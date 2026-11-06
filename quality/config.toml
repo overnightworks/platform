@@ -13,3 +13,7 @@ reason = "the tool lock beside mise.toml; mise finds project config only in the 
 [[root.allow]]
 entry = "clusters/"
 reason = "Flux's documented layout, ruled Q9 on platform#1"
+
+[[root.allow]]
+entry = "host/"
+reason = "the files the bootstrap writes onto the host, ruled Q9 on platform#1"

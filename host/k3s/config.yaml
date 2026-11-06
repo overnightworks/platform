@@ -1,0 +1,22 @@
+# k3s's server configuration for both clusters: the bootstrap writes it to /etc/rancher/k3s/config.yaml on the PC,
+# and the job cluster mounts it there in k3d.
+# A fixed name, so a local volume's node affinity survives a change of the hostname.
+node-name: pc
+# The docker group already holds root without a password, so its members gain nothing new.
+write-kubeconfig-group: docker
+write-kubeconfig-mode: "0640"
+# Takes effect only on a first start.
+secrets-encryption: true
+# Flux's helm-controller is the cluster's one Helm reconciler.
+disable-helm-controller: true
+# Flux owns ingress and storage; servicelb would open host ports; the RuntimeClasses name runtimes this host lacks;
+# the Gateway API chart needs the Helm controller disabled above.
+disable:
+  - traefik
+  - servicelb
+  - local-storage
+  - runtimes
+  - gateway-api-crd
+# route_localnet stays 0, so a service bound to 127.0.0.1 stays off the LAN, also after an uninstall.
+kube-proxy-arg:
+  - iptables-localhost-nodeports=false
