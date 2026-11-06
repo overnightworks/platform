@@ -1,20 +1,20 @@
 locals {
-  # Every non-archived non-fork repository of the organisation, with its visibility on GitHub.
-  managed = {
-    "aco"              = "public"
-    "agent-runtime"    = "public"
-    "appkit"           = "public"
-    "hal"              = "public"
-    "hopin"            = "public"
-    "marketplace"      = "public"
-    "platform"         = "public"
-    "platform-secrets" = "private"
-    "presentator"      = "public"
-    "quality"          = "public"
-    "songmaker"        = "public"
-    "speech-runtime"   = "public"
-    "webauth"          = "public"
-  }
+  # Every non-archived non-fork repository of the organisation.
+  managed = toset([
+    "aco",
+    "agent-runtime",
+    "appkit",
+    "hal",
+    "hopin",
+    "marketplace",
+    "platform",
+    "platform-secrets",
+    "presentator",
+    "quality",
+    "songmaker",
+    "speech-runtime",
+    "webauth",
+  ])
 
   # Listed repositories outside the contract, each with its reason.
   unmanaged = {
@@ -48,9 +48,9 @@ resource "github_repository" "managed" {
   depends_on = [data.github_user.current]
 
   # Secret scanning and push protection on a private repository need paid GitHub Secret Protection, so a private one
-  # relies on the free checks before GitHub instead.
+  # relies on the free checks at commit and in CI instead. Visibility is read from the listing, where GitHub owns it.
   dynamic "security_and_analysis" {
-    for_each = each.value == "private" ? [] : [each.value]
+    for_each = contains(local.listed_private, each.key) ? [] : [1]
 
     content {
       secret_scanning {
@@ -125,13 +125,14 @@ locals {
   listing_judgeable       = local.listing_read && !strcontains(local.link_header, "rel=\"next\"")
   listed_active           = toset([for repository in local.listing : repository.name if !repository.archived])
   listed_manageable       = toset([for repository in local.listing : repository.name if !repository.archived && !repository.fork])
-  undeclared_repositories = sort(setsubtract(local.listed_active, setunion(keys(local.managed), keys(local.unmanaged))))
-  unmanageable_names      = sort(setsubtract(keys(local.managed), local.listed_manageable))
+  listed_private          = toset([for repository in local.listing : repository.name if repository.private])
+  undeclared_repositories = sort(setsubtract(local.listed_active, setunion(local.managed, keys(local.unmanaged))))
+  unmanageable_names      = sort(setsubtract(local.managed, local.listed_manageable))
 }
 
 # The conditions reference only names and flags, because a failed condition prints every value it references.
 output "managed_repositories" {
-  value = sort(keys(local.managed))
+  value = sort(tolist(local.managed))
 
   precondition {
     condition     = local.listing_judgeable
