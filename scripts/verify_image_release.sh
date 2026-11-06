@@ -13,7 +13,7 @@ VENDOR_LIST_NAMESPACE="admission"
 # flux install --export of the locked flux2; the cluster job fails when it differs from a regeneration.
 GENERATED_FLUX_COMPONENTS="clusters/pc/flux-system/gotk-components.yaml"
 IMAGES_OVERRIDE_REASON="an images override rewrites an image named elsewhere"
-IMAGE_FIELD_PATH_REASON="a kustomize replacements or vars entry targets an image field, which rewrites an image named elsewhere"
+IMAGE_FIELD_PATH_REASON="a kustomize replacements entry targets an image field or a part of one, which rewrites an image named elsewhere"
 
 # The reference grammar of distribution/reference, matched against the lowercased string.
 DOMAIN_COMPONENT='[a-z0-9]([a-z0-9-]*[a-z0-9])?'
@@ -24,8 +24,8 @@ TAG_PATTERN='^[a-z0-9_][a-z0-9_.-]{0,127}$'
 DIGEST_PATTERN='^[a-z][a-z0-9]*([-_+.][a-z][a-z0-9]*)*:[0-9a-f]{32,}$'
 SHA256_DIGEST_PATTERN='^sha256:[0-9a-f]{64}$'
 
-# A kustomize fieldPath names its segments with dots or slashes.
-IMAGE_FIELD_PATH='(^|[./])image$'
+# A kustomize fieldPath names its segments with dots or slashes; it reaches an image at or below an image segment.
+IMAGE_FIELD_PATH='(^|[./])image($|[./])'
 # Every record is five NUL-terminated fields: type, document index, JSON pointer, value, reason. A scalar at an image
 # position (a key image, a patch operation's value at an /image path) leaves the plain scalar walk for the image one.
 POINTER='(path | map("/" + (tostring | sub("~", "~0") | sub("/", "~1"))) | join(""))'
@@ -72,8 +72,7 @@ RECORDS="
     (.. | select(key == \"image\" and (parent | kind) == \"map\") | ${IMAGE_VALUE}),
     (.. | select(${PATCH_OPERATION}) | ${PATCH_RULES}),
     (.. | select(key == \"images\" and kind == \"seq\") | [\"red\", \$document, ${POINTER}, to_json(0), \"${IMAGES_OVERRIDE_REASON}\"]),
-    (.. | select(key == \"replacements\" and kind == \"seq\") | .. | select(kind == \"scalar\" and (parent | key) == \"fieldPaths\" and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"]),
-    (.. | select(key == \"vars\" and kind == \"seq\") | .. | select(kind == \"scalar\" and key == \"fieldPath\" and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"])
+    (.. | select(kind == \"scalar\" and (parent | key) == \"fieldPaths\" and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"])
   ) | .[]"
 
 # One reason per line for what keeps the vendor list from being exactly one ConfigMap document of string entries.
