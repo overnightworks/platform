@@ -231,8 +231,8 @@ jobs:
           marker="$RUNNER_TEMP/before-second-run"
           touch "$marker"
           scripts/bootstrap_pc.sh --only tools
-          # mise refreshes the shims directory's own mtime on every run, so only files and links count.
-          changed="$(find "$HOME/.local/bin" "$HOME/.local/share/mise" ! -type d -newer "$marker")"
+          # mise refreshes the shims directory's own mtime on every run; everything else must stay as it was.
+          changed="$(find "$HOME/.local/bin" "$HOME/.local/share/mise" ! -path "$HOME/.local/share/mise/shims" -newer "$marker")"
           [ -z "$changed" ] || { echo "::error::the second run changed: $changed"; exit 1; }
 
   quality:
