@@ -81,25 +81,28 @@ decode() {
   yq --no-doc --nul-output --output-format yaml --yaml-fix-merge-anchor-to-spec=true --input-format "$1" "${RECORDS}" "$2"
 }
 
-# Sets reference_name, reference_tag and reference_digest; fails when $1 is no reference with a registry host.
+# Sets reference_name, reference_tag and reference_digest by splitting $1, then validates them. Returns 1 when $1 is
+# no candidate (a whitespace-free string, no URL, with a registry host before its first slash) and 2 when a candidate
+# breaks the reference grammar.
 parse_host_qualified_reference() {
   local remainder="$1" last_component host
   reference_name="" reference_tag="" reference_digest=""
   if [[ ${remainder} == *@* ]]; then
     reference_digest="${remainder#*@}"
     remainder="${remainder%%@*}"
-    [[ ${reference_digest,,} =~ ${DIGEST_PATTERN} ]] || return 1
   fi
   last_component="${remainder##*/}"
   if [[ ${last_component} == *:* ]]; then
     reference_tag="${last_component##*:}"
     remainder="${remainder%:*}"
-    [[ ${reference_tag,,} =~ ${TAG_PATTERN} ]] || return 1
   fi
   reference_name="${remainder}"
-  [[ ${reference_name,,} =~ ${NAME_PATTERN} && ${reference_name} == */* ]] || return 1
   host="${reference_name%%/*}"
-  [[ ${host} == *.* || ${host} == *:* || ${host,,} == localhost ]]
+  [[ $1 != *[[:space:]]* && ! $1 =~ ^[A-Za-z][A-Za-z0-9+.-]*:// && ${reference_name} == */* &&
+    (${host} == *.* || ${host} == *:* || ${host,,} == localhost) ]] || return 1
+  [[ -z ${reference_digest} || ${reference_digest,,} =~ ${DIGEST_PATTERN} ]] || return 2
+  [[ -z ${reference_tag} || ${reference_tag,,} =~ ${TAG_PATTERN} ]] || return 2
+  [[ ${reference_name,,} =~ ${NAME_PATTERN} ]] || return 2
 }
 
 judge_app_reference() {
@@ -119,13 +122,18 @@ judge_app_reference() {
 
 # Judges one decoded string at a position: content (any scalar), image (an image value) or split (a joined mapping).
 judge_string() {
-  local location="$1" value="$2" position="$3" namespace_content_rule="$4" reasons=() joined_reasons
+  local location="$1" value="$2" position="$3" namespace_content_rule="$4" reasons=() joined_reasons parse_status=0
   if [[ ${value,,} == *"ghcr.io/${owner}/"* ]] && { [ "${position}" != content ] || [ "${namespace_content_rule}" = true ]; }; then
     judge_app_reference "${location}" "${value}" "${position}"
     return
   fi
-  if ! parse_host_qualified_reference "${value}"; then
-    [ "${position}" = content ] || report_red "${location}" "${value}" "an image that is no reference with a registry host"
+  parse_host_qualified_reference "${value}" || parse_status=$?
+  if [ "${parse_status}" -ne 0 ]; then
+    if [ "${position}" != content ]; then
+      report_red "${location}" "${value}" "an image that is no valid reference with a registry host"
+    elif [ "${parse_status}" -eq 2 ] && [ -n "${reference_tag}${reference_digest}" ]; then
+      report_red "${location}" "${value}" "a host-qualified reference with a tag or digest that breaks the reference grammar"
+    fi
     return
   fi
   [ "${position}" != content ] || [ -n "${reference_tag}${reference_digest}" ] || return 0
