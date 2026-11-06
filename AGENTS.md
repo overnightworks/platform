@@ -41,8 +41,8 @@
   the operator's word only while the cluster holds no PersistentVolume, no claim and no Secret beyond its first
   install's; an inventory that differs or cannot be read stops k3s with `k3s-killall.sh`, which deletes nothing, and
   the uninstall waits for his word.
-- Until P10 of overnightworks/platform#1, the PC runs only the bootstrap parts and sub-tasks a slice names, never a
-  full `mise bootstrap` or `scripts/bootstrap_pc.sh` without `--only`.
+- The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
+  `scripts/bootstrap_pc.sh` without `--only`, because hal runs beside it.
 
 ## Layout
 
