@@ -44,6 +44,8 @@ resource "github_repository" "managed" {
   delete_branch_on_merge = true
   archive_on_destroy     = true
 
+  depends_on = [data.github_user.current]
+
   security_and_analysis {
     secret_scanning {
       status = "enabled"
