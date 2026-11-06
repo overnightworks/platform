@@ -15,7 +15,6 @@ disable:
   - traefik
   - servicelb
   - local-storage
-  - runtimes
   - gateway-api-crd
 # route_localnet stays 0, so a service bound to 127.0.0.1 stays off the LAN, also after an uninstall.
 kube-proxy-arg:
