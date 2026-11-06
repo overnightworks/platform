@@ -44,6 +44,12 @@ spec:
       name: flux-system
       namespace: flux-system
   timeout: 5m0s
+  patches:
+    - target: {kind: GitRepository, name: flux-system}
+      patch: |
+        - op: replace
+          path: /spec/interval
+          value: 2m0s
   sourceRef:
     kind: GitRepository
     name: flux-system
