@@ -1,0 +1,8 @@
+claim_id = "77cd7126b9484c40b50be80cad09b36d"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "25de5621ab64544f9747e0083e8bb08c095acf65"
+branch = "claude/issue-20-github-settings-g1"
+scope = [".aco/board.toml", ".github/dependabot.yml", ".github/workflows/ci.yml", "AGENTS.md", "README.md", "mise.lock", "mise.toml", "quality/config.toml", "scripts/apply_github_settings.sh", "src/opentofu/github/.terraform.lock.hcl", "src/opentofu/github/main.tf", "src/opentofu/github/repositories.tf", "src/opentofu/github/tests/repository_listing.tftest.hcl"]
+opened_commit = "fdb1478b65cb09286be1249e67ef1e3a562d22e4"
+whole_reason = "The first honest proof needs the declarations, the one command that applies them and the mandatory job that gates them from the first pull request; any cut leaves the declarations without their applying caller or ungated."
