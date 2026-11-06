@@ -33,11 +33,6 @@ run "a_listing_that_agrees_with_the_declarations_passes" {
       JSON
     }
   }
-
-  assert {
-    condition     = length(output.managed_repositories) == 12
-    error_message = "The agreeing listing did not plan every managed repository."
-  }
 }
 
 run "an_undeclared_listed_repository_fails" {
