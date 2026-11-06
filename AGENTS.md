@@ -5,13 +5,17 @@
 - `quality hygiene .` runs the repository rules of quality at the release `.github/workflows/ci.yml` pins and must print `hygiene: clean`. Install it as
   quality's README says, at that release.
 - `scripts/bootstrap_pc.sh --only tools` installs the mise its header pins, checks its sha256 and installs the
-  tools `mise.lock` holds; a tool without a lock entry is an error. Change a tool with `mise lock` after editing
+  tools `mise.lock` holds; a tool without a lock entry is an error. A fresh machine first needs `git`, `curl` and
+  `sha256sum` (on Ubuntu, `apt-get install ca-certificates curl git`); the script names the first one missing and
+  installs nothing. Change a tool with `mise lock` after editing
   `mise.toml`, never by hand.
 - `mise run flux:export` regenerates `clusters/pc/flux-system/gotk-components.yaml` from the locked flux2.
 
 ## Layout
 
-- `.github/workflows/ci.yml`: the `checks` job, the `cluster` job and the `quality` job that calls quality's `gate.yml`.
+- `.github/workflows/ci.yml`: the `checks` job, the `cluster` job, the `bootstrap` job and the `quality` job that calls
+  quality's `gate.yml`. `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
+  `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes anything.
   `cluster` reconciles `clusters/pc` in k3d: on a pull request the source is patched to the pull request's head and
   the committed self-Kustomization is dropped from the applied tree (only dry-run); on main the committed sync runs as
   on the PC.
