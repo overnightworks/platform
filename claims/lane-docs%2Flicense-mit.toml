@@ -1,0 +1,7 @@
+claim_id = "e297113b462d4b8cba47d012a88d2f9d"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "a0405d73a11be324f47af167aa9e24c2fb543a0d"
+branch = "docs/license-mit"
+scope = ["LICENSE"]
+opened_commit = "92e190fda58227eb989b2a185ea82aac88c5f39f"
