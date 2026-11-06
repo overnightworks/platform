@@ -2,7 +2,7 @@
 
 ## Commands
 
-- `quality hygiene .` runs the repository rules of quality v0.9.2 and must print `hygiene: clean`. Install it as
+- `quality hygiene .` runs the repository rules of quality at the release `.github/workflows/ci.yml` pins and must print `hygiene: clean`. Install it as
   quality's README says, at that release.
 
 ## Layout
