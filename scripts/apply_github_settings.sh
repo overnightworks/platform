@@ -72,7 +72,7 @@ mkdir -p "$(dirname "${state_file}")"
 run_tofu init -input=false -lockfile=readonly -backend-config="path=${state_file}" >/dev/null
 plan_status=0
 run_tofu plan -input=false -detailed-exitcode -out="${plan_file}" || plan_status=$?
-[ "${plan_status}" -ne 1 ] || fail "the plan failed"
+[ "${plan_status}" -eq 0 ] || [ "${plan_status}" -eq 2 ] || fail "the plan failed with status ${plan_status}"
 
 if [ "${apply}" = true ] && [ "${plan_status}" -eq 2 ]; then
   run_tofu apply -input=false "${plan_file}"
