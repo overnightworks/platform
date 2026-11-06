@@ -2,6 +2,7 @@
 # Install the pinned mise, check its sha256, trust this checkout's mise.toml and hand over to `mise bootstrap`.
 # Pin source: the release assets of https://github.com/jdx/mise/releases/tag/v2026.11.3 (asset digest and SHASUMS256.txt).
 # Usage: scripts/bootstrap_pc.sh [mise bootstrap flags], for example `--only tools`.
+# A fresh machine needs git, curl and sha256sum first; the script names the first one missing and installs nothing.
 set -euo pipefail
 
 MISE_VERSION="v2026.11.3"
@@ -16,6 +17,13 @@ if [ "$(uname -sm)" != "Linux x86_64" ]; then
   echo "bootstrap_pc: the pin covers only ${MISE_ASSET}, this machine is $(uname -sm)" >&2
   exit 1
 fi
+
+for prerequisite in git curl sha256sum; do
+  if ! command -v "${prerequisite}" >/dev/null; then
+    echo "bootstrap_pc: ${prerequisite} is missing; install it first" >&2
+    exit 1
+  fi
+done
 
 has_pinned_checksum() {
   echo "${MISE_SHA256}  $1" | sha256sum --check --status
