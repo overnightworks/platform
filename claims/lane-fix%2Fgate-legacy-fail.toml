@@ -1,7 +1,0 @@
-claim_id = "06aa04855a184aaf843107c0ea3045dc"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "90fdadc106985e966c00fd400906d97b8c4ab8c7"
-branch = "fix/gate-legacy-fail"
-scope = ["quality/config.toml"]
-opened_commit = "70c3dfe147544cd6a2f8d064a257a6a29a70022e"
