@@ -19,8 +19,14 @@
 
 ## Layout
 
-- `.github/workflows/ci.yml`: the `checks` job, the `cluster` job, the `bootstrap` job, the `opentofu` job and the `quality` job that
-  calls quality's `gate.yml`. `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
+- `.github/workflows/ci.yml`: the `checks` job, the `cluster` job, the `bootstrap` job, the `opentofu` job, the `images`
+  job and the `quality` job that calls quality's `gate.yml`. `images` runs `scripts/verify_image_release.sh`: it decodes
+  every tracked YAML and JSON file but `gotk-components.yaml` with the locked yq, YAML held in strings included, and
+  refuses every image reference that is not a repository of the vendor list at a sha256 digest, every app ref under
+  `ghcr.io/<owner>/` (no release check exists yet), every `images` override and every patch operation on one field
+  of an image. What it cannot read (chart defaults, values from outside the tree, shell `run` blocks) is left to the
+  admission layer in the cluster, overnightworks/platform#50.
+  `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
   `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes the paths or the file
   sizes and timestamps under `~/.local/bin` and mise's data directory (directory timestamps are not compared, the paths
   inside every directory are).
@@ -51,5 +57,8 @@
 ## Owners
 
 - A GitHub setting `src/opentofu/github` holds changes only through that root and the command, never by hand.
+- `infrastructure/admission/image-vendors.yaml` is the one vendor list, which `images` and the admission layer read;
+  platform's head owns it. An entry changes only when a vendor is added or removed, with its first or last ref, in a
+  pull request the operator merges; its review checks the vendor's page and that the repository is no app of ours.
 - quality owns the gate, its workflows and its docs; the jobs and pins here follow its README and `docs/`.
 - overnightworks/platform#1 holds the plan.

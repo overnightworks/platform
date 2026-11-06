@@ -482,9 +482,28 @@ jobs:
       - name: Check the GitHub settings root against its lock and mocked tests
         run: mise run github:test
 
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned tools
+        run: |
+          scripts/bootstrap_pc.sh --only tools
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Judge every image reference of the tracked YAML and JSON files
+        run: mise exec -- scripts/verify_image_release.sh
+
   quality:
     if: always()
-    needs: [checks, cluster, bootstrap, opentofu]
+    needs: [checks, cluster, bootstrap, opentofu, images]
     permissions:
       contents: read
       actions: read
