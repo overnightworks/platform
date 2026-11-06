@@ -14,6 +14,7 @@ VENDOR_LIST_NAMESPACE="admission"
 GENERATED_FLUX_COMPONENTS="clusters/pc/flux-system/gotk-components.yaml"
 IMAGES_OVERRIDE_REASON="an images override rewrites an image named elsewhere"
 IMAGE_FIELD_PATH_REASON="a kustomize replacements entry targets an image field or a part of one, which rewrites an image named elsewhere"
+REPLACEMENT_DELIMITER_REASON="a kustomize replacements target with options.delimiter splices a value into one part of a string, which can rewrite an image the job passed"
 
 # The reference grammar of distribution/reference, matched against the lowercased string.
 DOMAIN_COMPONENT='[a-z0-9]([a-z0-9-]*[a-z0-9])?'
@@ -72,7 +73,8 @@ RECORDS="
     (.. | select(key == \"image\" and (parent | kind) == \"map\") | ${IMAGE_VALUE}),
     (.. | select(${PATCH_OPERATION}) | ${PATCH_RULES}),
     (.. | select(key == \"images\" and kind == \"seq\") | [\"red\", \$document, ${POINTER}, to_json(0), \"${IMAGES_OVERRIDE_REASON}\"]),
-    (.. | select(kind == \"scalar\" and (parent | key) == \"fieldPaths\" and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"])
+    (.. | select(kind == \"scalar\" and (parent | key) == \"fieldPaths\" and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"]),
+    (.. | select(kind == \"map\" and has(\"fieldPaths\") and (.options | kind) == \"map\" and (.options | has(\"delimiter\"))) | [\"red\", \$document, ${POINTER}, to_json(0), \"${REPLACEMENT_DELIMITER_REASON}\"])
   ) | .[]"
 
 # One reason per line for what keeps the vendor list from being exactly one ConfigMap document of string entries.
