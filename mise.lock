@@ -32,3 +32,14 @@ specifiers = ["1.37"]
 [tools.kubectl."platforms.linux-x64"]
 checksum = "sha256:c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4"
 url = "https://dl.k8s.io/v1.37.2/bin/linux/amd64/kubectl"
+
+[[tools.opentofu]]
+version = "1.13.8"
+backend = "aqua:opentofu/opentofu"
+specifiers = ["1.13"]
+
+[tools.opentofu."platforms.linux-x64"]
+checksum = "sha256:dab8135df87343ce143e1bef1a6174d7b82035950818bde17950658ff9a72697"
+checksum_source = "mise-versions"
+url = "https://github.com/opentofu/opentofu/releases/download/v1.13.8/tofu_1.13.8_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/opentofu/opentofu/releases/assets/711039356"

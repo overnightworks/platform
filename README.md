@@ -4,6 +4,8 @@ This repository builds nothing a maintained tool already does. It is the one des
 
 The platform of the overnightworks apps: k3s on one machine, with Flux reconciling its whole state from Git.
 
+The GitHub security and merge settings of the fleet's repositories live here as OpenTofu code.
+
 It is not an application and holds no app code or libraries. Libraries release through their own CI-gated GitHub
 releases.
 
