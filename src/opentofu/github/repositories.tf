@@ -8,6 +8,7 @@ locals {
     "hopin",
     "marketplace",
     "platform",
+    "platform-secrets",
     "presentator",
     "quality",
     "songmaker",
@@ -46,12 +47,18 @@ resource "github_repository" "managed" {
 
   depends_on = [data.github_user.current]
 
-  security_and_analysis {
-    secret_scanning {
-      status = "enabled"
-    }
-    secret_scanning_push_protection {
-      status = "enabled"
+  # Secret scanning and push protection on a private repository need paid GitHub Secret Protection, so a private one
+  # relies on the free checks at commit and in CI instead. Visibility is read from the listing, where GitHub owns it.
+  dynamic "security_and_analysis" {
+    for_each = contains(local.listed_private, each.key) ? [] : [1]
+
+    content {
+      secret_scanning {
+        status = "enabled"
+      }
+      secret_scanning_push_protection {
+        status = "enabled"
+      }
     }
   }
 
@@ -118,13 +125,14 @@ locals {
   listing_judgeable       = local.listing_read && !strcontains(local.link_header, "rel=\"next\"")
   listed_active           = toset([for repository in local.listing : repository.name if !repository.archived])
   listed_manageable       = toset([for repository in local.listing : repository.name if !repository.archived && !repository.fork])
+  listed_private          = toset([for repository in local.listing : repository.name if repository.private])
   undeclared_repositories = sort(setsubtract(local.listed_active, setunion(local.managed, keys(local.unmanaged))))
   unmanageable_names      = sort(setsubtract(local.managed, local.listed_manageable))
 }
 
 # The conditions reference only names and flags, because a failed condition prints every value it references.
 output "managed_repositories" {
-  value = sort(local.managed)
+  value = sort(tolist(local.managed))
 
   precondition {
     condition     = local.listing_judgeable
