@@ -44,6 +44,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # On a pull request the default checkout is the merge commit, while Flux reconciles the head.
+          ref: ${{ env.CANDIDATE_REVISION }}
           persist-credentials: false
 
       - name: Install the pinned tools
@@ -146,12 +148,16 @@ jobs:
           for revision in "$source_revision" "$applied_revision"; do
             [ "${revision##*@sha1:}" = "$CANDIDATE_REVISION" ] || fail "revision '$revision' is not the candidate $CANDIDATE_REVISION"
           done
+          echo "candidate revision:                   $CANDIDATE_REVISION"
+          echo "GitRepository artifact revision:      $source_revision"
+          echo "Kustomization lastAppliedRevision:    $applied_revision"
 
           entries="$(inventory)"
           for entry in flux-system_flux-system_source.toolkit.fluxcd.io_GitRepository \
             flux-system_source-controller_apps_Deployment flux-system_kustomize-controller_apps_Deployment \
             flux-system_helm-controller_apps_Deployment flux-system_notification-controller_apps_Deployment; do
             grep -qxF "$entry" <<<"$entries" || fail "the flux-system inventory lacks $entry"
+            echo "inventory holds: $entry"
           done
 
           # allow-scraping only admits metrics scrapes; deleting allow-egress would cut the controllers off each other.
@@ -162,9 +168,11 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             source_ref="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.spec.ref.name}')"
             [ "$source_ref" = "$PULL_REQUEST_REF" ] || fail "the source ref '$source_ref' left $PULL_REQUEST_REF"
+            echo "GitRepository spec.ref after the reconcile: $source_ref"
             if grep -qxF flux-system_flux-system_kustomize.toolkit.fluxcd.io_Kustomization <<<"$(inventory)"; then
               fail "the inventory holds the committed self-Kustomization"
             fi
+            echo "inventory lacks the committed self-Kustomization flux-system_flux-system_kustomize.toolkit.fluxcd.io_Kustomization"
           fi
 
       - name: Print Flux's state and the controllers' errors
