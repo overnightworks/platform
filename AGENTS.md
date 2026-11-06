@@ -8,7 +8,6 @@
   tools `mise.lock` holds; a tool without a lock entry is an error. Change a tool with `mise lock` after editing
   `mise.toml`, never by hand.
 - `mise run flux:export` regenerates `clusters/pc/flux-system/gotk-components.yaml` from the locked flux2.
-- k3d, k3s and the bootstrap run only in CI or a throwaway container, never on an agent's host.
 
 ## Layout
 
