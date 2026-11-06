@@ -232,12 +232,16 @@ jobs:
 
       - name: Run the script again and assert that it changes nothing
         run: |
-          marker="$RUNNER_TEMP/before-second-run"
-          touch "$marker"
+          # Each line holds a path and its type; a non-directory also holds its size and timestamp. Directory timestamps
+          # are not compared (mise refreshes the shims directory's on every run), but the paths inside every directory are.
+          list_state() {
+            find "$HOME/.local/bin" "$HOME/.local/share/mise" \( -type d -printf '%y %p\n' \) -o \( -printf '%y %p %s %T@\n' \) | sort
+          }
+          list_state >"$RUNNER_TEMP/before-second-run"
           scripts/bootstrap_pc.sh --only tools
-          # mise refreshes the shims directory's own mtime on every run; everything else must stay as it was.
-          changed="$(find "$HOME/.local/bin" "$HOME/.local/share/mise" ! -path "$HOME/.local/share/mise/shims" -newer "$marker")"
-          [ -z "$changed" ] || { echo "::error::the second run changed: $changed"; exit 1; }
+          list_state >"$RUNNER_TEMP/after-second-run"
+          diff "$RUNNER_TEMP/before-second-run" "$RUNNER_TEMP/after-second-run" >"$RUNNER_TEMP/second-run.diff" ||
+            { echo "::error::the second run changed the installed state:"; cat "$RUNNER_TEMP/second-run.diff"; exit 1; }
 
   quality:
     if: always()

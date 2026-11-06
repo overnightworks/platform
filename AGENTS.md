@@ -15,8 +15,9 @@
 
 - `.github/workflows/ci.yml`: the `checks` job, the `cluster` job, the `bootstrap` job and the `quality` job that calls
   quality's `gate.yml`. `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
-  `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes anything but the shims
-  directory's own timestamp.
+  `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes the paths or the file
+  sizes and timestamps under `~/.local/bin` and mise's data directory (directory timestamps are not compared, the paths
+  inside every directory are).
   `cluster` reconciles `clusters/pc` in k3d: on a pull request the source is patched to the pull request's head and
   the committed self-Kustomization is dropped from the applied tree (only dry-run); on main the committed sync runs as
   on the PC.
