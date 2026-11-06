@@ -1,8 +1,0 @@
-claim_id = "7982d8b1fee9406aa62911d8b7077921"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "747581a44df36bc95604168a7a77697c55aee449"
-branch = "claude/issue-14-cluster-job-k3d"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/flux-system/gotk-components.yaml", "clusters/pc/flux-system/gotk-sync.yaml", "clusters/pc/flux-system/kustomization.yaml", "mise.lock", "mise.toml", "quality/config.toml", "scripts/bootstrap_pc.sh"]
-opened_commit = "68e59b3f67f1c74ffc11668c6d300b6dfd068491"
-whole_reason = "The first honest end-to-end proof needs the pinned tools path, the committed Flux manifests and the k3d job that consumes both; any cut leaves one half without a caller."
