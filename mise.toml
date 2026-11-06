@@ -131,9 +131,11 @@ kubectl wait "node/$node" --for=condition=Ready --timeout=3m
 [tasks."bootstrap:flux"]
 description = "Apply Flux from the committed clusters/pc/flux-system to the PC's k3s and wait for its controllers"
 env = { KUBECONFIG = "/etc/rancher/k3s/k3s.yaml" }
-# The sync objects are Flux's custom resources, so its CRDs and controllers come first.
+# The sync objects are Flux's custom resources, so its CRDs and controllers come first. Once Flux has reconciled, its
+# kustomize-controller owns the fields the API server normalizes (1000m as 1, 1000 as 1k, the defaulted fieldRef), so a
+# repeat claims them back with --force-conflicts, as Flux's own installer does; the values stay the committed ones.
 run = [
-  "kubectl apply --server-side --filename clusters/pc/flux-system/gotk-components.yaml",
+  "kubectl apply --server-side --force-conflicts --filename clusters/pc/flux-system/gotk-components.yaml",
   "kubectl --namespace flux-system wait deployment --all --for=condition=Available --timeout=3m",
-  "kubectl apply --server-side --kustomize clusters/pc/flux-system",
+  "kubectl apply --server-side --force-conflicts --kustomize clusters/pc/flux-system",
 ]
