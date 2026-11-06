@@ -1,0 +1,8 @@
+claim_id = "89b3dd80fa1c45acb72c0f7c66fee187"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "25de5621ab64544f9747e0083e8bb08c095acf65"
+branch = "claude/issue-24-secrets-decrypt-k3d"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/flux-system/gotk-sync.yaml", "clusters/pc/secrets.yaml", "mise.lock", "mise.toml"]
+opened_commit = "6041de117096a4811712a7f242b630bbdfb85df9"
+whole_reason = "The root's health, the main-mode change, the committed Kustomization, the tools and task that make the key and the Secret, and the CI proof that consumes them each have no caller without the PC-only source."
