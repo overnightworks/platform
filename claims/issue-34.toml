@@ -1,0 +1,7 @@
+claim_id = "b75b319be5e640839a4d5ca459c62b75"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "fa2f78e3046dd17b2519bcaaaece2ae63f2e6dd6"
+branch = "claude/issue-34-the-settings-root-declares-the-private-r"
+scope = ["src/opentofu/github/repositories.tf", "src/opentofu/github/tests/repository_listing.tftest.hcl"]
+opened_commit = "6dd4070649cea5fffe563af87813898ede9e57e1"
