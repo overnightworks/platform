@@ -40,8 +40,9 @@
 - The undo is `sudo /usr/local/bin/k3s-uninstall.sh`, then the firewall section applied with `state = "absent"`, which
   deletes mise's rule and its state file and keeps the operator's own; deleting the section or reverting the
   commit changes nothing on the host. The uninstall leaves `/etc/rancher/node/password` (k3s's node password), the
-  empty `/var/lib/rancher`, `/var/log/pods` and `/var/log/containers`. The kernel settings k3s made stay until a
-  reboot. The uninstall runs without
+  empty `/var/lib/rancher`, `/var/log/pods` and `/var/log/containers`. The kernel settings k3s made and the empty
+  `*mangle` tables it created in the IPv4 and IPv6 rules stay until a reboot, so the rules equal those before the
+  install apart from those two tables. The uninstall runs without
   the operator's word only while the cluster holds no PersistentVolume, no claim and no Secret beyond its first
   install's; an inventory that differs or cannot be read stops k3s with `k3s-killall.sh`, which deletes nothing, and
   the uninstall waits for his word.
