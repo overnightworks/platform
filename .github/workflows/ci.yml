@@ -108,7 +108,7 @@ jobs:
 
           # The recipient is the key's public half, so sops encrypts without reading any private key.
           encrypted_file="$artifact_dir/$PROOF_SECRET_NAME.yaml"
-          sops --encrypt --age "$(age-keygen -y "$key_file")" --encrypted-regex '^(data|stringData)$' \
+          sops --encrypt --age "$(age-keygen -y "$key_file")" --encrypted-regex '^(stringData)$' \
             "$plain_file" > "$encrypted_file"
 
           # Flux applies a value left outside the encrypted fields as it is, which would fake the proof.
