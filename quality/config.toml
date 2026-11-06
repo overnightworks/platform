@@ -1,3 +1,15 @@
 [gate]
-mandatory_jobs = ["checks"]
+mandatory_jobs = ["checks", "cluster"]
 legacy = "fail"
+
+[[root.allow]]
+entry = "mise.toml"
+reason = "the pinned tools config; mise finds project config only in the root"
+
+[[root.allow]]
+entry = "mise.lock"
+reason = "the tool lock beside mise.toml; mise finds project config only in the root"
+
+[[root.allow]]
+entry = "clusters/"
+reason = "Flux's documented layout, ruled Q9 on platform#1"
