@@ -1,5 +1,5 @@
 [gate]
-mandatory_jobs = ["checks", "cluster", "opentofu"]
+mandatory_jobs = ["checks", "cluster", "bootstrap", "opentofu"]
 legacy = "fail"
 
 [[root.allow]]
