@@ -1,8 +1,0 @@
-claim_id = "4967c42c481a4e57a5acec9beffb3256"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "0e1ad80f87ab2c47a96010af2e4fd129eb34a99b"
-branch = "claude/issue-35-k3s-config-k3d"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "host/k3s/config.yaml", "host/k3s/config.yaml.d/node-name.yaml", "quality/config.toml"]
-opened_commit = "817d3247d03cee545a6bf3d32b4294d04a2ecd13"
-whole_reason = "The file has no consumer without the k3d mount and its proof, and its root declaration lands with the first file under host/."
