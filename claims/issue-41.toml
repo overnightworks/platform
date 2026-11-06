@@ -1,0 +1,7 @@
+claim_id = "537e7a4415b64289b230dfc836077435"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "fa2f78e3046dd17b2519bcaaaece2ae63f2e6dd6"
+branch = "claude/issue-41-k3s-flux-on-pc"
+scope = ["AGENTS.md", "host/k3s/config.yaml", "mise.toml"]
+opened_commit = "3ceb786144045e48a3a27c3e08dd1952d2e0ffe7"
