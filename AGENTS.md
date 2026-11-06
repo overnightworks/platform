@@ -43,7 +43,8 @@
   install's; an inventory that differs or cannot be read stops k3s with `k3s-killall.sh`, which deletes nothing, and
   the uninstall waits for his word.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
-  `scripts/bootstrap_pc.sh` without `--only`, because hal runs beside it.
+  `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
+  runs beside it.
 
 ## Layout
 
