@@ -69,7 +69,9 @@ jobs:
           # k3d only warns about a missing volume source, and k3s would start on its defaults.
           [ -f "$K3S_CONFIG_SOURCE" ] || { echo "::error::$K3S_CONFIG_SOURCE is missing"; exit 1; }
           # The file alone at k3s's default path, the one the PC uses: k3d writes registries.yaml beside it.
-          k3d cluster create "$CLUSTER_NAME" --image "rancher/k3s:${K3S_VERSION//+/-}" \
+          # k3d's DNS fix DNATs pod DNS to Docker's 127.0.0.11, which the kernel drops unless route_localnet is 1: the
+          # shared file's iptables-localhost-nodeports=false keeps it 0, so CoreDNS would answer SERVFAIL.
+          K3D_FIX_DNS=0 k3d cluster create "$CLUSTER_NAME" --image "rancher/k3s:${K3S_VERSION//+/-}" \
             --volume "$PWD/$K3S_CONFIG_SOURCE:/etc/rancher/k3s/config.yaml:ro@server:0" \
             --registry-create "${REGISTRY_NAME}:127.0.0.1:${REGISTRY_PORT}" --enforce-registry-port-match \
             --wait --timeout 3m
