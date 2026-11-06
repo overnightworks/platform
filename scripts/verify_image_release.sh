@@ -9,6 +9,7 @@ set -euo pipefail
 VENDOR_LIST="infrastructure/admission/image-vendors.yaml"
 # flux install --export of the locked flux2; the cluster job fails when it differs from a regeneration.
 GENERATED_FLUX_COMPONENTS="clusters/pc/flux-system/gotk-components.yaml"
+IMAGES_OVERRIDE_REASON="an images override rewrites an image named elsewhere"
 
 # The reference grammar of distribution/reference, matched against the lowercased string.
 DOMAIN_COMPONENT='[a-z0-9]([a-z0-9-]*[a-z0-9])?'
@@ -62,7 +63,7 @@ RECORDS="
     (.. | select(kind == \"map\") | ${POINTER} as \$map | keys | .[] | [\"scalar\", \$document, \$map + \"/\" + (tostring | sub(\"~\", \"~0\") | sub(\"/\", \"~1\")), tostring, \"\"]),
     (.. | select(key == \"image\" and (parent | kind) == \"map\") | ${IMAGE_VALUE}),
     (.. | select(${PATCH_OPERATION}) | ${PATCH_RULES}),
-    (.. | select(key == \"images\" and kind == \"seq\") | [\"red\", \$document, ${POINTER}, to_json(0), \"an images override rewrites an image named elsewhere\"])
+    (.. | select(key == \"images\" and kind == \"seq\") | [\"red\", \$document, ${POINTER}, to_json(0), \"${IMAGES_OVERRIDE_REASON}\"])
   ) | .[]"
 
 red_count=0
@@ -161,9 +162,8 @@ judge_string() {
 # Judges the records in the file $2, read from a source at $1; a string that holds a YAML mapping or sequence is
 # replaced by its decoded children.
 judge_records() {
-  local prefix="$1" records_file="$2" namespace_content_rule="$3" depth="$4" records index nested_file
+  local prefix="$1" records_file="$2" namespace_content_rule="$3" depth="$4" records index
   mapfile -d '' records <"${records_file}"
-  nested_file="${work_directory}/records.$((depth + 1))"
   for ((index = 0; index < ${#records[@]}; index += 5)); do
     local type="${records[index]}" location="${prefix} doc ${records[index + 1]} ${records[index + 2]:-/}"
     local value="${records[index + 3]}" reason="${records[index + 4]}"
@@ -171,25 +171,45 @@ judge_records() {
       root) ;;
       red) report_red "${location}" "${value}" "${reason}" ;;
       image | split) judge_string "${location}" "${value}" "${type}" "${namespace_content_rule}" ;;
-      scalar)
-        if printf '%s' "${value}" | decode yaml - >"${nested_file}" 2>/dev/null && holds_collection "${nested_file}"; then
-          judge_records "${location} >" "${nested_file}" "${namespace_content_rule}" "$((depth + 1))"
-        else
-          judge_string "${location}" "${value}" content "${namespace_content_rule}"
-        fi
-        ;;
+      scalar) judge_scalar "${location}" "${records[index + 2]}" "${value}" "${namespace_content_rule}" "${depth}" ;;
       *) echo "verify_image_release: unknown record type ${type}" >&2 && exit 1 ;;
     esac
   done
 }
 
-holds_collection() {
-  local records index
-  mapfile -d '' records <"$1"
+# Succeeds when a document of the records file $1 has a root of one of the kinds $2....
+holds_root_kind() {
+  local records_file="$1" records index kind
+  shift
+  mapfile -d '' records <"${records_file}"
   for ((index = 0; index < ${#records[@]}; index += 5)); do
-    [ "${records[index]}" != root ] || [ "${records[index + 3]}" = scalar ] || return 0
+    [ "${records[index]}" = root ] || continue
+    for kind in "$@"; do
+      [ "${records[index + 3]}" != "${kind}" ] || return 0
+    done
   done
   return 1
+}
+
+# Judges a scalar at the JSON pointer $2 of $1. A string that parses as a mapping or sequence is replaced by its decoded
+# children and keeps its field, so an images field holding a sequence is an override. yq cannot print a scalar that
+# holds a NUL character, so a string yq parses as a mapping or sequence but cannot decode is red.
+judge_scalar() {
+  local location="$1" pointer="$2" value="$3" namespace_content_rule="$4" depth="$5" kinds
+  local nested_file="${work_directory}/records.$((depth + 1))"
+  if printf '%s' "${value}" | decode yaml - >"${nested_file}" 2>/dev/null; then
+    if holds_root_kind "${nested_file}" map seq; then
+      if [[ ${pointer} == */images ]] && holds_root_kind "${nested_file}" seq; then
+        report_red "${location}" "${value}" "${IMAGES_OVERRIDE_REASON}"
+      fi
+      judge_records "${location} >" "${nested_file}" "${namespace_content_rule}" "$((depth + 1))"
+      return
+    fi
+  elif kinds="$(printf '%s' "${value}" | yq --no-doc --input-format yaml kind - 2>/dev/null)" && [[ ${kinds} == *map* || ${kinds} == *seq* ]]; then
+    report_red "${location}" "${value}" "yq parses the string as a YAML document but cannot decode it"
+    return
+  fi
+  judge_string "${location}" "${value}" content "${namespace_content_rule}"
 }
 
 judge_file() {
