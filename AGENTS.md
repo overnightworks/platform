@@ -21,11 +21,14 @@
 
 - `.github/workflows/ci.yml`: the `checks` job, the `cluster` job, the `bootstrap` job, the `opentofu` job, the `images`
   job and the `quality` job that calls quality's `gate.yml`. `images` runs `scripts/verify_image_release.sh`: it decodes
-  every tracked YAML and JSON file but `gotk-components.yaml` with the locked yq, YAML held in strings included, and
-  refuses every image reference that is not a repository of the vendor list at a sha256 digest, every app ref under
-  `ghcr.io/<owner>/` (no release check exists yet), every `images` override and every patch operation on one field
-  of an image. What it cannot read (chart defaults, values from outside the tree, shell `run` blocks) is left to the
-  admission layer in the cluster, overnightworks/platform#50.
+  every tracked YAML and JSON file and every file named `Kustomization` (no extension) but `gotk-components.yaml` with
+  the locked yq, YAML held in strings included, and refuses every image reference that is not a repository of the vendor
+  list at a sha256 digest, every app ref under `ghcr.io/<owner>/` (no release check exists yet), every `images`
+  override, every kustomize `replacements` or `vars` entry whose target fieldPath ends in `image`, every patch
+  operation on one field of an image, every split `image` mapping that repeats a field, and a vendor list that is not
+  exactly one ConfigMap `image-vendors` in namespace `admission` whose entries name each repository once. What it
+  cannot read (chart defaults, values from outside the tree, shell `run` blocks) is left to the admission layer in the
+  cluster, overnightworks/platform#50.
   `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
   `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes the paths or the file
   sizes and timestamps under `~/.local/bin` and mise's data directory (directory timestamps are not compared, the paths

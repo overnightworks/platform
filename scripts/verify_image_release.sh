@@ -7,9 +7,13 @@
 set -euo pipefail
 
 VENDOR_LIST="infrastructure/admission/image-vendors.yaml"
+# The admission layer's binding reads the list by this name and namespace (paramRef).
+VENDOR_LIST_NAME="image-vendors"
+VENDOR_LIST_NAMESPACE="admission"
 # flux install --export of the locked flux2; the cluster job fails when it differs from a regeneration.
 GENERATED_FLUX_COMPONENTS="clusters/pc/flux-system/gotk-components.yaml"
 IMAGES_OVERRIDE_REASON="an images override rewrites an image named elsewhere"
+IMAGE_FIELD_PATH_REASON="a kustomize replacements or vars entry targets an image field, which rewrites an image named elsewhere"
 
 # The reference grammar of distribution/reference, matched against the lowercased string.
 DOMAIN_COMPONENT='[a-z0-9]([a-z0-9-]*[a-z0-9])?'
@@ -20,6 +24,8 @@ TAG_PATTERN='^[a-z0-9_][a-z0-9_.-]{0,127}$'
 DIGEST_PATTERN='^[a-z][a-z0-9]*([-_+.][a-z][a-z0-9]*)*:[0-9a-f]{32,}$'
 SHA256_DIGEST_PATTERN='^sha256:[0-9a-f]{64}$'
 
+# A kustomize fieldPath names its segments with dots or slashes.
+IMAGE_FIELD_PATH='(^|[./])image$'
 # Every record is five NUL-terminated fields: type, document index, JSON pointer, value, reason. A scalar at an image
 # position (a key image, a patch operation's value at an /image path) leaves the plain scalar walk for the image one.
 POINTER='(path | map("/" + (tostring | sub("~", "~0") | sub("/", "~1"))) | join(""))'
@@ -28,6 +34,7 @@ IMAGE_POSITION="((key == \"image\" and (parent | kind) == \"map\") or (key == \"
 SPLIT_IMAGE="
   . as \$mapping |
   [keys | .[] | select(. != \"registry\" and . != \"repository\" and . != \"tag\" and . != \"digest\" and . != \"pullPolicy\")] as \$unknown |
+  [keys | group_by(.) | .[] | select(length > 1) | .[0]] as \$repeated |
   [to_entries | .[] | select((.value | tag) != \"!!null\" and .value != \"\")] as \$set |
   [\$set | .[] | select((.value | tag) != \"!!str\") | .key] as \$not_strings |
   [\$set | .[] | select(.key == \"registry\") | .value] as \$registry |
@@ -36,6 +43,7 @@ SPLIT_IMAGE="
   [\$set | .[] | select(.key == \"digest\") | .value] as \$digest |
   (\$mapping | to_json(0)) as \$shown |
   if (\$unknown | length) > 0 then [\"red\", \$document, ${POINTER}, \$shown, \"a split image mapping holds \" + (\$unknown | join(\", \")) + \" beside registry, repository, tag, digest and pullPolicy\"]
+  elif (\$repeated | length) > 0 then [\"red\", \$document, ${POINTER}, \$shown, \"a split image mapping repeats \" + (\$repeated | join(\", \")) + \", which yq and Helm may read differently\"]
   elif (\$not_strings | length) > 0 then [\"red\", \$document, ${POINTER}, \$shown, \"a set split image field is not a string: \" + (\$not_strings | join(\", \"))]
   elif (\$registry | length) == 0 or (\$repository | length) == 0 then [\"red\", \$document, ${POINTER}, \$shown, \"a split image mapping needs registry and repository\"]
   elif (\$digest | length) > 0 then (
@@ -63,8 +71,29 @@ RECORDS="
     (.. | select(kind == \"map\") | ${POINTER} as \$map | keys | .[] | [\"scalar\", \$document, \$map + \"/\" + (tostring | sub(\"~\", \"~0\") | sub(\"/\", \"~1\")), tostring, \"\"]),
     (.. | select(key == \"image\" and (parent | kind) == \"map\") | ${IMAGE_VALUE}),
     (.. | select(${PATCH_OPERATION}) | ${PATCH_RULES}),
-    (.. | select(key == \"images\" and kind == \"seq\") | [\"red\", \$document, ${POINTER}, to_json(0), \"${IMAGES_OVERRIDE_REASON}\"])
+    (.. | select(key == \"images\" and kind == \"seq\") | [\"red\", \$document, ${POINTER}, to_json(0), \"${IMAGES_OVERRIDE_REASON}\"]),
+    (.. | select(key == \"replacements\" and kind == \"seq\") | .. | select(kind == \"scalar\" and (parent | key) == \"fieldPaths\" and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"]),
+    (.. | select(key == \"vars\" and kind == \"seq\") | .. | select(kind == \"scalar\" and key == \"fieldPath\" and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"])
   ) | .[]"
+
+# One reason per line for what keeps the vendor list from being exactly one ConfigMap document of string entries.
+VENDOR_LIST_SHAPE="
+  (
+    (select(document_index > 0) | [\"the file holds more than one document\"]),
+    (select(document_index == 0 and kind != \"map\") | [\"the document is not a mapping\"]),
+    (select(document_index == 0 and kind == \"map\") | (
+      (select((keys | sort | join(\",\")) != \"apiVersion,data,kind,metadata\") | [\"its top-level keys are not exactly apiVersion, data, kind and metadata\"]),
+      (select(.apiVersion != \"v1\") | [\"apiVersion is not v1\"]),
+      (select(.kind != \"ConfigMap\") | [\"kind is not ConfigMap\"]),
+      (select((.metadata | kind) != \"map\" or (.metadata | keys | sort | join(\",\")) != \"name,namespace\") | [\"metadata does not hold exactly name and namespace\"]),
+      (select(.metadata.name != \"${VENDOR_LIST_NAME}\") | [\"metadata.name is not ${VENDOR_LIST_NAME}\"]),
+      (select(.metadata.namespace != \"${VENDOR_LIST_NAMESPACE}\") | [\"metadata.namespace is not ${VENDOR_LIST_NAMESPACE}\"]),
+      (select((.data | kind) != \"map\") | [\"data is not a mapping\"]),
+      (.data | select(kind == \"map\") | (
+        (keys | group_by(.) | .[] | select(length > 1) | [\"data repeats the key \" + .[0]]),
+        (to_entries | .[] | select((.value | tag) != \"!!str\") | [\"data entry \" + .key + \" is not a string\"])))))
+  ) | .[]"
+VENDOR_LIST_ENTRIES="select(document_index == 0) | .data | select(kind == \"map\") | to_entries | .[] | [.key, (.value | tostring)] | .[]"
 
 red_count=0
 app_reference_count=0
@@ -227,9 +256,14 @@ judge_file() {
 }
 
 load_vendor_list() {
-  local entries_file="${work_directory}/vendor-entries" entries index repository
-  yq --nul-output --output-format yaml '.data // {} | to_entries | .[] | [.key, (.value | tostring)] | .[]' "${VENDOR_LIST}" >"${entries_file}" ||
+  local shape_file="${work_directory}/vendor-shape" entries_file="${work_directory}/vendor-entries" shape_reasons entries index repository reason
+  yq --nul-output --output-format yaml "${VENDOR_LIST_SHAPE}" "${VENDOR_LIST}" >"${shape_file}" &&
+    yq --nul-output --output-format yaml "${VENDOR_LIST_ENTRIES}" "${VENDOR_LIST}" >"${entries_file}" ||
     { echo "verify_image_release: yq cannot read the vendor list ${VENDOR_LIST}" >&2 && exit 1; }
+  mapfile -d '' shape_reasons <"${shape_file}"
+  for reason in "${shape_reasons[@]}"; do
+    report_red "${VENDOR_LIST}" "" "${reason}"
+  done
   mapfile -d '' entries <"${entries_file}"
   for ((index = 0; index < ${#entries[@]}; index += 2)); do
     repository="${entries[index + 1]}"
@@ -239,6 +273,8 @@ load_vendor_list() {
       report_red "${VENDOR_LIST} entry ${entries[index]}" "${repository}" "a vendor entry that is no lowercase <registry>/<repository>"
     elif [ -n "${reference_tag}${reference_digest}" ]; then
       report_red "${VENDOR_LIST} entry ${entries[index]}" "${repository}" "a vendor entry with a version"
+    elif [ -n "${vendor_entry_by_repository[${repository}]+listed}" ]; then
+      report_red "${VENDOR_LIST} entry ${entries[index]}" "${repository}" "a vendor repository listed under two keys: ${vendor_entry_by_repository[${repository}]} and ${entries[index]}"
     else
       vendor_entry_by_repository["${repository}"]="${entries[index]}"
     fi
@@ -255,7 +291,7 @@ main() {
   trap 'rm -rf "${work_directory}"' EXIT
   load_vendor_list
   tracked_files="${work_directory}/tracked-files"
-  git ls-files -z -- ':(icase)*.yaml' ':(icase)*.yml' ':(icase)*.json' >"${tracked_files}"
+  git ls-files -z -- ':(icase)*.yaml' ':(icase)*.yml' ':(icase)*.json' ':(glob)**/Kustomization' >"${tracked_files}"
   while IFS= read -r -d '' file; do
     [ "${file}" = "${GENERATED_FLUX_COMPONENTS}" ] || judge_file "${file}"
   done <"${tracked_files}"
