@@ -26,10 +26,11 @@
 
 ## The PC's host step
 
-- It runs from a checkout, in this order: `scripts/bootstrap_pc.sh --only tools`; `mise bootstrap plan
-  --detailed-exitcode`, which must list only the entry state's changes; `scripts/bootstrap_pc.sh --only
-  files,firewall`, which writes `/etc/rancher/k3s/config.yaml` and adds mise's two ufw rules on `cni0` before k3s
-  first starts; `mise run bootstrap:k3s`; `mise run bootstrap:flux`.
+- It runs from a checkout, in this order: `scripts/bootstrap_pc.sh --only tools`; `scripts/bootstrap_pc.sh plan
+  --detailed-exitcode` (the script sets `LC_ALL=C`, which mise needs to read a localized ufw), which must list only
+  the entry state's changes; `scripts/bootstrap_pc.sh --only files,firewall`, which writes
+  `/etc/rancher/k3s/config.yaml` and adds mise's two ufw rules on `cni0` before k3s first starts;
+  `mise run bootstrap:k3s`; `mise run bootstrap:flux`.
 - `/usr/local/bin/k3s` decides the entry state. Absent, it is a first install (no `mise:` ufw rule and no
   `/var/lib/mise/bootstrap/firewall.json`; the plan lists `/etc/rancher/k3s`, its config file, the firewall and the
   two rules) or the uninstalled state (both `mise:` rules and the state file kept; the plan lists only
