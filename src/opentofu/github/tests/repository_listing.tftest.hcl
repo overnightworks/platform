@@ -22,6 +22,7 @@ run "a_listing_that_agrees_with_the_declarations_passes" {
           {"name": "hopin", "archived": false, "fork": false},
           {"name": "marketplace", "archived": false, "fork": false},
           {"name": "platform", "archived": false, "fork": false},
+          {"name": "platform-secrets", "archived": false, "fork": false},
           {"name": "presentator", "archived": false, "fork": false},
           {"name": "quality", "archived": false, "fork": false},
           {"name": "songmaker", "archived": false, "fork": false},
@@ -32,6 +33,51 @@ run "a_listing_that_agrees_with_the_declarations_passes" {
         ]
       JSON
     }
+  }
+}
+
+run "platform_secrets_is_declared_private_beside_a_public_repository" {
+  command = plan
+
+  plan_options {
+    target = [data.github_rest_api.organisation_repositories]
+  }
+
+  override_data {
+    target = data.github_rest_api.organisation_repositories
+    values = {
+      code    = 200
+      headers = "{}"
+      body    = <<-JSON
+        [
+          {"name": "aco", "archived": false, "fork": false},
+          {"name": "agent-runtime", "archived": false, "fork": false},
+          {"name": "appkit", "archived": false, "fork": false},
+          {"name": "hal", "archived": false, "fork": false},
+          {"name": "hopin", "archived": false, "fork": false},
+          {"name": "marketplace", "archived": false, "fork": false},
+          {"name": "platform", "archived": false, "fork": false},
+          {"name": "platform-secrets", "archived": false, "fork": false},
+          {"name": "presentator", "archived": false, "fork": false},
+          {"name": "quality", "archived": false, "fork": false},
+          {"name": "songmaker", "archived": false, "fork": false},
+          {"name": "speech-runtime", "archived": false, "fork": false},
+          {"name": "webauth", "archived": false, "fork": false},
+          {"name": "ACE-Step-1.5", "archived": false, "fork": true},
+          {"name": "retired-project", "archived": true, "fork": false}
+        ]
+      JSON
+    }
+  }
+
+  assert {
+    condition     = contains(output.managed_repositories, "platform-secrets") && local.managed["platform-secrets"] == "private"
+    error_message = "platform-secrets is not declared as a managed private repository."
+  }
+
+  assert {
+    condition     = local.managed["platform"] == "public"
+    error_message = "platform is not declared as a managed public repository."
   }
 }
 
@@ -56,6 +102,7 @@ run "an_undeclared_listed_repository_fails" {
           {"name": "hopin", "archived": false, "fork": false},
           {"name": "marketplace", "archived": false, "fork": false},
           {"name": "platform", "archived": false, "fork": false},
+          {"name": "platform-secrets", "archived": false, "fork": false},
           {"name": "presentator", "archived": false, "fork": false},
           {"name": "quality", "archived": false, "fork": false},
           {"name": "songmaker", "archived": false, "fork": false},
@@ -91,6 +138,7 @@ run "a_managed_repository_missing_from_the_listing_fails" {
           {"name": "hopin", "archived": false, "fork": false},
           {"name": "marketplace", "archived": false, "fork": false},
           {"name": "platform", "archived": false, "fork": false},
+          {"name": "platform-secrets", "archived": false, "fork": false},
           {"name": "presentator", "archived": false, "fork": false},
           {"name": "quality", "archived": false, "fork": false},
           {"name": "songmaker", "archived": false, "fork": false},
@@ -126,6 +174,7 @@ run "a_managed_repository_listed_as_archived_fails" {
           {"name": "hopin", "archived": false, "fork": false},
           {"name": "marketplace", "archived": false, "fork": false},
           {"name": "platform", "archived": false, "fork": false},
+          {"name": "platform-secrets", "archived": false, "fork": false},
           {"name": "presentator", "archived": false, "fork": false},
           {"name": "quality", "archived": false, "fork": false},
           {"name": "songmaker", "archived": false, "fork": false},
@@ -161,6 +210,7 @@ run "a_managed_repository_listed_as_a_fork_fails" {
           {"name": "hopin", "archived": false, "fork": false},
           {"name": "marketplace", "archived": false, "fork": false},
           {"name": "platform", "archived": false, "fork": false},
+          {"name": "platform-secrets", "archived": false, "fork": false},
           {"name": "presentator", "archived": false, "fork": false},
           {"name": "quality", "archived": false, "fork": false},
           {"name": "songmaker", "archived": false, "fork": false},
@@ -196,6 +246,7 @@ run "a_listing_with_a_next_page_cannot_be_judged" {
           {"name": "hopin", "archived": false, "fork": false},
           {"name": "marketplace", "archived": false, "fork": false},
           {"name": "platform", "archived": false, "fork": false},
+          {"name": "platform-secrets", "archived": false, "fork": false},
           {"name": "presentator", "archived": false, "fork": false},
           {"name": "quality", "archived": false, "fork": false},
           {"name": "songmaker", "archived": false, "fork": false},
