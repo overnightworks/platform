@@ -37,9 +37,15 @@ jobs:
         # Every step after the bootstrap runs with the locked tools and the [env] of mise.toml.
         shell: mise exec -- bash --noprofile --norc -euo pipefail {0}
     env:
-      REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
       CANDIDATE_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       PULL_REQUEST_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || '' }}
+      # The k3d-managed registry serving the job's platform-secrets source: the cluster reaches it by name, the runner
+      # on localhost, both on this port.
+      REGISTRY_NAME: platform-registry
+      REGISTRY_PORT: "5000"
+      # The dummy Secret the job encrypts, serves as platform-secrets and reads back decrypted.
+      PROOF_SECRET_NAMESPACE: default
+      PROOF_SECRET_NAME: decryption-proof
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,88 +60,206 @@ jobs:
           scripts/bootstrap_pc.sh --only tools
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Create the k3d cluster
+      - name: Create the k3d cluster with its registry
         id: create-cluster
-        run: k3d cluster create platform --image "rancher/k3s:${K3S_VERSION//+/-}" --wait --timeout 3m
+        run: |
+          k3d cluster create platform --image "rancher/k3s:${K3S_VERSION//+/-}" \
+            --registry-create "${REGISTRY_NAME}:127.0.0.1:${REGISTRY_PORT}" --enforce-registry-port-match \
+            --wait --timeout 3m
 
       - name: Apply the Flux controllers from the committed components
         run: |
           kubectl apply --server-side -f clusters/pc/flux-system/gotk-components.yaml
           kubectl -n flux-system wait deployment --all --for=condition=Available --timeout=3m
 
-      - name: Dry-run the committed sync on the API server
-        if: github.event_name == 'pull_request'
-        run: kubectl apply --server-side --dry-run=server -k clusters/pc/flux-system
-
-      - name: Reconcile the pull request's tree
-        if: github.event_name == 'pull_request'
+      - name: Encrypt a dummy Secret to a throwaway age key
         run: |
-          # The patches keep the source on the pull request and drop the committed self-Kustomization,
-          # which would otherwise replace this object and point the source back at main.
-          candidate="$(cat <<'YAML'
-          apiVersion: source.toolkit.fluxcd.io/v1
-          kind: GitRepository
+          fail() { echo "::error::$1"; exit 1; }
+          # The key, the dummy and the plain manifest exist only in this runner's temp directory; no step prints them.
+          umask 077
+          private_dir="$RUNNER_TEMP/decryption-proof"
+          artifact_dir="$RUNNER_TEMP/platform-secrets"
+          mkdir "$private_dir" "$artifact_dir"
+          key_file="$private_dir/ci.agekey"
+          age-keygen -o "$key_file" 2>/dev/null
+
+          # Eighteen fixed characters, a multiple of three, so the dummy's base64 form starts with a fixed string too.
+          dummy="platform-ci-dummy-$(openssl rand -hex 16)"
+          echo "::add-mask::$dummy"
+          dummy_base64="$(printf '%s' "$dummy" | base64 --wrap=0)"
+          echo "::add-mask::$dummy_base64"
+          printf '%s' "$dummy" > "$private_dir/dummy"
+
+          manifest="$(cat <<'YAML'
+          apiVersion: v1
+          kind: Secret
           metadata:
-            name: flux-system
+            name: @NAME@
+            namespace: @NAMESPACE@
+          type: Opaque
+          data:
+            value: @VALUE@
+          YAML
+          )"
+          manifest="${manifest//@NAME@/${PROOF_SECRET_NAME}}"
+          manifest="${manifest//@NAMESPACE@/${PROOF_SECRET_NAMESPACE}}"
+          plain_file="$private_dir/$PROOF_SECRET_NAME.yaml"
+          printf '%s\n' "${manifest//@VALUE@/${dummy_base64}}" > "$plain_file"
+
+          # The recipient is the key's public half, so sops encrypts without reading any private key.
+          encrypted_file="$artifact_dir/$PROOF_SECRET_NAME.yaml"
+          sops --encrypt --age "$(age-keygen -y "$key_file")" --encrypted-regex '^(data|stringData)$' \
+            "$plain_file" > "$encrypted_file"
+
+          # Flux applies a value left outside the encrypted fields as it is, which would fake the proof.
+          encrypted="$(<"$encrypted_file")"
+          [[ $encrypted != *"$dummy"* && $encrypted != *"$dummy_base64"* ]] ||
+            fail "$encrypted_file holds the dummy in plain text"
+          values="$(kubectl create --dry-run=client --validate=false -f "$encrypted_file" \
+            -o go-template='{{range .data}}{{.}}{{"\n"}}{{end}}')"
+          [ -n "$values" ] || fail "$encrypted_file holds no data value"
+          while IFS= read -r value; do
+            [[ $value == 'ENC['* ]] || fail "a data value in $encrypted_file is not sops ciphertext"
+          done <<<"$values"
+          echo "every data value in $encrypted_file is sops ciphertext, and the dummy is absent from it"
+
+          {
+            echo "AGE_KEY_FILE=$key_file"
+            echo "DUMMY_FILE=$private_dir/dummy"
+            echo "SECRETS_ARTIFACT_DIR=$artifact_dir"
+          } >> "$GITHUB_ENV"
+
+      - name: Push the encrypted Secret and serve it as the job's platform-secrets source
+        run: |
+          repository=platform-secrets
+          tag=candidate
+          flux push artifact "oci://localhost:${REGISTRY_PORT}/${repository}:${tag}" --path="$SECRETS_ARTIFACT_DIR" \
+            --source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --revision="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}@sha1:$CANDIDATE_REVISION" --insecure-registry
+
+          # Applied outside Flux's inventory: the root's patches point the Kustomization platform-secrets at it.
+          source="$(cat <<'YAML'
+          apiVersion: source.toolkit.fluxcd.io/v1
+          kind: OCIRepository
+          metadata:
+            name: platform-secrets
             namespace: flux-system
           spec:
             interval: 1m0s
-            url: @REPOSITORY_URL@
+            url: oci://@REPOSITORY@
             ref:
-              name: @PULL_REQUEST_REF@
-          ---
-          apiVersion: kustomize.toolkit.fluxcd.io/v1
-          kind: Kustomization
-          metadata:
-            name: flux-system
-            namespace: flux-system
-          spec:
-            interval: 10m0s
-            path: ./clusters/pc
-            prune: true
-            wait: true
-            timeout: 5m0s
-            sourceRef:
-              kind: GitRepository
-              name: flux-system
-            patches:
-              - target:
-                  group: source.toolkit.fluxcd.io
-                  kind: GitRepository
-                  name: flux-system
-                patch: |
-                  - op: replace
-                    path: /spec/ref
-                    value:
-                      name: @PULL_REQUEST_REF@
-              - target:
-                  group: kustomize.toolkit.fluxcd.io
-                  kind: Kustomization
-                  name: flux-system
-                patch: |
-                  $patch: delete
-                  apiVersion: kustomize.toolkit.fluxcd.io/v1
-                  kind: Kustomization
-                  metadata:
-                    name: flux-system
-                    namespace: flux-system
+              tag: @TAG@
+            insecure: true
           YAML
           )"
-          candidate="${candidate//@REPOSITORY_URL@/${REPOSITORY_URL}}"
-          candidate="${candidate//@PULL_REQUEST_REF@/${PULL_REQUEST_REF}}"
-          printf '%s\n' "$candidate" > "$RUNNER_TEMP/candidate.yaml"
-          kubectl apply --server-side -f "$RUNNER_TEMP/candidate.yaml"
+          source="${source//@REPOSITORY@/${REGISTRY_NAME}:${REGISTRY_PORT}/${repository}}"
+          printf '%s\n' "${source//@TAG@/${tag}}" | kubectl apply --server-side -f -
 
-      - name: Apply the committed sync as the PC does
-        if: github.event_name == 'push'
-        run: kubectl apply --server-side -k clusters/pc/flux-system
+      - name: Create the Secret sops-age with the task the PC bootstrap runs
+        run: mise run secrets:age-secret "$AGE_KEY_FILE"
 
-      - name: Assert that Flux reconciled the candidate commit
+      - name: Dry-run the layer files on the API server
+        run: kubectl apply --server-side --dry-run=server -f clusters/pc
+
+      - name: Check that the committed root carries no spec.patches
+        run: |
+          # The job root's overlay adds spec.patches, which would replace committed ones without a word (RFC 6902 add).
+          fail() { echo "::error::$1"; exit 1; }
+          root_file=clusters/pc/flux-system/gotk-sync.yaml
+          objects="$(kubectl create --dry-run=client -f "$root_file" \
+            -o go-template='{{.kind}}{{if .spec.patches}} with spec.patches{{end}}{{"\n"}}')"
+          case "$(grep '^Kustomization' <<<"$objects" || true)" in
+            Kustomization) echo "the root Kustomization in $root_file carries no spec.patches" ;;
+            "Kustomization with spec.patches")
+              fail "the root Kustomization in $root_file carries spec.patches, which the job root's overlay would replace" ;;
+            *) fail "$root_file holds not exactly one Kustomization" ;;
+          esac
+
+      - name: Reconcile the candidate tree
+        run: |
+          # The job root is the PC's own clusters/pc/flux-system as a kustomize base, no file copied. The overlay adds
+          # only Flux's spec.patches on the root and, on a pull request, the pull request's ref.
+          overlay="$RUNNER_TEMP/candidate-root"
+          mkdir "$overlay"
+          printf 'resources:\n  - %s\n' "$(realpath --relative-to="$overlay" clusters/pc/flux-system)" \
+            > "$overlay/kustomization.yaml"
+          cat >> "$overlay/kustomization.yaml" <<'YAML'
+          patches:
+            - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: flux-system}
+              patch: |
+                - op: add
+                  path: /spec/patches
+                  value:
+                    # The committed self-Kustomization would replace this object and its patches.
+                    - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: flux-system}
+                      patch: |
+                        $patch: delete
+                        apiVersion: kustomize.toolkit.fluxcd.io/v1
+                        kind: Kustomization
+                        metadata: {name: flux-system, namespace: flux-system}
+                    # The PC-only sources: CI never fetches them, and their consumers run on the job's own source.
+                    - target: {group: source.toolkit.fluxcd.io, kind: GitRepository, name: platform-secrets}
+                      patch: |
+                        $patch: delete
+                        apiVersion: source.toolkit.fluxcd.io/v1
+                        kind: GitRepository
+                        metadata: {name: platform-secrets, namespace: flux-system}
+                    - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: platform-secrets}
+                      patch: |
+                        - op: replace
+                          path: /spec/sourceRef/kind
+                          value: OCIRepository
+          YAML
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            pull_request_patches="$(cat <<'YAML'
+            # The source follows the pull request's head, in the object applied here and in Flux's build.
+            - target: {group: source.toolkit.fluxcd.io, kind: GitRepository, name: flux-system}
+              patch: |
+                - op: replace
+                  path: /spec/ref
+                  value: {name: @PULL_REQUEST_REF@}
+            - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: flux-system}
+              patch: |
+                - op: add
+                  path: /spec/patches/-
+                  value:
+                    target: {group: source.toolkit.fluxcd.io, kind: GitRepository, name: flux-system}
+                    patch: |
+                      - op: replace
+                        path: /spec/ref
+                        value: {name: @PULL_REQUEST_REF@}
+          YAML
+            )"
+            printf '%s\n' "${pull_request_patches//@PULL_REQUEST_REF@/${PULL_REQUEST_REF}}" >> "$overlay/kustomization.yaml"
+          fi
+          kubectl apply --server-side -k "$overlay"
+          kubectl -n flux-system get kustomization flux-system -o yaml
+
+      - name: Assert that Flux reconciled the candidate commit and decrypted the dummy
         run: |
           fail() { echo "::error::$1"; exit 1; }
           inventory() {
             kubectl -n flux-system get kustomization flux-system \
               -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}'
+          }
+          assert_job_source() {
+            local kind entries value
+            kind="$(kubectl -n flux-system get kustomization platform-secrets -o jsonpath='{.spec.sourceRef.kind}')"
+            [ "$kind" = OCIRepository ] || fail "the Kustomization platform-secrets runs on a $kind, not the job's OCIRepository"
+            echo "the Kustomization platform-secrets runs on the job's OCIRepository"
+            [ -z "$(kubectl -n flux-system get gitrepository platform-secrets --ignore-not-found -o name)" ] ||
+              fail "the GitRepository platform-secrets exists, though CI never fetches it"
+            echo "no GitRepository platform-secrets exists"
+            entries="$(inventory)"
+            for entry in flux-system_flux-system_kustomize.toolkit.fluxcd.io_Kustomization \
+              flux-system_platform-secrets_source.toolkit.fluxcd.io_GitRepository; do
+              if grep -qxF "$entry" <<<"$entries"; then fail "the flux-system inventory holds $entry"; fi
+              echo "inventory lacks: $entry"
+            done
+            value="$(kubectl -n "$PROOF_SECRET_NAMESPACE" get secret "$PROOF_SECRET_NAME" -o jsonpath='{.data.value}' |
+              base64 --decode)"
+            [ "$value" = "$(<"$DUMMY_FILE")" ] || fail "the Secret $PROOF_SECRET_NAME does not hold the dummy"
+            echo "the Secret $PROOF_SECRET_NAME, decrypted by Flux, holds the dummy the job generated"
           }
 
           kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=3m
@@ -160,6 +284,37 @@ jobs:
             echo "inventory holds: $entry"
           done
 
+          # The root health-checks exactly the Deployments in its inventory and its own source, compared as
+          # inventory ids so that kind and namespace count; an unset namespace is the root's, as in Flux.
+          root_namespace=flux-system
+          health_checks="$(kubectl -n "$root_namespace" get kustomization flux-system \
+            -o jsonpath='{range .spec.healthChecks[*]}{.namespace}{"|"}{.name}{"|"}{.apiVersion}{"|"}{.kind}{"\n"}{end}')"
+          health_check_ids="$(while IFS='|' read -r namespace name api_version kind; do
+              group=""
+              [[ $api_version != */* ]] || group="${api_version%/*}"
+              echo "${namespace:-$root_namespace}_${name}_${group}_${kind}"
+            done <<<"$health_checks" | sort -u)"
+          source_ref="$(kubectl -n "$root_namespace" get kustomization flux-system \
+            -o jsonpath='{.spec.sourceRef.namespace}{"|"}{.spec.sourceRef.name}{"|"}{.spec.sourceRef.kind}')"
+          IFS='|' read -r source_namespace source_name source_kind <<<"$source_ref"
+          expected_ids="$( {
+              grep -E '_Deployment$' <<<"$entries" || true
+              grep -E "^${source_namespace:-$root_namespace}_${source_name}_[^_]*_${source_kind}\$" <<<"$entries" || true
+            } | sort -u)"
+          mismatch="$(comm -3 <(printf '%s\n' "$expected_ids") <(printf '%s\n' "$health_check_ids"))"
+          if [ -n "$mismatch" ]; then
+            while IFS= read -r id; do
+              case "$id" in
+                $'\t'*) echo "::error::the root health-checks ${id#$'\t'}, neither a Deployment in its inventory nor its own source" ;;
+                *) echo "::error::the root's inventory holds $id without a health check" ;;
+              esac
+            done <<<"$mismatch"
+            exit 1
+          fi
+          sed 's/^/the root health-checks: /' <<<"$health_check_ids"
+
+          assert_job_source
+
           # allow-scraping only admits metrics scrapes; deleting allow-egress would cut the controllers off each other.
           kubectl -n flux-system delete networkpolicy allow-scraping
           flux reconcile kustomization flux-system --with-source --timeout=5m
@@ -168,12 +323,14 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             source_ref="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.spec.ref.name}')"
             [ "$source_ref" = "$PULL_REQUEST_REF" ] || fail "the source ref '$source_ref' left $PULL_REQUEST_REF"
-            echo "GitRepository spec.ref after the reconcile: $source_ref"
-            if grep -qxF flux-system_flux-system_kustomize.toolkit.fluxcd.io_Kustomization <<<"$(inventory)"; then
-              fail "the inventory holds the committed self-Kustomization"
-            fi
-            echo "inventory lacks the committed self-Kustomization flux-system_flux-system_kustomize.toolkit.fluxcd.io_Kustomization"
+          else
+            source_ref="$(kubectl -n flux-system get gitrepository flux-system -o go-template='{{.spec.ref}}')"
+            committed_ref="$(kubectl create --dry-run=client -f clusters/pc/flux-system/gotk-sync.yaml \
+              -o go-template='{{if eq .kind "GitRepository"}}{{.spec.ref}}{{end}}')"
+            [ "$source_ref" = "$committed_ref" ] || fail "the source ref '$source_ref' is not the committed '$committed_ref'"
           fi
+          echo "GitRepository spec.ref after the reconcile: $source_ref"
+          assert_job_source
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
