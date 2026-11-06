@@ -1,3 +1,11 @@
 [gate]
 mandatory_jobs = ["checks"]
 legacy = "fail"
+
+[[root.allow]]
+entry = "mise.toml"
+reason = "the pinned tools config; mise finds project config only in the root"
+
+[[root.allow]]
+entry = "mise.lock"
+reason = "the tool lock beside mise.toml; mise finds project config only in the root"
