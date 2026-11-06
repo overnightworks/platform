@@ -9,6 +9,7 @@ flux2 = "2"
 k3d = "5"
 kubectl = "1.37"
 sops = "3"
+opentofu = "1.13"
 
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.
@@ -22,3 +23,17 @@ run = "flux install --export > clusters/pc/flux-system/gotk-components.yaml"
 description = "Create the Secret sops-age in flux-system, the age key Flux decrypts platform-secrets with, from a key file"
 usage = 'arg "<key_file>" help="The age key file; the task has no default and reads no other key"'
 run = 'kubectl --namespace flux-system create secret generic sops-age --from-file=age.agekey="${usage_key_file?}"'
+[tasks."github:test"]
+description = "Check the GitHub settings root: format, init against the committed lock, validate and the mocked tests"
+dir = "src/opentofu/github"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+TF_DATA_DIR="$(mktemp -d)"
+export TF_DATA_DIR
+trap 'rm -rf "$TF_DATA_DIR"' EXIT
+tofu fmt -check -recursive
+tofu init -backend=false -lockfile=readonly -input=false
+tofu validate
+tofu test
+'''

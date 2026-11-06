@@ -1,2 +1,2 @@
 merge_method = "squash"
-dependency_paths = [".github/workflows/"]
+dependency_paths = [".github/workflows/", "src/opentofu/github/main.tf", "src/opentofu/github/.terraform.lock.hcl"]
