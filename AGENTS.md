@@ -24,7 +24,8 @@
   every tracked YAML and JSON file and every file named `Kustomization` (no extension) but `gotk-components.yaml` with
   the locked yq, YAML held in strings included, and refuses every image reference that is not a repository of the vendor
   list at a sha256 digest, every app ref under `ghcr.io/<owner>/` (no release check exists yet), every `images`
-  override, every kustomize `replacements` or `vars` entry whose target fieldPath ends in `image`, every patch
+  override, every `fieldPaths` entry (a kustomize replacement's targets) at or below an `image` segment (a `vars` `$(VAR)` at an
+  image position is refused as an image), every patch
   operation on one field of an image, every split `image` mapping that repeats a field, and a vendor list that is not
   exactly one ConfigMap `image-vendors` in namespace `admission` whose entries name each repository once. What it
   cannot read (chart defaults, values from outside the tree, shell `run` blocks) is left to the admission layer in the
