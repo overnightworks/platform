@@ -156,7 +156,10 @@ jobs:
           printf '%s\n' "${source//@TAG@/${tag}}" | kubectl apply --server-side -f -
 
       - name: Create the Secret sops-age with the task the PC bootstrap runs
-        run: mise run secrets:age-secret "$AGE_KEY_FILE"
+        run: |
+          other_key="$RUNNER_TEMP/other.agekey"
+          age-keygen -o "$other_key" 2>/dev/null
+          mise run secrets:age-secret "$other_key"
 
       - name: Dry-run the layer files on the API server
         run: kubectl apply --server-side --dry-run=server -f clusters/pc
