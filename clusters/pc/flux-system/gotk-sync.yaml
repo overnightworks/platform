@@ -19,7 +19,30 @@ spec:
   interval: 10m0s
   path: ./clusters/pc
   prune: true
-  wait: true
+  # The root checks only its own objects, so a failing layer reports itself and leaves the root applying the rest.
+  # The Deployments are the controllers of gotk-components.yaml: a `mise run flux:export` that adds, renames or
+  # removes one changes this list with it.
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: source-controller
+      namespace: flux-system
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: kustomize-controller
+      namespace: flux-system
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: helm-controller
+      namespace: flux-system
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: notification-controller
+      namespace: flux-system
+    - apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      name: flux-system
+      namespace: flux-system
   timeout: 5m0s
   sourceRef:
     kind: GitRepository
