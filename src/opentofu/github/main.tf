@@ -16,7 +16,7 @@ provider "github" {
   owner = "overnightworks"
 }
 
-# Fails without a token, so a plan never renders as anonymous.
+# Fails without a token, so an anonymous plan never completes.
 data "github_user" "current" {
   username = ""
 }
