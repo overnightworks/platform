@@ -1,8 +1,0 @@
-claim_id = "146c2603428342d0b2908d33b16ea241"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "8e89c221af4526d7594c96d14f0ab3d16890016a"
-branch = "claude/issue-2-p0-the-skeleton-and-the-fleet-s-quality"
-scope = [".github", ".gitignore", "AGENTS.md", "CLAUDE.md", "README.md", "quality", "sonar-project.properties"]
-opened_commit = "f61075834779875d93bc3dd966f1428f0e8a996a"
-whole_reason = "The skeleton's files work only together: one gate run reads the workflow, its config and the Sonar properties at once."
