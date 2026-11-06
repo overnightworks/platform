@@ -187,9 +187,65 @@ jobs:
           mise lock
           git diff --exit-code -- clusters/pc/flux-system/gotk-components.yaml mise.lock
 
+  bootstrap:
+    runs-on: ubuntu-latest
+    # A bare image, as on a fresh machine: the first-run prerequisites are the only step before the script.
+    container: ubuntu:26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install the first-run prerequisites
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends ca-certificates curl git
+
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned tools
+        run: scripts/bootstrap_pc.sh --only tools
+
+      - name: Assert that every locked tool is installed and runs
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          missing="$(mise ls --current --missing)"
+          [ -z "$missing" ] || { echo "::error::tools missing: $missing"; exit 1; }
+          # Every executable of every locked tool must start, so a tool added to mise.toml is covered without an edit here.
+          bin_paths="$(mise bin-paths)"
+          [ -n "$bin_paths" ] || { echo "::error::mise bin-paths printed no tool path"; exit 1; }
+          for bin_path in $bin_paths; do
+            binaries="$(find -L "$bin_path" -maxdepth 1 -type f -executable)"
+            [ -n "$binaries" ] || { echo "::error::no executable in $bin_path"; exit 1; }
+            for binary in $binaries; do
+              echo "$binary"
+              "$binary" --help >/dev/null || { echo "::error::$binary does not run"; exit 1; }
+            done
+          done
+
+      - name: Run the script again and assert that it changes nothing
+        run: |
+          # Each line holds a path and its type; a non-directory also holds its size and timestamp. Directory timestamps
+          # are not compared (mise refreshes the shims directory's on every run), but the paths inside every directory are.
+          list_state() {
+            find "$HOME/.local/bin" "$HOME/.local/share/mise" \( -type d -printf '%y %p\n' \) -o \( -printf '%y %p %s %T@\n' \) | sort
+          }
+          list_state >"$RUNNER_TEMP/before-second-run"
+          scripts/bootstrap_pc.sh --only tools
+          list_state >"$RUNNER_TEMP/after-second-run"
+          diff "$RUNNER_TEMP/before-second-run" "$RUNNER_TEMP/after-second-run" >"$RUNNER_TEMP/second-run.diff" ||
+            { echo "::error::the second run changed the installed state:"; cat "$RUNNER_TEMP/second-run.diff"; exit 1; }
+
   quality:
     if: always()
-    needs: [checks, cluster]
+    needs: [checks, cluster, bootstrap]
     permissions:
       contents: read
       actions: read
