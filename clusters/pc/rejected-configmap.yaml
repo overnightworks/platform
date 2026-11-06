@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: Rejected_Name
+  namespace: default
+data:
+  key: value
