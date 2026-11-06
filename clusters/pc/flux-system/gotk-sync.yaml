@@ -33,10 +33,6 @@ spec:
       namespace: flux-system
     - apiVersion: apps/v1
       kind: Deployment
-      name: helm-controller
-      namespace: flux-system
-    - apiVersion: apps/v1
-      kind: Deployment
       name: notification-controller
       namespace: flux-system
     - apiVersion: source.toolkit.fluxcd.io/v1
