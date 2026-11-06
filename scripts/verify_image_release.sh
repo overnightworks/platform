@@ -115,14 +115,16 @@ decode() {
 # no candidate (a whitespace-free string, no URL, with a registry host before its first slash) and 2 when a candidate
 # breaks the reference grammar.
 parse_host_qualified_reference() {
-  local remainder="$1" last_component host
+  local remainder="$1" last_component host has_digest=false has_tag=false
   reference_name="" reference_tag="" reference_digest=""
   if [[ ${remainder} == *@* ]]; then
+    has_digest=true
     reference_digest="${remainder#*@}"
     remainder="${remainder%%@*}"
   fi
   last_component="${remainder##*/}"
   if [[ ${last_component} == *:* ]]; then
+    has_tag=true
     reference_tag="${last_component##*:}"
     remainder="${remainder%:*}"
   fi
@@ -130,8 +132,8 @@ parse_host_qualified_reference() {
   host="${reference_name%%/*}"
   [[ $1 != *[[:space:]]* && ! $1 =~ ^[A-Za-z][A-Za-z0-9+.-]*:// && ${reference_name} == */* &&
     (${host} == *.* || ${host} == *:* || ${host,,} == localhost) ]] || return 1
-  [[ -z ${reference_digest} || ${reference_digest,,} =~ ${DIGEST_PATTERN} ]] || return 2
-  [[ -z ${reference_tag} || ${reference_tag,,} =~ ${TAG_PATTERN} ]] || return 2
+  [[ ${has_digest} == false || ${reference_digest,,} =~ ${DIGEST_PATTERN} ]] || return 2
+  [[ ${has_tag} == false || ${reference_tag,,} =~ ${TAG_PATTERN} ]] || return 2
   [[ ${reference_name,,} =~ ${NAME_PATTERN} ]] || return 2
 }
 
