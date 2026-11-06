@@ -1,7 +1,8 @@
 # platform
 
-The platform of the overnightworks apps: k3s on one machine, with Flux reconciling its whole state from Git. This
-repository is that Git source, plus the few small tools that no maintained tool covers.
+This repository builds nothing a maintained tool already does. It is the one description of the platform, the k3s and Flux configuration in Git, plus the few tools no tool covers: legal pages, person export and erasure, AI keys and budgets, the restore test and the secret checks.
+
+The platform of the overnightworks apps: k3s on one machine, with Flux reconciling its whole state from Git.
 
 It is not an application and holds no app code or libraries. Libraries release through their own CI-gated GitHub
 releases.
