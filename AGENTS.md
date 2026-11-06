@@ -33,12 +33,15 @@
   `mise run bootstrap:k3s`; `mise run bootstrap:flux`.
 - `/usr/local/bin/k3s` decides the entry state. Absent, it is a first install (no `mise:` ufw rule and no
   `/var/lib/mise/bootstrap/firewall.json`; the plan lists `/etc/rancher/k3s`, its config file, the firewall and the
-  rule) or the uninstalled state (the `mise:` rule and the state file kept; the plan lists only
-  `/etc/rancher/k3s` and its config file). Present with `k3s-uninstall.sh` beside it, it is an existing install. Any
-  other state, `/etc/rancher/k3s` without `/usr/local/bin/k3s` included, stops the step.
+  rule) or the uninstalled state (the `mise:` rule and the state file kept, `/etc/rancher` holding at most
+  `node/password`; the plan lists only `/etc/rancher/k3s` and its config file). Present with `k3s-uninstall.sh`
+  beside it, it is an existing install. Any other state, `/etc/rancher/k3s` without `/usr/local/bin/k3s` included,
+  stops the step.
 - The undo is `sudo /usr/local/bin/k3s-uninstall.sh`, then the firewall section applied with `state = "absent"`, which
   deletes mise's rule and its state file and keeps the operator's own; deleting the section or reverting the
-  commit changes nothing on the host, and the kernel settings k3s made stay until a reboot. The uninstall runs without
+  commit changes nothing on the host. The uninstall leaves `/etc/rancher/node/password` (k3s's node password), the
+  empty `/var/lib/rancher`, `/var/log/pods` and `/var/log/containers`. The kernel settings k3s made stay until a
+  reboot. The uninstall runs without
   the operator's word only while the cluster holds no PersistentVolume, no claim and no Secret beyond its first
   install's; an inventory that differs or cannot be read stops k3s with `k3s-killall.sh`, which deletes nothing, and
   the uninstall waits for his word.
