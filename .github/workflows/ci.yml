@@ -218,9 +218,13 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           missing="$(mise ls --current --missing)"
           [ -z "$missing" ] || { echo "::error::tools missing: $missing"; exit 1; }
-          mise exec -- flux --version
-          mise exec -- k3d version
-          mise exec -- kubectl version --client
+          # Every executable of every locked tool must start, so a tool added to mise.toml is covered without an edit here.
+          binaries="$(mise bin-paths | xargs -I{} find {} -maxdepth 1 -type f -executable)"
+          [ -n "$binaries" ] || { echo "::error::no tool binaries found"; exit 1; }
+          for binary in $binaries; do
+            echo "$binary"
+            "$binary" --help >/dev/null || { echo "::error::$binary does not run"; exit 1; }
+          done
 
       - name: Run the script again and assert that it changes nothing
         run: |
