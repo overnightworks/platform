@@ -27,6 +27,9 @@ SHA256_DIGEST_PATTERN='^sha256:[0-9a-f]{64}$'
 
 # A kustomize fieldPath names its segments with dots or slashes; it reaches an image at or below an image segment.
 IMAGE_FIELD_PATH='(^|[./])image($|[./])'
+# A fieldPaths entry is a scalar below a key fieldPaths, or a root-level scalar of a sequence decoded from the string of a
+# fieldPaths key (FIELD_PATHS_ROOT is true for it, false elsewhere).
+FIELD_PATH_ENTRY="(kind == \"scalar\" and ((parent | key) == \"fieldPaths\" or (env(FIELD_PATHS_ROOT) == \"true\" and (parent | kind) == \"seq\" and (path | length) == 1)))"
 # Every record is five NUL-terminated fields: type, document index, JSON pointer, value, reason. A scalar at an image
 # position (a key image, a patch operation's value at an /image path) leaves the plain scalar walk for the image one.
 POINTER='(path | map("/" + (tostring | sub("~", "~0") | sub("/", "~1"))) | join(""))'
@@ -73,7 +76,7 @@ RECORDS="
     (.. | select(key == \"image\" and (parent | kind) == \"map\") | ${IMAGE_VALUE}),
     (.. | select(${PATCH_OPERATION}) | ${PATCH_RULES}),
     (.. | select(key == \"images\" and kind == \"seq\") | [\"red\", \$document, ${POINTER}, to_json(0), \"${IMAGES_OVERRIDE_REASON}\"]),
-    (.. | select(kind == \"scalar\" and (parent | key) == \"fieldPaths\" and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"]),
+    (.. | select(${FIELD_PATH_ENTRY} and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"]),
     (.. | select(kind == \"map\" and has(\"fieldPaths\") and (.options | kind) == \"map\" and (.options | has(\"delimiter\"))) | [\"red\", \$document, ${POINTER}, to_json(0), \"${REPLACEMENT_DELIMITER_REASON}\"])
   ) | .[]"
 
@@ -107,9 +110,10 @@ report_red() {
   echo "red: $1: '${2//$'\n'/\\n}': $3"
 }
 
-# Prints the records of every document of $2 ('-' for stdin) read as $1; fails when yq cannot parse it.
+# Prints the records of every document of $2 ('-' for stdin) read as $1; fails when yq cannot parse it. $3 is true when
+# $2 is the string of a fieldPaths key.
 decode() {
-  yq --no-doc --nul-output --output-format yaml --yaml-fix-merge-anchor-to-spec=true --input-format "$1" "${RECORDS}" "$2"
+  FIELD_PATHS_ROOT="${3:-false}" yq --no-doc --nul-output --output-format yaml --yaml-fix-merge-anchor-to-spec=true --input-format "$1" "${RECORDS}" "$2"
 }
 
 # Sets reference_name, reference_tag and reference_digest by splitting $1, then validates them. Returns 1 when $1 is
@@ -228,8 +232,9 @@ holds_root_kind() {
 # holds a NUL character, so a string yq parses as a mapping or sequence but cannot decode is red.
 judge_scalar() {
   local location="$1" pointer="$2" value="$3" namespace_content_rule="$4" depth="$5" kinds
-  local nested_file="${work_directory}/records.$((depth + 1))"
-  if printf '%s' "${value}" | decode yaml - >"${nested_file}" 2>/dev/null; then
+  local nested_file="${work_directory}/records.$((depth + 1))" in_field_paths=false
+  [[ ${pointer} != */fieldPaths ]] || in_field_paths=true
+  if printf '%s' "${value}" | decode yaml - "${in_field_paths}" >"${nested_file}" 2>/dev/null; then
     if holds_root_kind "${nested_file}" map seq; then
       if [[ ${pointer} == */images ]] && holds_root_kind "${nested_file}" seq; then
         report_red "${location}" "${value}" "${IMAGES_OVERRIDE_REASON}"
