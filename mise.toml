@@ -30,22 +30,27 @@ group = "root"
 mode = "0644"
 
 # The PC's ufw keeps its defaults and the operator's own rules (no exclusive, whose ufw reset would delete them).
-# The pods reach the API server and the kubelet on the host from k3s's default pod and service networks, which
-# host/k3s/config.yaml keeps; only on cni0, so a LAN host that spoofs a pod address stays out.
+# The pods reach the API server and the kubelet on the host through cni0, which only pods sit on, so one rule on the
+# interface alone admits them. mise's ufw check reads the "/16" of a source CIDR as a protocol, so a rule with a
+# source never matches and every plan would name it unknown.
+# k3s-pods and k3s-services are declared absent because mise's apply keeps every rule its state file holds, and the
+# PC's holds those two.
 [bootstrap.linux.firewall]
 backend = "ufw"
 default_incoming = "deny"
 default_outgoing = "allow"
 
 [[bootstrap.linux.firewall.rules]]
-name = "k3s-pods"
-source = "10.42.0.0/16"
+name = "k3s-cni"
 interface = "cni0"
 
 [[bootstrap.linux.firewall.rules]]
+name = "k3s-pods"
+state = "absent"
+
+[[bootstrap.linux.firewall.rules]]
 name = "k3s-services"
-source = "10.43.0.0/16"
-interface = "cni0"
+state = "absent"
 
 [tasks."flux:export"]
 description = "Regenerate the committed Flux components from the locked flux2"
