@@ -4,9 +4,11 @@ min_version = "2026.11.3"
 locked = true
 
 [tools]
+age = "1"
 flux2 = "2"
 k3d = "5"
 kubectl = "1.37"
+sops = "3"
 
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.
@@ -15,3 +17,8 @@ K3S_VERSION = "v1.37.2+k3s1"
 [tasks."flux:export"]
 description = "Regenerate the committed Flux components from the locked flux2"
 run = "flux install --export > clusters/pc/flux-system/gotk-components.yaml"
+
+[tasks."secrets:age-secret"]
+description = "Create the Secret sops-age in flux-system, the age key Flux decrypts platform-secrets with, from a key file"
+usage = 'arg "<key_file>" help="The age key file; the task has no default and reads no other key"'
+run = 'kubectl --namespace flux-system create secret generic sops-age --from-file=age.agekey="${usage_key_file?}"'
