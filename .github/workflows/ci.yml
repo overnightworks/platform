@@ -27,9 +27,161 @@ jobs:
       - name: Validate the Dependabot configuration against its schema
         run: uvx --no-build check-jsonschema@0.39.0 --builtin-schema vendor.dependabot .github/dependabot.yml
 
+  cluster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        # Every step after the bootstrap runs with the locked tools and the [env] of mise.toml.
+        shell: mise exec -- bash --noprofile --norc -euo pipefail {0}
+    env:
+      REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+      CANDIDATE_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      PULL_REQUEST_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || '' }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned tools
+        shell: bash
+        run: |
+          scripts/bootstrap_pc.sh --only tools
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Create the k3d cluster
+        id: create-cluster
+        run: k3d cluster create platform --image "rancher/k3s:${K3S_VERSION//+/-}" --wait --timeout 3m
+
+      - name: Apply the Flux controllers from the committed components
+        run: |
+          kubectl apply --server-side -f clusters/pc/flux-system/gotk-components.yaml
+          kubectl -n flux-system wait deployment --all --for=condition=Available --timeout=3m
+
+      - name: Dry-run the committed sync on the API server
+        if: github.event_name == 'pull_request'
+        run: kubectl apply --server-side --dry-run=server -k clusters/pc/flux-system
+
+      - name: Reconcile the pull request's tree
+        if: github.event_name == 'pull_request'
+        run: |
+          # The patches keep the source on the pull request and drop the committed self-Kustomization,
+          # which would otherwise replace this object and point the source back at main.
+          candidate="$(cat <<'YAML'
+          apiVersion: source.toolkit.fluxcd.io/v1
+          kind: GitRepository
+          metadata:
+            name: flux-system
+            namespace: flux-system
+          spec:
+            interval: 1m0s
+            url: @REPOSITORY_URL@
+            ref:
+              name: @PULL_REQUEST_REF@
+          ---
+          apiVersion: kustomize.toolkit.fluxcd.io/v1
+          kind: Kustomization
+          metadata:
+            name: flux-system
+            namespace: flux-system
+          spec:
+            interval: 10m0s
+            path: ./clusters/pc
+            prune: true
+            wait: true
+            timeout: 5m0s
+            sourceRef:
+              kind: GitRepository
+              name: flux-system
+            patches:
+              - target:
+                  group: source.toolkit.fluxcd.io
+                  kind: GitRepository
+                  name: flux-system
+                patch: |
+                  - op: replace
+                    path: /spec/ref
+                    value:
+                      name: @PULL_REQUEST_REF@
+              - target:
+                  group: kustomize.toolkit.fluxcd.io
+                  kind: Kustomization
+                  name: flux-system
+                patch: |
+                  $patch: delete
+                  apiVersion: kustomize.toolkit.fluxcd.io/v1
+                  kind: Kustomization
+                  metadata:
+                    name: flux-system
+                    namespace: flux-system
+          YAML
+          )"
+          candidate="${candidate//@REPOSITORY_URL@/${REPOSITORY_URL}}"
+          candidate="${candidate//@PULL_REQUEST_REF@/${PULL_REQUEST_REF}}"
+          printf '%s\n' "$candidate" > "$RUNNER_TEMP/candidate.yaml"
+          kubectl apply --server-side -f "$RUNNER_TEMP/candidate.yaml"
+
+      - name: Apply the committed sync as the PC does
+        if: github.event_name == 'push'
+        run: kubectl apply --server-side -k clusters/pc/flux-system
+
+      - name: Assert that Flux reconciled the candidate commit
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          inventory() {
+            kubectl -n flux-system get kustomization flux-system \
+              -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}'
+          }
+
+          kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=3m
+          kubectl -n flux-system wait kustomization/flux-system --for=condition=Ready --timeout=5m
+          kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=5m
+          kubectl -n flux-system get gitrepository flux-system -o yaml
+
+          source_revision="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}')"
+          applied_revision="$(kubectl -n flux-system get kustomization flux-system -o jsonpath='{.status.lastAppliedRevision}')"
+          for revision in "$source_revision" "$applied_revision"; do
+            [ "${revision##*@sha1:}" = "$CANDIDATE_REVISION" ] || fail "revision '$revision' is not the candidate $CANDIDATE_REVISION"
+          done
+
+          entries="$(inventory)"
+          for entry in flux-system_flux-system_source.toolkit.fluxcd.io_GitRepository \
+            flux-system_source-controller_apps_Deployment flux-system_kustomize-controller_apps_Deployment \
+            flux-system_helm-controller_apps_Deployment flux-system_notification-controller_apps_Deployment; do
+            grep -qxF "$entry" <<<"$entries" || fail "the flux-system inventory lacks $entry"
+          done
+
+          # allow-scraping only admits metrics scrapes; deleting allow-egress would cut the controllers off each other.
+          kubectl -n flux-system delete networkpolicy allow-scraping
+          flux reconcile kustomization flux-system --with-source --timeout=5m
+          kubectl -n flux-system get networkpolicy allow-scraping
+
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            source_ref="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.spec.ref.name}')"
+            [ "$source_ref" = "$PULL_REQUEST_REF" ] || fail "the source ref '$source_ref' left $PULL_REQUEST_REF"
+            if grep -qxF flux-system_flux-system_kustomize.toolkit.fluxcd.io_Kustomization <<<"$(inventory)"; then
+              fail "the inventory holds the committed self-Kustomization"
+            fi
+          fi
+
+      - name: Print Flux's state and the controllers' errors
+        if: failure() && steps.create-cluster.outcome == 'success'
+        run: |
+          flux get all --all-namespaces
+          flux logs --all-namespaces --level=error
+
+      - name: Compare the generated files with a fresh regeneration
+        run: |
+          mise run flux:export
+          mise lock
+          git diff --exit-code -- clusters/pc/flux-system/gotk-components.yaml mise.lock
+
   quality:
     if: always()
-    needs: [checks]
+    needs: [checks, cluster]
     permissions:
       contents: read
       actions: read
