@@ -56,7 +56,8 @@ resource "github_repository" "managed" {
   }
 
   lifecycle {
-    prevent_destroy = true
+    # A key removed from managed is forgotten, never destroyed, so the repository stays on GitHub.
+    destroy = false
     # The resource plans every unset attribute back to its default, so whatever the contract does not hold stays as set on GitHub.
     ignore_changes = [
       allow_auto_merge,
@@ -96,6 +97,11 @@ resource "github_repository_vulnerability_alerts" "managed" {
 
   repository = github_repository.managed[each.key].name
   enabled    = true
+
+  lifecycle {
+    # Disabling the alerts is a change to the repository, so a removed key leaves them as set.
+    destroy = false
+  }
 }
 
 data "github_rest_api" "organisation_repositories" {
