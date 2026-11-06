@@ -9,8 +9,6 @@ set -euo pipefail
 VENDOR_LIST="infrastructure/admission/image-vendors.yaml"
 # flux install --export of the locked flux2; the cluster job fails when it differs from a regeneration.
 GENERATED_FLUX_COMPONENTS="clusters/pc/flux-system/gotk-components.yaml"
-# The admission policies name the app namespace as a pattern, not as a reference.
-APP_NAMESPACE_PATTERN_FILES=" infrastructure/admission/image-policy.yaml infrastructure/app-attestations/app-attestations.yaml "
 
 # The reference grammar of distribution/reference, matched against the lowercased string.
 DOMAIN_COMPONENT='[a-z0-9]([a-z0-9-]*[a-z0-9])?'
@@ -189,7 +187,10 @@ holds_collection() {
 judge_file() {
   local file="$1" input_format=yaml namespace_content_rule=true records_file="${work_directory}/records.0"
   [[ ${file,,} != *.json ]] || input_format=json
-  [[ ${APP_NAMESPACE_PATTERN_FILES} != *" ${file} "* ]] || namespace_content_rule=false
+  # The admission policies name the app namespace as a pattern, not as a reference.
+  case "${file}" in
+    infrastructure/admission/image-policy.yaml | infrastructure/app-attestations/app-attestations.yaml) namespace_content_rule=false ;;
+  esac
   if ! decode "${input_format}" "${file}" >"${records_file}"; then
     report_red "${file}" "" "yq cannot parse the file"
     return
