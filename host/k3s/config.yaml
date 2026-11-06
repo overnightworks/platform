@@ -1,7 +1,7 @@
 # k3s's server configuration for both clusters: the bootstrap writes it to /etc/rancher/k3s/config.yaml on the PC,
 # and the job cluster mounts it there in k3d.
 # A fixed name, so a local volume's node affinity survives a change of the hostname.
-node-name: pc
+node-name: other
 # The docker group already holds root without a password, so its members gain nothing new.
 write-kubeconfig-group: docker
 write-kubeconfig-mode: "0640"
