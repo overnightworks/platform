@@ -1,8 +1,0 @@
-claim_id = "33f7fe89c8f841aaabdf5c7e643899ae"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "25de5621ab64544f9747e0083e8bb08c095acf65"
-branch = "claude/issue-19-bootstrap-container-job"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "quality/config.toml", "scripts/bootstrap_pc.sh"]
-opened_commit = "163204cc5e0e6f36cff7792a06da4c88e45b8d08"
-whole_reason = "The prerequisite check has no caller that proves it without the container job, and the job is not required without its gate entry; any cut leaves one part unproven or ungated."
