@@ -2,6 +2,7 @@
 # Run scripts/verify_image_release.sh on every case under tests/images/: the case's files laid over base/, then its
 # exit status and red records compared with its expected-exit.txt and expected-red.txt. Each line of expected-red.txt
 # matches one red record; a * in it stands for any text, since flux's messages name the runner's own resolver.
+# Tag lookups read local bare repositories, so no case needs the network.
 # Usage: mise exec -- tests/images/run.sh
 set -euo pipefail
 
@@ -31,6 +32,9 @@ red_set_matches() {
 
 work_directory="$(mktemp -d)"
 trap 'rm -rf "${work_directory}"' EXIT
+# git reads github.com/overnightworks/hopin from an empty bare repository, which lists no tag.
+git init --bare -q "${work_directory}/remote/overnightworks/hopin"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.file://${work_directory}/remote/.insteadOf" GIT_CONFIG_VALUE_0=https://github.com/
 failed=0 case_count=0
 for case_directory in "${cases_directory}"/*/; do
   case_name="$(basename "${case_directory}")"
