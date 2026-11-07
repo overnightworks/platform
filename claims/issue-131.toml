@@ -1,8 +1,0 @@
-claim_id = "0dbf6b3ad49e49b5b514bdac92440156"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "9bfa67fa2c94b6c13870ab8f66876352ed964406"
-branch = "claude/issue-131-pod-log-30-day-bound"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "host/k3s/config.yaml", "host/pod-logs", "mise.toml"]
-opened_commit = "175c2622ed3a9eeca0ea5b015c781b62ca977588"
-whole_reason = "The kubelet setting, the tmpfiles line, its timer and check and their CI proofs are one bound: the line alone deletes compressed copies too late, and the setting alone deletes nothing."
