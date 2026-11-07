@@ -67,13 +67,13 @@
   `git ls-remote` and peeled, `gh attestation verify` by digest with that commit as source digest, and the signer commit
   on quality's main; the job logs in to ghcr.io through stdin and grants `packages: read`), and Flux's controllers pass
   in flux-system as `flux install --export` names them for the components `FLUX_COMPONENTS` in `mise.toml` lists. It
-  refuses another kind that carries an image, every Helm object, a `substituteFrom` ConfigMap, a remote kustomize resource, a changed
-  root, and every source but this repository's default branch and the owner's repository `platform-secrets`, as well as
-  the source fields, ignore files, symlinks and Kustomization paths above their source's root that would make what
-  Flux applies differ from the render. Its gaps: it does not
-  render `platform-secrets`, and a `substituteFrom` Secret's variables render empty or at their defaults. On the PC
-  the admission policy judges their images by form only; overnightworks/platform#50 owns the attestation check, and
-  overnightworks/platform#49 lists the gaps. `tests/images/` holds the matrix's cases, which the job runs.
+  refuses another kind that carries an image, every Helm object, a `substituteFrom` ConfigMap, a remote kustomize
+  resource, a changed root, and every source but this repository's default branch and the owner's repository
+  `platform-secrets`, as well as the source fields, ignore files, symlinks and Kustomization paths above their source's
+  root that would make what Flux applies differ from the render. Its gaps: it does not render `platform-secrets`, and
+  a `substituteFrom` Secret's variables render empty or at their defaults. On the PC the admission policy judges their
+  images by form only; overnightworks/platform#50 owns the attestation check, and overnightworks/platform#49 lists the
+  gaps. `tests/images/` holds the matrix's cases, which the job runs.
   `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
   `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes the paths or the file
   sizes and timestamps under `~/.local/bin` and mise's data directory (directory timestamps are not compared, the paths
@@ -83,11 +83,15 @@
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
   each PC-only source swapped for one the job serves; a new PC-only source joins that list) and, on a pull request,
   the pull request's ref. The job proves decryption with an age key and a dummy Secret it generates and never prints.
+  Its `platform-secrets` source also serves the two Secrets `apps/hopin/hopin.yaml` names, hopin's files as dummies and
+  the pull Secret from the job's own token, whose `packages: read` reads hopin's private package; neither is printed.
   Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock` and the renders, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. After the reconcile it reads
-  Traefik from the cluster: its Service is ClusterIP with the one port `web`, an unrouted host gets 404, its container
-  runs the Deployment's digest, and no Service of type NodePort or LoadBalancer and no Pod on a host port or the host
-  network exists in the cluster. Every Kustomization but the root and `admission` whose inventory holds a workload
+  Traefik from the cluster: its Service is ClusterIP with the one port `web`, an unrouted host gets 404, and no Service
+  of type NodePort or LoadBalancer and no Pod on a host port or the host network exists in the cluster. hopin's
+  Deployment, applied by `apps` after its Secrets, is Available with one Ready pod and `Recreate` at a full app ref in
+  a Namespace that enforces `restricted`, and every running container outside kube-system and flux-system carries its
+  Deployment's digest. Every Kustomization but the root and `admission` whose inventory holds a workload
   kind or a HelmRelease depends on `admission` and created its workloads after `admission`'s objects, the root's
   workloads are the Deployments of `gotk-components.yaml`, and `namespaces` holds only Namespaces Flux never prunes.
   Last, it probes the image policy by server-side dry-run on generated objects and live ones; every image a step runs
@@ -101,6 +105,11 @@
 - `clusters/pc/infrastructure.yaml`: one Flux Kustomization per directory under `infrastructure/`, each with
   `wait: true` and a `timeout`; `admission` depends on `namespaces`, and every layer that runs a workload on
   `admission`.
+- `clusters/pc/apps.yaml`: the Kustomization `apps` over `apps/`, with `wait: true` and a `timeout`, depending on
+  `platform-secrets` and `admission`.
+- `apps/hopin/`: hopin's Deployment and Service, one pod with `Recreate`, its image the full app ref of a release
+  that changes only in a pull request the operator merges, pulled through the Secret `ghcr-pull` and started from the
+  Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`.
 - `infrastructure/namespaces/`: the Namespaces that receive Secrets from platform-secrets, each annotated
   `kustomize.toolkit.fluxcd.io/prune: disabled`, so a revert never deletes one with its Secrets.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose

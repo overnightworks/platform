@@ -1,0 +1,98 @@
+# HopIn, pulled from its private package through the Secret ghcr-pull and started from the Secret hopin's files, both
+# from platform-secrets. A call's state lives in the one process's memory, so one pod runs and a deploy ends every
+# running call, as on hal.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hopin
+  namespace: hopin
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hopin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hopin
+    spec:
+      automountServiceAccountToken: false
+      # The Service hopin would inject HOPIN_PORT=tcp://<address>:8080, which hopin reads as its own port setting.
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        # The kubelet verifies the image's numeric USER 1001 as non-root, so no runAsUser repeats it.
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: hopin
+          image: ghcr.io/overnightworks/hopin:2026.11.06.2@sha256:aaa309151f36d714fe49d8a285f85c4942b4e145e0befd32472167978c496ae6
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: HOPIN_OIDC_ISSUER
+              value: https://auth.hallucinai.de/realms/hallucinai
+            - name: HOPIN_OIDC_CLIENT_SECRET_FILE
+              value: /run/secrets/oidc_client_secret
+            - name: HOPIN_PUBLIC_ORIGIN
+              value: https://hopin.hallucinai.de
+            - name: HOPIN_SESSION_SECRET_FILE
+              value: /run/secrets/session_secret
+            - name: HOPIN_TURN_PROVIDER
+              value: cloudflare
+            - name: HOPIN_TURN_KEY_ID_FILE
+              value: /run/secrets/turn_key_id
+            - name: HOPIN_TURN_API_TOKEN_FILE
+              value: /run/secrets/turn_api_token
+            - name: HOPIN_AGENT__BACKEND
+              value: litellm
+            # The game's settings are required at start, yet the platform runs no gateway: .invalid never resolves
+            # (RFC 6761), and the key file stays absent, so every game master turn reads as unavailable.
+            - name: HOPIN_AGENT__GATEWAY__ORIGIN
+              value: http://gateway.invalid
+            - name: HOPIN_AGENT__GATEWAY__KEY_FILE
+              value: /run/secrets/litellm_key
+            - name: HOPIN_AGENT__API_GROUP
+              value: /services/agent-service/api
+          # No liveness probe: a restart ends every call and session.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Every key of the Secret becomes a file, so a missing one stops HopIn's start naming its setting.
+        - name: secrets
+          secret:
+            secretName: hopin
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hopin
+  namespace: hopin
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hopin
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
