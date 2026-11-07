@@ -17,6 +17,9 @@ cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$*" in
+  *"get kustomization"*"--output name"*)
+    [ -z "${FAKE_NO_KUSTOMIZATION:-}" ] || exit 0
+    echo "kustomization.kustomize.toolkit.fluxcd.io/x" ;;
   *"get kustomization"*)
     [ -z "${FAKE_READ_SUSPEND_FAILS:-}" ] || { echo "fake kubectl: the server is unreachable" >&2; exit 1; }
     printf '%s' "${FAKE_SUSPENDED:-}" ;;
@@ -92,6 +95,13 @@ cell_failed_resume_exits_nonzero_and_does_not_claim_nothing_changed() {
   FAKE_RESUME_FAILS=1 run_loader --resume x
   [ "$status" != 0 ] && [[ $flux_calls == *resume* ]] && [[ $output != *"nothing changed"* ]] ||
     fail "--resume that failed at flux resume exited $status with '$output' after flux $flux_calls"
+}
+
+cell_resume_of_missing_kustomization_stops_at_once() {
+  cell=resume-of-missing-kustomization-stops-at-once
+  FAKE_NO_KUSTOMIZATION=1 run_loader --resume x
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"no Kustomization x in flux-system"* ]] ||
+    fail "--resume of a missing Kustomization exited $status with '$output' after flux $flux_calls"
 }
 
 cell_unreadable_suspension_stops_before_suspend() {
@@ -208,6 +218,7 @@ FAKE
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 cells=(
   failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
+  resume-of-missing-kustomization-stops-at-once
   unreadable-suspension-stops-before-suspend
   foreign-suspension-refused-naming-resume
   load-log-created-at-0600
