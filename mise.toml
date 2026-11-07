@@ -92,7 +92,13 @@ render traefik oci://ghcr.io/traefik/helm/traefik@sha256:a702a4316735397ecd1c3ed
 [tasks."secrets:age-secret"]
 description = "Create the Secret sops-age in flux-system, the age key Flux decrypts platform-secrets with, from a key file"
 usage = 'arg "<key_file>" help="The age key file; the task has no default and reads no other key"'
-run = 'kubectl --namespace flux-system create secret generic sops-age --from-file=age.agekey="${usage_key_file?}"'
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+kubectl --namespace flux-system create secret generic sops-age --from-file=age.agekey="${usage_key_file?}" >/dev/null
+echo "secrets:age-secret: Secret sops-age created"
+'''
 
 # The one owner of the age key's path: the file sops reads besides its other key sources.
 [tasks."secrets:key-file"]
@@ -103,29 +109,38 @@ run = 'echo "${SOPS_AGE_KEY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/sops/age/key
 
 [tasks."secrets:new-key"]
 description = "Create the age key once in the file secrets:key-file prints and print only its recipient"
+quiet = true
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-fail() { echo "secrets:new-key: $1; nothing was changed" >&2; exit 1; }
+fail() { echo "secrets:new-key: $1, nothing changed; $2" >&2; exit 1; }
 key_file="$(mise run secrets:key-file)"
 key_dir="$(dirname "$key_file")"
 
 # During a drill the key every value is encrypted to sits beside its file, and a new key would replace it.
 if [ -e "$key_file.drill" ] || [ -L "$key_file.drill" ]; then
-  fail "$key_file.drill exists; move it back to $key_file to end the drill"
+  fail "$key_file.drill exists" "move it back to $key_file to end the drill"
 fi
 if [ -e "$key_file" ] || [ -L "$key_file" ]; then
-  fail "$key_file exists and is kept unread"
+  fail "$key_file exists and is kept unread" "bootstrap:secrets uses it"
 fi
+existing_ancestor="$key_dir"
+until [ -e "$existing_ancestor" ] || [ -L "$existing_ancestor" ]; do
+  existing_ancestor="$(dirname "$existing_ancestor")"
+done
+[ -d "$existing_ancestor" ] || fail "$existing_ancestor is no directory, so the key directory $key_dir cannot exist" \
+  "move it or set SOPS_AGE_KEY_FILE"
 if [ -d "$key_dir" ]; then
-  key_dir_mode="$(stat --format=%a "$key_dir")"
-  [ "$key_dir_mode" = 700 ] || fail "$key_dir has mode $key_dir_mode, not 700; the operator decides its mode"
+  # The directory the file lands in guards it, so a symlinked key directory is judged by its target.
+  key_dir_mode="$(stat --dereference --format=%a "$key_dir")"
+  [ "$key_dir_mode" = 700 ] || fail "$key_dir has mode $key_dir_mode, not 700" "chmod it to 700 to go on"
 fi
 
 umask 077
 mkdir -p "$key_dir"
-# age-keygen creates the file exclusively and prints only the recipient, as "Public key: age1...".
-age-keygen -o "$key_file"
+# age-keygen creates the file exclusively and names only the recipient, as "Public key: age1...".
+keygen_output="$(age-keygen -o "$key_file" 2>&1)" || { printf '%s\n' "$keygen_output" >&2; exit 1; }
+echo "secrets:new-key: $key_file created for the recipient ${keygen_output#Public key: }"
 '''
 
 # A filter: on stdin one Secret manifest, which holds a private key, so it reaches the readers only through pipes.
@@ -137,7 +152,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 meta_url=https://api.github.com/meta
-fail() { echo "secrets:github-host-keys: $1; nothing was passed on" >&2; exit 1; }
+fail() { echo "secrets:github-host-keys: $1; nothing passed on" >&2; exit 1; }
 
 IFS= read -r -d '' manifest || true
 [ "$(printf '%s' "$manifest" | yq '.kind')" = Secret ] || fail "stdin holds not exactly one Secret"
@@ -157,7 +172,7 @@ while IFS= read -r line; do
     fail "the key on known_hosts line $line_number is none of the ssh_keys $meta_url lists"
 done < <(printf '%s\n' "$known_hosts")
 
-echo "secrets:github-host-keys: every known_hosts line is a github.com key $meta_url lists" >&2
+echo "secrets:github-host-keys: known_hosts verified against $meta_url" >&2
 printf '%s' "$manifest"
 '''
 
@@ -244,29 +259,55 @@ run = [
 [tasks."bootstrap:secrets"]
 description = "Create sops-age and the read-only deploy key for platform-secrets once each, then wait for Flux"
 env = { KUBECONFIG = "/etc/rancher/k3s/k3s.yaml" }
+quiet = true
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 source_file=clusters/pc/secrets.yaml
 source_name=platform-secrets
+source="gitrepository/$source_name"
 fail() { echo "bootstrap:secrets: $1" >&2; exit 1; }
 read_source() {
   source_name="$source_name" yq "select(.kind == \"GitRepository\" and .metadata.name == strenv(source_name)) | $1" \
     "$source_file"
 }
+read_object() {
+  kubectl --namespace flux-system get "$1" --output "jsonpath=$2" ||
+    fail "$1 in flux-system unreadable; run this task again once kubectl reads it"
+}
 # A failed read stops the task instead of counting as a missing Secret.
 secret_exists() {
   local found
   found="$(kubectl --namespace flux-system get secret "$1" --ignore-not-found --output name)" ||
-    fail "the Secret $1 in flux-system cannot be read"
+    fail "Secret $1 in flux-system unreadable; run this task again once kubectl reads it"
   [ -n "$found" ]
+}
+# The token is fresh per request, as flux reconcile sets it, so a Ready from an earlier reconcile never counts.
+request_reconcile() {
+  token="$(date +%s%N)"
+  requested_at=$SECONDS
+  kubectl --namespace flux-system annotate --overwrite "$source" "reconcile.fluxcd.io/requestedAt=$token" >/dev/null ||
+    fail "$source in flux-system not annotated; run this task again once kubectl reaches it"
+}
+# True once the controller has handled this request with Ready, false once it handled it otherwise or after $1 seconds.
+source_ready_within() {
+  local state
+  request_reconcile
+  while [ "$SECONDS" -lt $((requested_at + $1)) ]; do
+    # The caller's until and if suspend set -e here, so a failed read exits explicitly.
+    state="$(read_object "$source" \
+      '{.status.lastHandledReconcileAt} {.status.conditions[?(@.type=="Ready")].status}')" || exit 1
+    if [ "${state% *}" = "$token" ]; then [ "${state#* }" = True ]; return; fi
+    sleep 2
+  done
+  return 1
 }
 
 key_file="$(mise run secrets:key-file)"
 [ -f "$key_file" ] || fail "$key_file is missing; on a machine that had an age key, restore it from the password \
 manager, and on one that never had one, run mise run secrets:new-key"
 if secret_exists sops-age; then
-  echo "bootstrap:secrets: the Secret sops-age exists and is kept"
+  echo "bootstrap:secrets: Secret sops-age kept"
 else
   mise run secrets:age-secret "$key_file"
 fi
@@ -279,24 +320,43 @@ if secret_exists "$deploy_key_secret"; then
   kubectl --namespace flux-system get secret "$deploy_key_secret" --output yaml |
     mise run secrets:github-host-keys >/dev/null || {
     statuses=("${PIPESTATUS[@]}")
-    [ "${statuses[0]}" -eq 0 ] || fail "the Secret $deploy_key_secret in flux-system cannot be read"
-    fail "the Secret $deploy_key_secret fails the host-key check above and is kept; to replace it, run \
-kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml --namespace flux-system delete secret $deploy_key_secret, delete its \
-key at https://github.com/$repository/settings/keys and run this task again"
+    [ "${statuses[0]}" -eq 0 ] ||
+      fail "Secret $deploy_key_secret in flux-system unreadable; run this task again once kubectl reads it"
+    fail "Secret $deploy_key_secret kept unverified; to replace it, run kubectl --kubeconfig \
+/etc/rancher/k3s/k3s.yaml --namespace flux-system delete secret $deploy_key_secret, delete its key at \
+https://github.com/$repository/settings/keys and run this task again"
   }
+  echo "bootstrap:secrets: Secret $deploy_key_secret kept"
 else
   # The private key exists only in this pipeline, and kubectl create never replaces an existing Secret.
   flux create secret git "$deploy_key_secret" --namespace=flux-system --url="$source_url" --ssh-key-algorithm=ed25519 \
-    --export | mise run secrets:github-host-keys | kubectl create --filename -
+    --export | mise run secrets:github-host-keys | kubectl create --filename - >/dev/null ||
+    fail "Secret $deploy_key_secret not created; run this task again once the cause above is fixed"
+  echo "bootstrap:secrets: Secret $deploy_key_secret created"
 fi
 
-public_key="$(kubectl --namespace flux-system get secret "$deploy_key_secret" \
-  --output 'jsonpath={.data.identity\.pub}' | base64 --decode)"
-echo "bootstrap:secrets: add this deploy key once at https://github.com/$repository/settings/keys/new"
-echo "Title: $(yq '.["node-name"]' host/k3s/config.yaml)"
-echo "Key: $public_key"
-echo "Leave Allow write access unticked."
+# source-controller retries a failed source after a pause that doubles up to 15 minutes, so the task requests each try.
+if ! source_ready_within 60; then
+  public_key="$(read_object "secret/$deploy_key_secret" '{.data.identity\.pub}' | base64 --decode)"
+  echo "bootstrap:secrets: add the deploy key at https://github.com/$repository/settings/keys/new"
+  echo "  Title: $(yq '.["node-name"]' host/k3s/config.yaml)"
+  echo "  Key:   $public_key"
+  echo "  Allow write access: off"
+  echo "bootstrap:secrets: GitRepository $source_name not Ready, waiting up to 15 minutes"
+  deadline=$((SECONDS + 900))
+  until source_ready_within 30; do
+    [ "$SECONDS" -lt "$deadline" ] || fail "GitRepository $source_name not Ready after 15 minutes: $(read_object \
+"$source" '{.status.conditions[?(@.type=="Ready")].message}'); check its key at \
+https://github.com/$repository/settings/keys and run this task again"
+    [ $((requested_at + 30 - SECONDS)) -le 0 ] || sleep $((requested_at + 30 - SECONDS))
+  done
+fi
+source_revision="$(read_object "$source" '{.status.artifact.revision}')"
+echo "bootstrap:secrets: GitRepository $source_name Ready at $source_revision"
 
-kubectl --namespace flux-system wait "gitrepository/$source_name" --for=condition=Ready --timeout=15m
-kubectl --namespace flux-system wait "kustomization/$source_name" --for=condition=Ready --timeout=5m
+kubectl --namespace flux-system wait "kustomization/$source_name" --for=condition=Ready --timeout=5m >/dev/null ||
+  fail "Kustomization $source_name not Ready: $(read_object "kustomization/$source_name" \
+'{.status.conditions[?(@.type=="Ready")].message}'); fix its cause in $repository and run this task again"
+applied_revision="$(read_object "kustomization/$source_name" '{.status.lastAppliedRevision}')"
+echo "bootstrap:secrets: Kustomization $source_name Ready at $applied_revision"
 '''

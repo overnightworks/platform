@@ -19,8 +19,9 @@
   `bootstrap:secrets`, since a bare run talks to `~/.kube/config`.
 - `mise run secrets:new-key` is the operator's: it creates the age key once in the file sops reads, `SOPS_AGE_KEY_FILE`
   if set and non-empty, else `${XDG_CONFIG_HOME:-~/.config}/sops/age/keys.txt` (mode 600 in a directory at 700), and
-  prints only its recipient. It refuses, changing nothing, an existing key file, an existing directory at another mode
-  and a `<key file>.drill`. The PC's key lives in that file, and its one copy in the operator's password manager.
+  prints only its recipient. It refuses, changing nothing, an existing key file, an existing directory (or a link's
+  target) at another mode, a key directory a file blocks and a `<key file>.drill`. The PC's key lives in that file, and
+  its one copy in the operator's password manager.
 - `scripts/apply_github_settings.sh` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
   login, on any commit and without writing state (exit 0 no change, 2 changes, 1 failure). `--apply` applies that
   run's own plan, only from a clean `origin/main`, and is run only by the operator or on his word.
@@ -33,9 +34,11 @@
   for its controllers. `mise run bootstrap:secrets` is the operator's, since it reads the age key file: through k3s's
   own kubeconfig it creates `sops-age` from that file and the deploy-key Secret `platform-secrets`, each only when
   missing, and passes the deploy key only once GitHub's meta API lists every host key it holds, a check an existing
-  one passes on every run. It prints the public key to add once, read-only, in GitHub's web form, then waits for
-  `platform-secrets` to be Ready. `mise run bootstrap` runs the three in order, as a full `mise bootstrap` does after
-  its declarative parts.
+  one passes on every run. It then requests a reconcile of the source `platform-secrets`, and only when that is not
+  Ready within a minute prints the public key to add once, read-only, in GitHub's web form, requesting a reconcile
+  every 30 seconds for up to 15 minutes; then it waits for the Kustomization. Each line it and the `secrets:` tasks
+  print reads `<task>: <object> <state>`, or `<task>: <condition>; <the way back>`. `mise run bootstrap` runs the three
+  in order, as a full `mise bootstrap` does after its declarative parts.
 
 ## The PC's host step
 
