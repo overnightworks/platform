@@ -17,6 +17,8 @@ providers:
     enabled: false
 ports:
   # Only web is on the Service: traffic reaches Traefik over plain HTTP from inside the cluster.
+  web:
+    hostPort: 8000
   websecure:
     expose:
       default: false

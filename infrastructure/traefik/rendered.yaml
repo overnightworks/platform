@@ -217,6 +217,7 @@ spec:
           name: traefik
           protocol: TCP
         - containerPort: 8000
+          hostPort: 8000
           name: web
           protocol: TCP
         - containerPort: 8443
