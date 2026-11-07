@@ -482,6 +482,7 @@ fi
 
 say "verified; resuming the Kustomization $namespace"
 resume
+trap - INT
 for deployment in $deployments; do
   kubectl --namespace "$namespace" rollout status "$deployment" --timeout=5m
 done
