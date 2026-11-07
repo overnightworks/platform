@@ -544,7 +544,8 @@ jobs:
       - name: Assert that the namespaces layer keeps its Namespaces and tunnel applies cloudflared at 0 replicas
         run: |
           fail() { echo "::error::$1"; exit 1; }
-          for kustomization in namespaces platform-secrets tunnel; do
+          # platform-secrets runs on the job's own source, whose revision is its artifact's digest.
+          for kustomization in namespaces tunnel; do
             applied_revision="$(kubectl -n flux-system get kustomization "$kustomization" \
               -o jsonpath='{.status.lastAppliedRevision}')"
             [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
