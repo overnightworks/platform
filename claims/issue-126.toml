@@ -1,7 +1,0 @@
-claim_id = "4fcd8f8337b946ab8427b2d975e57632"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "6466f1bb31d637b278bb7b0da99bea3cdb604894"
-branch = "claude/issue-126-app-standard-doc"
-scope = ["AGENTS.md", "README.md", "docs/app.md"]
-opened_commit = "6d88fe2f38bdffb56cbf10b5afb2dd7a35a0d7e5"
