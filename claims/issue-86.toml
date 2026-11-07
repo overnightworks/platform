@@ -1,0 +1,8 @@
+claim_id = "cf205243644e4d10830a7ed87fa28317"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "a9cfd47649d292bc02395501c9a96c87d0810a53"
+branch = "claude/issue-86-org-deploy-key-setting"
+scope = ["src/opentofu/github"]
+opened_commit = "74a20a87a9ad6ff4b0f37a316768aa6e8457bea0"
+whole_reason = "The organisation resource, its test and the root's lock change together in one root."
