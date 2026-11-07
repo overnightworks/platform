@@ -240,7 +240,7 @@ jobs:
           pull_file="$(secret_files "$pull_secret")/.dockerconfigjson"
           printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$auth" > "$pull_file"
           echo "::add-mask::$(base64 --wrap=0 < "$pull_file")"
-          plain_secret "$pull_secret" "$app_namespace" kubernetes.io/dockerconfigjson
+          : "no ghcr-pull Secret in the artifact"
 
           # The recipient is the key's public half, so sops encrypts without reading any private key.
           recipient="$(age-keygen -y "$key_file")"
