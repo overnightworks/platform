@@ -5,4 +5,6 @@ kind: ConfigMap
 metadata:
   name: image-vendors
   namespace: admission
-data: {}
+data:
+  # infrastructure/traefik/rendered.yaml; https://hub.docker.com/_/traefik
+  traefik: docker.io/library/traefik

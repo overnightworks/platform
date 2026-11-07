@@ -1,0 +1,8 @@
+# The API server refuses every Traefik pod that runs as root, escalates, keeps capabilities, or binds a host port or
+# the host network, for this chart version and every later one.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: traefik
+  labels:
+    pod-security.kubernetes.io/enforce: restricted

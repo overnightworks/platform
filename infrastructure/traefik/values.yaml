@@ -1,0 +1,26 @@
+# Traefik's chart values; mise run charts:render renders them into rendered.yaml beside this file. A bump changes the
+# chart digest in that task, image.digest and versionOverride together and regenerates.
+image:
+  registry: docker.io
+  repository: library/traefik
+  # The tag alone moves on Docker Hub after a release, so the image is pinned by its index digest.
+  digest: sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
+versionOverride: v3.7.17
+global:
+  # The version comes from Git, so Traefik makes no call home.
+  checkNewVersion: false
+api:
+  dashboard: false
+providers:
+  # Routes are Kubernetes Ingresses; the rendered tree carries no Traefik CRDs.
+  kubernetesCRD:
+    enabled: false
+ports:
+  # Only web is on the Service: traffic reaches Traefik over plain HTTP from inside the cluster.
+  websecure:
+    expose:
+      default: false
+service:
+  spec:
+    # Reached only from inside the cluster: a NodePort or LoadBalancer would take the forward path ufw never sees.
+    type: ClusterIP
