@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scratch-nginx
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: scratch-nginx
+  template:
+    metadata:
+      labels:
+        app: scratch-nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1
