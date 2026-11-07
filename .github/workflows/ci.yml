@@ -49,6 +49,11 @@ jobs:
       # The dummy Secret the job encrypts, serves as platform-secrets and reads back decrypted.
       PROOF_SECRET_NAMESPACE: default
       PROOF_SECRET_NAME: decryption-proof
+      # The client Pods' image: each sends one request and is deleted after it.
+      CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+      # cloudflared's Namespace and the host its ingress names no rule for.
+      TUNNEL_NAMESPACE: cloudflared
+      UNROUTED_HOST: unrouted.invalid
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -252,9 +257,10 @@ jobs:
       - name: Dry-run the layer files on the API server
         run: kubectl apply --server-side --dry-run=server -f clusters/pc
 
-      - name: Check that the committed root carries no spec.patches
+      - name: Check that the committed root and tunnel carry no spec.patches
         run: |
-          # The job root's overlay adds spec.patches, which would replace committed ones without a word (RFC 6902 add).
+          # The job root's overlay adds spec.patches to both, which would replace committed ones without a word (RFC 6902
+          # add).
           fail() { echo "::error::$1"; exit 1; }
           root_file=clusters/pc/flux-system/gotk-sync.yaml
           objects="$(kubectl create --dry-run=client -f "$root_file" \
@@ -264,6 +270,15 @@ jobs:
             "Kustomization with spec.patches")
               fail "the root Kustomization in $root_file carries spec.patches, which the job root's overlay would replace" ;;
             *) fail "$root_file holds not exactly one Kustomization" ;;
+          esac
+          tunnel_file=clusters/pc/infrastructure.yaml
+          tunnel="$(kubectl create --dry-run=client -f "$tunnel_file" -o go-template='{{if eq .metadata.name "tunnel"}}
+            {{- .kind}}{{if .spec.patches}} with spec.patches{{end}}{{"\n"}}{{end}}')"
+          case "$tunnel" in
+            Kustomization) echo "the Kustomization tunnel in $tunnel_file carries no spec.patches" ;;
+            "Kustomization with spec.patches")
+              fail "the Kustomization tunnel in $tunnel_file carries spec.patches, which the job root's patch would replace" ;;
+            *) fail "$tunnel_file holds not exactly one Kustomization tunnel" ;;
           esac
 
       - name: Reconcile the candidate tree
@@ -300,6 +315,17 @@ jobs:
                         - op: replace
                           path: /spec/sourceRef/kind
                           value: OCIRepository
+                    # cloudflared's manifests apply, but no pod runs: its token is the PC's alone.
+                    - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: tunnel}
+                      patch: |
+                        - op: add
+                          path: /spec/patches
+                          value:
+                            - target: {group: apps, kind: Deployment, name: cloudflared}
+                              patch: |
+                                - op: replace
+                                  path: /spec/replicas
+                                  value: 0
           YAML
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             pull_request_patches="$(cat <<'YAML'
@@ -425,10 +451,8 @@ jobs:
 
       - name: Assert that Traefik runs from its render, ClusterIP only, and answers 404 for an unrouted host
         env:
-          # A client Pod in its own namespace, outside Traefik's, deleted after its one request.
-          CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+          # The client Pod's own namespace, outside Traefik's.
           CLIENT_NAMESPACE: ingress-client
-          UNROUTED_HOST: unrouted.invalid
         run: |
           fail() { echo "::error::$1"; exit 1; }
           applied_revision="$(kubectl -n flux-system get kustomization traefik -o jsonpath='{.status.lastAppliedRevision}')"
@@ -500,6 +524,143 @@ jobs:
             [ "${image_id##*@}" = "${image##*@}" ] || fail "the running Traefik container's imageID $image_id is not at the Deployment's digest"
           done <<<"$image_ids"
           echo "every running Traefik container carries the Deployment's digest"
+
+      - name: Assert that the namespaces layer keeps its Namespaces and tunnel applies cloudflared at 0 replicas
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          for kustomization in namespaces platform-secrets tunnel; do
+            applied_revision="$(kubectl -n flux-system get kustomization "$kustomization" \
+              -o jsonpath='{.status.lastAppliedRevision}')"
+            [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
+              fail "the Kustomization $kustomization applied '$applied_revision', not the candidate $CANDIDATE_REVISION"
+            echo "the Kustomization $kustomization is Ready at the candidate"
+          done
+
+          # Flux deletes a Namespace without the annotation on a revert, and with it the Secrets platform-secrets
+          # applies into it.
+          namespaces="$(kubectl -n flux-system get kustomization namespaces \
+            -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}' | sed -n 's/^_\([^_]*\)__Namespace$/\1/p')"
+          [ -n "$namespaces" ] || fail "the Kustomization namespaces applies no Namespace"
+          unprotected=""
+          while IFS= read -r namespace; do
+            prune="$(kubectl get namespace "$namespace" \
+              -o jsonpath='{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}')"
+            if [ "$prune" = disabled ]; then
+              echo "the Namespace $namespace carries kustomize.toolkit.fluxcd.io/prune: disabled"
+            else
+              echo "::error::the Namespace $namespace of the layer namespaces lacks kustomize.toolkit.fluxcd.io/prune: disabled"
+              unprotected+="$namespace "
+            fi
+          done <<<"$namespaces"
+          [ -z "$unprotected" ] || exit 1
+
+          replicas="$(kubectl -n "$TUNNEL_NAMESPACE" get deployment cloudflared -o jsonpath='{.spec.replicas}')"
+          [ "$replicas" = 0 ] || fail "the Deployment cloudflared runs $replicas replicas in the job, not 0"
+          echo "the Deployment cloudflared is applied at 0 replicas"
+
+      - name: Assert cloudflared's ingress from Pods built from its Deployment's template
+        env:
+          # The one host the tunnel's ingress sends to Traefik.
+          ROUTED_HOST: hopin.hallucinai.de
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          deployment="$(kubectl -n "$TUNNEL_NAMESPACE" get deployment cloudflared -o json)"
+          [ "$(yq '.spec.template.spec.containers | length' <<<"$deployment")" = 1 ] ||
+            fail "the Deployment cloudflared has not exactly one container"
+          mapfile -t run_arguments < <(yq '.spec.template.spec.containers[0].args[]' <<<"$deployment")
+          config_file=""
+          for index in "${!run_arguments[@]}"; do
+            [ "${run_arguments[index]}" != --config ] || config_file="${run_arguments[index + 1]:-}"
+          done
+          [ -n "$config_file" ] || fail "the Deployment cloudflared's arguments name no --config file"
+
+          # run_template_pod <name> <argument>...: a Pod from the Deployment's template with its Secret volumes dropped
+          # and its arguments replaced, admitted by Pod Security or refused, run once; sets pod_log and pod_exit_code.
+          run_template_pod() {
+            local name="$1"
+            shift
+            POD_NAME="$name" POD_ARGUMENTS="$(printf '%s\n' "$@")" yq -o json '
+              (.spec.template.spec.volumes | map(select(has("secret"))) | map(.name)) as $secret_volumes |
+              {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(POD_NAME)}, "spec": .spec.template.spec} |
+              .spec.restartPolicy = "Never" |
+              .spec.volumes |= map(select(has("secret") | not)) |
+              .spec.containers[0].volumeMounts |= map(select(.name as $mount | $secret_volumes | any_c(. == $mount) | not)) |
+              .spec.containers[0].args = (strenv(POD_ARGUMENTS) | split("\n"))' <<<"$deployment" |
+              kubectl -n "$TUNNEL_NAMESPACE" create -f - ||
+              fail "the API server refused the Pod $name built from the Deployment cloudflared's template"
+            kubectl -n "$TUNNEL_NAMESPACE" wait "pod/$name" --timeout=2m \
+              --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' || {
+              kubectl -n "$TUNNEL_NAMESPACE" describe "pod/$name"
+              fail "the Pod $name did not run to its end"
+            }
+            pod_exit_code="$(kubectl -n "$TUNNEL_NAMESPACE" get "pod/$name" \
+              -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
+            pod_log="$(kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$name")"
+            printf '%s\n' "$pod_log"
+            kubectl -n "$TUNNEL_NAMESPACE" delete pod "$name" --wait --timeout=2m
+          }
+          # match_rule <host>: sets matched_service to the service of the rule cloudflared matches for the host.
+          match_rule() {
+            local host="$1"
+            run_template_pod "ingress-rule-${host//./-}" tunnel --config "$config_file" ingress rule "https://$host"
+            [ "$pod_exit_code" = 0 ] || fail "cloudflared tunnel ingress rule exited $pod_exit_code for $host"
+            matched_service="$(sed -n 's/^\tservice: //p' <<<"$pod_log")"
+          }
+
+          # cloudflared prints OK only after it parsed the rules of the file it names; the last must match every host.
+          run_template_pod ingress-validate tunnel --config "$config_file" ingress validate
+          [ "$pod_exit_code" = 0 ] && grep -qx OK <<<"$pod_log" ||
+            fail "cloudflared tunnel ingress validate refused $config_file of the ConfigMap cloudflared"
+          echo "the Pod from the Deployment's template was admitted, and ingress validate passes on $config_file"
+
+          match_rule "$UNROUTED_HOST"
+          [ "$matched_service" = http_status:404 ] ||
+            fail "the tunnel sends the unrouted host $UNROUTED_HOST to '$matched_service', not http_status:404"
+          echo "the tunnel answers the unrouted host $UNROUTED_HOST with http_status:404"
+
+          match_rule "$ROUTED_HOST"
+          routed_url="$matched_service"
+          [[ $routed_url == http://* ]] || fail "the tunnel sends $ROUTED_HOST to '$routed_url', not to an http URL"
+          web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
+          [[ $routed_url =~ :${web_port}/?$ ]] || fail "the tunnel sends $ROUTED_HOST to $routed_url, not Traefik's web port $web_port"
+          # A client Pod beside cloudflared sends the request cloudflared forwards; no Ingress routes the host yet, so
+          # Traefik answers 404.
+          client_pod="$(cat <<'YAML'
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: routed-request
+          spec:
+            restartPolicy: Never
+            automountServiceAccountToken: false
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: client
+                image: @IMAGE@
+                args: [--silent, --output, /dev/null, --write-out, '%{http_code}', --max-time, '10', --retry, '5',
+                  --retry-connrefused, --retry-delay, '2', --header, 'Host: @HOST@', '@URL@']
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: [ALL]
+          YAML
+          )"
+          client_pod="${client_pod//@IMAGE@/${CLIENT_IMAGE}}"
+          client_pod="${client_pod//@HOST@/${ROUTED_HOST}}"
+          printf '%s\n' "${client_pod//@URL@/${routed_url}}" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
+          kubectl -n "$TUNNEL_NAMESPACE" wait pod/routed-request --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m || {
+            kubectl -n "$TUNNEL_NAMESPACE" describe pod/routed-request
+            kubectl -n "$TUNNEL_NAMESPACE" logs pod/routed-request || true
+            fail "the client Pod in $TUNNEL_NAMESPACE did not succeed"
+          }
+          status="$(kubectl -n "$TUNNEL_NAMESPACE" logs pod/routed-request)"
+          kubectl -n "$TUNNEL_NAMESPACE" delete pod routed-request --wait --timeout=2m
+          [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for $ROUTED_HOST at $routed_url"
+          echo "the tunnel sends $ROUTED_HOST to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
