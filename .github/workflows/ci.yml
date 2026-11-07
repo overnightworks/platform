@@ -279,6 +279,13 @@ jobs:
             *) fail "$root_file holds not exactly one Kustomization" ;;
           esac
 
+      - name: SCRATCH A9, create the substitution ConfigMaps outside Git
+        run: |
+          unlisted="docker.io/someone/hopin@sha256:$(printf '0%.0s' {1..64})"
+          kubectl --namespace flux-system create configmap scratch-image-unlisted --from-literal=SCRATCH_IMAGE="$unlisted"
+          kubectl --namespace flux-system create configmap scratch-image-listed \
+            --from-literal=SCRATCH_IMAGE=docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+
       - name: Reconcile the candidate tree
         run: |
           # The job root is the PC's own clusters/pc/flux-system as a kustomize base, no file copied. The overlay adds

@@ -49,3 +49,45 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: scratch-a9
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+  interval: 10m0s
+  path: ./infrastructure/scratch-a9
+  prune: true
+  wait: true
+  timeout: 2m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: scratch-image-unlisted
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: scratch-a9-control
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+  interval: 10m0s
+  path: ./infrastructure/scratch-a9-control
+  prune: true
+  wait: true
+  timeout: 2m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: scratch-image-listed

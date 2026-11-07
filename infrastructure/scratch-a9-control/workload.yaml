@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scratch-a9-control
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: probe
+  namespace: scratch-a9-control
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      probe: scratch-a9-control
+  template:
+    metadata:
+      labels:
+        probe: scratch-a9-control
+    spec:
+      containers:
+        - name: app
+          image: ${SCRATCH_IMAGE}
+          command: [sleep, "3600"]
