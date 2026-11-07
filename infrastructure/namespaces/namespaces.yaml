@@ -1,0 +1,11 @@
+# The Namespaces that receive Secrets from platform-secrets, applied before that layer. Flux never deletes one: a
+# revert here would otherwise delete the Namespace with its Secrets, and platform-secrets would fail on it. The cluster
+# job fails naming a Namespace of this layer without the annotation.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudflared
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
