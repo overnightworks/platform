@@ -1,8 +1,0 @@
-claim_id = "ed5b48bb01b349a090b46694ac549072"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "226d67abd148991b023918f1db03a6d07c872b1a"
-branch = "claude/issue-117-s5b-hopin-is-routed-through-traefik"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/hopin/hopin.yaml", "infrastructure/traefik/rendered.yaml", "infrastructure/traefik/values.yaml"]
-opened_commit = "c23f2b5c4756196ca1c83385586dc031a9a56996"
-whole_reason = "S5b does not split: the route, the NetworkPolicy and the trusted proxies are one trust boundary (decision 9), and Traefik's timeout follows only from H12 on that route."
