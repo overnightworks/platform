@@ -3,5 +3,5 @@ agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
 role = "builder"
 base = "a9cfd47649d292bc02395501c9a96c87d0810a53"
 branch = "claude/issue-128-c12-tunnel-check-line"
-scope = [".github/workflows/ci.yml", "infrastructure/cloudflared/cloudflared.yaml"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/cloudflared/cloudflared.yaml"]
 opened_commit = "b9050808ba04df822feb4babc0daca6d3bf9dbc1"
