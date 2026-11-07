@@ -27,3 +27,18 @@ kind: HelmRelease
 metadata: {name: other, namespace: default}
 spec:
   image: nginx:1
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata: {name: plain, namespace: default}
+spec:
+  interval: 10m
+  url: https://charts.example.com
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmChart
+metadata: {name: plain, namespace: default}
+spec:
+  interval: 10m
+  chart: plain
+  sourceRef: {kind: HelmRepository, name: plain}
