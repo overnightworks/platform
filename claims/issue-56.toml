@@ -3,6 +3,6 @@ agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
 role = "builder"
 base = "0f4cdaff782906b9e277f7cd30f14326e5a6ca94"
 branch = "claude/issue-56-b1b-the-job-images-checks-each-app-ref-s"
-scope = [".github/workflows/ci.yml", "mise.lock", "mise.toml", "scripts/verify_image_release.sh"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "mise.lock", "mise.toml", "scripts/verify_image_release.sh", "tests/images"]
 opened_commit = "55bce8aaeab62e8b1f272d56836b19e250d2b34a"
 whole_reason = "The release checks, the login that lets gh read the registry and gh in the lock are one change: the checks run only through the login and the locked gh."
