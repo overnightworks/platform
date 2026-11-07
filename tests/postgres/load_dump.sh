@@ -32,7 +32,10 @@ case "$*" in
         : >"$FAKE_DIR/verifying"
         [ -z "${FAKE_VERIFY_HANGS:-}" ] || sleep 60
         echo "key_table: 1 rows, 1 COPY lines in the dump, equal" ;;
-      *) "$@" ;;
+      *)
+        # The task's sh runs in the container as busybox ash, which has pipefail; the runner's sh may not.
+        if [ "$1" = sh ]; then set -- bash "${@:2}"; fi
+        "$@" ;;
     esac ;;
   *) echo "fake kubectl: unexpected $*" >&2; exit 1 ;;
 esac
@@ -57,7 +60,8 @@ exec /bin/chmod "$@"
 FAKE
 chmod +x "$fake_bin"/*
 # mise puts its own kubectl and flux before PATH, so the task must not load them.
-export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux2
+# KUBECONFIG names no file, so a call that leaks to a real kubectl fails instead of reaching a cluster.
+export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux2 KUBECONFIG="$work_directory/no-kubeconfig"
 cd "$repository_root"
 
 dump="$work_directory/dump"
