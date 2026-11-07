@@ -51,11 +51,11 @@ Not provided: a backup of an app's state and a copy of anything off the PC. A de
 
 | Rule | Checked by |
 |---|---|
-| Image ref is a full app ref at a release, verified by tag, attestation and signer; the image comes from quality's path | platform's `images` job (tag, attestation, signer commit on quality's main); quality's `release-gate.yml` and `image.yml` in the app's own release |
+| Image ref is a full app ref at a release, verified by tag, attestation and signer; the image comes from quality's path | platform's `images` job (tag, attestation, signer commit on quality's main); [quality's release path](https://github.com/overnightworks/quality/blob/main/docs/release.md) in the app's own release |
 | Image form (listed vendor at a digest, or a full app ref) on every Pod create or change | admission policy `app-and-vendor-images` |
 | Namespace enforces `restricted`; Deployment is `Recreate`, Available with one Ready pod, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
 | Manifests live under `apps/<app>/` and reconcile | the `cluster` job through the Kustomization `apps` |
-| No tracked `.env` file; published compose ports bind loopback | quality's gate rules `env-file` and `compose-port`, in the app repository |
+| Env files and published compose ports pass quality's rules | quality's gate rules `env-file` and `compose-port`, in the app repository |
 | A readiness check exists; secrets are files; no second deploy path | not machine-checked; the move checklist's answers carry them |
 
 ## The move checklist
@@ -82,7 +82,7 @@ checks the answers as owner; a line not yet held names its owning item and stays
 
 ## Where it ends against quality's release path
 
-quality's release path ends at a released tag and a pushed, attested image. From the pull request that moves the
+[quality's release path](https://github.com/overnightworks/quality/blob/main/docs/release.md) ends at a released tag and a pushed, attested image. From the pull request that moves the
 ref on, this standard holds. A compose file used only by CI or local runs is not covered by the no-second-deploy-path rule; quality's
 gate judges it by its own rules.
 
