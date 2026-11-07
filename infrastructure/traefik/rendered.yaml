@@ -182,6 +182,16 @@ spec:
         - --providers.kubernetesingress
         - --providers.kubernetesingress.allowEmptyServices=true
         - --providers.kubernetesingress.ingressendpoint.publishedservice=traefik/traefik
+        - --entryPoints.web.http.encodedCharacters.allowEncodedBackSlash=false
+        - --entryPoints.web.http.encodedCharacters.allowEncodedHash=false
+        - --entryPoints.web.http.encodedCharacters.allowEncodedNullCharacter=false
+        - --entryPoints.web.http.encodedCharacters.allowEncodedPercent=false
+        - --entryPoints.web.http.encodedCharacters.allowEncodedQuestionMark=false
+        - --entryPoints.web.http.encodedCharacters.allowEncodedSemicolon=false
+        - --entryPoints.web.http.encodedCharacters.allowEncodedSlash=false
+        - --entryPoints.web.http.sanitizePath=true
+        - --entryPoints.web.http.aliasHeadersStrategy=delete
+        - --entryPoints.web.forwardedHeaders.trustedIPs=10.42.0.0/16
         - --entryPoints.websecure.http.tls=true
         - --log.level=INFO
         env:

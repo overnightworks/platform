@@ -1,0 +1,20 @@
+# Only the tunnel reaches Traefik: pods of namespace cloudflared, a label the API server sets and no other namespace can
+# carry, may open the web port. Every other port and sender is denied, Traefik's own traefik and metrics ports
+# included; the kubelet's probes come from the node, which a NetworkPolicy never blocks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-from-cloudflared-only
+  namespace: traefik
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudflared
+      ports:
+        - port: web
+          protocol: TCP

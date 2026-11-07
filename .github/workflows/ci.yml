@@ -53,6 +53,30 @@ jobs:
       PROOF_SECRET_NAME: decryption-proof
       # The client Pods' image: each sends one request and is deleted after it.
       CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+      # A client Pod that Pod Security admits as restricted, as namespace cloudflared enforces: it prints the status of
+      # one request, or 000 when no answer came, with @NAME@, @IMAGE@, @HOST@ and @URL@ replaced.
+      CLIENT_POD: |
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: @NAME@
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: client
+              image: @IMAGE@
+              args: [--silent, --output, /dev/null, --write-out, '%{http_code}', --max-time, '10', --retry, '5',
+                --retry-connrefused, --retry-delay, '2', --header, 'Host: @HOST@', '@URL@']
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
       # cloudflared's Namespace and the host its ingress names no rule for.
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
@@ -493,10 +517,11 @@ jobs:
           echo "GitRepository spec.ref after the reconcile: $source_ref"
           assert_job_source
 
-      - name: Assert that Traefik runs from its render, ClusterIP only, and answers 404 for an unrouted host
+      - name: Assert that Traefik runs from its render, ClusterIP only, and answers only cloudflared's pods
         env:
-          # The client Pod's own namespace, outside Traefik's.
-          CLIENT_NAMESPACE: ingress-client
+          # A client Pod's namespace that is neither Traefik's nor the tunnel's, and the host its Ingress routes.
+          OTHER_NAMESPACE: ingress-client
+          ROUTED_HOST: routed.invalid
         run: |
           fail() { echo "::error::$1"; exit 1; }
           applied_revision="$(kubectl -n flux-system get kustomization traefik -o jsonpath='{.status.lastAppliedRevision}')"
@@ -540,22 +565,66 @@ jobs:
           fi
           echo "no NodePort or LoadBalancer Service and no Pod on a host port or the host network exists"
 
+          # web trusts the X-Forwarded-For of the pod network, which holds the pods its NetworkPolicy admits.
+          trusted_ips="$(kubectl -n traefik get deployment traefik -o json | yq \
+            '.spec.template.spec.containers[0].args[] | select(test("^--entryPoints[.]web[.]forwardedHeaders[.]trustedIPs=")) | sub("^[^=]*=", "")')"
+          pod_cidrs="$(kubectl get nodes -o jsonpath='{.items[*].spec.podCIDRs[*]}')"
+          python3 -I -c '
+          import ipaddress, sys
+          trusted = [ipaddress.ip_network(network) for network in sys.argv[1].split(",")]
+          pod_networks = [ipaddress.ip_network(network) for network in sys.argv[2].split()]
+          sys.exit(not pod_networks or not all(
+              any(pod.version == network.version and pod.subnet_of(network) for network in trusted) for pod in pod_networks))
+          ' "$trusted_ips" "$pod_cidrs" || fail "web trusts '$trusted_ips', which does not hold the nodes' pod CIDRs '$pod_cidrs'"
+          echo "web trusts the forwarded headers of $trusted_ips, which holds the nodes' pod CIDRs $pod_cidrs"
+
           web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
-          kubectl create namespace "$CLIENT_NAMESPACE"
-          kubectl -n "$CLIENT_NAMESPACE" run unrouted-request --image="$CLIENT_IMAGE" --restart=Never -- \
-            --silent --output /dev/null --write-out '%{http_code}' --max-time 10 \
-            --retry 5 --retry-connrefused --retry-delay 2 --header "Host: $UNROUTED_HOST" "http://traefik.traefik.svc:$web_port/"
-          kubectl -n "$CLIENT_NAMESPACE" wait pod/unrouted-request --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m || {
-            kubectl -n "$CLIENT_NAMESPACE" describe pod/unrouted-request
-            kubectl -n "$CLIENT_NAMESPACE" logs pod/unrouted-request || true
-            fail "the client Pod did not succeed"
+          client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
+          # request <namespace> <name> <host> <path>: a client Pod in the namespace asks Traefik's web port for the path
+          # of the host, runs to its end and is deleted; sets status to the status it printed and exit_code to curl's.
+          request() {
+            local namespace="$1" name="$2" host="$3" path="$4" client_pod
+            client_pod="${client_pod_template//@NAME@/${name}}"
+            client_pod="${client_pod//@HOST@/${host}}"
+            printf '%s\n' "${client_pod//@URL@/http://traefik.traefik.svc:${web_port}${path}}" | kubectl -n "$namespace" create -f -
+            kubectl -n "$namespace" wait "pod/$name" --timeout=2m \
+              --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' || {
+              kubectl -n "$namespace" describe "pod/$name"
+              fail "the client Pod $name in $namespace did not run to its end"
+            }
+            exit_code="$(kubectl -n "$namespace" get "pod/$name" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
+            status="$(kubectl -n "$namespace" logs "pod/$name")"
+            kubectl -n "$namespace" delete pod "$name" --wait --timeout=2m
           }
-          status="$(kubectl -n "$CLIENT_NAMESPACE" logs pod/unrouted-request)"
-          kubectl delete namespace "$CLIENT_NAMESPACE" --wait --timeout=2m
-          [ -z "$(kubectl get namespace "$CLIENT_NAMESPACE" --ignore-not-found -o name)" ] ||
-            fail "the namespace $CLIENT_NAMESPACE outlived its deletion"
-          [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for the unrouted host $UNROUTED_HOST"
-          echo "Traefik answered 404 for the unrouted host $UNROUTED_HOST, and the client Pod is gone"
+
+          request "$TUNNEL_NAMESPACE" unrouted-request "$UNROUTED_HOST" /
+          [ "$status" = 404 ] || fail "Traefik answered $status, not 404, to a Pod in $TUNNEL_NAMESPACE for the unrouted host $UNROUTED_HOST"
+          echo "Traefik answered 404 to a Pod in $TUNNEL_NAMESPACE for the unrouted host $UNROUTED_HOST"
+
+          # Traefik refuses encoded path characters in each route's chain, so an unrouted host gets 404 for them: the
+          # encoded slash goes to a host an Ingress routes to a Service without endpoints, which Traefik answers with 503
+          # once it serves the route.
+          kubectl create namespace "$OTHER_NAMESPACE"
+          kubectl -n "$OTHER_NAMESPACE" create service clusterip no-endpoints --tcp=80:80
+          kubectl -n "$OTHER_NAMESPACE" create ingress encoded-path --rule="$ROUTED_HOST/*=no-endpoints:80"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            request "$TUNNEL_NAMESPACE" "route-request-$attempt" "$ROUTED_HOST" /
+            [ "$status" = 404 ] || break
+          done
+          [ "$status" = 503 ] || fail "Traefik answered $status, not 503, for $ROUTED_HOST, routed to a Service without endpoints"
+          echo "Traefik serves the route of $ROUTED_HOST and answers its Service without endpoints with 503"
+          request "$TUNNEL_NAMESPACE" encoded-slash-request "$ROUTED_HOST" /a%2Fb
+          [ "$status" = 400 ] || fail "Traefik answered $status, not 400, to a Pod in $TUNNEL_NAMESPACE for $ROUTED_HOST/a%2Fb"
+          echo "Traefik answered 400 to a Pod in $TUNNEL_NAMESPACE for $ROUTED_HOST/a%2Fb"
+
+          # A refused connection (curl's 7) or no reply within the timeout (28) both leave the client without a status.
+          request "$OTHER_NAMESPACE" denied-request "$ROUTED_HOST" /
+          kubectl delete namespace "$OTHER_NAMESPACE" --wait --timeout=2m
+          [ -z "$(kubectl get namespace "$OTHER_NAMESPACE" --ignore-not-found -o name)" ] ||
+            fail "the namespace $OTHER_NAMESPACE outlived its deletion"
+          [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
+            fail "a Pod in $OTHER_NAMESPACE got the status $status from Traefik's web port, curl exit code $exit_code"
+          echo "a Pod in $OTHER_NAMESPACE got no answer from Traefik's web port (curl exit code $exit_code), and its namespace is gone"
 
       - name: Assert that the app runs at its full app ref after platform-secrets, pulled through its pull Secret
         env:
@@ -975,31 +1044,7 @@ jobs:
           # the request cloudflared forwards; no Ingress routes the host yet, so Traefik answers 404.
           web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
           traefik_host="$(kubectl -n traefik get service traefik -o jsonpath='{.metadata.name}.{.metadata.namespace}.svc')"
-          client_pod_template="$(cat <<'YAML'
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            name: @NAME@
-          spec:
-            restartPolicy: Never
-            automountServiceAccountToken: false
-            securityContext:
-              runAsNonRoot: true
-              runAsUser: 65534
-              seccompProfile:
-                type: RuntimeDefault
-            containers:
-              - name: client
-                image: @IMAGE@
-                args: [--silent, --output, /dev/null, --write-out, '%{http_code}', --max-time, '10', --retry, '5',
-                  --retry-connrefused, --retry-delay, '2', --header, 'Host: @HOST@', '@URL@']
-                securityContext:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop: [ALL]
-          YAML
-          )"
-          client_pod_template="${client_pod_template//@IMAGE@/${CLIENT_IMAGE}}"
+          client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
           for routed_host in "${routed_hosts[@]}"; do
             match_rule "$routed_host"
             routed_url="$matched_service"
