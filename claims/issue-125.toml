@@ -1,0 +1,8 @@
+claim_id = "6aed755702ef4c2385e915b5c3bb0f93"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "72260f435999a5e1a0b83a8e32fd034e2937798e"
+branch = "claude/issue-125-p7a-storage-postgres-and-dump-loader"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/keycloak/keycloak-egress.yaml", "infrastructure/keycloak/kustomization.yaml", "infrastructure/litellm/kustomization.yaml", "infrastructure/namespaces/namespaces.yaml", "infrastructure/postgres", "infrastructure/storage", "mise.toml", "tests/postgres"]
+opened_commit = "3dfcef25d9ee2e12150b54d8bbc8982f5d6934d5"
+whole_reason = "Storage has no honest proof without a claim, Postgres needs the class, and the loader has nothing to load into without Postgres."
