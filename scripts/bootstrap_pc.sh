@@ -48,5 +48,7 @@ if [ ! -f "${MISE_BINARY}" ] || ! has_pinned_checksum "${MISE_BINARY}"; then
 fi
 
 cd "${repository_root}"
+# mise reads ufw's output as English ("Status: active", "Default:"), and sudo keeps LC_ALL, so a German ufw reads as inactive.
+export LC_ALL=C
 "${MISE_BINARY}" trust "${repository_root}/mise.toml"
 exec "${MISE_BINARY}" bootstrap "$@"

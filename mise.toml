@@ -15,6 +15,43 @@ yq = "4"
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.
 K3S_VERSION = "v1.37.2+k3s1"
+# The sha256 of k3s's install.sh at that tag, the file bootstrap:k3s downloads; a bump changes both.
+K3S_INSTALLER_SHA256 = "ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b"
+
+# mise creates no missing parent of a file, and k3s's own directory exists only once k3s has run.
+[bootstrap.directories."/etc/rancher/k3s"]
+owner = "root"
+group = "root"
+mode = "0755"
+
+[bootstrap.files."/etc/rancher/k3s/config.yaml"]
+source = "host/k3s/config.yaml"
+owner = "root"
+group = "root"
+mode = "0644"
+
+# The PC's ufw keeps its defaults and the operator's own rules (no exclusive, whose ufw reset would delete them).
+# The pods reach the API server and the kubelet on the host through cni0, which only pods sit on, so one rule on the
+# interface alone admits them. mise's ufw check reads the "/16" of a source CIDR as a protocol, so a rule with a
+# source never matches and every plan would name it unknown.
+# k3s-pods and k3s-services are declared absent because mise's apply keeps every rule its state file holds, and the
+# PC's holds those two.
+[bootstrap.linux.firewall]
+backend = "ufw"
+default_incoming = "deny"
+default_outgoing = "allow"
+
+[[bootstrap.linux.firewall.rules]]
+name = "k3s-cni"
+interface = "cni0"
+
+[[bootstrap.linux.firewall.rules]]
+name = "k3s-pods"
+state = "absent"
+
+[[bootstrap.linux.firewall.rules]]
+name = "k3s-services"
+state = "absent"
 
 [tasks."flux:export"]
 description = "Regenerate the committed Flux components from the locked flux2"
@@ -38,3 +75,68 @@ tofu init -backend=false -lockfile=readonly -input=false
 tofu validate
 tofu test
 '''
+
+[tasks.bootstrap]
+description = "The PC's own steps after the declarative parts: k3s, then Flux"
+run = [{ task = "bootstrap:k3s" }, { task = "bootstrap:flux" }]
+
+[tasks."bootstrap:k3s"]
+description = "Install k3s at K3S_VERSION from its pinned installer, restart it for a newer config, wait for the node"
+env = { KUBECONFIG = "/etc/rancher/k3s/k3s.yaml" }
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+config=/etc/rancher/k3s/config.yaml
+committed_config=host/k3s/config.yaml
+installer_url="https://raw.githubusercontent.com/k3s-io/k3s/${K3S_VERSION}/install.sh"
+fail() { echo "bootstrap:k3s: $1" >&2; exit 1; }
+
+# Without this file k3s's first start takes its defaults: Secrets unencrypted, the hostname as node name, and the
+# bundled Traefik on servicelb's host ports.
+cmp --silent "$committed_config" "$config" ||
+  fail "$config is missing or differs from $committed_config; run scripts/bootstrap_pc.sh --only files,firewall first"
+
+installed_version=""
+if [ -x /usr/local/bin/k3s ]; then
+  installed_version="$(/usr/local/bin/k3s --version | awk 'NR == 1 { print $3 }')"
+fi
+
+if [ "$installed_version" != "$K3S_VERSION" ]; then
+  staging="$(mktemp)"
+  trap 'rm -f "$staging"' EXIT
+  curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$staging" "$installer_url"
+  echo "${K3S_INSTALLER_SHA256}  ${staging}" | sha256sum --check --status ||
+    fail "$installer_url does not match the pinned sha256 $K3S_INSTALLER_SHA256; the installer did not run"
+  echo "bootstrap:k3s: $installer_url matches the pinned sha256; running it"
+  # sudo resets the environment, so only these two reach the installer, which copies every K3S_, CONTAINERD_, KINE_
+  # and proxy variable it sees into k3s's env file.
+  sudo INSTALL_K3S_VERSION="$K3S_VERSION" INSTALL_K3S_SYMLINK=skip sh "$staging"
+else
+  # k3s reads its config only when it starts, and the installer restarts it only for a new binary, unit or env file.
+  started="$(systemctl show k3s.service --property=ExecMainStartTimestamp --value --timestamp=unix)"
+  [[ $started =~ ^@[0-9]+$ ]] || fail "k3s.service reports no start time"
+  if [ "$(stat --format=%Y "$config")" -ge "${started#@}" ]; then
+    echo "bootstrap:k3s: $config changed after k3s started; restarting k3s.service"
+    sudo systemctl restart k3s.service
+  else
+    echo "bootstrap:k3s: k3s $K3S_VERSION started after the last change of $config; nothing to do"
+  fi
+fi
+
+node="$(sed -n 's/^node-name: *//p' "$config")"
+[ -n "$node" ] || fail "$config sets no node-name"
+kubectl wait "node/$node" --for=create --timeout=3m
+kubectl wait "node/$node" --for=condition=Ready --timeout=3m
+'''
+
+[tasks."bootstrap:flux"]
+description = "Apply Flux from the committed clusters/pc/flux-system to the PC's k3s and wait for its controllers"
+env = { KUBECONFIG = "/etc/rancher/k3s/k3s.yaml" }
+# The sync objects are Flux's custom resources, so its CRDs and controllers come first. Once Flux has reconciled, its
+# kustomize-controller owns the fields the API server normalizes (1000m as 1, 1000 as 1k, the defaulted fieldRef), so a
+# repeat claims them back with --force-conflicts, as Flux's own installer does; the values stay the committed ones.
+run = [
+  "kubectl apply --server-side --force-conflicts --filename clusters/pc/flux-system/gotk-components.yaml",
+  "kubectl --namespace flux-system wait deployment --all --for=condition=Available --timeout=3m",
+  "kubectl apply --server-side --force-conflicts --kustomize clusters/pc/flux-system",
+]
