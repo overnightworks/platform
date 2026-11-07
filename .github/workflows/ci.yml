@@ -29,7 +29,7 @@ jobs:
 
   cluster:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
@@ -542,7 +542,7 @@ jobs:
 
           kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=3m
           kubectl -n flux-system wait kustomization/flux-system --for=condition=Ready --timeout=5m
-          kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=5m
+          kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=25m
           kubectl -n flux-system get gitrepository flux-system -o yaml
 
           source_revision="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}')"
@@ -1200,6 +1200,10 @@ jobs:
           flux logs --all-namespaces --level=error
           # Pod Security's refusal of a Pod appears only in Warning events and the workloads' conditions, never in Flux's state.
           kubectl get events --all-namespaces --field-selector type=Warning
+          # What an app's pull cost the runner before the failure: the kubelet's own report of each pull, and the disk.
+          kubectl get events --all-namespaces --field-selector reason=Pulled \
+            -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.message}{"\n"}{end}'
+          df --human-readable /
           kubectl get deployments,replicasets --all-namespaces -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]} {.type}={.status}({.reason}: {.message}){end}{"\n"}{end}'
           # A start an app refuses appears only in its own log.
           kubectl get pods --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"|"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' |
