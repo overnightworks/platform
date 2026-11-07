@@ -1,0 +1,8 @@
+claim_id = "8f258d1072774fa297104282337d5ba3"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "11cc6aafe3ab8929009e29a6a13718374ea867e6"
+branch = "claude/issue-82-s5a-hopin-runs-in-k3s"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/hopin/hopin.yaml", "clusters/pc/apps.yaml", "infrastructure/namespaces/namespaces.yaml", "quality/config.toml"]
+opened_commit = "718c034ab3a9605d316935200cc34a995c3d5136"
+whole_reason = "S5a does not split further: the Deployment, its Kustomization, its root declaration, its Namespace and the private pull that lets it start have no caller apart, and AGENTS.md describes them in the same change."
