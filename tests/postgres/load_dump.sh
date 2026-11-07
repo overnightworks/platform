@@ -144,9 +144,26 @@ cell_interrupt_while_verifying() {
     fail "an interrupt during verification exited $status after flux $(tr '\n' ' ' <"$FAKE_DIR/flux.log")"
 }
 
+cell_interrupt_script_reaps() {
+  cell=interrupt-script-reaps
+  # A loader that refuses at once leaves nobody reading the FIFO; the writer's half of the dump exceeds the FIFO's buffer.
+  printf '%s\n' '#!/usr/bin/env bash' 'case "$1" in run) echo refused >&2; exit 1 ;; *) echo 0 ;; esac' \
+    >"$work_directory/mise"
+  chmod +x "$work_directory/mise"
+  big_dump="$work_directory/big.dump"
+  head -c 10000000 /dev/zero >"$big_dump"
+  reaper_status=0
+  PATH="$work_directory:$PATH" tests/postgres/interrupt_load.sh x "$big_dump" INT >/dev/null 2>&1 || reaper_status=$?
+  [ "$reaper_status" != 0 ] || fail "interrupt_load.sh passed with a loader that refused at once"
+  if pgrep -f "^head -c 5000000 $big_dump" >/dev/null; then
+    pkill -KILL -f "^head -c 5000000 $big_dump"
+    fail "interrupt_load.sh left its writer running after the loader refused"
+  fi
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 failed=()
-for name in resume-fails suspension-unreadable suspended-by-another log-mode equal-with-empty-table extra-empty-table interrupt-while-verifying; do
+for name in resume-fails suspension-unreadable suspended-by-another log-mode equal-with-empty-table extra-empty-table interrupt-while-verifying interrupt-script-reaps; do
   ("cell_${name//-/_}") || failed+=("$name")
 done
 [ "${#failed[@]}" = 0 ] || { echo "load_dump: failed cells: ${failed[*]}" >&2; exit 1; }

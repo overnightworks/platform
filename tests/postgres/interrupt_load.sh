@@ -21,8 +21,26 @@ blocks_inside_transaction() { [[ "$(blocked_count)" =~ ^[1-9][0-9]*$ ]]; }
 case "$signal" in INT | KILL) ;; *) fail "the signal is INT or KILL, not $signal" ;; esac
 [ -f "$dump" ] || fail "$dump is no file"
 
+# The loader's session ended: no process of it remains, a resume that outlives mise included.
+session_ended() {
+  for _ in $(seq 600); do [ -n "$(pgrep --session "$loader")" ] || return 0; sleep 1; done
+  return 1
+}
+# On every exit the writer and the loader's session end before the FIFO goes: a loader that refused at once leaves a
+# writer blocked on a full FIFO nobody reads.
+loader="" writer=""
+cleanup() {
+  exec 3>&-
+  [ -z "$writer" ] || { kill "$writer" 2>/dev/null || true; wait "$writer" 2>/dev/null || true; }
+  if [ -n "$loader" ]; then
+    pkill -TERM --session "$loader" 2>/dev/null || true
+    session_ended || pkill -KILL --session "$loader" 2>/dev/null || true
+    wait "$loader" 2>/dev/null || true
+  fi
+  rm -rf "$fifo_dir"
+}
 fifo_dir="$(mktemp -d)"
-trap 'exec 3>&-; rm -rf "$fifo_dir"' EXIT
+trap cleanup EXIT
 mkfifo -m 0600 "$fifo_dir/dump"
 # Held open read-write, so pg_restore never reads the end of its input and can never commit.
 exec 3<>"$fifo_dir/dump"
@@ -48,8 +66,7 @@ loader_status=0
 wait "$loader" || loader_status=$?
 [ "$loader_status" != 0 ] || fail "the interrupted loader exited 0"
 # The trap's resume may outlive mise, which leads the session.
-for _ in $(seq 600); do [ -n "$(pgrep --session "$loader")" ] || break; sleep 1; done
-[ -z "$(pgrep --session "$loader")" ] || fail "a process of the loader still runs 600 seconds after $signal"
+session_ended || fail "a process of the loader still runs 600 seconds after $signal"
 [ "$(stat -c %a "$fifo_dir")" = 700 ] && [ "$(stat -c %a "$fifo_dir/dump.load.log")" = 600 ] ||
   fail "$fifo_dir is not at 0700 or its load log not at 0600"
 
