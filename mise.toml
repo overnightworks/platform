@@ -374,3 +374,107 @@ kubectl --namespace flux-system wait "kustomization/$source_name" --for=conditio
 applied_revision="$(read_object Kustomization "$source_name" '{.status.lastAppliedRevision}')"
 echo "bootstrap:secrets: Kustomization $source_name Ready at $applied_revision"
 '''
+
+# The platform's restore command, which the operator runs, because a dump holds keys and hashes: every line it prints
+# is a name, a count or an outcome, never a row.
+[tasks."db:load-dump"]
+description = "Load a custom-format dump into a namespace's Postgres with its writers stopped, verify it, then resume Flux"
+usage = '''
+flag "--compare" help="Also compare every table's row count and the sha256 of its sorted rows with the dump"
+flag "--resume" help="Only resume the Kustomization a killed load left suspended, once no other session holds the database"
+arg "<namespace>" help="The namespace whose Postgres is loaded; its Flux Kustomization has the same name"
+arg "[file]" help="The custom-format dump; pg_restore's messages go to <file>.load.log beside it, mode 0600"
+'''
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+namespace="${usage_namespace?}" file="${usage_file:-}"
+pod=postgres-0
+say() { echo "db:load-dump: $1"; }
+fail() { echo "db:load-dump: $1" >&2; exit 1; }
+in_postgres() { kubectl --namespace "$namespace" exec "$pod" --container postgres -- "$@"; }
+dump_into_postgres() { kubectl --namespace "$namespace" exec --stdin "$pod" --container postgres -- "$@" <"$file"; }
+other_sessions() {
+  in_postgres psql --no-psqlrc --tuples-only --no-align --command="SELECT count(*) FROM pg_stat_activity
+    WHERE datname = current_database() AND backend_type = 'client backend' AND pid <> pg_backend_pid()"
+}
+# A killed load's remote pg_restore, a backup's pg_dump: a session that could still write or read half a load.
+wait_alone() {
+  local deadline=$((SECONDS + 120))
+  until [ "$(other_sessions)" = 0 ]; do [ "$SECONDS" -lt "$deadline" ] || return 1; sleep 2; done
+}
+resume() {
+  trap - EXIT INT TERM
+  wait_alone || fail "another session still holds the database $namespace after 2 minutes; the Kustomization stays \
+suspended and the writers at 0: run mise run db:load-dump --resume $namespace once it ended"
+  flux resume kustomization "$namespace" --wait
+}
+if [ "${usage_resume:-false}" = true ]; then resume && exit 0; fi
+
+[ -r "$file" ] && [ ! -d "$file" ] || fail "no readable dump file given; nothing changed"
+[ "$(kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.spec.suspend}')" != true ] ||
+  fail "the Kustomization $namespace is suspended; nothing changed. After a killed load of this command run mise run \
+db:load-dump --resume $namespace, else ask whoever suspended it"
+flux suspend kustomization "$namespace"
+trap resume EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+say "stopping the writers of $namespace"
+deployments="$(kubectl --namespace "$namespace" get deployments -o name)"
+[ -z "$deployments" ] || kubectl --namespace "$namespace" scale $deployments --replicas=0
+# Foreground: the delete returns once the Jobs' pods are gone.
+kubectl --namespace "$namespace" delete job --selector "kustomize.toolkit.fluxcd.io/name=$namespace" --cascade=foreground
+writers="$(kubectl --namespace "$namespace" get pods -o go-template='{{range $pod := .items}}{{range .metadata.ownerReferences}}
+  {{- if eq .kind "ReplicaSet"}}pod/{{$pod.metadata.name}}{{"\n"}}{{end}}{{end}}{{end}}')"
+[ -z "$writers" ] || kubectl --namespace "$namespace" wait $writers --for=delete --timeout=5m
+wait_alone || fail "another session holds the database $namespace after 2 minutes; nothing loaded"
+
+log="$file.load.log"
+: >"$log" && chmod 0600 "$log"
+say "loading $file in one transaction; pg_restore's messages go to $log"
+# A COPY error quotes a row, also in the server's log, which these settings keep silent for this session.
+load_status=0
+dump_into_postgres env PGOPTIONS='-c log_min_messages=panic -c log_min_error_statement=panic' pg_restore --clean \
+  --if-exists --no-owner --role="$namespace" --single-transaction --exit-on-error --dbname="$namespace" 2>"$log" ||
+  load_status=$?
+[ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log; the data is unchanged"
+
+# Every table's data lines in a dump (stdin as SQL), sorted, as "<sha256> - <table> <rows>" per table with rows.
+table_digests='awk '\''table == "" && /^COPY / { table = $2; next } table != "" && /^\\[.]$/ { table = ""; next }
+  table != "" { print table "\t" $0 }'\'' | LC_ALL=C sort | awk -F "\t" '\''
+  function finish() { if (table != "") { close("sha256sum"); print table, rows; fflush() } }
+  $1 != table { finish(); table = $1; rows = 0 } { rows++; print substr($0, length($1) + 2) | "sha256sum" }
+  END { finish() }'\'' | paste -d " " - -'
+verified=true
+dump_into_postgres sh /etc/postgres-checks/check-key-tables.sh || verified=false
+if [ "${usage_compare:-false}" = true ]; then
+  dumped="$(dump_into_postgres sh -c "set -o pipefail; pg_restore --data-only --file=- | $table_digests")" &&
+    loaded="$(in_postgres sh -c "set -o pipefail; pg_dump --data-only | $table_digests")" &&
+    awk 'NF != 4 { next } FILENAME == ARGV[1] { dumped[$3] = $1; dumped_rows[$3] = $4; next }
+      { loaded[$3] = $1; loaded_rows[$3] = $4 }
+      END { for (table in dumped) tables[table]; for (table in loaded) tables[table]
+        for (table in tables) { same = (table in dumped) && (table in loaded) && dumped[table] == loaded[table] &&
+            dumped_rows[table] == loaded_rows[table]; differing += !same
+          printf "%s: %d rows loaded, %d in the dump, %s\n", table, loaded_rows[table], dumped_rows[table],
+            same ? "equal" : "DIFFERS" }
+        exit differing > 0 }' <(printf '%s\n' "$dumped") <(printf '%s\n' "$loaded") || verified=false
+fi
+if [ "$verified" != true ]; then
+  trap - EXIT INT TERM
+  fail "the loaded data differs from $file or could not be compared; the Kustomization $namespace stays suspended and \
+its writers at 0: load the dump again, or run mise run db:load-dump --resume $namespace to start them on this data"
+fi
+
+say "verified; resuming the Kustomization $namespace"
+resume
+for deployment in $deployments; do
+  kubectl --namespace "$namespace" rollout status "$deployment" --timeout=5m
+done
+jobs="$(kubectl --namespace "$namespace" get jobs --selector "kustomize.toolkit.fluxcd.io/name=$namespace" -o name)"
+[ -z "$jobs" ] || kubectl --namespace "$namespace" wait $jobs --for=condition=Complete --timeout=5m
+in_postgres sh /etc/postgres-checks/check-key-tables.sh --counts-only
+say "$namespace converged"
+'''
