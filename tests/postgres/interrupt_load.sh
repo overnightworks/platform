@@ -23,10 +23,9 @@ trap 'exec 3>&-; rm -rf "$fifo_dir"' EXIT
 mkfifo -m 0600 "$fifo_dir/dump"
 # Held open read-write, so pg_restore never reads the end of its input and can never commit.
 exec 3<>"$fifo_dir/dump"
-set -m
-load "$namespace" "$fifo_dir/dump" 3>&- &
+# Its own session, whose leader's process group is the one a terminal's Ctrl-C reaches.
+setsid mise run db:load-dump "$namespace" "$fifo_dir/dump" 3>&- &
 loader=$!
-set +m
 head -c "$(($(stat -c %s "$dump") / 2))" "$dump" >&3 &
 writer=$!
 
@@ -36,8 +35,12 @@ for _ in $(seq 300); do
   sleep 1
 done
 [ "$(blocked_sessions)" != 0 ] || fail "no pg_restore blocked inside its transaction within 300 seconds"
-echo "interrupt_load: pg_restore blocks inside its transaction; sending $signal to the loader's process group"
-kill "-$signal" -- "-$loader"
+echo "interrupt_load: pg_restore blocks inside its transaction; sending $signal to the loader"
+# INT as a terminal's Ctrl-C; KILL to every process of the session, as a reboot leaves no trap to run.
+case "$signal" in
+  INT) kill -INT -- "-$loader" ;;
+  KILL) pkill -KILL --session "$loader" ;;
+esac
 kill "$writer" 2>/dev/null || true
 exec 3>&-
 loader_status=0
@@ -47,6 +50,7 @@ wait "$loader" || loader_status=$?
   fail "$fifo_dir is not at 0700 or its load log not at 0600"
 
 if [ "$signal" = KILL ]; then
+  [ -z "$(pgrep --session "$loader")" ] || fail "a process of the killed loader still runs"
   [ "$(suspended)" = true ] || fail "the Kustomization $namespace is not suspended after the killed load"
   refusal="$(load "$namespace" "$dump" 2>&1)" && fail "a new load ran while the Kustomization was suspended"
   [[ $refusal == *"--resume $namespace"* ]] || fail "the refused load does not name --resume"
