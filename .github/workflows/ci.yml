@@ -243,7 +243,7 @@ jobs:
           plain_secret "$pull_secret" "$app_namespace" kubernetes.io/dockerconfigjson
 
           # The recipient is the key's public half, so sops encrypts without reading any private key.
-          recipient="$(age-keygen -y "$key_file")"
+          recipient="$(age-keygen 2>/dev/null | age-keygen -y)"
           data_values() { yq '.data // {} | .[]' "$1"; }
           for plain_file in "${plain_files[@]}"; do
             encrypted_file="$artifact_dir/${plain_file##*/}"
