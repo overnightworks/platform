@@ -1253,6 +1253,154 @@ jobs:
             fi
           done
 
+      - name: SCRATCH H12, two WebSocket connections held 120s through Traefik's web
+        env:
+          WHOAMI_IMAGE: docker.io/traefik/whoami:v1.12.0@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
+          WEBSOCAT_IMAGE: ghcr.io/vi/websocat:v1.14.1@sha256:830f664fd592cd7deab9d6af6a3391aa0220f29bacf2b5a9d58f6e51c06a5344
+          SCRATCH_NAMESPACE: h12-scratch
+          SCRATCH_HOST: whoami.h12.invalid
+          HOLD_SECONDS: "120"
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          kubectl create namespace "$SCRATCH_NAMESPACE"
+          manifest="$(cat <<'MANIFEST'
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: whoami
+            labels:
+              app: whoami
+          spec:
+            automountServiceAccountToken: false
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: whoami
+                image: @IMAGE@
+                args: [--port, '8080']
+                ports:
+                  - containerPort: 8080
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: [ALL]
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: whoami
+          spec:
+            selector:
+              app: whoami
+            ports:
+              - port: 8080
+          ---
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: whoami
+          spec:
+            ingressClassName: traefik
+            rules:
+              - host: @HOST@
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: whoami
+                          port:
+                            number: 8080
+          MANIFEST
+          )"
+          manifest="${manifest//@IMAGE@/$WHOAMI_IMAGE}"
+          manifest="${manifest//@HOST@/$SCRATCH_HOST}"
+          printf '%s\n' "$manifest" | kubectl -n "$SCRATCH_NAMESPACE" create -f -
+          kubectl -n "$SCRATCH_NAMESPACE" wait pod/whoami --for=condition=Ready --timeout=3m
+          web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
+          traefik_ip="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.clusterIP}')"
+          base_pod() {
+            local pod="${CLIENT_POD//@NAME@/$1}"
+            pod="${pod//@IMAGE@/$2}"; pod="${pod//@HOST@/unused}"; pod="${pod//@URL@/unused}"
+            printf '%s\n' "$pod"
+          }
+          # curl_body <name> <curl argument>...: prints the response body of a curl Pod in cloudflared.
+          curl_body() {
+            local name="$1" pod
+            shift
+            pod="$(CURL_ARGUMENTS="$(printf '%s\n' "$@")" yq '.spec.containers[0].args = (strenv(CURL_ARGUMENTS) | split("\n"))' <<<"$(base_pod "$name" "$CLIENT_IMAGE")")"
+            printf '%s\n' "$pod" | kubectl -n "$TUNNEL_NAMESPACE" create -f - >&2
+            kubectl -n "$TUNNEL_NAMESPACE" wait "pod/$name" --timeout=2m \
+              --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' >&2
+            kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$name"
+            kubectl -n "$TUNNEL_NAMESPACE" delete pod "$name" --wait --timeout=2m >&2
+          }
+          echo "=== route up"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            code="$(curl_body "whoami-route-$attempt" --silent --output /dev/null --write-out '%{http_code}' --max-time 10 \
+              --header "Host: $SCRATCH_HOST" "http://traefik.traefik.svc:$web_port/")"
+            echo "attempt $attempt: $code"
+            [ "$code" != 200 ] || break
+            sleep 3
+          done
+          [ "$code" = 200 ] || fail "whoami never answered 200 through Traefik for $SCRATCH_HOST"
+          echo "=== alias header cell: one request with X_Forwarded_For and X-Forwarded-For to whoami"
+          echo_body="$(curl_body whoami-alias-header --silent --max-time 10 --header "Host: $SCRATCH_HOST" \
+            --header 'X_Forwarded_For: 198.51.100.7' --header 'X-Forwarded-For: 192.0.2.7' "http://traefik.traefik.svc:$web_port/")"
+          echo "--- whoami echo begin"
+          echo "$echo_body"
+          echo "--- whoami echo end"
+          if grep -qi '^X_Forwarded_For:' <<<"$echo_body"; then
+            echo "H12-ALIAS: X_Forwarded_For SHOWN in whoami's echo (not dropped)"
+          else
+            echo "H12-ALIAS: X_Forwarded_For is NOT in whoami's echo (dropped)"
+          fi
+          grep -i '^X-Forwarded-For:' <<<"$echo_body" || echo "H12-ALIAS: no X-Forwarded-For line either"
+
+          echo "=== H12 WebSocket cell"
+          ws_pod() {
+            local name="$1" pod
+            shift
+            pod="$(ARGS="$(printf '%s\n' -v "$@" "ws://$SCRATCH_HOST:$web_port/echo")" ALIAS_IP="$traefik_ip" ALIAS_HOST="$SCRATCH_HOST" \
+              yq '.spec.containers[0].args = (strenv(ARGS) | split("\n")) | .spec.containers[0].stdin = true | .spec.hostAliases = [{"ip": strenv(ALIAS_IP), "hostnames": [strenv(ALIAS_HOST)]}]' \
+              <<<"$(base_pod "$name" "$WEBSOCAT_IMAGE")")"
+            printf '%s\n' "$pod" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
+          }
+          ws_pod ws-idle
+          ws_pod ws-ping --ping-interval 20
+          kubectl -n "$TUNNEL_NAMESPACE" wait pod/ws-idle pod/ws-ping --for=jsonpath='{.status.phase}'=Running --timeout=3m
+          start="$(date +%s)"
+          echo "both connections started at $(date -u +%T)"
+          declare -A closed_at=()
+          while [ "$(( $(date +%s) - start ))" -lt "$HOLD_SECONDS" ]; do
+            sleep 2
+            for name in ws-idle ws-ping; do
+              [ -z "${closed_at[$name]:-}" ] || continue
+              phase="$(kubectl -n "$TUNNEL_NAMESPACE" get "pod/$name" -o jsonpath='{.status.phase}')"
+              if [ "$phase" != Running ]; then
+                closed_at[$name]="$(( $(date +%s) - start ))"
+                echo "H12-CLOSE: $name left Running (phase $phase) at ${closed_at[$name]}s after the start"
+              fi
+            done
+          done
+          for name in ws-idle ws-ping; do
+            started="$(kubectl -n "$TUNNEL_NAMESPACE" get "pod/$name" -o jsonpath='{.status.containerStatuses[0].state.terminated.startedAt}')"
+            finished="$(kubectl -n "$TUNNEL_NAMESPACE" get "pod/$name" -o jsonpath='{.status.containerStatuses[0].state.terminated.finishedAt}')"
+            if [ -n "${closed_at[$name]:-}" ]; then
+              echo "H12-RESULT: $name closed, container ${started} to ${finished} (poll ${closed_at[$name]}s)"
+            else
+              echo "H12-RESULT: $name held ${HOLD_SECONDS}s"
+            fi
+            echo "--- log of $name"
+            kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$name" --tail=30 || true
+          done
+          kubectl -n "$TUNNEL_NAMESPACE" delete pod ws-idle ws-ping --wait --timeout=2m
+          kubectl delete namespace "$SCRATCH_NAMESPACE" --wait --timeout=2m
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: |
