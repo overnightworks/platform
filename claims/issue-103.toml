@@ -1,8 +1,0 @@
-claim_id = "e4d9dbd53a7a4799849923c43ac89de5"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "1d7457c99a68fa9c75b3178be922340ba1c1d487"
-branch = "claude/issue-103-s4b-traefik-admits-only-the-tunnel"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/traefik/kustomization.yaml", "infrastructure/traefik/network-policy.yaml", "infrastructure/traefik/rendered.yaml", "infrastructure/traefik/values.yaml"]
-opened_commit = "de3e5a9610a38cf9b273eee890fae5cadf563300"
-whole_reason = "Does not split: the NetworkPolicy without trustedIPs leaves the tunnel's forwarded headers untrusted, trustedIPs without the policy trusts every pod (P3d rejects both), and the hardening is the same entrypoint's values with the same render (#45's decision 11)."
