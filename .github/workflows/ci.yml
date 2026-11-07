@@ -63,6 +63,34 @@ jobs:
           scripts/bootstrap_pc.sh --only tools
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
+      - name: Compare the generated files with a fresh regeneration
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          generated=(clusters/pc/flux-system/gotk-components.yaml mise.lock infrastructure/)
+          mise run flux:export
+          mise lock
+          mise run charts:render
+
+          # An ignored output would escape the status below.
+          ignore_status=0
+          ignored="$(find "${generated[@]}" -type f | git check-ignore --no-index --stdin)" || ignore_status=$?
+          case "$ignore_status" in
+            0) fail "git ignores ${ignored//$'\n'/ }, which the comparison below would not see" ;;
+            1) echo "git ignores none of ${generated[*]}" ;;
+            *) fail "git check-ignore failed with exit $ignore_status" ;;
+          esac
+
+          # git diff alone would miss a file the regeneration adds and the commit lacks.
+          changes="$(git status --porcelain --untracked-files=all -- "${generated[@]}")"
+          if [ -n "$changes" ]; then
+            echo "::error::the regeneration changed, added or deleted generated files:"
+            printf '%s\n' "$changes"
+            git diff -- "${generated[@]}"
+            exit 1
+          fi
+          echo "the regeneration of ${generated[*]} matches the commit"
+
       - name: Create the k3d cluster with its registry
         id: create-cluster
         run: |
@@ -395,17 +423,92 @@ jobs:
           echo "GitRepository spec.ref after the reconcile: $source_ref"
           assert_job_source
 
+      - name: Assert that Traefik runs from its render, ClusterIP only, and answers 404 for an unrouted host
+        env:
+          # A client Pod in its own namespace, outside Traefik's, deleted after its one request.
+          CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+          CLIENT_NAMESPACE: ingress-client
+          UNROUTED_HOST: unrouted.invalid
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          applied_revision="$(kubectl -n flux-system get kustomization traefik -o jsonpath='{.status.lastAppliedRevision}')"
+          [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
+            fail "the Kustomization traefik applied '$applied_revision', not the candidate $CANDIDATE_REVISION"
+          kubectl -n traefik wait deployment/traefik --for=condition=Available --timeout=3m
+          echo "the Kustomization traefik applied the candidate, and the Deployment traefik is Available"
+
+          # Charts reach the cluster only as committed manifests; the job's own platform-secrets source is no chart.
+          sources="$(kubectl get helmreleases.helm.toolkit.fluxcd.io,ocirepositories.source.toolkit.fluxcd.io -A \
+            -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{"\n"}{end}')"
+          chart_sources="$(grep -vxF OCIRepository/flux-system/platform-secrets <<<"$sources" || true)"
+          [ -z "$chart_sources" ] || fail "the cluster holds ${chart_sources//$'\n'/ }"
+          echo "no HelmRelease and no OCIRepository beyond the job's platform-secrets source exists"
+          traefik_crds="$(kubectl get crd -o jsonpath='{range .items[*]}{.spec.group} {.metadata.name}{"\n"}{end}' |
+            awk '$1 == "traefik.io" || $1 == "hub.traefik.io" { print $2 }')"
+          [ -z "$traefik_crds" ] || fail "the cluster holds Traefik's CRDs ${traefik_crds//$'\n'/ }"
+          echo "no traefik.io or hub.traefik.io CRD exists"
+
+          # A NodePort, a LoadBalancer, a hostPort or the host network takes the forward path ufw's input rules never see.
+          traefik_service="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.type}{range .spec.ports[*]} {.name}{end}')"
+          [ "$traefik_service" = "ClusterIP web" ] ||
+            fail "the Service traefik is '$traefik_service', not ClusterIP with the one port web"
+          echo "the Service traefik is ClusterIP with the one port web"
+          exposed=""
+          services="$(kubectl get services -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}|{.spec.type}{"\n"}{end}')"
+          while IFS='|' read -r service type; do
+            case "$type" in NodePort | LoadBalancer) exposed+="the Service $service is a $type"$'\n' ;; esac
+          done <<<"$services"
+          pods="$(kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}|{.spec.hostNetwork}|{.spec.initContainers[*].ports[*].hostPort} {.spec.containers[*].ports[*].hostPort}{"\n"}{end}')"
+          while IFS='|' read -r pod host_network host_ports; do
+            [ "$host_network" != true ] || exposed+="the Pod $pod uses the host network"$'\n'
+            [ -z "${host_ports// /}" ] || exposed+="the Pod $pod binds the host ports $host_ports"$'\n'
+          done <<<"$pods"
+          if [ -n "$exposed" ]; then
+            while IFS= read -r finding; do [ -z "$finding" ] || echo "::error::$finding"; done <<<"$exposed"
+            exit 1
+          fi
+          echo "no NodePort or LoadBalancer Service and no Pod on a host port or the host network exists"
+
+          web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
+          kubectl create namespace "$CLIENT_NAMESPACE"
+          kubectl -n "$CLIENT_NAMESPACE" run unrouted-request --image="$CLIENT_IMAGE" --restart=Never -- \
+            --silent --output /dev/null --write-out '%{http_code}' --max-time 10 \
+            --retry 5 --retry-connrefused --retry-delay 2 --header "Host: $UNROUTED_HOST" "http://traefik.traefik.svc:$web_port/"
+          kubectl -n "$CLIENT_NAMESPACE" wait pod/unrouted-request --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m || {
+            kubectl -n "$CLIENT_NAMESPACE" describe pod/unrouted-request
+            kubectl -n "$CLIENT_NAMESPACE" logs pod/unrouted-request || true
+            fail "the client Pod did not succeed"
+          }
+          status="$(kubectl -n "$CLIENT_NAMESPACE" logs pod/unrouted-request)"
+          kubectl delete namespace "$CLIENT_NAMESPACE" --wait --timeout=2m
+          [ -z "$(kubectl get namespace "$CLIENT_NAMESPACE" --ignore-not-found -o name)" ] ||
+            fail "the namespace $CLIENT_NAMESPACE outlived its deletion"
+          [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for the unrouted host $UNROUTED_HOST"
+          echo "Traefik answered 404 for the unrouted host $UNROUTED_HOST, and the client Pod is gone"
+
+          # The runtime's imageID names the digest it resolved the Deployment's image to.
+          image="$(kubectl -n traefik get deployment traefik -o jsonpath='{.spec.template.spec.containers[*].image}')"
+          [[ $image =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]] || fail "the Deployment traefik runs '$image', not one image at a digest"
+          selector="$(kubectl -n traefik get deployment traefik \
+            -o go-template='{{range $key, $value := .spec.selector.matchLabels}}{{$key}}={{$value}},{{end}}')"
+          image_ids="$(kubectl -n traefik get pods --selector "${selector%,}" \
+            -o go-template='{{range .items}}{{range .status.containerStatuses}}{{.imageID}}{{"\n"}}{{end}}{{end}}')"
+          [ -n "$image_ids" ] || fail "no running Traefik container reports an imageID"
+          echo "Deployment image: $image"
+          while IFS= read -r image_id; do
+            echo "running imageID:  $image_id"
+            [ "${image_id##*@}" = "${image##*@}" ] || fail "the running Traefik container's imageID $image_id is not at the Deployment's digest"
+          done <<<"$image_ids"
+          echo "every running Traefik container carries the Deployment's digest"
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: |
           flux get all --all-namespaces
           flux logs --all-namespaces --level=error
-
-      - name: Compare the generated files with a fresh regeneration
-        run: |
-          mise run flux:export
-          mise lock
-          git diff --exit-code -- clusters/pc/flux-system/gotk-components.yaml mise.lock
+          # Pod Security's refusal of a Pod appears only in Warning events and the workloads' conditions, never in Flux's state.
+          kubectl get events --all-namespaces --field-selector type=Warning
+          kubectl get deployments,replicasets --all-namespaces -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]} {.type}={.status}({.reason}: {.message}){end}{"\n"}{end}'
 
   bootstrap:
     runs-on: ubuntu-latest
