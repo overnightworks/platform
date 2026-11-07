@@ -506,7 +506,7 @@ jobs:
         run: |
           flux get all --all-namespaces
           flux logs --all-namespaces --level=error
-          # Pod Security's refusal of a Pod appears only as a Warning event and a ReplicaSet condition.
+          # Pod Security's refusal of a Pod appears only in Warning events and the workloads' conditions, never in Flux's state.
           kubectl get events --all-namespaces --field-selector type=Warning
           kubectl get deployments,replicasets --all-namespaces -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]} {.type}={.status}({.reason}: {.message}){end}{"\n"}{end}'
 
