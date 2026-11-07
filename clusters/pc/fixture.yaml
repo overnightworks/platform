@@ -1,14 +1,10 @@
-# SCRATCH fixture for #44 E7a: Pods on a host port and on the host network, in a namespace without Pod Security enforcement.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: exposure-fixture
+# SCRATCH fixture for #44 E7a: Pods on a host port and on the host network, in the default namespace, which enforces no Pod Security level.
 ---
 apiVersion: v1
 kind: Pod
 metadata:
   name: host-port
-  namespace: exposure-fixture
+  namespace: default
 spec:
   containers:
     - name: traefik
@@ -21,7 +17,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: host-network
-  namespace: exposure-fixture
+  namespace: default
 spec:
   hostNetwork: true
   containers:
