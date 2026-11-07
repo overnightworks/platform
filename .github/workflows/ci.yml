@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      # The Secret ghcr-pull holds this job's token, which pulls hopin's private package.
+      # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
       packages: read
     defaults:
       run:
@@ -80,8 +80,8 @@ jobs:
       # cloudflared's Namespace and the host its ingress names no rule for.
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
-      # The app whose pull Secret and files the job's platform-secrets serves, by the names its Deployment reads.
-      APP_MANIFEST: apps/hopin/hopin.yaml
+      # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
+      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -129,6 +129,8 @@ jobs:
         run: |
           # k3d only warns about a missing volume source, and k3s would start on its defaults.
           [ -f "$K3S_CONFIG_SOURCE" ] || { echo "::error::$K3S_CONFIG_SOURCE is missing"; exit 1; }
+          # The apps' images fill this disk: the app step prints it again after their pulls.
+          df --human-readable /
           # The file alone at k3s's default path, the one the PC uses: k3d writes registries.yaml beside it.
           # k3d's DNS fix DNATs pod DNS to Docker's 127.0.0.11, which the kernel drops unless route_localnet is 1: the
           # shared file's iptables-localhost-nodeports=false keeps it 0, so CoreDNS would answer SERVFAIL.
@@ -297,7 +299,7 @@ jobs:
 
       - name: Encrypt a dummy Secret and the app's Secrets to a throwaway age key
         env:
-          # The app's pull Secret holds this job's own token, which GitHub masks; the app's package grants it Read.
+          # The apps' pull Secrets hold this job's own token, which GitHub masks; each app's package grants it Read.
           PULL_USER: ${{ github.actor }}
           PULL_TOKEN: ${{ github.token }}
         run: |
@@ -309,48 +311,53 @@ jobs:
           mkdir "$private_dir" "$artifact_dir"
           key_file="$private_dir/ci.agekey"
           age-keygen -o "$key_file" 2>/dev/null
-          # Each Secret's data holds the files of its own directory, keyed by file name.
+          # Each Secret's data holds the files of its own directory, keyed by file name; the same name in two
+          # namespaces is two Secrets.
           files_dir="$private_dir/files"
           plain_files=()
-          secret_files() { mkdir -p "$files_dir/$1" && echo "$files_dir/$1"; }
+          secret_files() { mkdir -p "$files_dir/$2/$1" && echo "$files_dir/$2/$1"; }
           plain_secret() {
             local file
-            plain_files+=("$private_dir/$1.yaml")
+            plain_files+=("$private_dir/$2.$1.yaml")
             NAME="$1" NAMESPACE="$2" TYPE="$3" yq --null-input \
               '{"apiVersion": "v1", "kind": "Secret", "metadata": {"name": strenv(NAME), "namespace": strenv(NAMESPACE)}, "type": strenv(TYPE)}' \
               > "${plain_files[-1]}"
             while IFS= read -r file; do
               KEY="${file##*/}" FILE="$file" yq --inplace '.data[strenv(KEY)] = (load_str(strenv(FILE)) | @base64)' "${plain_files[-1]}"
-            done < <(find "$files_dir/$1" -maxdepth 1 -type f | sort)
+            done < <(find "$files_dir/$2/$1" -maxdepth 1 -type f | sort)
           }
 
           # Eighteen fixed characters, a multiple of three, so the dummy's base64 form starts with a fixed string too.
           dummy="platform-ci-dummy-$(openssl rand -hex 16)"
           echo "::add-mask::$dummy"
           echo "::add-mask::$(printf '%s' "$dummy" | base64 --wrap=0)"
-          dummy_file="$(secret_files "$PROOF_SECRET_NAME")/value"
+          dummy_file="$(secret_files "$PROOF_SECRET_NAME" "$PROOF_SECRET_NAMESPACE")/value"
           printf '%s' "$dummy" > "$dummy_file"
           plain_secret "$PROOF_SECRET_NAME" "$PROOF_SECRET_NAMESPACE" Opaque
 
-          # The app's files as dummies, one per key the PC's Secret holds; hex meets the TURN files' grammar, and 64
-          # characters the session secret's minimum.
-          deployment="$(yq 'select(.kind == "Deployment")' "$APP_MANIFEST")"
-          app_namespace="$(yq '.metadata.namespace' <<<"$deployment")"
-          app_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$deployment")"
-          pull_secret="$(yq '.spec.template.spec.imagePullSecrets[].name' <<<"$deployment")"
-          app_files="$(secret_files "$app_secret")"
-          for key in oidc_client_secret session_secret turn_key_id turn_api_token; do
-            value="$(openssl rand -hex 32)"
-            echo "::add-mask::$value"
-            printf '%s' "$value" > "$app_files/$key"
-          done
-          plain_secret "$app_secret" "$app_namespace" Opaque
+          # Each app's files as dummies, one per key the PC's Secret holds, for an app that mounts a Secret; hex meets
+          # the TURN files' grammar, and 64 characters the session secret's minimum.
           auth="$(printf '%s:%s' "$PULL_USER" "$PULL_TOKEN" | base64 --wrap=0)"
           echo "::add-mask::$auth"
-          pull_file="$(secret_files "$pull_secret")/.dockerconfigjson"
-          printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$auth" > "$pull_file"
-          echo "::add-mask::$(base64 --wrap=0 < "$pull_file")"
-          plain_secret "$pull_secret" "$app_namespace" kubernetes.io/dockerconfigjson
+          for manifest in $APP_MANIFESTS; do
+            deployment="$(yq 'select(.kind == "Deployment")' "$manifest")"
+            app_namespace="$(yq '.metadata.namespace' <<<"$deployment")"
+            app_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$deployment")"
+            pull_secret="$(yq '.spec.template.spec.imagePullSecrets[].name' <<<"$deployment")"
+            if [ -n "$app_secret" ]; then
+              app_files="$(secret_files "$app_secret" "$app_namespace")"
+              for key in oidc_client_secret session_secret turn_key_id turn_api_token; do
+                value="$(openssl rand -hex 32)"
+                echo "::add-mask::$value"
+                printf '%s' "$value" > "$app_files/$key"
+              done
+              plain_secret "$app_secret" "$app_namespace" Opaque
+            fi
+            pull_file="$(secret_files "$pull_secret" "$app_namespace")/.dockerconfigjson"
+            printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$auth" > "$pull_file"
+            echo "::add-mask::$(base64 --wrap=0 < "$pull_file")"
+            plain_secret "$pull_secret" "$app_namespace" kubernetes.io/dockerconfigjson
+          done
 
           # The recipient is the key's public half, so sops encrypts without reading any private key.
           recipient="$(age-keygen -y "$key_file")"
@@ -535,7 +542,7 @@ jobs:
 
           kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=3m
           kubectl -n flux-system wait kustomization/flux-system --for=condition=Ready --timeout=5m
-          kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=5m
+          kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=10m
           kubectl -n flux-system get gitrepository flux-system -o yaml
 
           source_revision="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}')"
@@ -603,11 +610,16 @@ jobs:
           echo "GitRepository spec.ref after the reconcile: $source_ref"
           assert_job_source
 
-      - name: Assert that Traefik runs from its render, ClusterIP only, and answers only cloudflared's pods
+      - name: Assert that Traefik runs from its render, ClusterIP only, and answers only cloudflared's pods, and that speech-runtime answers only its callers' pods
         env:
-          # A client Pod's namespace that is neither Traefik's nor the tunnel's, and the host its Ingress routes.
+          # A client Pod's namespace that is neither Traefik's nor the tunnel's nor speech-runtime's callers', and the
+          # host its Ingress routes.
           OTHER_NAMESPACE: ingress-client
           ROUTED_HOST: routed.invalid
+          # speech-runtime's Namespace and Service, and one namespace its NetworkPolicy admits.
+          SPEECH_NAMESPACE: speech-runtime
+          SPEECH_SERVICE: speech-runtime
+          SPEECH_CALLER_NAMESPACE: hopin
         run: |
           fail() { echo "::error::$1"; exit 1; }
           applied_revision="$(kubectl -n flux-system get kustomization traefik -o jsonpath='{.status.lastAppliedRevision}')"
@@ -665,14 +677,15 @@ jobs:
           echo "web trusts the forwarded headers of $trusted_ips, which holds the nodes' pod CIDRs $pod_cidrs"
 
           web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
+          traefik_url="http://traefik.traefik.svc:${web_port}"
           client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
-          # request <namespace> <name> <host> <path>: a client Pod in the namespace asks Traefik's web port for the path
-          # of the host, runs to its end and is deleted; sets status to the status it printed and exit_code to curl's.
+          # request <namespace> <name> <host> <url>: a client Pod in the namespace asks the URL with the host header,
+          # runs to its end and is deleted; sets status to the status it printed and exit_code to curl's.
           request() {
-            local namespace="$1" name="$2" host="$3" path="$4" client_pod
+            local namespace="$1" name="$2" host="$3" url="$4" client_pod
             client_pod="${client_pod_template//@NAME@/${name}}"
             client_pod="${client_pod//@HOST@/${host}}"
-            printf '%s\n' "${client_pod//@URL@/http://traefik.traefik.svc:${web_port}${path}}" | kubectl -n "$namespace" create -f -
+            printf '%s\n' "${client_pod//@URL@/${url}}" | kubectl -n "$namespace" create -f -
             kubectl -n "$namespace" wait "pod/$name" --timeout=2m \
               --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' || {
               kubectl -n "$namespace" describe "pod/$name"
@@ -683,7 +696,7 @@ jobs:
             kubectl -n "$namespace" delete pod "$name" --wait --timeout=2m
           }
 
-          request "$TUNNEL_NAMESPACE" unrouted-request "$UNROUTED_HOST" /
+          request "$TUNNEL_NAMESPACE" unrouted-request "$UNROUTED_HOST" "$traefik_url/"
           [ "$status" = 404 ] || fail "Traefik answered $status, not 404, to a Pod in $TUNNEL_NAMESPACE for the unrouted host $UNROUTED_HOST"
           echo "Traefik answered 404 to a Pod in $TUNNEL_NAMESPACE for the unrouted host $UNROUTED_HOST"
 
@@ -694,25 +707,44 @@ jobs:
           kubectl -n "$OTHER_NAMESPACE" create service clusterip no-endpoints --tcp=80:80
           kubectl -n "$OTHER_NAMESPACE" create ingress encoded-path --rule="$ROUTED_HOST/*=no-endpoints:80"
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            request "$TUNNEL_NAMESPACE" "route-request-$attempt" "$ROUTED_HOST" /
+            request "$TUNNEL_NAMESPACE" "route-request-$attempt" "$ROUTED_HOST" "$traefik_url/"
             [ "$status" = 404 ] || break
           done
           [ "$status" = 503 ] || fail "Traefik answered $status, not 503, for $ROUTED_HOST, routed to a Service without endpoints"
           echo "Traefik serves the route of $ROUTED_HOST and answers its Service without endpoints with 503"
-          request "$TUNNEL_NAMESPACE" encoded-slash-request "$ROUTED_HOST" /a%2Fb
+          request "$TUNNEL_NAMESPACE" encoded-slash-request "$ROUTED_HOST" "$traefik_url/a%2Fb"
           [ "$status" = 400 ] || fail "Traefik answered $status, not 400, to a Pod in $TUNNEL_NAMESPACE for $ROUTED_HOST/a%2Fb"
           echo "Traefik answered 400 to a Pod in $TUNNEL_NAMESPACE for $ROUTED_HOST/a%2Fb"
 
           # A refused connection (curl's 7) or no reply within the timeout (28) both leave the client without a status.
-          request "$OTHER_NAMESPACE" denied-request "$ROUTED_HOST" /
+          assert_no_answer() {
+            [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
+              fail "a Pod in $OTHER_NAMESPACE got the status $status from $1, curl exit code $exit_code"
+            echo "a Pod in $OTHER_NAMESPACE got no answer from $1 (curl exit code $exit_code)"
+          }
+          request "$OTHER_NAMESPACE" denied-request "$ROUTED_HOST" "$traefik_url/"
+          assert_no_answer "Traefik's web port"
+
+          # speech-runtime's NetworkPolicy admits its callers' namespaces on the Service's port, and no other.
+          speech_port="$(kubectl -n "$SPEECH_NAMESPACE" get service "$SPEECH_SERVICE" -o jsonpath='{.spec.ports[0].port}')"
+          speech_callers="$(kubectl -n "$SPEECH_NAMESPACE" get networkpolicy "$SPEECH_SERVICE" \
+            -o jsonpath='{.spec.ingress[*].from[*].namespaceSelector.matchExpressions[*].values[*]}')"
+          [[ " $speech_callers " == *" $SPEECH_CALLER_NAMESPACE "* ]] ||
+            fail "the NetworkPolicy $SPEECH_SERVICE admits '$speech_callers', not $SPEECH_CALLER_NAMESPACE"
+          speech_url="http://${SPEECH_SERVICE}.${SPEECH_NAMESPACE}.svc:${speech_port}/health"
+          request "$SPEECH_CALLER_NAMESPACE" speech-caller-request "$SPEECH_SERVICE" "$speech_url"
+          [ "$status" = 200 ] ||
+            fail "$SPEECH_SERVICE answered $status, not 200, to a Pod in $SPEECH_CALLER_NAMESPACE, curl exit code $exit_code"
+          echo "$SPEECH_SERVICE answered 200 to a Pod in $SPEECH_CALLER_NAMESPACE"
+          request "$OTHER_NAMESPACE" speech-denied-request "$SPEECH_SERVICE" "$speech_url"
+          assert_no_answer "$SPEECH_SERVICE"
+
           kubectl delete namespace "$OTHER_NAMESPACE" --wait --timeout=2m
           [ -z "$(kubectl get namespace "$OTHER_NAMESPACE" --ignore-not-found -o name)" ] ||
             fail "the namespace $OTHER_NAMESPACE outlived its deletion"
-          [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
-            fail "a Pod in $OTHER_NAMESPACE got the status $status from Traefik's web port, curl exit code $exit_code"
-          echo "a Pod in $OTHER_NAMESPACE got no answer from Traefik's web port (curl exit code $exit_code), and its namespace is gone"
+          echo "the namespace $OTHER_NAMESPACE is gone"
 
-      - name: Assert that the app runs at its full app ref after platform-secrets, pulled through its pull Secret
+      - name: Assert that each app runs at its full app ref after platform-secrets, pulled through its pull Secret
         env:
           APP_LAYER: flux-system/apps
           SECRETS_LAYER: flux-system/platform-secrets
@@ -726,41 +758,47 @@ jobs:
             fail "the Kustomization $APP_LAYER does not depend on $SECRETS_LAYER"
           echo "the Kustomization $APP_LAYER applied the candidate and depends on $SECRETS_LAYER"
 
-          deployment="$(yq 'select(.kind == "Deployment") | .metadata.namespace + "/" + .metadata.name' "$APP_MANIFEST")"
-          namespace="${deployment%/*}" name="${deployment#*/}"
-          markers="$(kubectl get namespace "$namespace" \
-            -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}|{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}')"
-          [ "$markers" = "restricted|disabled" ] ||
-            fail "the Namespace $namespace reads '$markers', not Pod Security restricted and prune disabled"
-          echo "the Namespace $namespace enforces restricted, and Flux never prunes it"
+          for manifest in $APP_MANIFESTS; do
+            deployment="$(yq 'select(.kind == "Deployment") | .metadata.namespace + "/" + .metadata.name' "$manifest")"
+            namespace="${deployment%/*}" name="${deployment#*/}"
+            markers="$(kubectl get namespace "$namespace" \
+              -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}|{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}')"
+            [ "$markers" = "restricted|disabled" ] ||
+              fail "the Namespace $namespace reads '$markers', not Pod Security restricted and prune disabled"
+            echo "the Namespace $namespace enforces restricted, and Flux never prunes it"
 
-          kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
-          state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
-          [ "$state" = "1|Recreate" ] || fail "the Deployment $deployment reads '$state', not one Ready pod and Recreate"
-          image="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.containers[*].image}')"
-          [[ $image =~ ^ghcr[.]io/${GITHUB_REPOSITORY_OWNER,,}/[^[:space:]:@]+:[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] ||
-            fail "the Deployment $deployment runs '$image', not one full app ref"
-          echo "the Deployment $deployment is Available with one Ready pod, Recreate, and runs the full app ref $image"
+            kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
+            state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
+            [ "$state" = "1|Recreate" ] || fail "the Deployment $deployment reads '$state', not one Ready pod and Recreate"
+            image="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.containers[*].image}')"
+            [[ $image =~ ^ghcr[.]io/${GITHUB_REPOSITORY_OWNER,,}/[^[:space:]:@]+:[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] ||
+              fail "the Deployment $deployment runs '$image', not one full app ref"
+            echo "the Deployment $deployment is Available with one Ready pod, Recreate, and runs the full app ref $image"
+            # What the image cost the runner: the kubelet's own report of each pull, and the disk after it.
+            kubectl --namespace "$namespace" get events --field-selector reason=Pulled \
+              -o jsonpath='{range .items[*]}{.message}{"\n"}{end}'
+            df --human-readable /
 
-          # The Secrets the pod pulls and starts from are platform-secrets' objects, there before the Deployment.
-          created="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.metadata.creationTimestamp}')"
-          secrets_inventory="$(layer "$SECRETS_LAYER" '{range .status.inventory.entries[*]}{.id}{"\n"}{end}')"
-          pull_secrets="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.imagePullSecrets[*].name}')"
-          [ -n "$pull_secrets" ] || fail "the Deployment $deployment names no pull Secret"
-          for secret in $pull_secrets $(kubectl --namespace "$namespace" get deployment "$name" \
-            -o jsonpath='{.spec.template.spec.volumes[*].secret.secretName}'); do
-            grep -qxF "${namespace}_${secret}__Secret" <<<"$secrets_inventory" ||
-              fail "the Secret $namespace/$secret is not in the inventory of $SECRETS_LAYER"
-            secret_created="$(kubectl --namespace "$namespace" get secret "$secret" -o jsonpath='{.metadata.creationTimestamp}')"
-            [[ ! $created < "$secret_created" ]] ||
-              fail "the Deployment $deployment was created at $created, before its Secret $secret at $secret_created"
-            echo "the Secret $namespace/$secret of $SECRETS_LAYER was created at $secret_created, not after the Deployment at $created"
+            # The Secrets the pod pulls and starts from are platform-secrets' objects, there before the Deployment.
+            created="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.metadata.creationTimestamp}')"
+            secrets_inventory="$(layer "$SECRETS_LAYER" '{range .status.inventory.entries[*]}{.id}{"\n"}{end}')"
+            pull_secrets="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.imagePullSecrets[*].name}')"
+            [ -n "$pull_secrets" ] || fail "the Deployment $deployment names no pull Secret"
+            for secret in $pull_secrets $(kubectl --namespace "$namespace" get deployment "$name" \
+              -o jsonpath='{.spec.template.spec.volumes[*].secret.secretName}'); do
+              grep -qxF "${namespace}_${secret}__Secret" <<<"$secrets_inventory" ||
+                fail "the Secret $namespace/$secret is not in the inventory of $SECRETS_LAYER"
+              secret_created="$(kubectl --namespace "$namespace" get secret "$secret" -o jsonpath='{.metadata.creationTimestamp}')"
+              [[ ! $created < "$secret_created" ]] ||
+                fail "the Deployment $deployment was created at $created, before its Secret $secret at $secret_created"
+              echo "the Secret $namespace/$secret of $SECRETS_LAYER was created at $secret_created, not after the Deployment at $created"
+            done
+            for secret in $pull_secrets; do
+              type="$(kubectl --namespace "$namespace" get secret "$secret" -o jsonpath='{.type}')"
+              [ "$type" = kubernetes.io/dockerconfigjson ] || fail "the pull Secret $namespace/$secret is of type $type"
+            done
+            echo "the Deployment $deployment pulled its private image through $pull_secrets"
           done
-          for secret in $pull_secrets; do
-            type="$(kubectl --namespace "$namespace" get secret "$secret" -o jsonpath='{.type}')"
-            [ "$type" = kubernetes.io/dockerconfigjson ] || fail "the pull Secret $namespace/$secret is of type $type"
-          done
-          echo "the Deployment $deployment pulled its private image through $pull_secrets"
 
       - name: Assert that every Deployment outside the system namespaces runs the digests it names
         env:
@@ -1162,6 +1200,10 @@ jobs:
           flux logs --all-namespaces --level=error
           # Pod Security's refusal of a Pod appears only in Warning events and the workloads' conditions, never in Flux's state.
           kubectl get events --all-namespaces --field-selector type=Warning
+          # What an app's pull cost the runner before the failure: the kubelet's own report of each pull, and the disk.
+          kubectl get events --all-namespaces --field-selector reason=Pulled \
+            -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.message}{"\n"}{end}'
+          df --human-readable /
           kubectl get deployments,replicasets --all-namespaces -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]} {.type}={.status}({.reason}: {.message}){end}{"\n"}{end}'
           # A start an app refuses appears only in its own log.
           kubectl get pods --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"|"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' |
