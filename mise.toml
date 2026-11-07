@@ -301,7 +301,8 @@ request_reconcile() {
   kubectl --namespace flux-system annotate --overwrite "$source" "reconcile.fluxcd.io/requestedAt=$token" >/dev/null ||
     fail "$source in flux-system not annotated; run this task again once kubectl reaches it"
 }
-# True once the controller has handled this request with Ready, false once it handled it otherwise or after $1 seconds.
+# True once the controller has handled this request with Ready, false when $1 seconds pass first; a handled request
+# that is not Ready may turn Ready on the controller's next try, so the window is always observed in full.
 source_ready_within() {
   local state
   request_reconcile
@@ -309,7 +310,7 @@ source_ready_within() {
     # The caller's until and if suspend set -e here, so a failed read exits explicitly.
     state="$(read_object "$source" \
       '{.status.lastHandledReconcileAt} {.status.conditions[?(@.type=="Ready")].status}')" || exit 1
-    if [ "${state% *}" = "$token" ]; then [ "${state#* }" = True ]; return; fi
+    if [ "${state% *}" = "$token" ] && [ "${state#* }" = True ]; then return 0; fi
     sleep 2
   done
   return 1
@@ -360,7 +361,6 @@ if ! source_ready_within 60; then
     [ "$SECONDS" -lt "$deadline" ] || fail "GitRepository $source_name not Ready after 15 minutes: $(read_object \
 "$source" '{.status.conditions[?(@.type=="Ready")].message}'); check its key at \
 https://github.com/$repository/settings/keys and run this task again"
-    [ $((requested_at + 30 - SECONDS)) -le 0 ] || sleep $((requested_at + 30 - SECONDS))
   done
 fi
 source_revision="$(read_object "$source" '{.status.artifact.revision}')"
