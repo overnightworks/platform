@@ -1379,6 +1379,71 @@ jobs:
           diff "$RUNNER_TEMP/before-second-run" "$RUNNER_TEMP/after-second-run" >"$RUNNER_TEMP/second-run.diff" ||
             { echo "::error::the second run changed the installed state:"; cat "$RUNNER_TEMP/second-run.diff"; exit 1; }
 
+      - name: Check that the committed tmpfiles line deletes a pod log by its creation time, with its emptied directories
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          apt-get install --yes --no-install-recommends systemd >/dev/null
+          # The committed line with its age shortened to seconds; its type, path and kind of age stay as committed.
+          age_seconds=3
+          line="$(grep -v '^#' host/pod-logs/pod-logs.conf)"
+          short_line="$(sed -E "s/b:[0-9a-z]+\$/b:${age_seconds}s/" <<<"$line")"
+          [ "$short_line" != "$line" ] || fail "the line '$line' sets no age by creation time"
+          root="$RUNNER_TEMP/pod-logs-root"
+          pods_dir="$root$(awk '{ print $2 }' <<<"$line")"
+          mkdir -p "$pods_dir/ns_old_1/app" "$root/etc/tmpfiles.d"
+          echo "$short_line" >"$root/etc/tmpfiles.d/pod-logs.conf"
+          echo first >"$pods_dir/ns_old_1/app/0.log"
+          [ "$(stat --format=%W "$pods_dir/ns_old_1/app/0.log")" -gt 0 ] || fail "$RUNNER_TEMP records no creation time"
+          sleep $((age_seconds + 2))
+          # Neither a write nor a read keeps the old file; the new pod's file is younger than the age.
+          echo appended >>"$pods_dir/ns_old_1/app/0.log"
+          cat "$pods_dir/ns_old_1/app/0.log" >/dev/null
+          mkdir -p "$pods_dir/ns_new_2/app"
+          echo first >"$pods_dir/ns_new_2/app/0.log"
+          systemd-tmpfiles --clean --root="$root" "$root/etc/tmpfiles.d/pod-logs.conf"
+          [ ! -e "$pods_dir/ns_old_1" ] || fail "the clean kept $(find "$pods_dir/ns_old_1" | tr '\n' ' ')"
+          [ -f "$pods_dir/ns_new_2/app/0.log" ] || fail "the clean deleted the file younger than ${age_seconds}s"
+          echo "the line at ${age_seconds}s deleted the older file after an append and a read, with its emptied" \
+            "container and pod directories, and kept the newer file"
+
+      - name: Check that check-pod-logs passes fresh logs and names each breach it can see without a month's wait
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          # systemd does not run in this container, so a fake systemctl answers for the timer and its service.
+          fake_bin="$RUNNER_TEMP/fake-systemctl"
+          mkdir -p "$fake_bin"
+          cat >"$fake_bin/systemctl" <<'FAKE'
+          #!/usr/bin/env bash
+          case "$*" in
+            *LastTriggerUSec*) echo "$FAKE_LAST_RUN" ;;
+            *NextElapseUSecRealtime*) echo "@$(($(date +%s) + 3600))" ;;
+            *Result*) echo "$FAKE_RESULT" ;;
+            *) echo "fake systemctl: unexpected $*" >&2; exit 1 ;;
+          esac
+          FAKE
+          chmod +x "$fake_bin/systemctl"
+          check() { PATH="$fake_bin:$PATH" host/pod-logs/check-pod-logs 2>&1; }
+          # A breach the check must name: the case, the fake timer's last run and result, and the text naming it.
+          expect_breach() {
+            local output
+            output="$(FAKE_LAST_RUN="$2" FAKE_RESULT="$3" check)" && fail "the check passed $1: $output"
+            grep -q -- "$4" <<<"$output" || fail "the check did not name $1: $output"
+            echo "the check fails on $1: $(grep -- "$4" <<<"$output")"
+          }
+          pods_dir=/var/log/pods
+          mkdir -p "$pods_dir/ns_pod_1/app"
+          echo line >"$pods_dir/ns_pod_1/app/0.log"
+          recent="@$(($(date +%s) - 60))"
+          output="$(FAKE_LAST_RUN="$recent" FAKE_RESULT=success check)" || fail "the check failed fresh logs: $output"
+          grep -q "ns_pod_1/app/0.log" <<<"$output" || fail "the check did not name the oldest file: $output"
+          echo "the check passes fresh logs: $output"
+          expect_breach "a timer that never ran" n/a success "never run"
+          expect_breach "a run 26 hours ago" "@$(($(date +%s) - 26 * 3600))" success "hours ago"
+          expect_breach "a failed run" "$recent" exit-code "ended with exit-code"
+          touch "$pods_dir/ns_pod_1/app/0.log.20261101-000000.gz" "$pods_dir/ns_pod_1/app/0.log.20261101-000000.tmp"
+          expect_breach "a compressed copy" "$recent" success "0.log.20261101-000000.gz is a compressed copy"
+          expect_breach "a copy in compression" "$recent" success "0.log.20261101-000000.tmp is a copy"
+
   opentofu:
     runs-on: ubuntu-latest
     timeout-minutes: 10

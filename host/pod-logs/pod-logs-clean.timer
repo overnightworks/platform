@@ -1,0 +1,12 @@
+# The stock systemd-tmpfiles-clean.timer counts monotonic time, which pauses in suspend; this one follows the wall
+# clock and catches up a run missed while the PC was off.
+[Unit]
+Description=Delete pod logs by creation time daily and after boot
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+OnBootSec=5min
+
+[Install]
+WantedBy=timers.target
