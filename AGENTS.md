@@ -181,7 +181,7 @@
   request the operator merges. Its NetworkPolicy admits only pods of namespace `cloudflared`, and only to the `web`
   port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied, while the node's
   probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
-  `host/k3s/config.yaml` sets no `cluster-cidr`, which `cluster` checks against the nodes' pod CIDRs, and carries hal's
+  `host/k3s/config.yaml` sets no `cluster-cidr` (`cluster` checks it against the nodes' pod CIDRs), and carries hal's
   entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character refused with 400 by
   each route, so an unrouted host still gets 404.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
