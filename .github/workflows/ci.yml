@@ -29,7 +29,7 @@ jobs:
 
   cluster:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
@@ -542,7 +542,7 @@ jobs:
 
           kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=3m
           kubectl -n flux-system wait kustomization/flux-system --for=condition=Ready --timeout=5m
-          kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=25m
+          kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=10m
           kubectl -n flux-system get gitrepository flux-system -o yaml
 
           source_revision="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}')"
