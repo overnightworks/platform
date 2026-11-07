@@ -229,7 +229,7 @@ jobs:
           app_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$deployment")"
           pull_secret="$(yq '.spec.template.spec.imagePullSecrets[].name' <<<"$deployment")"
           app_files="$(secret_files "$app_secret")"
-          for key in oidc_client_secret session_secret turn_key_id turn_api_token; do
+          for key in oidc_client_secret turn_key_id turn_api_token; do
             value="$(openssl rand -hex 32)"
             echo "::add-mask::$value"
             printf '%s' "$value" > "$app_files/$key"
@@ -1023,6 +1023,31 @@ jobs:
             [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for $routed_host at $routed_url"
             echo "the tunnel sends $routed_host to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
           done
+
+      - name: SCRATCH diagnostics
+        if: always() && steps.create-cluster.outcome == 'success'
+        run: |
+          set +e
+          echo "== Kustomizations: name | conditions"
+          kubectl -n flux-system get kustomization -o jsonpath='{range .items[*]}{.metadata.name}{" | "}{range .status.conditions[*]}{.type}={.status}({.reason}): {.message}{" ; "}{end}{"\n"}{end}'
+          echo "== namespace hopin"
+          kubectl get namespace hopin -o jsonpath='{.metadata.name} phase={.status.phase} prune={.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}{"\n"}'
+          echo "== objects in hopin"
+          kubectl -n hopin get deployments,services,secrets,pods -o wide
+          echo "== events in hopin"
+          kubectl -n hopin get events --sort-by=.lastTimestamp -o jsonpath='{range .items[*]}{.type}/{.reason}: {.message}{"\n"}{end}'
+          echo "== log of every hopin pod, last 50 lines"
+          : > "$RUNNER_TEMP/hopin-pod.log"
+          for pod in $(kubectl -n hopin get pods -o name); do
+            echo "-- $pod"
+            kubectl -n hopin logs "$pod" --all-containers --tail=50 2>&1 | tee -a "$RUNNER_TEMP/hopin-pod.log"
+          done
+          echo "== occurrences of each Secret file's value in that log (counts only)"
+          for value_file in "$RUNNER_TEMP"/decryption-proof/files/hopin/* "$RUNNER_TEMP"/decryption-proof/files/ghcr-pull/*; do
+            [ -s "$value_file" ] || continue
+            echo "${value_file##*/}: $(grep -cF -f "$value_file" "$RUNNER_TEMP/hopin-pod.log")"
+          done
+          true
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
