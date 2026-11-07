@@ -1,0 +1,16 @@
+name: ci
+on: push
+env:
+  NO_DIGEST: docker.io/library/alpine:3.22
+  UNLISTED: docker.io/someone/tool@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      NO_DIGEST: docker.io/library/alpine:3.22
+      UNLISTED: docker.io/someone/tool@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      UNROUTED_HOST: unrouted.invalid
+    steps:
+      - name: Run the clients
+        run: "true"
