@@ -1717,13 +1717,15 @@ jobs:
       - name: Check that check-pod-logs passes fresh logs and names each breach it can see without a month's wait
         run: |
           fail() { echo "::error::$1"; exit 1; }
-          # systemd does not run in this container, so a fake systemctl answers for the timer and its service.
+          # systemd does not run in this container, so a fake systemctl answers for the timer and its service. The timer
+          # has not fired, as after a first install or a manual start; the service's start time is FAKE_LAST_RUN.
           fake_bin="$RUNNER_TEMP/fake-systemctl"
           mkdir -p "$fake_bin"
           cat >"$fake_bin/systemctl" <<'FAKE'
           #!/usr/bin/env bash
           case "$*" in
-            *LastTriggerUSec*) echo "$FAKE_LAST_RUN" ;;
+            *LastTriggerUSec*) echo "n/a" ;;
+            *InactiveExitTimestamp*) echo "$FAKE_LAST_RUN" ;;
             *NextElapseUSecRealtime*) echo "@$(($(date +%s) + 3600))" ;;
             *Result*) echo "$FAKE_RESULT" ;;
             *) echo "fake systemctl: unexpected $*" >&2; exit 1 ;;
@@ -1748,7 +1750,7 @@ jobs:
           FAKE
           chmod +x "$fake_bin/find"
           check() { PATH="$fake_bin:$PATH" host/pod-logs/scripts/check_pod_logs.sh 2>&1; }
-          # A breach the check must name: the case, the fake timer's last run and result, and the text naming it.
+          # A breach the check must name: the case, the fake service's last start and result, and the text naming it.
           expect_breach() {
             local case_name="$1" last_run="$2" result="$3" named="$4" output
             output="$(FAKE_LAST_RUN="$last_run" FAKE_RESULT="$result" check)" &&
@@ -1762,8 +1764,9 @@ jobs:
           recent="@$(($(date +%s) - 60))"
           output="$(FAKE_LAST_RUN="$recent" FAKE_RESULT=success check)" || fail "the check failed fresh logs: $output"
           grep -q "ns_pod_1/app/0.log" <<<"$output" || fail "the check did not name the oldest file: $output"
-          echo "the check passes fresh logs: $output"
-          expect_breach "a timer that never ran" n/a success "never run"
+          echo "the check passes fresh logs while the timer has not fired: $output"
+          expect_breach "a clean that never ran" n/a success \
+            "has never run: sudo systemctl start pod-logs-clean.service"
           expect_breach "a run 26 hours ago" "@$(($(date +%s) - 26 * 3600))" success "hours ago"
           expect_breach "a failed run" "$recent" exit-code "ended with exit-code"
           FAKE_FIND_FAIL=1 expect_breach "a listing that failed" "$recent" success \

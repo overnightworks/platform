@@ -29,8 +29,9 @@
 - `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
   which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
   names and times only, and fails on any; it passes with no pod logs yet while `/var/log/pods` does not exist, and
-  fails when it cannot list the directory. It reads the clean's result from its last run, so after a fix a failed
-  check keeps failing until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
+  fails when it cannot list the directory. It reads the clean's last start and result from the service, whoever
+  started it, so a failed or never-run clean keeps failing the check until `sudo systemctl start
+  pod-logs-clean.service` has run, then `mise run check:pod-logs`.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command, which the operator runs:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
@@ -67,7 +68,8 @@
   the entry state's changes; `scripts/bootstrap_pc.sh --only files,firewall,services`, which writes
   `/etc/rancher/k3s/config.yaml` and the pod-log parts, adds mise's one ufw rule on `cni0` before k3s first starts and
   starts `pod-logs-clean.timer`; `mise run bootstrap:k3s`; `mise run bootstrap:flux`; `mise run bootstrap:secrets`, by
-  the operator; `mise run check:pod-logs`, by the operator.
+  the operator; `sudo systemctl start pod-logs-clean.service` once, since the timer's first run is the coming midnight
+  and the check fails until a clean has run; `mise run check:pod-logs`, by the operator.
 - `/usr/local/bin/k3s` decides the entry state. Absent, it is a first install (no `mise:` ufw rule and no
   `/var/lib/mise/bootstrap/firewall.json`; the plan lists `/etc/rancher/k3s`, its config file, the firewall and the
   rule) or the uninstalled state (the `mise:` rule and the state file kept, `/etc/rancher` holding at most
@@ -89,11 +91,12 @@
   creation time is younger than its lines; `pod-logs-clean.timer` and `.service` in `/etc/systemd/system/` run that clean daily by the
   wall clock and after boot, then `scripts/check_pod_logs.sh` as `/usr/local/sbin/check-pod-logs`;
   `container-log-max-files=2` in `host/k3s/config.yaml` keeps the kubelet from compressing a rotated file. A first
-  apply on an existing install is `scripts/bootstrap_pc.sh --only files,services`, then `mise run bootstrap:k3s` and
-  `mise run check:pod-logs`. Their undo declares the timer `state = "stopped"` and `enabled = false` and applies
-  `--only services`, so systemd disables it while its file exists; then deletes the timer's entry, which a plan
-  reports unknown once its file is gone, declares the four files `state = "absent"` and applies `--only files`; then
-  drops the `kubelet-arg` and runs `mise run bootstrap:k3s`. Deleted logs stay deleted.
+  apply on an existing install is `scripts/bootstrap_pc.sh --only files,services`, then `mise run bootstrap:k3s`,
+  `sudo systemctl start pod-logs-clean.service` and `mise run check:pod-logs`. Their undo declares the timer
+  `state = "stopped"` and `enabled = false` and applies `--only services`, so systemd disables it while its file
+  exists; then deletes the timer's entry, which a plan reports unknown once its file is gone, declares the four files
+  `state = "absent"` and applies `--only files`; then drops the `kubelet-arg` and runs `mise run bootstrap:k3s`.
+  Deleted logs stay deleted.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
   runs beside it.

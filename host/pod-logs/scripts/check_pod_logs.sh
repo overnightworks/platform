@@ -8,8 +8,8 @@ timer=pod-logs-clean.timer
 service=pod-logs-clean.service
 # pod-logs.conf deletes a file 28 days after its creation and the timer runs daily, so an older file missed a clean.
 max_file_age_seconds=$((29 * 24 * 3600))
-# A daily timer has fired within the last day; the hour on top absorbs its run time.
-max_timer_age_seconds=$((25 * 3600))
+# The daily timer starts the clean within the last day; the hour on top absorbs its run time.
+max_clean_age_seconds=$((25 * 3600))
 
 now="$(date +%s)"
 breaches=0
@@ -71,15 +71,18 @@ while IFS= read -r -d '' file; do
   fi
 done <"$pods_listing"
 
-last_run="$(unit_time "$timer" LastTriggerUSec)"
+# The service's own start counts, whoever started it: the timer's last trigger stays empty after a manual run.
+rerun_hint="sudo systemctl start $service, then mise run check:pod-logs"
+last_run="$(unit_time "$service" InactiveExitTimestamp)"
 if [ -z "$last_run" ]; then
-  breach "$timer has never run"
-elif [ $((now - last_run)) -gt "$max_timer_age_seconds" ]; then
-  breach "$timer last ran at $(format_time "$last_run"), more than $((max_timer_age_seconds / 3600)) hours ago"
+  breach "$service has never run: $rerun_hint"
+elif [ $((now - last_run)) -gt "$max_clean_age_seconds" ]; then
+  breach "$service last ran at $(format_time "$last_run"), more than $((max_clean_age_seconds / 3600)) hours ago:"\
+" $rerun_hint"
 fi
 result="$(systemctl show "$service" --property=Result --value)"
-[ "$result" = success ] || breach "the last run of $service ended with $result, which stays until the service runs again:"\
-" sudo systemctl start $service, then mise run check:pod-logs"
+[ "$result" = success ] ||
+  breach "the last run of $service ended with $result, which stays until the service runs again: $rerun_hint"
 
 [ "$breaches" -eq 0 ] || {
   plural=breaches
@@ -95,4 +98,4 @@ next_run="$(unit_time "$timer" NextElapseUSecRealtime)"
 files_summary="$file_count files under $pods_dir, $oldest"
 [ -z "$no_pod_logs_yet" ] || files_summary="no pod logs yet, $pods_dir does not exist"
 echo "check-pod-logs: $files_summary;" \
-  "$timer last ran at $(format_time "$last_run")$next_run"
+  "$service last ran at $(format_time "$last_run")$next_run"
