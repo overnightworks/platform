@@ -91,9 +91,23 @@ cell_resume_fails() {
     fail "--resume that failed at flux resume exited $status with '$output' after flux $flux_calls"
 }
 
+cell_suspension_unreadable() {
+  cell=suspension-unreadable
+  FAKE_READ_SUSPEND_FAILS=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *suspend* ]] ||
+    fail "a load whose suspension state was unreadable exited $status after flux $flux_calls"
+}
+
+cell_suspended_by_another() {
+  cell=suspended-by-another
+  FAKE_SUSPENDED=true run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *suspend* ]] && [[ $output == *"--resume x"* ]] ||
+    fail "a load on a foreign suspension exited $status after flux $flux_calls"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 failed=()
-for name in resume-fails; do
+for name in resume-fails suspension-unreadable suspended-by-another; do
   ("cell_${name//-/_}") || failed+=("$name")
 done
 [ "${#failed[@]}" = 0 ] || { echo "load_dump: failed cells: ${failed[*]}" >&2; exit 1; }

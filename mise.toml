@@ -417,7 +417,9 @@ Kustomization stays suspended and the writers at 0: run mise run db:load-dump --
 if [ "${usage_resume:-false}" = true ]; then resume; exit 0; fi
 
 [ -r "$file" ] && [ ! -d "$file" ] || fail "no readable dump file given; nothing changed"
-[ "$(kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.spec.suspend}')" != true ] ||
+suspended="$(kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.spec.suspend}')" ||
+  fail "cannot read whether the Kustomization $namespace is suspended; nothing changed"
+[ "$suspended" != true ] ||
   fail "the Kustomization $namespace is suspended; nothing changed. After a killed load of this command run mise run \
 db:load-dump --resume $namespace, else ask whoever suspended it"
 flux suspend kustomization "$namespace"
