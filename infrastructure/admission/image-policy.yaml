@@ -85,3 +85,83 @@ spec:
     name: image-vendors
     namespace: admission
     parameterNotFoundAction: Deny
+---
+# In flux-system the API server admits only Flux's controller repositories, which `flux install --export` writes for
+# FLUX_COMPONENTS in mise.toml, by tag: the one tag-only exception, fixed by the checksummed flux2 in mise.lock. In
+# kube-system, where k3s applies its own parts, it refuses every Pod or workload a Flux controller writes. It reads no
+# parameter, so a missing vendor list never stops Flux; the cluster job fails when its controller repositories differ
+# from gotk-components.yaml or its podSpecs, podSpecUnchanged and images from those of app-and-vendor-images.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: system-namespace-images
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [kube-system, flux-system]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods, pods/ephemeralcontainers, replicationcontrollers]
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets, replicasets]
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [jobs, cronjobs]
+  variables:
+    - name: podSpecs
+      expression: >-
+        (request.operation == 'UPDATE' ? [object, oldObject] : [object]).map(judged,
+          request.kind.kind == 'Pod' ? judged.spec :
+          request.kind.kind == 'CronJob' ? judged.spec.jobTemplate.spec.template.spec :
+          judged.spec.template.spec)
+    - name: podSpecUnchanged
+      expression: size(variables.podSpecs) == 2 && variables.podSpecs[0] == variables.podSpecs[1]
+    - name: images
+      expression: >-
+        variables.podSpecs[0].containers.map(c, ['container', string(c.name), has(c.image) ? string(c.image) : ''])
+        + (has(variables.podSpecs[0].initContainers) ? variables.podSpecs[0].initContainers.map(c,
+            ['init container', string(c.name), has(c.image) ? string(c.image) : '']) : [])
+        + (has(variables.podSpecs[0].ephemeralContainers) ? variables.podSpecs[0].ephemeralContainers.map(c,
+            ['ephemeral container', string(c.name), has(c.image) ? string(c.image) : '']) : [])
+        + (has(variables.podSpecs[0].volumes) ? variables.podSpecs[0].volumes.filter(v, has(v.image)).map(v,
+            ['image volume', string(v.name), has(v.image.reference) ? string(v.image.reference) : '']) : [])
+    - name: controllerRepositories
+      expression: >-
+        ['ghcr.io/fluxcd/source-controller', 'ghcr.io/fluxcd/kustomize-controller',
+          'ghcr.io/fluxcd/notification-controller']
+    - name: refused
+      expression: >-
+        variables.images.filter(image, !variables.controllerRepositories.exists(repository,
+          image[2].startsWith(repository + ':')
+            && image[2].substring(size(repository)).matches('^:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$')))
+  validations:
+    - expression: >-
+        request.namespace != 'kube-system'
+          || !request.userInfo.username.startsWith('system:serviceaccount:flux-system:')
+      reason: Forbidden
+      messageExpression: >-
+        'kube-system admits no Pod or workload that a Flux controller writes, and '
+          + request.userInfo.username + ' is one'
+    - expression: request.namespace != 'flux-system' || variables.podSpecUnchanged || size(variables.refused) == 0
+      reason: Forbidden
+      messageExpression: >-
+        variables.refused.map(image, image[0] + ' ' + image[1] + " runs '" + image[2] + "'").join(', ')
+          + ", not one of Flux's controller repositories by tag, "
+          + variables.controllerRepositories.map(repository, repository + ':<tag>').join(', ')
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: system-namespace-images
+spec:
+  policyName: system-namespace-images
+  validationActions: [Deny]
