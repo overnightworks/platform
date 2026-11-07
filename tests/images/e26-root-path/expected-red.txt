@@ -1,0 +1,1 @@
+red: Kustomization/flux-system/flux-system: '': a changed self-reference: the rendered root differs from the root of clusters/pc/flux-system/gotk-sync.yaml

@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: volume, namespace: default}
+spec:
+  template:
+    spec:
+      containers:
+        - {name: main, image: "docker.io/library/traefik@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      volumes:
+        - {name: data, image: {reference: "docker.io/someone/data:1"}}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: {name: db, namespace: data}
+spec:
+  imageName: "ghcr.io/cloudnative-pg/postgresql:17@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+---
+apiVersion: example.io/v1
+kind: Runner
+metadata: {name: runner, namespace: default}
+spec:
+  template: {image: nginx}
+---
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata: {name: train, namespace: default}
+spec:
+  tasks:
+    - template:
+        spec:
+          containers:
+            - {name: main, image: "docker.io/library/traefik@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: names, namespace: default}
+data: {traefik: docker.io/library/traefik}
+---
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata: {name: runners.example.io}
+spec:
+  validation:
+    openAPIV3Schema:
+      properties:
+        image: {type: string}

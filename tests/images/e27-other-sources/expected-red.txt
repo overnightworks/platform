@@ -1,0 +1,6 @@
+red: GitRepository/flux-system/flux-system .spec.ref: '{"branch":"other"}': the root's source is not the branch main
+red: GitRepository/flux-system/platform-secrets .spec.include: '': a source field that makes Flux's artifact differ from the checkout
+red: GitRepository/flux-system/platform-secrets .spec.url: 'ssh://git@github.com/someone/secrets': the PC-only source is not the repository overnightworks/platform-secrets
+red: .sourceignore: '': a .sourceignore, which source-controller applies to the whole artifact and the render does not
+red: Kustomization/flux-system/apps .spec.ignoreMissingComponents: 'true': a skipped missing component may apply in CI and not on the PC
+red: Deployment/default/web .spec.template.spec.containers[main].image: 'docker.io/library/nginx@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': not a repository of the vendor list

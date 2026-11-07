@@ -1,0 +1,3 @@
+red: Deployment/default/a .spec.template.spec.containers[main].image: '': an empty or missing image
+red: Deployment/default/b .spec.template.spec.containers[main].image: '${app_image}': not a repository of the vendor list
+red: Kustomization/flux-system/configmap .spec.postBuild.substituteFrom: 'ConfigMap/flux-system/images': a substitution from a ConfigMap, which the render does not read

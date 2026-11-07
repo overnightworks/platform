@@ -1,0 +1,2 @@
+red: Deployment/default/web .spec.template.spec.containers[no-key].image: '': an empty or missing image
+red: Deployment/default/web .spec.template.spec.containers[empty].image: '': an empty or missing image

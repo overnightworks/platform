@@ -53,17 +53,19 @@
 ## Layout
 
 - `.github/workflows/ci.yml`: the `checks` job, the `cluster` job, the `bootstrap` job, the `opentofu` job, the `images`
-  job and the `quality` job that calls quality's `gate.yml`. `images` runs `scripts/verify_image_release.sh`: it decodes
-  every tracked YAML and JSON file and every file named `Kustomization` (no extension) but `gotk-components.yaml` with
-  the locked yq, YAML held in strings included, and refuses every image reference that is not a repository of the vendor
-  list at a sha256 digest, every app ref under `ghcr.io/<owner>/` (no release check exists yet), every `images`
-  override, every `fieldPaths` entry (a kustomize replacement's targets) at or below an `image` segment and every replacement
-  target with `options.delimiter`, which splices a value into one part of a string (a `vars` `$(VAR)` at an
-  image position is refused as an image), every patch
-  operation on one field of an image, every split `image` mapping that repeats a field, and a vendor list that is not
-  exactly one ConfigMap `image-vendors` in namespace `admission` whose entries name each repository once. What it
-  cannot read (chart defaults, values from outside the tree, shell `run` blocks) is left to the admission layer in the
-  cluster, overnightworks/platform#50.
+  job and the `quality` job that calls quality's `gate.yml`.
+  `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
+  (`flux build kustomization --dry-run --recursive` from the root Kustomization in
+  `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
+  It judges every image of every rendered Pod template, image volumes included: a vendor ref passes only as a
+  repository of the vendor list at a sha256 digest, every app ref under `ghcr.io/<owner>/` is red until the release
+  checks exist, and Flux's controllers pass in flux-system as `flux install --export` names them. It refuses another
+  kind that carries an image, every Helm object, a `substituteFrom` ConfigMap, a remote kustomize resource, a changed
+  root, and every source but this repository's default branch and the owner's repository `platform-secrets`, as well as
+  the source fields and ignore files that would make Flux's artifact differ from the checkout. Its gaps: it does not
+  render `platform-secrets`, and a `substituteFrom` Secret's variables render empty or at their defaults. No check
+  on the PC judges these yet; overnightworks/platform#50 owns that check, and overnightworks/platform#49 lists the
+  gaps. `tests/images/` holds the matrix's cases, which the job runs.
   `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
   `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes the paths or the file
   sizes and timestamps under `~/.local/bin` and mise's data directory (directory timestamps are not compared, the paths

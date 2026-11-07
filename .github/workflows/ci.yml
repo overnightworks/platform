@@ -487,6 +487,10 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      # The image the render runs in without network; flux2 is a static binary, mounted from the lock.
+      RENDER_IMAGE: ubuntu:26.04
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -498,8 +502,11 @@ jobs:
           scripts/bootstrap_pc.sh --only tools
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Judge every image reference of the tracked YAML and JSON files
+      - name: Render the tree and judge every image
         run: mise exec -- scripts/verify_image_release.sh
+
+      - name: Run the fixture cases through the script
+        run: mise exec -- tests/images/run.sh
 
   quality:
     if: always()

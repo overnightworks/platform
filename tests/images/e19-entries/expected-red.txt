@@ -1,0 +1,4 @@
+red: infrastructure/admission/image-vendors.yaml entry tagged: 'docker.io/library/traefik:v3.7.17': a vendor entry with a version
+red: infrastructure/admission/image-vendors.yaml entry ours: 'ghcr.io/overnightworks/hopin': a vendor entry under the app namespace ghcr.io/overnightworks/
+red: infrastructure/admission/image-vendors.yaml entry nginx-again: 'docker.io/library/nginx': a vendor repository listed under two keys: nginx and nginx-again
+red: infrastructure/admission/image-vendors.yaml entry unused: 'docker.io/cloudflare/cloudflared': a vendor entry no rendered image uses

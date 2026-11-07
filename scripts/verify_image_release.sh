@@ -1,86 +1,82 @@
 #!/usr/bin/env bash
-# Judge every image reference the tracked YAML and JSON files hold, YAML held in their strings included: a vendor ref
-# passes only as a repository of the vendor list at a sha256 digest, and every app ref is red, since no release check
-# exists here. GITHUB_REPOSITORY_OWNER names the app namespace ghcr.io/<owner>/.
-# Usage: mise exec -- scripts/verify_image_release.sh, so yq is the one mise.lock pins.
-# Exit: 0 every reference passes, 1 a reference, a vendor entry or a file is red.
-set -euo pipefail
+# Render the tree as Flux applies it, with the locked flux2 and without network, and judge every image of every rendered
+# Pod template: a vendor ref passes only as a repository of the vendor list at a sha256 digest, every app ref under
+# ghcr.io/<owner>/ is red, since no release check exists here, and Flux's controllers pass in their namespace as the
+# locked flux2 exports them. What the rule cannot judge is red too.
+# Usage: mise exec -- scripts/verify_image_release.sh [tree], the tree defaulting to this checkout. The run names
+# GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, DEFAULT_BRANCH and RENDER_IMAGE, the image the render
+# runs in.
+# Exit: 0 nothing is red, 1 after at least one red record, 2 on any other failure.
+set -Eeuo pipefail
+trap 'echo "verify_image_release: line ${LINENO} failed: ${BASH_COMMAND}" >&2; exit 2' ERR
 
+ROOT_SYNC_FILE="clusters/pc/flux-system/gotk-sync.yaml"
 VENDOR_LIST="infrastructure/admission/image-vendors.yaml"
 # The admission layer's binding reads the list by this name and namespace (paramRef).
 VENDOR_LIST_NAME="image-vendors"
 VENDOR_LIST_NAMESPACE="admission"
-# flux install --export of the locked flux2; the cluster job fails when it differs from a regeneration.
-GENERATED_FLUX_COMPONENTS="clusters/pc/flux-system/gotk-components.yaml"
-IMAGES_OVERRIDE_REASON="an images override rewrites an image named elsewhere"
-IMAGE_FIELD_PATH_REASON="a kustomize replacements entry targets an image field or a part of one, which rewrites an image named elsewhere"
-REPLACEMENT_DELIMITER_REASON="a kustomize replacements target with options.delimiter splices a value into one part of a string, which can rewrite an image the job passed"
+# The PC-only source, rendered empty since CI holds no key for it; the cluster job's overlay swaps the same source.
+PC_ONLY_SOURCE="GitRepository/flux-system/platform-secrets"
 
-# The reference grammar of distribution/reference, matched against the lowercased string.
+# The reference grammar of distribution/reference; names and digests are matched against the lowercased string.
 DOMAIN_COMPONENT='[a-z0-9]([a-z0-9-]*[a-z0-9])?'
 DOMAIN="(${DOMAIN_COMPONENT}(\\.${DOMAIN_COMPONENT})*|\\[[0-9a-f:]+\\])(:[0-9]+)?"
 PATH_COMPONENT='[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*'
 NAME_PATTERN="^(${DOMAIN}/)?${PATH_COMPONENT}(/${PATH_COMPONENT})*\$"
-TAG_PATTERN='^[a-z0-9_][a-z0-9_.-]{0,127}$'
+TAG_PATTERN='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
 DIGEST_PATTERN='^[a-z][a-z0-9]*([-_+.][a-z][a-z0-9]*)*:[0-9a-f]{32,}$'
-SHA256_DIGEST_PATTERN='^sha256:[0-9a-f]{64}$'
+SHA256_DIGEST_PATTERN='^@sha256:[0-9a-f]{64}$'
 
-# A kustomize fieldPath names its segments with dots or slashes; it reaches an image at or below an image segment.
-IMAGE_FIELD_PATH='(^|[./])image($|[./])'
-# A fieldPaths entry is a scalar below a key fieldPaths, or a root-level scalar of a sequence decoded from the string of a
-# fieldPaths key (FIELD_PATHS_ROOT is true for it, false elsewhere).
-FIELD_PATH_ENTRY="(kind == \"scalar\" and ((parent | key) == \"fieldPaths\" or (env(FIELD_PATHS_ROOT) == \"true\" and (parent | kind) == \"seq\" and (path | length) == 1)))"
-# Every record is five NUL-terminated fields: type, document index, JSON pointer, value, reason. A scalar at an image
-# position (a key image, a patch operation's value at an /image path) leaves the plain scalar walk for the image one.
-POINTER='(path | map("/" + (tostring | sub("~", "~0") | sub("/", "~1"))) | join(""))'
-PATCH_OPERATION='(kind == "map" and has("op") and has("path") and (parent | kind) == "seq")'
-IMAGE_POSITION="((key == \"image\" and (parent | kind) == \"map\") or (key == \"value\" and (parent | (${PATCH_OPERATION} and (.path | tostring | test(\"/image\$\"))))))"
-SPLIT_IMAGE="
-  . as \$mapping |
-  [keys | .[] | select(. != \"registry\" and . != \"repository\" and . != \"tag\" and . != \"digest\" and . != \"pullPolicy\")] as \$unknown |
-  [keys | group_by(.) | .[] | select(length > 1) | .[0]] as \$repeated |
-  [to_entries | .[] | select((.value | tag) != \"!!null\" and .value != \"\")] as \$set |
-  [\$set | .[] | select((.value | tag) != \"!!str\") | .key] as \$not_strings |
-  [\$set | .[] | select(.key == \"registry\") | .value] as \$registry |
-  [\$set | .[] | select(.key == \"repository\") | .value] as \$repository |
-  [\$set | .[] | select(.key == \"tag\") | .value] as \$tag |
-  [\$set | .[] | select(.key == \"digest\") | .value] as \$digest |
-  (\$mapping | to_json(0)) as \$shown |
-  if (\$unknown | length) > 0 then [\"red\", \$document, ${POINTER}, \$shown, \"a split image mapping holds \" + (\$unknown | join(\", \")) + \" beside registry, repository, tag, digest and pullPolicy\"]
-  elif (\$repeated | length) > 0 then [\"red\", \$document, ${POINTER}, \$shown, \"a split image mapping repeats \" + (\$repeated | join(\", \")) + \", which yq and Helm may read differently\"]
-  elif (\$not_strings | length) > 0 then [\"red\", \$document, ${POINTER}, \$shown, \"a set split image field is not a string: \" + (\$not_strings | join(\", \"))]
-  elif (\$registry | length) == 0 or (\$repository | length) == 0 then [\"red\", \$document, ${POINTER}, \$shown, \"a split image mapping needs registry and repository\"]
-  elif (\$digest | length) > 0 then (
-    if (\$digest | .[0] | test(\"${SHA256_DIGEST_PATTERN}\")) then [\"split\", \$document, ${POINTER}, (\$registry | .[0]) + \"/\" + (\$repository | .[0]) + \"@\" + (\$digest | .[0]), \"\"]
-    else [\"red\", \$document, ${POINTER}, \$shown, \"a split image digest is not sha256:<64 hex>\"] end)
-  elif (\$tag | length) > 0 then [\"split\", \$document, ${POINTER}, (\$registry | .[0]) + \"/\" + (\$repository | .[0]) + \":\" + (\$tag | .[0]), \"\"]
-  else [\"red\", \$document, ${POINTER}, \$shown, \"a split image mapping with neither tag nor digest runs the chart's default tag\"] end"
-IMAGE_VALUE="
-  if tag == \"!!null\" then [\"red\", \$document, ${POINTER}, \"null\", \"an image with a null value\"]
-  elif kind == \"scalar\" then [\"image\", \$document, ${POINTER}, tostring, \"\"]
-  elif kind == \"map\" then (${SPLIT_IMAGE})
-  else [\"red\", \$document, ${POINTER}, to_json(0), \"an image that is a sequence\"] end"
-PATCH_RULES="
-  ${POINTER} as \$operation | (.path | tostring) as \$target | (.op | tostring) as \$op | (
-  (select(\$target | test(\"/image/\")) | [\"red\", \$document, \$operation, \$op + \" \" + \$target, \"a patch operation below an image segment changes one part of a reference joined elsewhere\"]),
-  (select(\$target | test(\"/image\$\")) | (
-    if (\$op == \"add\" or \$op == \"replace\" or \$op == \"test\") | not then [\"red\", \$document, \$operation, \$op + \" \" + \$target, \"a \" + \$op + \" at an /image path hands the image to a chart default or a value read elsewhere\"]
-    elif has(\"value\") | not then [\"red\", \$document, \$operation, \$op + \" \" + \$target, \"a patch operation at an /image path without a value\"]
-    else (.value | ${IMAGE_VALUE}) end)),
-  (select(has(\"from\") and (.from | tostring | test(\"/image(/|\$)\"))) | [\"red\", \$document, \$operation, \$op + \" from \" + (.from | tostring), \"a patch operation whose from lies at or below an /image path\"]))"
-RECORDS="
-  explode(.) | document_index as \$document | (
-    [\"root\", \$document, \"\", kind, \"\"],
-    (.. | select(kind == \"scalar\") | select(${IMAGE_POSITION} | not) | [\"scalar\", \$document, ${POINTER}, tostring, \"\"]),
-    (.. | select(kind == \"map\") | ${POINTER} as \$map | keys | .[] | [\"scalar\", \$document, \$map + \"/\" + (tostring | sub(\"~\", \"~0\") | sub(\"/\", \"~1\")), tostring, \"\"]),
-    (.. | select(key == \"image\" and (parent | kind) == \"map\") | ${IMAGE_VALUE}),
-    (.. | select(${PATCH_OPERATION}) | ${PATCH_RULES}),
-    (.. | select(key == \"images\" and kind == \"seq\") | [\"red\", \$document, ${POINTER}, to_json(0), \"${IMAGES_OVERRIDE_REASON}\"]),
-    (.. | select(${FIELD_PATH_ENTRY} and test(\"${IMAGE_FIELD_PATH}\")) | [\"red\", \$document, ${POINTER}, tostring, \"${IMAGE_FIELD_PATH_REASON}\"]),
-    (.. | select(kind == \"map\" and has(\"fieldPaths\") and (.options | kind) == \"map\" and (.options | has(\"delimiter\"))) | [\"red\", \$document, ${POINTER}, to_json(0), \"${REPLACEMENT_DELIMITER_REASON}\"])
+# The yq programs. Each prints its records as NUL-terminated fields.
+OBJECT='(.kind + "/" + (.metadata.namespace // "") + "/" + .metadata.name)'
+FIELD_PATH='("." + (path | map(tostring) | join(".")))'
+KUSTOMIZATION='(.kind == "Kustomization" and ((.apiVersion // "") | test("^kustomize[.]toolkit[.]fluxcd[.]io/")))'
+POD_SPEC_PATH='({"v1 Pod": ".spec", "v1 PodTemplate": ".template.spec", "v1 ReplicationController": ".spec.template.spec",
+  "apps/v1 ReplicaSet": ".spec.template.spec", "apps/v1 Deployment": ".spec.template.spec",
+  "apps/v1 StatefulSet": ".spec.template.spec", "apps/v1 DaemonSet": ".spec.template.spec",
+  "batch/v1 Job": ".spec.template.spec", "batch/v1 CronJob": ".spec.jobTemplate.spec.template.spec"}
+  [(.apiVersion // "") + " " + (.kind // "")])'
+# Object, namespace, field path, image.
+POD_IMAGES="${POD_SPEC_PATH} as \$at | select(\$at != null) | ${OBJECT} as \$object | (.metadata.namespace // \"\") as \$namespace
+  | eval(\$at) | (
+    ((\"containers\", \"initContainers\", \"ephemeralContainers\") as \$list | (.[\$list] // [])[]
+      | [\$object, \$namespace, \$at + \".\" + \$list + \"[\" + (.name // \"\") + \"].image\", ((.image // \"\") | tostring)]),
+    ((.volumes // [])[] | select(has(\"image\"))
+      | [\$object, \$namespace, \$at + \".volumes[\" + (.name // \"\") + \"].image.reference\", ((.image.reference // \"\") | tostring)])
   ) | .[]"
-
-# One reason per line for what keeps the vendor list from being exactly one ConfigMap document of string entries.
+# Object, apiVersion, field path, value, and key or candidate: an image key, or a string the grammar has to confirm as
+# a host-qualified reference, in an object of a kind the rule does not know.
+UNKNOWN_KIND_TRIGGERS="select(${POD_SPEC_PATH} == null)
+  | select((.apiVersion == \"kustomize.toolkit.fluxcd.io/v1\" and .kind == \"Kustomization\") | not)
+  | select((.apiVersion == \"apiextensions.k8s.io/v1\" and .kind == \"CustomResourceDefinition\") | not)
+  | select((.apiVersion // \"\") | test(\"^helm[.]toolkit[.]fluxcd[.]io/\") | not)
+  | ${OBJECT} as \$object | .apiVersion as \$api_version | (
+    (.. | select(tag == \"!!map\" and has(\"image\"))
+      | [\$object, \$api_version, ${FIELD_PATH} + \".image\", ((.image | select(kind == \"scalar\") | tostring) // \"\"), \"key\"]),
+    (.. | select(tag == \"!!str\" and test(\"^(localhost|[^/ ]*[.:][^/ ]*)/[^ ]*[:@][^ /]*\$\"))
+      | [\$object, \$api_version, ${FIELD_PATH}, ., \"candidate\"])
+  ) | .[]"
+# Object, apiVersion.
+HELM_OBJECTS="select((.apiVersion // \"\") | test(\"^helm[.]toolkit[.]fluxcd[.]io/\")) | [${OBJECT}, .apiVersion] | .[]"
+# Fact, object, value.
+KUSTOMIZATION_FACTS="select(${KUSTOMIZATION}) | ${OBJECT} as \$object | (
+    [\"identity\", \$object, ([.apiVersion, .spec] | sort_keys(..) | to_json(0))],
+    (select(.spec.ignoreMissingComponents == true) | [\"ignoreMissingComponents\", \$object, \"true\"]),
+    ((.spec.postBuild.substituteFrom // [])[]
+      | [\"substituteFrom\", \$object, .kind + \"/\" + (\$object | split(\"/\") | .[1]) + \"/\" + .name])
+  ) | .[]"
+# Object, the fields that make the artifact differ from the checkout, url, ref.
+SOURCES="select((.apiVersion // \"\") | test(\"^source[.]toolkit[.]fluxcd[.]io/\")) | [${OBJECT},
+  ([(.spec // {}) | keys | .[] | select(. == \"include\" or . == \"ignore\" or . == \"recurseSubmodules\" or . == \"sparseCheckout\")] | join(\" \")),
+  ((.spec.url // \"\") | tostring), ((.spec.ref // {}) | sort_keys(..) | to_json(0))] | .[]"
+RENDERED_DEPLOYMENTS="select(.apiVersion == \"apps/v1\" and .kind == \"Deployment\") | ${OBJECT}"
+# Name, namespace, path, source, apiVersion and spec of the root.
+ROOT_FIELDS="select(${KUSTOMIZATION}) | [.metadata.name, .metadata.namespace, .spec.path,
+  .spec.sourceRef.kind + \"/\" + (.spec.sourceRef.namespace // .metadata.namespace) + \"/\" + .spec.sourceRef.name,
+  ([.apiVersion, .spec] | sort_keys(..) | to_json(0))] | .[]"
+HEALTH_CHECKED_DEPLOYMENTS="select(${KUSTOMIZATION}) | .metadata.namespace as \$namespace | (.spec.healthChecks // [])[]
+  | select(.apiVersion == \"apps/v1\" and .kind == \"Deployment\") | \"Deployment/\" + (.namespace // \$namespace) + \"/\" + .name"
+# One reason for each thing that keeps the vendor list from being exactly one ConfigMap document of string entries.
 VENDOR_LIST_SHAPE="
   (
     (select(document_index > 0) | [\"the file holds more than one document\"]),
@@ -102,18 +98,25 @@ VENDOR_LIST_ENTRIES="select(document_index == 0) | .data | select(kind == \"map\
 red_count=0
 app_reference_count=0
 vendor_reference_count=0
+records=()
 declare -A vendor_entry_by_repository=()
 declare -A used_vendor_repositories=()
+declare -A flux_own_images=()
+
+fail() {
+  echo "verify_image_release: $1" >&2
+  exit 2
+}
 
 report_red() {
   red_count=$((red_count + 1))
   echo "red: $1: '${2//$'\n'/\\n}': $3"
 }
 
-# Prints the records of every document of $2 ('-' for stdin) read as $1; fails when yq cannot parse it. $3 is true when
-# $2 is the string of a fieldPaths key.
-decode() {
-  FIELD_PATHS_ROOT="${3:-false}" yq --no-doc --nul-output --output-format yaml --yaml-fix-merge-anchor-to-spec=true --input-format "$1" "${RECORDS}" "$2"
+# Sets records to the fields the yq program $1 prints for the file $2 (default: the render); returns yq's failure.
+read_records() {
+  yq --no-doc --nul-output --output-format yaml "$1" "${2:-${rendered}}" >"${work_directory}/records" || return
+  mapfile -d '' records <"${work_directory}/records"
 }
 
 # Sets reference_name, reference_tag and reference_digest by splitting $1, then validates them. Returns 1 when $1 is
@@ -138,176 +141,225 @@ parse_host_qualified_reference() {
   [[ $1 != *[[:space:]]* && ! $1 =~ ^[A-Za-z][A-Za-z0-9+.-]*:// && ${reference_name} == */* &&
     (${host} == *.* || ${host} == *:* || ${host,,} == localhost) ]] || return 1
   [[ ${has_digest} == false || ${reference_digest,,} =~ ${DIGEST_PATTERN} ]] || return 2
-  [[ ${has_tag} == false || ${reference_tag,,} =~ ${TAG_PATTERN} ]] || return 2
+  [[ ${has_tag} == false || ${reference_tag} =~ ${TAG_PATTERN} ]] || return 2
   [[ ${reference_name,,} =~ ${NAME_PATTERN} ]] || return 2
 }
 
-judge_app_reference() {
-  local location="$1" value="$2" position="$3" repository_pattern="^ghcr\\.io/${owner}/${PATH_COMPONENT}(/${PATH_COMPONENT})?\$"
-  app_reference_count=$((app_reference_count + 1))
-  if [ "${position}" = split ]; then
-    report_red "${location}" "${value}" "an app ref in split form; an app ref is one string"
-  elif ! parse_host_qualified_reference "${value}" || [[ ! ${reference_name,,} =~ ${repository_pattern} ]] ||
-    [ -z "${reference_tag}" ] || [[ ! ${reference_digest} =~ ${SHA256_DIGEST_PATTERN} ]]; then
-    report_red "${location}" "${value}" "not one full app ref ghcr.io/${owner}/<repo>[/<name>]:<version>@sha256:<64 hex>"
-  elif [ "${reference_name}" != "${reference_name,,}" ]; then
-    report_red "${location}" "${value}" "an app ref whose registry host or path is not lowercase"
-  else
-    report_red "${location}" "${value}" "an app ref, and no release check exists yet"
-  fi
-}
-
-# Judges one decoded string at a position: content (any scalar), image (an image value) or split (a joined mapping).
-judge_string() {
-  local location="$1" value="$2" position="$3" namespace_content_rule="$4" reasons=() joined_reasons parse_status=0
-  if [[ ${value,,} == *"ghcr.io/${owner}/"* ]] && { [ "${position}" != content ] || [ "${namespace_content_rule}" = true ]; }; then
-    judge_app_reference "${location}" "${value}" "${position}"
+load_vendor_list() {
+  local entry_key repository index
+  if ! read_records "${VENDOR_LIST_SHAPE}" "${VENDOR_LIST}" 2>/dev/null; then
+    report_red "${VENDOR_LIST}" "" "yq cannot read the vendor list"
     return
   fi
-  parse_host_qualified_reference "${value}" || parse_status=$?
-  if [ "${parse_status}" -ne 0 ]; then
-    if [ "${position}" != content ]; then
-      report_red "${location}" "${value}" "an image that is no valid reference with a registry host"
-    elif [ "${parse_status}" -eq 2 ] && [ -n "${reference_tag}${reference_digest}" ]; then
-      report_red "${location}" "${value}" "a host-qualified reference with a tag or digest that breaks the reference grammar"
+  for index in "${!records[@]}"; do
+    report_red "${VENDOR_LIST}" "" "${records[index]}"
+  done
+  read_records "${VENDOR_LIST_ENTRIES}" "${VENDOR_LIST}"
+  for ((index = 0; index < ${#records[@]}; index += 2)); do
+    entry_key="${VENDOR_LIST} entry ${records[index]}" repository="${records[index + 1]}"
+    if [[ ${repository,,} == "ghcr.io/${owner}/"* ]]; then
+      report_red "${entry_key}" "${repository}" "a vendor entry under the app namespace ghcr.io/${owner}/"
+    elif ! parse_host_qualified_reference "${repository}" || [ "${repository}" != "${repository,,}" ]; then
+      report_red "${entry_key}" "${repository}" "a vendor entry that is no lowercase <registry>/<repository>"
+    elif [ -n "${reference_tag}${reference_digest}" ]; then
+      report_red "${entry_key}" "${repository}" "a vendor entry with a version"
+    elif [ -n "${vendor_entry_by_repository[${repository}]+listed}" ]; then
+      report_red "${entry_key}" "${repository}" "a vendor repository listed under two keys: ${vendor_entry_by_repository[${repository}]} and ${records[index]}"
+    else
+      vendor_entry_by_repository["${repository}"]="${records[index]}"
     fi
-    return
-  fi
-  [ "${position}" != content ] || [ -n "${reference_tag}${reference_digest}" ] || return 0
-  if [[ ${reference_name,,} == "ghcr.io/${owner}/"* ]]; then
-    judge_app_reference "${location}" "${value}" "${position}"
-    return
-  fi
-  vendor_reference_count=$((vendor_reference_count + 1))
-  if [ "${reference_name}" != "${reference_name,,}" ]; then
-    reasons+=("its registry host or path is not lowercase")
-  elif [ -n "${vendor_entry_by_repository[${reference_name}]+listed}" ]; then
-    used_vendor_repositories["${reference_name}"]=1
-  else
-    reasons+=("its repository is not in ${VENDOR_LIST}")
-  fi
-  [[ ${reference_digest} =~ ${SHA256_DIGEST_PATTERN} ]] || reasons+=("it has no sha256:<64 hex> digest")
-  if [ "${#reasons[@]}" -eq 0 ]; then
-    echo "pass: ${location}: '${value}'"
-  else
-    printf -v joined_reasons '%s; ' "${reasons[@]}"
-    report_red "${location}" "${value}" "a vendor ref: ${joined_reasons%; }"
-  fi
+  done
 }
 
-# Judges the records in the file $2, read from a source at $1; a string that holds a YAML mapping or sequence is
-# replaced by its decoded children.
-judge_records() {
-  local prefix="$1" records_file="$2" namespace_content_rule="$3" depth="$4" records index
-  mapfile -d '' records <"${records_file}"
-  for ((index = 0; index < ${#records[@]}; index += 5)); do
-    local type="${records[index]}" location="${prefix} doc ${records[index + 1]} ${records[index + 2]:-/}"
-    local value="${records[index + 3]}" reason="${records[index + 4]}"
-    case "${type}" in
-      root) ;;
-      red) report_red "${location}" "${value}" "${reason}" ;;
-      image | split) judge_string "${location}" "${value}" "${type}" "${namespace_content_rule}" ;;
-      scalar) judge_scalar "${location}" "${records[index + 2]}" "${value}" "${namespace_content_rule}" "${depth}" ;;
-      *) echo "verify_image_release: unknown record type ${type}" >&2 && exit 1 ;;
+# Sets the root_ values from the one root Kustomization of the sync file.
+read_root() {
+  read_records "${ROOT_FIELDS}" "${ROOT_SYNC_FILE}"
+  [ "${#records[@]}" -eq 5 ] || fail "${ROOT_SYNC_FILE} holds not exactly one Kustomization"
+  root_name="${records[0]}" root_namespace="${records[1]}" root_path="${records[2]}" root_source="${records[3]}"
+  root_identity="${records[4]}" root_object="Kustomization/${records[1]}/${records[0]}"
+}
+
+# Renders the tree into the file rendered; a failed render is red with flux's message, and the run stops there.
+render() {
+  local flux_binary status=0 empty_source="${work_directory}/empty-source"
+  flux_binary="$(readlink -f "$(command -v flux)")"
+  mkdir "${empty_source}"
+  docker image inspect "${RENDER_IMAGE}" >/dev/null 2>&1 || docker pull --quiet "${RENDER_IMAGE}" >/dev/null
+  docker run --rm --pull never --network none --user "$(id -u):$(id -g)" --workdir /tree \
+    --volume "${tree}:/tree:ro" --volume "${flux_binary}:/usr/local/bin/flux:ro" --volume "${empty_source}:/empty:ro" \
+    "${RENDER_IMAGE}" flux build kustomization "${root_name}" --namespace "${root_namespace}" --path "${root_path}" \
+    --kustomization-file "${ROOT_SYNC_FILE}" --dry-run --in-memory-build --recursive \
+    --local-sources "${root_source}=.,${PC_ONLY_SOURCE}=/empty" >"${rendered}" 2>"${work_directory}/render-errors" ||
+    status=$?
+  case "${status}" in
+    0) ;;
+    1)
+      report_red "${root_object}" "$(cat "${work_directory}/render-errors")" "the render failed"
+      echo "images: ${red_count} red"
+      exit 1
+      ;;
+    *) fail "the render container exited ${status}: $(cat "${work_directory}/render-errors")" ;;
+  esac
+}
+
+# Red: a changed, missing or repeated self-reference, a repeated Kustomization identity, a skipped missing component, a
+# ConfigMap substitution and a health-checked Deployment the render lacks. A Secret substitution is gap G2.
+judge_kustomizations() {
+  local index object value root_copies=0
+  local -A identity_count=() rendered_deployments=()
+  read_records "${KUSTOMIZATION_FACTS}"
+  for ((index = 0; index < ${#records[@]}; index += 3)); do
+    object="${records[index + 1]}" value="${records[index + 2]}"
+    case "${records[index]}" in
+      identity)
+        identity_count["${object}"]=$((${identity_count[${object}]:-0} + 1))
+        if [ "${object}" = "${root_object}" ]; then
+          root_copies=$((root_copies + 1))
+          [ "${value}" = "${root_identity}" ] ||
+            report_red "${object}" "" "a changed self-reference: the rendered root differs from the root of ${ROOT_SYNC_FILE}"
+        fi
+        ;;
+      ignoreMissingComponents)
+        report_red "${object} .spec.ignoreMissingComponents" "${value}" "a skipped missing component may apply in CI and not on the PC"
+        ;;
+      substituteFrom)
+        if [[ ${value} == Secret/* ]]; then
+          echo "images: gap G2: ${object} substitutes from ${value}, which CI does not read: its variables render empty, at their defaults, or literal"
+        else
+          report_red "${object} .spec.postBuild.substituteFrom" "${value}" "a substitution from a ${value%%/*}, which the render does not read"
+        fi
+        ;;
     esac
   done
-}
-
-# Succeeds when a document of the records file $1 has a root of one of the kinds $2....
-holds_root_kind() {
-  local records_file="$1" records index kind
-  shift
-  mapfile -d '' records <"${records_file}"
-  for ((index = 0; index < ${#records[@]}; index += 5)); do
-    [ "${records[index]}" = root ] || continue
-    for kind in "$@"; do
-      [ "${records[index + 3]}" != "${kind}" ] || return 0
-    done
+  [ "${root_copies}" -gt 0 ] || report_red "${root_object}" "" "a missing self-reference: the render holds no copy of the root"
+  for object in "${!identity_count[@]}"; do
+    [ "${identity_count[${object}]}" -eq 1 ] || report_red "${object}" "" "a repeated Kustomization identity"
   done
-  return 1
+  read_records "${RENDERED_DEPLOYMENTS}"
+  for object in "${records[@]}"; do
+    rendered_deployments["${object}"]=rendered
+  done
+  read_records "${HEALTH_CHECKED_DEPLOYMENTS}" "${ROOT_SYNC_FILE}"
+  for object in "${records[@]}"; do
+    [ -n "${rendered_deployments[${object}]+rendered}" ] || report_red "${object}" "" "the render lacks a Deployment the root health-checks"
+  done
 }
 
-# Judges a scalar at the JSON pointer $2 of $1. A string that parses as a mapping or sequence is replaced by its decoded
-# children and keeps its field, so an images field holding a sequence is an override. yq cannot print a scalar that
-# holds a NUL character, so a string yq parses as a mapping or sequence but cannot decode is red.
-judge_scalar() {
-  local location="$1" pointer="$2" value="$3" namespace_content_rule="$4" depth="$5" kinds
-  local nested_file="${work_directory}/records.$((depth + 1))" in_field_paths=false
-  [[ ${pointer} != */fieldPaths ]] || in_field_paths=true
-  if printf '%s' "${value}" | decode yaml - "${in_field_paths}" >"${nested_file}" 2>/dev/null; then
-    if holds_root_kind "${nested_file}" map seq; then
-      if [[ ${pointer} == */images ]] && holds_root_kind "${nested_file}" seq; then
-        report_red "${location}" "${value}" "${IMAGES_OVERRIDE_REASON}"
+# Red: a mapped source not rendered exactly once, a source field or ignore file that makes Flux's artifact differ from
+# the checkout, a root source other than this repository's default branch, and a PC-only source other than the owner's
+# repository of its name.
+judge_sources() {
+  local source index count field url ref ignore_file host="${GITHUB_SERVER_URL#*://}"
+  local pc_only_url_pattern="^(https://|ssh://git@)${host//./\\.}/${owner}/${PC_ONLY_SOURCE##*/}(\\.git)?\$"
+  read_records "${SOURCES}"
+  for source in "${root_source}" "${PC_ONLY_SOURCE}"; do
+    count=0
+    for ((index = 0; index < ${#records[@]}; index += 4)); do
+      [ "${records[index]}" = "${source}" ] || continue
+      count=$((count + 1)) url="${records[index + 2]}" ref="${records[index + 3]}"
+      for field in ${records[index + 1]}; do
+        report_red "${source} .spec.${field}" "" "a source field that makes Flux's artifact differ from the checkout"
+      done
+      if [ "${source}" = "${root_source}" ]; then
+        [ "${url}" = "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" ] ||
+          report_red "${source} .spec.url" "${url}" "the root's source is not ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+        [ "${ref}" = "{\"branch\":\"${DEFAULT_BRANCH}\"}" ] ||
+          report_red "${source} .spec.ref" "${ref}" "the root's source is not the branch ${DEFAULT_BRANCH}"
+      elif [[ ! ${url} =~ ${pc_only_url_pattern} ]]; then
+        report_red "${source} .spec.url" "${url}" "the PC-only source is not the repository ${owner}/${PC_ONLY_SOURCE##*/}"
       fi
-      judge_records "${location} >" "${nested_file}" "${namespace_content_rule}" "$((depth + 1))"
-      return
-    fi
-  elif kinds="$(printf '%s' "${value}" | yq --no-doc --input-format yaml kind - 2>/dev/null)" && [[ ${kinds} == *map* || ${kinds} == *seq* ]]; then
-    report_red "${location}" "${value}" "yq parses the string as a YAML document but cannot decode it"
-    return
-  fi
-  judge_string "${location}" "${value}" content "${namespace_content_rule}"
-}
-
-judge_file() {
-  local file="$1" input_format=yaml namespace_content_rule=true records_file="${work_directory}/records.0"
-  [[ ${file,,} != *.json ]] || input_format=json
-  # The admission policies name the app namespace as a pattern, not as a reference.
-  case "${file}" in
-    infrastructure/admission/image-policy.yaml | infrastructure/app-attestations/app-attestations.yaml) namespace_content_rule=false ;;
-  esac
-  if ! decode "${input_format}" "${file}" >"${records_file}"; then
-    report_red "${file}" "" "yq cannot parse the file"
-    return
-  fi
-  judge_records "${file}" "${records_file}" "${namespace_content_rule}" 0
-}
-
-load_vendor_list() {
-  local shape_file="${work_directory}/vendor-shape" entries_file="${work_directory}/vendor-entries" shape_reasons entries index repository reason
-  yq --nul-output --output-format yaml "${VENDOR_LIST_SHAPE}" "${VENDOR_LIST}" >"${shape_file}" &&
-    yq --nul-output --output-format yaml "${VENDOR_LIST_ENTRIES}" "${VENDOR_LIST}" >"${entries_file}" ||
-    { echo "verify_image_release: yq cannot read the vendor list ${VENDOR_LIST}" >&2 && exit 1; }
-  mapfile -d '' shape_reasons <"${shape_file}"
-  for reason in "${shape_reasons[@]}"; do
-    report_red "${VENDOR_LIST}" "" "${reason}"
+    done
+    [ "${count}" -eq 1 ] || report_red "${source}" "" "a mapped source the render holds ${count} times"
   done
-  mapfile -d '' entries <"${entries_file}"
-  for ((index = 0; index < ${#entries[@]}; index += 2)); do
-    repository="${entries[index + 1]}"
-    if [[ ${repository,,} == "ghcr.io/${owner}/"* ]]; then
-      report_red "${VENDOR_LIST} entry ${entries[index]}" "${repository}" "a vendor entry under the app namespace ghcr.io/${owner}/"
-    elif ! parse_host_qualified_reference "${repository}" || [ "${repository}" != "${repository,,}" ]; then
-      report_red "${VENDOR_LIST} entry ${entries[index]}" "${repository}" "a vendor entry that is no lowercase <registry>/<repository>"
-    elif [ -n "${reference_tag}${reference_digest}" ]; then
-      report_red "${VENDOR_LIST} entry ${entries[index]}" "${repository}" "a vendor entry with a version"
-    elif [ -n "${vendor_entry_by_repository[${repository}]+listed}" ]; then
-      report_red "${VENDOR_LIST} entry ${entries[index]}" "${repository}" "a vendor repository listed under two keys: ${vendor_entry_by_repository[${repository}]} and ${entries[index]}"
+  find . -name .git -prune -o -name .sourceignore -print >"${work_directory}/ignore-files"
+  while IFS= read -r ignore_file; do
+    report_red "${ignore_file#./}" "" "a .sourceignore, which source-controller applies to the whole artifact and the render does not"
+  done <"${work_directory}/ignore-files"
+}
+
+# Red: every Helm object, and every other kind the rule does not know that carries an image, once per object.
+judge_unknown_kinds() {
+  local index object value
+  local -A judged_objects=()
+  read_records "${HELM_OBJECTS}"
+  for ((index = 0; index < ${#records[@]}; index += 2)); do
+    report_red "${records[index]}" "${records[index + 1]}" "a Helm object, which the render does not render yet"
+  done
+  read_records "${UNKNOWN_KIND_TRIGGERS}"
+  for ((index = 0; index < ${#records[@]}; index += 5)); do
+    object="${records[index]}" value="${records[index + 3]}"
+    [ -z "${judged_objects[${object}]+judged}" ] || continue
+    if [ "${records[index + 4]}" = candidate ]; then
+      parse_host_qualified_reference "${value}" && [ -n "${reference_tag}${reference_digest}" ] || continue
+    fi
+    judged_objects["${object}"]=judged
+    report_red "${object} ${records[index + 2]}" "${value}" "a kind whose image the rule does not know (${records[index + 1]})"
+  done
+}
+
+judge_image() {
+  local location="$1 $3" namespace="$2" image="$4" named repository
+  named="${image%@*}" repository="${image%@*}"
+  [[ ${named##*/} != *:* ]] || repository="${named%:*}"
+  if [ -z "${image}" ]; then
+    report_red "${location}" "" "an empty or missing image"
+  elif [ "${repository}" != "${repository,,}" ]; then
+    report_red "${location}" "${image}" "a registry host or repository path that is not lowercase"
+  elif [ -n "${flux_own_images["${namespace} ${image}"]+own}" ]; then
+    echo "images: ${location} runs ${image}, the locked flux2's own"
+  elif [[ ${image} == "ghcr.io/${owner}/"* ]]; then
+    app_reference_count=$((app_reference_count + 1))
+    if [[ ${repository} =~ ^ghcr\.io/${owner}/${PATH_COMPONENT}(/${PATH_COMPONENT})?$ && ${named} != "${repository}" &&
+      ${named##*:} =~ ${TAG_PATTERN} && ${image#"${named}"} =~ ${SHA256_DIGEST_PATTERN} ]]; then
+      report_red "${location}" "${image}" "an app ref, and no release check exists yet"
     else
-      vendor_entry_by_repository["${repository}"]="${entries[index]}"
+      report_red "${location}" "${image}" "not one full app ref ghcr.io/${owner}/<repo>[/<name>]:<version>@sha256:<64 hex>"
     fi
-  done
+  elif [ -z "${vendor_entry_by_repository[${repository}]+listed}" ]; then
+    report_red "${location}" "${image}" "not a repository of the vendor list"
+  else
+    used_vendor_repositories["${repository}"]=used
+    if [[ ${image#"${named}"} =~ ${SHA256_DIGEST_PATTERN} && (${named} == "${repository}" || ${named##*:} =~ ${TAG_PATTERN}) ]]; then
+      vendor_reference_count=$((vendor_reference_count + 1))
+    else
+      report_red "${location}" "${image}" "a listed vendor repository not at <repository>[:<tag>]@sha256:<64 hex>"
+    fi
+  fi
 }
 
 main() {
-  local repository_root tracked_files file
-  repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  cd "${repository_root}"
-  owner="${GITHUB_REPOSITORY_OWNER:?GITHUB_REPOSITORY_OWNER names the app namespace ghcr.io/<owner>/}"
-  owner="${owner,,}"
+  local variable index repository
+  for variable in GITHUB_SERVER_URL GITHUB_REPOSITORY GITHUB_REPOSITORY_OWNER DEFAULT_BRANCH RENDER_IMAGE; do
+    [ -n "${!variable:-}" ] || fail "${variable} is not set"
+  done
+  tree="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
+  cd "${tree}"
+  owner="${GITHUB_REPOSITORY_OWNER,,}"
   work_directory="$(mktemp -d)"
   trap 'rm -rf "${work_directory}"' EXIT
+  rendered="${work_directory}/rendered.yaml"
+  flux install --export >"${work_directory}/flux-components.yaml"
+  read_records "${POD_IMAGES}" "${work_directory}/flux-components.yaml"
+  for ((index = 0; index < ${#records[@]}; index += 4)); do
+    flux_own_images["${records[index + 1]} ${records[index + 3]}"]=own
+  done
   load_vendor_list
-  tracked_files="${work_directory}/tracked-files"
-  git ls-files -z -- ':(icase)*.yaml' ':(icase)*.yml' ':(icase)*.json' ':(glob)**/Kustomization' >"${tracked_files}"
-  while IFS= read -r -d '' file; do
-    [ "${file}" = "${GENERATED_FLUX_COMPONENTS}" ] || judge_file "${file}"
-  done <"${tracked_files}"
+  read_root
+  render
+  echo "images: ${root_object} renders $(yq eval-all '[.] | length' "${rendered}") objects"
+  echo "images: gap G1: ${PC_ONLY_SOURCE} is not rendered: the PC-only source, for which CI holds no key"
+  judge_kustomizations
+  judge_sources
+  judge_unknown_kinds
+  read_records "${POD_IMAGES}"
+  for ((index = 0; index < ${#records[@]}; index += 4)); do
+    judge_image "${records[index]}" "${records[index + 1]}" "${records[index + 2]}" "${records[index + 3]}"
+  done
   for repository in "${!vendor_entry_by_repository[@]}"; do
     [ -n "${used_vendor_repositories[${repository}]+used}" ] ||
-      report_red "${VENDOR_LIST} entry ${vendor_entry_by_repository[${repository}]}" "${repository}" "a vendor entry no tracked ref uses"
+      report_red "${VENDOR_LIST} entry ${vendor_entry_by_repository[${repository}]}" "${repository}" "a vendor entry no rendered image uses"
   done
-  echo "images: ${vendor_reference_count} vendor references"
+  echo "images: ${vendor_reference_count} vendor references pass"
   if [ "${app_reference_count}" -eq 0 ]; then
     echo "images: no app image reference was found"
   else

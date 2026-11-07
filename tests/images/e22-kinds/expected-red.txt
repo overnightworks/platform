@@ -1,0 +1,5 @@
+red: Deployment/default/volume .spec.template.spec.volumes[data].image.reference: 'docker.io/someone/data:1': not a repository of the vendor list
+red: Cluster/data/db .spec.imageName: 'ghcr.io/cloudnative-pg/postgresql:17@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': a kind whose image the rule does not know (postgresql.cnpg.io/v1)
+red: Runner/default/runner .spec.template.image: 'nginx': a kind whose image the rule does not know (example.io/v1)
+red: Job/default/train .spec.tasks.0.template.spec.containers.0.image: 'docker.io/library/traefik@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': a kind whose image the rule does not know (batch.volcano.sh/v1alpha1)
+red: CustomResourceDefinition//runners.example.io .spec.validation.openAPIV3Schema.properties.image: '': a kind whose image the rule does not know (apiextensions.k8s.io/v1beta1)

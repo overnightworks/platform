@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: encoded
+  namespace: default
+  annotations: {app: &app ghcr.io/overnightworks/hopin:2099.01.01.1}
+spec:
+  template:
+    spec:
+      containers:
+        - {name: escape, image: "ghcr.io/overnightworks/hopin:2099.01.01.1"}
+        - {name: alias, image: *app}
+        - {name: custom-tag, image: !custom ghcr.io/overnightworks/hopin:2099.01.01.1}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: second-document, namespace: default}
+spec:
+  template:
+    spec:
+      containers:
+        - {name: main, image: ghcr.io/overnightworks/hopin:2099.01.01.1}
