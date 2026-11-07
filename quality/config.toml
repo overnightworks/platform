@@ -21,3 +21,7 @@ reason = "Flux's documented layout: the cluster-wide add-ons beside clusters/, t
 [[root.allow]]
 entry = "host/"
 reason = "the files the bootstrap writes onto the host, ruled Q9 on platform#1"
+
+[[root.allow]]
+entry = "apps/"
+reason = "Flux's documented layout, ruled Q9 on platform#1"
