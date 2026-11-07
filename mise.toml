@@ -17,6 +17,9 @@ yq = "4"
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.
 K3S_VERSION = "v1.37.2+k3s1"
+# The one Flux component set: flux:export writes it and the images job names Flux's own images from it. No Helm
+# reconciler is in it, since every chart is rendered into Git.
+FLUX_COMPONENTS = "source-controller,kustomize-controller,notification-controller"
 # The sha256 of k3s's install.sh at that tag, the file bootstrap:k3s downloads; a bump changes both.
 K3S_INSTALLER_SHA256 = "ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b"
 
@@ -57,7 +60,7 @@ state = "absent"
 
 [tasks."flux:export"]
 description = "Regenerate the committed Flux components from the locked flux2"
-run = "flux install --export > clusters/pc/flux-system/gotk-components.yaml"
+run = 'flux install --export --components="$FLUX_COMPONENTS" > clusters/pc/flux-system/gotk-components.yaml'
 
 [tasks."charts:render"]
 description = "Render each pinned chart with its values into infrastructure/<component>/rendered.yaml"
