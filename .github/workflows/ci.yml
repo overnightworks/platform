@@ -512,11 +512,13 @@ jobs:
             containers:
               - name: client
                 image: @IMAGE@
-                args: [--silent, --max-time, "10", --write-out, "\nHTTP_STATUS=%{http_code}\n", --header, "Host: whoami.invalid", --header, "X-Forwarded-For: 192.0.2.1", "http://traefik.traefik.svc:80/"]
+                args: [--silent, --show-error, --max-time, "10", --write-out, "\nHTTP_STATUS=%{http_code} EXIT=%{exitcode} ERR=%{errormsg}\n", --header, "Host: whoami.invalid", --header, "X-Forwarded-For: 192.0.2.1", "http://traefik.traefik.svc:80/"]
                 securityContext:
                   allowPrivilegeEscalation: false
                   capabilities:
                     drop: [ALL]'
+          kubectl -n traefik get pods,endpoints,networkpolicy -o wide || true
+          kubectl -n traefik get svc traefik -o wide || true
           body=""
           for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
             name="whoami-request-$attempt"
