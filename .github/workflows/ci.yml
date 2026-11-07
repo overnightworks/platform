@@ -698,6 +698,38 @@ jobs:
           admitted "$ref in ${vendor_list%/*}" create_in "${vendor_list%/*}" <<<"$(probe_object Pod probe "$(one_container app "$ref")")"
           kubectl delete namespace "$PROBE_NAMESPACE" --wait --timeout=2m
 
+      - name: SCRATCH A5, an unlisted image only in an ephemeral container
+        env:
+          EPHEMERAL_NAMESPACE: ephemeral-probe
+          HOLDER_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          kubectl create namespace "$EPHEMERAL_NAMESPACE"
+          kubectl label namespace "$EPHEMERAL_NAMESPACE" pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=latest
+          kubectl --namespace "$EPHEMERAL_NAMESPACE" wait serviceaccount/default --for=create --timeout=1m
+          restricted='"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"runAsNonRoot":true,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}}'
+          kubectl --namespace "$EPHEMERAL_NAMESPACE" create -f - <<YAML
+          {"apiVersion":"v1","kind":"Pod","metadata":{"name":"holder"},"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"holder","image":"$HOLDER_IMAGE","command":["sleep","3600"],$restricted}]}}
+          YAML
+          kubectl --namespace "$EPHEMERAL_NAMESPACE" wait pod/holder --for=condition=Ready --timeout=3m
+          echo "the holder Pod runs in a namespace that enforces Pod Security restricted"
+          unlisted="docker.io/someone/hopin@sha256:$(printf '0%.0s' {1..64})"
+          ephemeral() {
+            kubectl --namespace "$EPHEMERAL_NAMESPACE" patch pod holder --subresource=ephemeralcontainers --type=strategic "${@:2}" \
+              --patch "{\"spec\":{\"ephemeralContainers\":[{\"name\":\"debugger\",\"image\":\"$1\",\"command\":[\"sleep\",\"60\"],$restricted}]}}"
+          }
+          # Control: the same restricted ephemeral container with a listed image passes Pod Security and the policy.
+          output="$(ephemeral "$HOLDER_IMAGE" --dry-run=server 2>&1)" || fail "the listed ephemeral container was refused: $output"
+          echo "admitted (control, dry-run): ephemeral container debugger runs the listed $HOLDER_IMAGE: $output"
+          if output="$(ephemeral "$unlisted" 2>&1)"; then fail "the ephemeral container with $unlisted was admitted: $output"; fi
+          echo "refused: ephemeral container debugger runs $unlisted: $output"
+          [[ $output == *app-and-vendor-images* && $output == *"ephemeral container debugger runs '$unlisted'"* ]] ||
+            fail "the refusal does not come from the policy for that container"
+          names="$(kubectl --namespace "$EPHEMERAL_NAMESPACE" get pod holder -o jsonpath='{.spec.ephemeralContainers[*].name}')"
+          [ -z "$names" ] || fail "the Pod holds the ephemeral containers '$names'"
+          echo "the Pod holds no ephemeral container after the refusal"
+          kubectl delete namespace "$EPHEMERAL_NAMESPACE" --wait --timeout=2m
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: |
