@@ -604,16 +604,21 @@ jobs:
             echo "$layer depends on $ADMISSION_LAYER, and its workloads were created after it"
           done <<<"$layers"
 
-      - name: Probe the image policy by server-side dry-run
+      - name: Probe the image policies by server-side dry-run
         env:
           # The policy covers this namespace like every other one; the step deletes it after the probes.
           PROBE_NAMESPACE: admission-probe
           POLICY_FILE: infrastructure/admission/image-policy.yaml
           VENDOR_LIST: infrastructure/admission/image-vendors.yaml
+          FLUX_COMPONENTS_FILE: clusters/pc/flux-system/gotk-components.yaml
+          FLUX_CONTROLLER: system:serviceaccount:flux-system:kustomize-controller
         run: |
           fail() { echo "::error::$1"; exit 1; }
-          policy="$(yq 'select(.kind == "ValidatingAdmissionPolicy") | .metadata.name' "$POLICY_FILE")"
-          binding="$(yq 'select(.kind == "ValidatingAdmissionPolicyBinding") | .metadata.name' "$POLICY_FILE")"
+          # The policy with the vendor list as its parameter, and the system namespaces' policy without one.
+          policy="$(yq 'select(.kind == "ValidatingAdmissionPolicy" and .spec.paramKind != null) | .metadata.name' "$POLICY_FILE")"
+          binding="$(yq 'select(.kind == "ValidatingAdmissionPolicyBinding" and .spec.paramRef != null) | .metadata.name' "$POLICY_FILE")"
+          system_policy="$(yq 'select(.kind == "ValidatingAdmissionPolicy" and .spec.paramKind == null) | .metadata.name' "$POLICY_FILE")"
+          system_binding="$(yq 'select(.kind == "ValidatingAdmissionPolicyBinding" and .spec.paramRef == null) | .metadata.name' "$POLICY_FILE")"
           vendor_list="$(yq '.metadata.namespace + "/" + .metadata.name' "$VENDOR_LIST")"
           failure_policy="$(kubectl get validatingadmissionpolicy "$policy" -o jsonpath='{.spec.failurePolicy}')"
           [ "$failure_policy" = Fail ] || fail "the policy $policy has failurePolicy '$failure_policy', not Fail"
@@ -622,6 +627,29 @@ jobs:
             fail "the binding $binding reads '$settings', not '$policy|Deny|$vendor_list|Deny'"
           echo "$policy fails closed; $binding only denies, reads $vendor_list and denies without it"
 
+          # The system namespaces are exactly those the first policy leaves out, and nothing there reads the vendor list.
+          exempt=" $(kubectl get validatingadmissionpolicy "$policy" -o jsonpath='{.spec.matchConstraints.namespaceSelector.matchExpressions[?(@.operator=="NotIn")].values[*]}') "
+          settings="$(kubectl get validatingadmissionpolicy "$system_policy" -o jsonpath='{.spec.failurePolicy}|{.spec.paramKind}| {.spec.matchConstraints.namespaceSelector.matchExpressions[?(@.operator=="In")].values[*]} ')"
+          [ "$settings" = "Fail||$exempt" ] || fail "the policy $system_policy reads '$settings', not 'Fail||$exempt'"
+          settings="$(kubectl get validatingadmissionpolicybinding "$system_binding" -o jsonpath='{.spec.policyName}|{.spec.validationActions[*]}|{.spec.paramRef}')"
+          [ "$settings" = "$system_policy|Deny|" ] || fail "the binding $system_binding reads '$settings', not '$system_policy|Deny|'"
+          echo "$system_policy fails closed in the namespaces$exempt; $system_binding only denies and reads no parameter"
+          # Both policies find a Pod spec's images through the same first three variables.
+          shared_variables() {
+            yq -o json -I 0 "select(.kind == \"ValidatingAdmissionPolicy\" and .metadata.name == \"$1\") | .spec.variables[0:3]" "$POLICY_FILE"
+          }
+          [ "$(shared_variables "$policy")" = "$(shared_variables "$system_policy")" ] ||
+            fail "the first three variables of $system_policy differ from those of $policy"
+          # What flux-system admits follows the controllers that gotk-components.yaml runs.
+          mapfile -t controller_refs < <(yq --no-doc 'select(.kind == "Deployment") | .spec.template.spec.containers[].image' \
+            "$FLUX_COMPONENTS_FILE")
+          controller_repositories="$(printf '%s\n' "${controller_refs[@]%:*}" | sort -u)"
+          admitted_repositories="$(kubectl get validatingadmissionpolicy "$system_policy" \
+            -o jsonpath='{.spec.variables[?(@.name=="controllerRepositories")].expression}' | grep -oE "'[^']+'" | tr -d "'" | sort -u)"
+          [ "$admitted_repositories" = "$controller_repositories" ] ||
+            fail "$system_policy admits '${admitted_repositories//$'\n'/ }', not the controllers of $FLUX_COMPONENTS_FILE"
+          echo "$system_policy admits the ${#controller_refs[@]} controller repositories of $FLUX_COMPONENTS_FILE"
+
           create_in() { kubectl --namespace "$1" create --dry-run=server -f -; }
           admitted() {
             local what="$1" output
@@ -629,14 +657,15 @@ jobs:
             output="$("$@" 2>&1)" || fail "$what was refused: $output"
             echo "admitted: $what"
           }
-          # refused <what> <text>... -- <command>...: the refusal names the policy, the digest and each text.
+          # refused <what> <text>... -- <command>...: the refusal names each of judged_by and each text.
+          judged_by=("$policy" digest)
           refused() {
             local what="$1" texts=() text output
             shift
             while [ "$1" != -- ]; do texts+=("$1") && shift; done
             shift
             if output="$("$@" 2>&1)"; then fail "$what was admitted"; fi
-            for text in "$policy" digest "${texts[@]}"; do
+            for text in "${judged_by[@]}" "${texts[@]}"; do
               [[ $output == *"$text"* ]] || fail "$what was refused without naming '$text': $output"
             done
             echo "refused: $what: $output"
@@ -648,6 +677,7 @@ jobs:
             template="{metadata: {labels: {probe: $name}}, spec: $spec}"
             case "$kind" in
               Pod) echo "{apiVersion: v1, kind: Pod, metadata: {name: $name}, spec: $spec}" ;;
+              ReplicationController) echo "{apiVersion: v1, kind: $kind, metadata: {name: $name}, spec: {selector: {probe: $name}, template: $template}}" ;;
               StatefulSet) echo "{apiVersion: apps/v1, kind: $kind, metadata: {name: $name}, spec: {serviceName: $name, selector: {matchLabels: {probe: $name}}, template: $template}}" ;;
               Deployment | DaemonSet | ReplicaSet) echo "{apiVersion: apps/v1, kind: $kind, metadata: {name: $name}, spec: {selector: {matchLabels: {probe: $name}}, template: $template}}" ;;
               Job) echo "{apiVersion: batch/v1, kind: Job, metadata: {name: $name}, spec: {template: $template}}" ;;
@@ -658,7 +688,6 @@ jobs:
           template_containers='(.spec.template.spec.containers[], .spec.template.spec.initContainers[])'
 
           # Each running vendor workload's Pod template, copied from the live object under a new name.
-          exempt=" $(kubectl get validatingadmissionpolicy "$policy" -o jsonpath='{.spec.matchConstraints.namespaceSelector.matchExpressions[?(@.operator=="NotIn")].values[*]}') "
           live_refs=() live_deployment="" live_pod=""
           while IFS='|' read -r namespace workload; do
             [[ $exempt != *" $namespace "* ]] || continue
@@ -721,6 +750,29 @@ jobs:
             <<<"$(probe_object Pod probe "$(one_container app "$app:v1.0.0@$generated_digest")")"
           admitted "$ref in ${vendor_list%/*}" create_in "${vendor_list%/*}" <<<"$(probe_object Pod probe "$(one_container app "$ref")")"
           kubectl delete namespace "$PROBE_NAMESPACE" --wait --timeout=2m
+
+          # flux-system admits Flux's controller repositories by tag and nothing else.
+          judged_by=("$system_policy")
+          flux_pod() { create_in flux-system <<<"$(probe_object Pod probe "$(one_container manager "$1")")"; }
+          for controller in "${controller_refs[@]}"; do
+            admitted "$controller in flux-system" flux_pod "$controller"
+          done
+          for image in "$unlisted" "${controller%/*}/helm-controller:${controller##*:}" "${controller%:*}" \
+            "$app:v1.0.0@$generated_digest"; do
+            refused "$image in flux-system" manager "$image" -- flux_pod "$image"
+          done
+          refused "an init container running $unlisted in flux-system" setup "$unlisted" -- create_in flux-system \
+            <<<"$(probe_object Pod probe "$(one_container manager "$controller"), initContainers: [{name: setup, image: '$unlisted'}]")"
+          refused "a Deployment running $unlisted in flux-system" app "$unlisted" -- create_in flux-system \
+            <<<"$(probe_object Deployment deployment-probe "$(one_container app "$unlisted")")"
+
+          # kube-system refuses what a Flux controller writes and leaves the rest, as k3s's own parts, unjudged.
+          for kind in Pod Deployment ReplicationController; do
+            object="$(probe_object "$kind" "${kind,,}-probe" "$(one_container app "$unlisted")")"
+            refused "a $kind in kube-system written as $FLUX_CONTROLLER" kube-system "$FLUX_CONTROLLER" -- \
+              kubectl --as="$FLUX_CONTROLLER" --namespace kube-system create --dry-run=server -f - <<<"$object"
+            admitted "a $kind in kube-system written as the job's user" create_in kube-system <<<"$object"
+          done
 
       - name: Assert that namespaces and tunnel applied the candidate and cloudflared runs at 0 replicas
         run: |

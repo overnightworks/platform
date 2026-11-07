@@ -93,7 +93,7 @@
   network exists in the cluster. Every Kustomization but the root and `admission` whose inventory holds a workload
   kind or a HelmRelease depends on `admission` and created its workloads after `admission`'s objects, the root's
   workloads are the Deployments of `gotk-components.yaml`, and `namespaces` holds only Namespaces Flux never prunes:
-  the job fails naming one without the prune annotation. It then probes the image policy by server-side dry-run on
+  the job fails naming one without the prune annotation. It then probes the image policies by server-side dry-run on
   generated objects and live ones; every image a step runs in the cluster is a listed vendor ref at a digest. Last,
   it runs Pods built from `cloudflared`'s template, its Secret volumes dropped and its arguments replaced: Pod Security
   `restricted` admits them, `cloudflared tunnel ingress validate` passes on the committed config, an unrouted host gets
@@ -117,7 +117,11 @@
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
   and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at
-  a sha256 digest or a full app ref, and in `admission` a vendor ref only.
+  a sha256 digest or a full app ref, and in `admission` a vendor ref only. The policy `system-namespace-images`, without
+  a parameter so a missing list never stops Flux, admits in flux-system only Flux's controller repositories by tag, the
+  one tag-only exception, and refuses in kube-system every Pod or workload a `system:serviceaccount:flux-system:` user
+  writes, so k3s's own parts there stay unjudged. Its controller list follows `FLUX_COMPONENTS`: `cluster` fails when it
+  differs from the images of `gotk-components.yaml`.
 - `infrastructure/cloudflared/`: the platform's own tunnel `platform`. The ConfigMap holds its lines, one per host to
   Traefik's Service and a final `http_status:404`; the Deployment `cloudflared` reads the tunnel and its credential
   only from the token file of the Secret `tunnel-token`, which `platform-secrets` applies, so no tunnel id, credential
