@@ -44,3 +44,9 @@ spec:
     openAPIV3Schema:
       properties:
         image: {type: string}
+---
+apiVersion: example.io/v1
+kind: Mirror
+metadata: {name: local, namespace: default}
+spec:
+  imageName: "LOCALHOST/repo:1"

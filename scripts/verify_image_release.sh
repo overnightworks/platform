@@ -53,7 +53,7 @@ UNKNOWN_KIND_TRIGGERS="select(${POD_SPEC_PATH} == null)
   | ${OBJECT} as \$object | .apiVersion as \$api_version | (
     (.. | select(tag == \"!!map\" and has(\"image\"))
       | [\$object, \$api_version, ${FIELD_PATH} + \".image\", ((.image | select(kind == \"scalar\") | tostring) // \"\"), \"key\"]),
-    (.. | select(tag == \"!!str\" and test(\"^(localhost|[^/ ]*[.:][^/ ]*)/[^ ]*[:@][^ /]*\$\"))
+    (.. | select(tag == \"!!str\" and test(\"^((?i:localhost)|[^/ ]*[.:][^/ ]*)/[^ ]*[:@][^ /]*\$\"))
       | [\$object, \$api_version, ${FIELD_PATH}, ., \"candidate\"])
   ) | .[]"
 # Object, apiVersion.
