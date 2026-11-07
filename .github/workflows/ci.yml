@@ -303,6 +303,70 @@ jobs:
           [ "$route_localnet" = 0 ] || fail "net.ipv4.conf.all.route_localnet is $route_localnet in $server, not 0"
           echo "net.ipv4.conf.all.route_localnet is 0 in $server"
 
+      - name: Assert that the kubelet keeps the configured log files, reopens a deleted pod log and never compresses one
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          server="k3d-${CLUSTER_NAME}-server-0"
+          node="$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')"
+          configured="$(yq '.["kubelet-arg"][] | select(test("^container-log-max-files=")) | sub("^[^=]*=", "")' \
+            "$K3S_CONFIG_SOURCE")"
+          [ -n "$configured" ] || fail "$K3S_CONFIG_SOURCE sets no container-log-max-files"
+          max_files="$(kubectl get --raw "/api/v1/nodes/$node/proxy/configz" |
+            yq -p json '.kubeletconfig.containerLogMaxFiles')"
+          [ "$max_files" = "$configured" ] ||
+            fail "the kubelet keeps $max_files log files per container, not the $configured $K3S_CONFIG_SOURCE sets"
+          echo "the kubelet of $node keeps $max_files log files per container, as $K3S_CONFIG_SOURCE sets"
+
+          # One writer prints a line with its time each second; the other 1 MiB each second, past several rotations.
+          # Each writer's own shell expands its script.
+          # shellcheck disable=SC2016
+          kubectl run log-ticker --image="$CLIENT_IMAGE" --restart=Never --command -- \
+            sh -c 'while true; do echo "tick $(date +%s)"; sleep 1; done'
+          # shellcheck disable=SC2016
+          kubectl run log-burst --image="$CLIENT_IMAGE" --restart=Never --command -- \
+            sh -c 'line="$(printf "%0100d" 0)"; for _ in $(seq 120); do yes "$line" | head -c 1048576; sleep 1; done'
+          kubectl wait pod/log-ticker pod/log-burst --for=condition=Ready --timeout=3m
+          # container_dir <pod>: the pod's log directory of its one container, found by the pod's uid on the node.
+          container_dir() {
+            local pod="$1" uid
+            uid="$(kubectl get pod "$pod" -o jsonpath='{.metadata.uid}')"
+            docker exec "$server" sh -c 'ls -d /var/log/pods/*_"$1"/"$2"' sh "$uid" "$pod"
+          }
+
+          # The clean of host/pod-logs deletes a live file and its emptied directories, here the whole pod directory.
+          ticker_dir="$(container_dir log-ticker)"
+          live_file="$ticker_dir/$(docker exec "$server" ls -1A "$ticker_dir")"
+          echo "deleting ${ticker_dir%/*} with the node's $(docker exec "$server" rm --version | head -n 1)"
+          deleted_at="$(docker exec "$server" sh -c 'rm -r "$1" && date +%s' sh "${ticker_dir%/*}")"
+          for _ in $(seq 30); do docker exec "$server" test -f "$live_file" && break; sleep 1; done
+          docker exec "$server" test -f "$live_file" || fail "the kubelet did not recreate $live_file within 30 seconds"
+          echo "the kubelet recreated $live_file within $(($(date +%s) - deleted_at)) seconds"
+          for _ in $(seq 10); do
+            newer="$(kubectl logs log-ticker | awk -v deleted_at="$deleted_at" '$1 == "tick" && $2 > deleted_at' || true)"
+            [ -z "$newer" ] || break
+            sleep 1
+          done
+          [ -n "$newer" ] || fail "kubectl logs shows no line written after the deletion"
+          echo "kubectl logs shows $(wc -l <<<"$newer") lines written after the deletion"
+
+          # The default of five files compresses each rotated file but the newest; two rotations show the difference.
+          burst_dir="$(container_dir log-burst)"
+          live_name="${live_file##*/}"
+          rotated=""
+          rotations=0
+          for _ in $(seq 90); do
+            files="$(docker exec "$server" ls -1A "$burst_dir")"
+            [ "$(wc -l <<<"$files")" -le "$max_files" ] || fail "$burst_dir holds ${files//$'\n'/ }"
+            ! grep -qE '\.(gz|tmp)$' <<<"$files" || fail "$burst_dir holds a compressed copy: ${files//$'\n'/ }"
+            rotated="$({ [ -z "$rotated" ] || echo "$rotated"; grep -vxF "$live_name" <<<"$files" || true; } | sort -u)"
+            rotations="$(grep -c . <<<"$rotated" || true)"
+            [ "$rotations" -lt 2 ] || break
+            sleep 1
+          done
+          [ "$rotations" -ge 2 ] || fail "the kubelet rotated $burst_dir less than twice: ${rotated:-none}"
+          echo "through the rotations ${rotated//$'\n'/ } $burst_dir held at most $max_files files and no compressed copy"
+          kubectl delete pod log-ticker log-burst --wait=false
+
       - name: Encrypt a dummy Secret and the app's Secrets to a throwaway age key
         env:
           # The apps' pull Secrets hold this job's own token, which GitHub masks; each app's package grants it Read.
@@ -1618,6 +1682,134 @@ jobs:
           list_state >"$RUNNER_TEMP/after-second-run"
           diff "$RUNNER_TEMP/before-second-run" "$RUNNER_TEMP/after-second-run" >"$RUNNER_TEMP/second-run.diff" ||
             { echo "::error::the second run changed the installed state:"; cat "$RUNNER_TEMP/second-run.diff"; exit 1; }
+
+      - name: Check that the committed tmpfiles line deletes a pod log by its creation time, with its emptied directories
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          apt-get install --yes --no-install-recommends systemd >/dev/null
+          # The committed line with its age shortened to seconds; its type, path and kind of age stay as committed.
+          age_seconds=3
+          line="$(grep '^e ' host/pod-logs/pod-logs.conf)"
+          short_line="$(sed -E "s/b:[0-9a-z]+\$/b:${age_seconds}s/" <<<"$line")"
+          [ "$short_line" != "$line" ] || fail "the line '$line' sets no age by creation time"
+          root="$RUNNER_TEMP/pod-logs-root"
+          pods_dir="$root$(awk '{ print $2 }' <<<"$line")"
+          mkdir -p "$pods_dir/ns_old_1/app" "$root/etc/tmpfiles.d"
+          # The committed file's other lines stay as committed.
+          { echo "$short_line"; grep '^r ' host/pod-logs/pod-logs.conf; } >"$root/etc/tmpfiles.d/pod-logs.conf"
+          echo first >"$pods_dir/ns_old_1/app/0.log"
+          [ "$(stat --format=%W "$pods_dir/ns_old_1/app/0.log")" -gt 0 ] || fail "$RUNNER_TEMP records no creation time"
+          sleep $((age_seconds + 2))
+          # Neither a write nor a read keeps the old file; the new pod's file is younger than the age.
+          echo appended >>"$pods_dir/ns_old_1/app/0.log"
+          cat "$pods_dir/ns_old_1/app/0.log" >/dev/null
+          mkdir -p "$pods_dir/ns_new_2/app"
+          echo first >"$pods_dir/ns_new_2/app/0.log"
+          touch "$pods_dir/ns_new_2/app/0.log.20261101-000000.gz" "$pods_dir/ns_new_2/app/0.log.20261101-000000.tmp"
+          # The flags are the service's own; only the root and the config path are the test tree's.
+          mapfile -t service_flags < <(sed -n 's/^ExecStart=[^ ]*//p' host/pod-logs/pod-logs-clean.service | tr ' ' '\n' |
+            grep -- '^--')
+          [ "${#service_flags[@]}" -gt 0 ] || fail "pod-logs-clean.service's ExecStart holds no flag"
+          systemd-tmpfiles "${service_flags[@]}" --root="$root" "$root/etc/tmpfiles.d/pod-logs.conf"
+          [ ! -e "$pods_dir/ns_old_1" ] || fail "the clean kept $(find "$pods_dir/ns_old_1" | tr '\n' ' ')"
+          [ -f "$pods_dir/ns_new_2/app/0.log" ] || fail "the clean deleted the file younger than ${age_seconds}s"
+          [ "$(find "$pods_dir/ns_new_2" -type f | wc -l)" -eq 1 ] ||
+            fail "the clean kept $(find "$pods_dir/ns_new_2" -type f | tr '\n' ' ')"
+          echo "the line at ${age_seconds}s deleted the older file after an append and a read, with its emptied" \
+            "container and pod directories, and kept the newer file; the clean deleted the new pod's .gz and .tmp"
+
+      - name: Check that check-pod-logs passes fresh logs and names each breach it can see without a month's wait
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          # systemd does not run in this container, so a fake systemctl answers for the timer and its service. The timer
+          # has not fired, as after a first install or a manual start, unless FAKE_LAST_TRIGGER sets its last trigger;
+          # the service's start time is FAKE_LAST_RUN.
+          fake_bin="$RUNNER_TEMP/fake-systemctl"
+          mkdir -p "$fake_bin"
+          cat >"$fake_bin/systemctl" <<'FAKE'
+          #!/usr/bin/env bash
+          case "$*" in
+            *LastTriggerUSec*) echo "${FAKE_LAST_TRIGGER:-n/a}" ;;
+            *InactiveExitTimestamp*) echo "$FAKE_LAST_RUN" ;;
+            *NextElapseUSecRealtime*) echo "@$(($(date +%s) + 3600))" ;;
+            *Result*) echo "$FAKE_RESULT" ;;
+            *) echo "fake systemctl: unexpected $*" >&2; exit 1 ;;
+          esac
+          FAKE
+          chmod +x "$fake_bin/systemctl"
+          # A fake stat answers with the creation time in FAKE_BIRTH, fails when FAKE_STAT_FAIL is set, deletes its
+          # file before failing when FAKE_STAT_VANISH is set, and else is stat.
+          cat >"$fake_bin/stat" <<'FAKE'
+          #!/usr/bin/env bash
+          [ -z "${FAKE_STAT_FAIL:-}" ] || { echo "fake stat: failed" >&2; exit 1; }
+          [ -z "${FAKE_STAT_VANISH:-}" ] || { rm -f "${@: -1}"; echo "fake stat: vanished" >&2; exit 1; }
+          [ -n "${FAKE_BIRTH:-}" ] || exec /usr/bin/stat "$@"
+          printf '%s' "$FAKE_BIRTH"
+          FAKE
+          chmod +x "$fake_bin/stat"
+          # A fake find fails when FAKE_FIND_FAIL is set, as an unreadable directory does, and else is find.
+          cat >"$fake_bin/find" <<'FAKE'
+          #!/usr/bin/env bash
+          [ -z "${FAKE_FIND_FAIL:-}" ] || { echo "fake find: failed" >&2; exit 1; }
+          exec /usr/bin/find "$@"
+          FAKE
+          chmod +x "$fake_bin/find"
+          check() { PATH="$fake_bin:$PATH" host/pod-logs/scripts/check_pod_logs.sh 2>&1; }
+          # A breach the check must name: the case, the fake service's last start and result, and the text naming it.
+          expect_breach() {
+            local case_name="$1" last_run="$2" result="$3" named="$4" output
+            output="$(FAKE_LAST_RUN="$last_run" FAKE_RESULT="$result" check)" &&
+              fail "the check passed $case_name: $output"
+            grep -q -- "$named" <<<"$output" || fail "the check did not name $case_name: $output"
+            echo "the check fails on $case_name: $(grep -- "$named" <<<"$output")"
+          }
+          pods_dir=/var/log/pods
+          mkdir -p "$pods_dir/ns_pod_1/app"
+          echo line >"$pods_dir/ns_pod_1/app/0.log"
+          recent="@$(($(date +%s) - 60))"
+          output="$(FAKE_LAST_RUN="$recent" FAKE_RESULT=success check)" || fail "the check failed fresh logs: $output"
+          grep -q "ns_pod_1/app/0.log" <<<"$output" || fail "the check did not name the oldest file: $output"
+          echo "the check passes fresh logs while the timer has not fired: $output"
+          output="$(FAKE_LAST_TRIGGER="$recent" FAKE_LAST_RUN=n/a FAKE_RESULT=success check)" ||
+            fail "the check failed a timer that fired after a reboot lost the service's start: $output"
+          echo "the check passes a clean the timer started before a reboot: $output"
+          expect_breach "a clean that never ran" n/a success \
+            "has never run: sudo systemctl start pod-logs-clean.service"
+          expect_breach "a run 26 hours ago" "@$(($(date +%s) - 26 * 3600))" success "hours ago"
+          expect_breach "a failed run" "$recent" exit-code "ended with exit-code"
+          FAKE_FIND_FAIL=1 expect_breach "a listing that failed" "$recent" success \
+            "listing the files under $pods_dir failed"
+          FAKE_STAT_FAIL=1 expect_breach "a stat that failed on a file that stays" "$recent" success \
+            "listing the files under $pods_dir failed, so the 30-day bound is unchecked: fake stat: failed"
+          expect_breach "a failed run with one breach" "$recent" exit-code "1 breach of the 30-day bound"
+          output="$(FAKE_LAST_RUN=n/a FAKE_RESULT=exit-code check)" && fail "the check passed two breaches"
+          grep -q "2 breaches of the 30-day bound" <<<"$output" || fail "the check did not count two breaches: $output"
+          grep -q "sudo systemctl start pod-logs-clean.service, then mise run check:pod-logs" <<<"$output" ||
+            fail "the check did not name the rerun of a failed clean: $output"
+          output="$(FAKE_STAT_VANISH=1 FAKE_LAST_RUN="$recent" FAKE_RESULT=success check)" ||
+            fail "the check failed files that vanished before their stat: $output"
+          grep -q "0 files under $pods_dir" <<<"$output" || fail "the check counted files that vanished: $output"
+          echo "the check skips files that vanished before their stat: $output"
+          echo line >"$pods_dir/ns_pod_1/app/0.log"
+          now="$(date +%s)"
+          # The check keeps a file up to 29 days old; a minute either side of the boundary stays clear of the clock.
+          FAKE_BIRTH=$((now - 29 * 86400 + 60)) FAKE_LAST_RUN="$recent" FAKE_RESULT=success check >/dev/null ||
+            fail "the check failed a file a minute short of 29 days old"
+          FAKE_BIRTH=$((now - 29 * 86400 - 60)) expect_breach "a file a minute over 29 days old" "$recent" success \
+            "days ago"
+          FAKE_BIRTH=0 expect_breach "a file without a creation time" "$recent" success "has no creation time"
+          touch "$pods_dir/ns_pod_1/app/0.log.20261101-000000.gz" "$pods_dir/ns_pod_1/app/0.log.20261101-000000.tmp"
+          expect_breach "a compressed copy" "$recent" success "0.log.20261101-000000.gz is a compressed copy"
+          expect_breach "a copy in compression" "$recent" success "0.log.20261101-000000.tmp is a copy"
+          rm -r "$pods_dir"
+          output="$(FAKE_LAST_RUN="$recent" FAKE_RESULT=success check)" ||
+            fail "the check failed a missing $pods_dir: $output"
+          [ "$(wc -l <<<"$output")" -eq 1 ] || fail "the check did not pass a missing $pods_dir with one line: $output"
+          echo "the check passes a missing $pods_dir: $output"
+          touch "$pods_dir"
+          expect_breach "a file in place of $pods_dir" "$recent" success \
+            "unchecked: $pods_dir is not a directory"
+          rm "$pods_dir"
 
   opentofu:
     runs-on: ubuntu-latest

@@ -37,6 +37,39 @@ owner = "root"
 group = "root"
 mode = "0644"
 
+# The 30-day bound on the kubelet's pod logs: the tmpfiles line, its daily clean and the check run after each clean.
+[bootstrap.files."/etc/tmpfiles.d/pod-logs.conf"]
+source = "host/pod-logs/pod-logs.conf"
+owner = "root"
+group = "root"
+mode = "0644"
+
+[bootstrap.files."/usr/local/sbin/check-pod-logs"]
+source = "host/pod-logs/scripts/check_pod_logs.sh"
+owner = "root"
+group = "root"
+mode = "0755"
+
+# mise starts a unit it has not seen before only when the run that writes its file notifies it, and a notification
+# runs systemd's daemon-reload first, so a changed service file reaches systemd too.
+[bootstrap.files."/etc/systemd/system/pod-logs-clean.timer"]
+source = "host/pod-logs/pod-logs-clean.timer"
+owner = "root"
+group = "root"
+mode = "0644"
+notify = ["pod-logs-clean.timer"]
+
+[bootstrap.files."/etc/systemd/system/pod-logs-clean.service"]
+source = "host/pod-logs/pod-logs-clean.service"
+owner = "root"
+group = "root"
+mode = "0644"
+notify = ["pod-logs-clean.timer"]
+
+[bootstrap.services."pod-logs-clean.timer"]
+state = "running"
+enabled = true
+
 # The PC's ufw keeps its defaults and the operator's own rules (no exclusive, whose ufw reset would delete them).
 # The pods reach the API server and the kubelet on the host through cni0, which only pods sit on, so one rule on the
 # interface alone admits them. mise's ufw check reads the "/16" of a source CIDR as a protocol, so a rule with a
@@ -187,6 +220,11 @@ done < <(printf '%s\n' "$known_hosts")
 
 printf '%s' "$manifest"
 '''
+
+[tasks."check:pod-logs"]
+description = "Check that no pod log on the PC is past its 30-day bound and that the daily clean ran and succeeded"
+# The installed check, the one the clean runs; /var/log/pods is root's alone.
+run = "sudo /usr/local/sbin/check-pod-logs"
 
 [tasks."github:test"]
 description = "Check the GitHub settings root: format, init against the committed lock, validate and the mocked tests"

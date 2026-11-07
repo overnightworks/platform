@@ -20,3 +20,7 @@ disable:
 # route_localnet stays 0, so a service bound to 127.0.0.1 stays off the LAN, also after an uninstall.
 kube-proxy-arg:
   - iptables-localhost-nodeports=false
+# The live file and one rotated file, never a compressed copy, so no log file is younger than its oldest line, which
+# the 30-day clean of host/pod-logs judges by creation time.
+kubelet-arg:
+  - container-log-max-files=2

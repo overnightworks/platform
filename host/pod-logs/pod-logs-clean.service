@@ -1,0 +1,7 @@
+[Unit]
+Description=Delete pod logs by creation time and check their 30-day bound
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemd-tmpfiles --clean --remove /etc/tmpfiles.d/pod-logs.conf
+ExecStartPost=/usr/local/sbin/check-pod-logs
