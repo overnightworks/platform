@@ -750,6 +750,52 @@ jobs:
             admitted "a $kind in kube-system written as the job's user" create_in kube-system <<<"$object"
           done
 
+      - name: A14 scratch, admission suspended and image-vendors deleted
+        env:
+          FLUX_COMPONENTS_FILE: clusters/pc/flux-system/gotk-components.yaml
+        run: |
+          echo "A14-BEGIN"
+          mapfile -t controller_refs < <(yq --no-doc 'select(.kind == "Deployment") | .spec.template.spec.containers[].image' "$FLUX_COMPONENTS_FILE")
+          echo "A14 controller refs: ${controller_refs[*]}"
+          echo "A14 flux-system Pods and images before:"
+          kubectl -n flux-system get pods -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{" "}{.spec.containers[*].image}{"\n"}{end}'
+          traefik_image="$(kubectl -n traefik get deployment -o jsonpath='{.items[0].spec.template.spec.containers[0].image}')"
+          echo "A14 traefik live ref: $traefik_image"
+          kubectl create namespace a14-probe
+          kubectl -n a14-probe wait serviceaccount/default --for=create --timeout=1m
+          pod_yaml() { echo "{apiVersion: v1, kind: Pod, metadata: {name: probe}, spec: {restartPolicy: Never, containers: [{name: $1, image: '$2'}]}}"; }
+          echo "A14 baseline, before suspending: the live ref in a14-probe"
+          kubectl -n a14-probe create --dry-run=server -f - <<<"$(pod_yaml app "$traefik_image")"
+          flux suspend kustomization admission -n flux-system
+          kubectl -n flux-system get kustomization admission -o jsonpath='A14 admission suspend={.spec.suspend}{"\n"}'
+          kubectl -n admission delete configmap image-vendors
+          if kubectl -n admission get configmap image-vendors; then echo "A14-FAIL the ConfigMap is still there"; exit 1; fi
+          rc=0
+          app_out="$(kubectl -n a14-probe create --dry-run=server -f - <<<"$(pod_yaml app "$traefik_image")" 2>&1)" || rc=$?
+          echo "A14 app-namespace probe exit=$rc output=$app_out"
+          [ "$rc" -ne 0 ] || { echo "A14-FAIL app-namespace probe admitted without the parameter"; exit 1; }
+          [[ $app_out == *param* ]] || { echo "A14-FAIL refusal does not name the parameter"; exit 1; }
+          for controller in "${controller_refs[@]}"; do
+            out="$(kubectl -n flux-system create --dry-run=server -f - <<<"$(pod_yaml manager "$controller")" 2>&1)" || { echo "A14-FAIL $controller in flux-system refused: $out"; exit 1; }
+            echo "A14 admitted in flux-system without the parameter: $out ($controller)"
+          done
+          rc=0
+          out="$(kubectl -n flux-system create --dry-run=server -f - <<<"$(pod_yaml manager "docker.io/someone/x@sha256:$(openssl rand -hex 32)")" 2>&1)" || rc=$?
+          echo "A14 extra, unlisted image in flux-system exit=$rc output=$out"
+          rc=0
+          out="$(kubectl --as=system:serviceaccount:flux-system:kustomize-controller -n kube-system create --dry-run=server -f - <<<"$(pod_yaml app "$traefik_image")" 2>&1)" || rc=$?
+          echo "A14 extra, flux controller in kube-system exit=$rc output=$out"
+          echo "A14 extra, Flux controllers still running with admission suspended:"
+          kubectl -n flux-system get deployments
+          kubectl -n flux-system rollout restart deployment/kustomize-controller
+          kubectl -n flux-system rollout status deployment/kustomize-controller --timeout=3m
+          echo "A14 extra, a restarted Flux controller Pod ran admitted without the parameter:"
+          kubectl -n flux-system get pods -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{"\n"}{end}'
+          flux resume kustomization admission -n flux-system
+          kubectl -n admission wait configmap/image-vendors --for=create --timeout=2m
+          kubectl -n a14-probe create --dry-run=server -f - <<<"$(pod_yaml app "$traefik_image")"
+          echo "A14-END"
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: |
