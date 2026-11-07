@@ -1,3 +1,0 @@
-red: HelmRelease/traefik/traefik: 'helm.toolkit.fluxcd.io/v2': a Helm object, which the render does not render yet
-red: HelmRelease/default/plain: 'helm.toolkit.fluxcd.io/v2beta2': a Helm object, which the render does not render yet
-red: HelmRelease/default/other .spec.image: 'nginx:1': a kind whose image the rule does not know (example.com/v1)
