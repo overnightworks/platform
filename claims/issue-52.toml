@@ -1,7 +1,0 @@
-claim_id = "6269040adbf54712bc3cf1a4e864d699"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "11cc6aafe3ab8929009e29a6a13718374ea867e6"
-branch = "claude/issue-52-ad1b-the-system-namespaces-admit-only-fl"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/admission/image-policy.yaml"]
-opened_commit = "c5753449c0a432007c720c0977f584add6b77583"
