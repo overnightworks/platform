@@ -10,5 +10,5 @@ data:
   traefik: docker.io/library/traefik
   # infrastructure/cloudflared/cloudflared.yaml; https://github.com/cloudflare/cloudflared#installing-cloudflared
   cloudflared: docker.io/cloudflare/cloudflared
-  # .github/workflows/ci.yml, the cluster job's client of Traefik; https://hub.docker.com/r/curlimages/curl
+  # .github/workflows/ci.yml, the cluster job's env CLIENT_IMAGE; https://hub.docker.com/r/curlimages/curl
   curl: docker.io/curlimages/curl

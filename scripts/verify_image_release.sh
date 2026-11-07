@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Render the tree as Flux applies it, with the locked flux2 and without network, and judge every image of every rendered
-# Pod template, and every host-qualified value of a step env in the CI workflow: a vendor ref passes only as a
-# repository of the vendor list at a sha256 digest, an app ref under ghcr.io/<owner>/ passes only through its release
-# checks (its tag, its attestation and the signer's commit on quality's main), and Flux's controllers pass in their
-# namespace as the locked flux2 exports them. What the rule cannot judge is red too.
+# Pod template, and every host-qualified value of an env map of the CI workflow (workflow, job or step): a vendor ref
+# passes only as a repository of the vendor list at a sha256 digest, an app ref under ghcr.io/<owner>/ passes only
+# through its release checks (its tag, its attestation and the signer's commit on quality's main), and Flux's
+# controllers pass in their namespace as the locked flux2 exports them. What the rule cannot judge is red too.
 # Usage: mise exec -- scripts/verify_image_release.sh [tree], the tree defaulting to this checkout. The run names
 # GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, DEFAULT_BRANCH, RENDER_IMAGE, the image the render
 # runs in, and FLUX_COMPONENTS, which mise.toml sets; gh reads GH_TOKEN or its own login, and reads the registry through
@@ -13,7 +13,7 @@ set -Eeuo pipefail
 trap 'echo "verify_image_release: line ${LINENO} failed: ${BASH_COMMAND}" >&2; exit 2' ERR
 
 ROOT_SYNC_FILE="clusters/pc/flux-system/gotk-sync.yaml"
-# The CI workflow whose step env values name the images its probes run in the cluster.
+# The CI workflow whose env values name the images its probes run in the cluster.
 CI_WORKFLOW=".github/workflows/ci.yml"
 VENDOR_LIST="infrastructure/admission/image-vendors.yaml"
 # The admission layer's binding reads the list by this name and namespace (paramRef).
@@ -56,10 +56,12 @@ POD_IMAGES="${POD_SPEC_PATH} as \$at | select(\$at != null) | ${OBJECT} as \$obj
     ((.volumes // [])[] | select(has(\"image\"))
       | [\$object, \$namespace, \$at + \".volumes[\" + (.name // \"\") + \"].image.reference\", ((.image.reference // \"\") | tostring)])
   ) | .[]"
-# Field path and string value of every env entry of every step of every job.
-CI_STEP_ENV_VALUES='.jobs | to_entries | .[] | .key as $job | (.value.steps // []) | .[] | (.name // "") as $step
-  | (.env // {}) | to_entries | .[] | select((.value | tag) == "!!str")
-  | [".jobs." + $job + ".steps[" + $step + "].env." + .key, .value] | .[]'
+# Field path and string value of every env entry of the workflow, of every job and of every step of every job.
+CI_ENV_VALUES='(["", .], ((.jobs // {}) | to_entries | .[] | .key as $job | (
+    [".jobs." + $job, .value],
+    ((.value.steps // []) | .[] | [".jobs." + $job + ".steps[" + (.name // "") + "]", .]))))
+  | .[0] as $owner | (.[1].env // {}) | to_entries | .[] | select((.value | tag) == "!!str")
+  | [$owner + ".env." + .key, .value] | .[]'
 # Object, apiVersion, field path, value, and key or candidate: an image key, or a string the grammar has to confirm as
 # a host-qualified reference, in an object of a kind the rule does not know.
 UNKNOWN_KIND_TRIGGERS="select(${POD_SPEC_PATH} == null)
@@ -376,11 +378,11 @@ judge_image() {
   fi
 }
 
-# Judges every step env value of the CI workflow that is a host-qualified reference, as a Pod template's image is judged.
-judge_ci_step_env_images() {
+# Judges every env value of the CI workflow that is a host-qualified reference, as a Pod template's image is judged.
+judge_ci_env_images() {
   local index status
   [ -f "${CI_WORKFLOW}" ] || fail "${CI_WORKFLOW} is missing"
-  read_records "${CI_STEP_ENV_VALUES}" "${CI_WORKFLOW}"
+  read_records "${CI_ENV_VALUES}" "${CI_WORKFLOW}"
   for ((index = 0; index < ${#records[@]}; index += 2)); do
     status=0
     parse_host_qualified_reference "${records[index + 1]}" || status=$?
@@ -482,10 +484,10 @@ main() {
   for ((index = 0; index < ${#records[@]}; index += 4)); do
     judge_image "${records[index]}" "${records[index + 1]}" "${records[index + 2]}" "${records[index + 3]}"
   done
-  judge_ci_step_env_images
+  judge_ci_env_images
   for repository in "${!vendor_entry_by_repository[@]}"; do
     [ -n "${used_vendor_repositories[${repository}]+used}" ] ||
-      report_red "${VENDOR_LIST} entry ${vendor_entry_by_repository[${repository}]}" "${repository}" "a vendor entry no rendered image or CI step env value uses"
+      report_red "${VENDOR_LIST} entry ${vendor_entry_by_repository[${repository}]}" "${repository}" "a vendor entry no rendered image or ci.yml env value uses"
   done
   echo "images: ${vendor_reference_count} vendor references pass"
   [ "${#app_reference_locations[@]}" -eq 0 ] ||
