@@ -51,10 +51,11 @@ jobs:
       # The dummy Secret the job encrypts, serves as platform-secrets and reads back decrypted.
       PROOF_SECRET_NAMESPACE: default
       PROOF_SECRET_NAME: decryption-proof
-      # The client Pods' image: each sends one request and is deleted after it.
+      # The client Pods' image: each sends its requests and is deleted after them.
       CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
       # A client Pod that Pod Security admits as restricted, as namespace cloudflared enforces: it prints the status of
-      # one request, or 000 when no answer came, with @NAME@, @IMAGE@, @HOST@ and @URL@ replaced.
+      # each request to its URL, or 000 when no answer came, with @NAME@, @IMAGE@, @HOST@ and @URL@ replaced. A 429's
+      # Retry-After would hold a retry for the whole rate-limit window, so --retry-max-time drops that retry.
       CLIENT_POD: |
         apiVersion: v1
         kind: Pod
@@ -72,7 +73,7 @@ jobs:
             - name: client
               image: @IMAGE@
               args: [--silent, --output, /dev/null, --write-out, '%{http_code}', --max-time, '10', --retry, '5',
-                --retry-connrefused, --retry-delay, '2', --header, 'Host: @HOST@', '@URL@']
+                --retry-connrefused, --retry-delay, '2', --retry-max-time, '30', --header, 'Host: @HOST@', '@URL@']
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -632,12 +633,21 @@ jobs:
           echo "GitRepository spec.ref after the reconcile: $source_ref"
           assert_job_source
 
-      - name: Assert that Traefik runs from its render, ClusterIP only, and answers only cloudflared's pods, and that speech-runtime answers only its callers' pods
+      - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's pods and routes the app, and that speech-runtime answers only its callers' pods
         env:
           # A client Pod's namespace that is neither Traefik's nor the tunnel's nor speech-runtime's callers', and the
           # host its Ingress routes.
           OTHER_NAMESPACE: ingress-client
           ROUTED_HOST: routed.invalid
+          # The routed app's manifest, its setting of the proxies it trusts, its sign-in start and that path's budget per
+          # client address, as hopin's config names them, and two documentation addresses (RFC 5737) a client names as
+          # forwarded.
+          ROUTED_APP_MANIFEST: apps/hopin/hopin.yaml
+          TRUSTED_PROXIES_SETTING: HOPIN_TRUSTED_PROXIES
+          SIGN_IN_PATH: /auth/start
+          SIGN_IN_BUDGET: "40"
+          FIRST_CLIENT_ADDRESS: 192.0.2.1
+          SECOND_CLIENT_ADDRESS: 192.0.2.2
           # speech-runtime's Namespace and Service, and one namespace its NetworkPolicy admits.
           SPEECH_NAMESPACE: speech-runtime
           SPEECH_SERVICE: speech-runtime
@@ -701,13 +711,19 @@ jobs:
           web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
           traefik_url="http://traefik.traefik.svc:${web_port}"
           client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
-          # request <namespace> <name> <host> <url>: a client Pod in the namespace asks the URL with the host header,
-          # runs to its end and is deleted; sets status to the status it printed and exit_code to curl's.
+          # request <namespace> <name> <host> <url> [<curl argument>...]: a client Pod in the namespace asks the URL with
+          # the host and the further arguments, runs to its end and is deleted; sets status to the statuses it printed
+          # and exit_code to curl's.
           request() {
             local namespace="$1" name="$2" host="$3" url="$4" client_pod
+            shift 4
             client_pod="${client_pod_template//@NAME@/${name}}"
             client_pod="${client_pod//@HOST@/${host}}"
-            printf '%s\n' "${client_pod//@URL@/${url}}" | kubectl -n "$namespace" create -f -
+            client_pod="${client_pod//@URL@/${url}}"
+            if [ "$#" -gt 0 ]; then
+              client_pod="$(CURL_ARGUMENTS="$(printf '%s\n' "$@")" yq '.spec.containers[0].args += (strenv(CURL_ARGUMENTS) | split("\n"))' <<<"$client_pod")"
+            fi
+            printf '%s\n' "$client_pod" | kubectl -n "$namespace" create -f -
             kubectl -n "$namespace" wait "pod/$name" --timeout=2m \
               --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' || {
               kubectl -n "$namespace" describe "pod/$name"
@@ -716,6 +732,14 @@ jobs:
             exit_code="$(kubectl -n "$namespace" get "pod/$name" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
             status="$(kubectl -n "$namespace" logs "pod/$name")"
             kubectl -n "$namespace" delete pod "$name" --wait --timeout=2m
+          }
+
+          # A refused connection (curl's 7) or no reply within the timeout (28) both leave the client without a status.
+          # assert_no_answer <namespace> <target>: the last request, from a Pod in the namespace, got no answer.
+          assert_no_answer() {
+            [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
+              fail "a Pod in $1 got the status $status from $2, curl exit code $exit_code"
+            echo "a Pod in $1 got no answer from $2 (curl exit code $exit_code)"
           }
 
           request "$TUNNEL_NAMESPACE" unrouted-request "$UNROUTED_HOST" "$traefik_url/"
@@ -738,14 +762,35 @@ jobs:
           [ "$status" = 400 ] || fail "Traefik answered $status, not 400, to a Pod in $TUNNEL_NAMESPACE for $ROUTED_HOST/a%2Fb"
           echo "Traefik answered 400 to a Pod in $TUNNEL_NAMESPACE for $ROUTED_HOST/a%2Fb"
 
-          # A refused connection (curl's 7) or no reply within the timeout (28) both leave the client without a status.
-          assert_no_answer() {
-            [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
-              fail "a Pod in $OTHER_NAMESPACE got the status $status from $1, curl exit code $exit_code"
-            echo "a Pod in $OTHER_NAMESPACE got no answer from $1 (curl exit code $exit_code)"
-          }
           request "$OTHER_NAMESPACE" denied-request "$ROUTED_HOST" "$traefik_url/"
-          assert_no_answer "Traefik's web port"
+          assert_no_answer "$OTHER_NAMESPACE" "Traefik's web port"
+
+          # Traefik's own port answers its readiness probe from the node, yet gives a Pod beside cloudflared no answer.
+          traefik="$(kubectl -n traefik get deployment traefik -o json)"
+          traefik_selector="$(yq '.spec.selector.matchLabels | to_entries | map(.key + "=" + .value) | join(",")' \
+            <<<"$traefik")"
+          read -r probe_path probe_port < <(yq \
+            '.spec.template.spec.containers[0].readinessProbe.httpGet | .path + " " + (.port | tostring)' <<<"$traefik")
+          traefik_pod_ip="$(kubectl -n traefik get pods -l "$traefik_selector" -o jsonpath='{.items[0].status.podIP}')"
+          request "$TUNNEL_NAMESPACE" probe-port-request "$UNROUTED_HOST" "http://${traefik_pod_ip}:${probe_port}${probe_path}"
+          assert_no_answer "$TUNNEL_NAMESPACE" "Traefik's probe port $probe_port"
+
+          # The app's Ingress sends its host to the app's Service, whose pods only Traefik's reach.
+          ingress="$(yq 'select(.kind == "Ingress") | .metadata.namespace + "/" + .metadata.name' "$ROUTED_APP_MANIFEST")"
+          app_namespace="${ingress%/*}"
+          route='{.spec.rules[0].host} {.spec.rules[0].http.paths[0].backend.service.name}'
+          route+=' {.spec.rules[0].http.paths[0].backend.service.port.number}{"\n"}'
+          read -r app_host app_service app_port < <(kubectl -n "$app_namespace" get ingress "${ingress#*/}" -o jsonpath="$route")
+          app_deployment="$(yq 'select(.kind == "Deployment") | .metadata.name' "$ROUTED_APP_MANIFEST")"
+          app="$(kubectl -n "$app_namespace" get deployment "$app_deployment" -o json)"
+          health_path="$(yq '.spec.template.spec.containers[0].readinessProbe.httpGet.path' <<<"$app")"
+          request "$TUNNEL_NAMESPACE" app-health-request "$app_host" "$traefik_url$health_path"
+          [ "$status" = 200 ] || fail "Traefik answered $status, not 200, to a Pod in $TUNNEL_NAMESPACE for $app_host$health_path"
+          echo "Traefik routes $app_host: a Pod in $TUNNEL_NAMESPACE got 200 for $health_path"
+          for namespace in "$OTHER_NAMESPACE" "$TUNNEL_NAMESPACE"; do
+            request "$namespace" app-denied-request "$app_host" "http://$app_service.$app_namespace.svc:$app_port$health_path"
+            assert_no_answer "$namespace" "the Service $app_namespace/$app_service"
+          done
 
           # speech-runtime's NetworkPolicy admits its callers' namespaces on the Service's port, and no other.
           speech_port="$(kubectl -n "$SPEECH_NAMESPACE" get service "$SPEECH_SERVICE" -o jsonpath='{.spec.ports[0].port}')"
@@ -759,12 +804,40 @@ jobs:
             fail "$SPEECH_SERVICE answered $status, not 200, to a Pod in $SPEECH_CALLER_NAMESPACE, curl exit code $exit_code"
           echo "$SPEECH_SERVICE answered 200 to a Pod in $SPEECH_CALLER_NAMESPACE"
           request "$OTHER_NAMESPACE" speech-denied-request "$SPEECH_SERVICE" "$speech_url"
-          assert_no_answer "$SPEECH_SERVICE"
+          assert_no_answer "$OTHER_NAMESPACE" "$SPEECH_SERVICE"
 
           kubectl delete namespace "$OTHER_NAMESPACE" --wait --timeout=2m
           [ -z "$(kubectl get namespace "$OTHER_NAMESPACE" --ignore-not-found -o name)" ] ||
             fail "the namespace $OTHER_NAMESPACE outlived its deletion"
           echo "the namespace $OTHER_NAMESPACE is gone"
+
+          # The app trusts the forwarded addresses of every Traefik pod, so its sign-in budget counts the address the
+          # client named: one more start than the budget from one address gets 429, and one from another does not.
+          trusted_proxies="$(yq \
+            '.spec.template.spec.containers[0].env[] | select(.name == strenv(TRUSTED_PROXIES_SETTING)) | .value' <<<"$app")"
+          traefik_pod_ips="$(kubectl -n traefik get pods -l "$traefik_selector" -o jsonpath='{range .items[*]}{range .status.podIPs[*]}{.ip}{" "}{end}{end}')"
+          python3 -I -c '
+          import ipaddress, sys
+          trusted = [ipaddress.ip_network(entry.strip()) for entry in sys.argv[1].split(",") if entry.strip()]
+          addresses = [ipaddress.ip_address(address) for address in sys.argv[2].split()]
+          sys.exit(not trusted or not addresses or
+                   not all(any(address in network for network in trusted) for address in addresses))
+          ' "$trusted_proxies" "$traefik_pod_ips" ||
+            fail "$TRUSTED_PROXIES_SETTING '$trusted_proxies' does not hold every Traefik pod's address '$traefik_pod_ips'"
+          echo "$TRUSTED_PROXIES_SETTING $trusted_proxies holds every Traefik pod's address: $traefik_pod_ips"
+          starts=$((SIGN_IN_BUDGET + 1))
+          request "$TUNNEL_NAMESPACE" sign-in-requests "$app_host" "$traefik_url$SIGN_IN_PATH?attempt=[1-$starts]" \
+            --header "X-Forwarded-For: $FIRST_CLIENT_ADDRESS"
+          mapfile -t statuses < <(grep -o '[0-9][0-9][0-9]' <<<"$status")
+          admitted="$(printf '%s\n' "${statuses[@]:0:SIGN_IN_BUDGET}" | grep -cvxE '000|429' || true)"
+          [ "${#statuses[@]}" = "$starts" ] && [ "$admitted" = "$SIGN_IN_BUDGET" ] && [ "${statuses[-1]}" = 429 ] ||
+            fail "the app answered '${statuses[*]}' to $starts sign-in starts from $FIRST_CLIENT_ADDRESS, not $SIGN_IN_BUDGET without 429, then 429"
+          echo "the app admitted $SIGN_IN_BUDGET sign-in starts from $FIRST_CLIENT_ADDRESS and answered the next with 429"
+          request "$TUNNEL_NAMESPACE" other-sign-in-request "$app_host" "$traefik_url$SIGN_IN_PATH" \
+            --header "X-Forwarded-For: $SECOND_CLIENT_ADDRESS"
+          [ "$status" != 429 ] && [ "$status" != 000 ] ||
+            fail "the app answered $status to a sign-in start from $SECOND_CLIENT_ADDRESS after the budget of $FIRST_CLIENT_ADDRESS"
+          echo "the app answered $status to a sign-in start from $SECOND_CLIENT_ADDRESS"
 
       - name: Assert that each app runs at its full app ref after platform-secrets, pulled through its pull Secret
         env:
@@ -1187,7 +1260,8 @@ jobs:
           echo "the tunnel answers the unrouted host $UNROUTED_HOST with http_status:404"
 
           # Every host the lines name goes to Traefik's Service at its web port, and a client Pod beside cloudflared sends
-          # the request cloudflared forwards; no Ingress routes the host yet, so Traefik answers 404.
+          # the request cloudflared forwards: Traefik answers 404 for a host no Ingress routes, and passes on the others.
+          ingress_hosts="$(kubectl get ingresses -A -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{"\n"}{end}{end}')"
           web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
           traefik_host="$(kubectl -n traefik get service traefik -o jsonpath='{.metadata.name}.{.metadata.namespace}.svc')"
           client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
@@ -1211,17 +1285,24 @@ jobs:
             }
             status="$(kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$client_pod_name")"
             kubectl -n "$TUNNEL_NAMESPACE" delete pod "$client_pod_name" --wait --timeout=2m
-            [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for $routed_host at $routed_url"
-            echo "the tunnel sends $routed_host to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
+            if grep -qxF "$routed_host" <<<"$ingress_hosts"; then
+              [[ $status =~ ^[1-5][0-9][0-9]$ && $status != 404 ]] ||
+                fail "Traefik answered $status for $routed_host at $routed_url, which an Ingress routes"
+              echo "the tunnel sends $routed_host to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches its route ($status)"
+            else
+              [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for $routed_host at $routed_url"
+              echo "the tunnel sends $routed_host to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
+            fi
           done
 
       - name: P7a cells
         env:
           # The layer whose Kustomization the prune proof deletes and whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
-          # Keycloak's namespace, whose egress policy the probe Pods meet, an app Service and a host outside the cluster.
+          # Keycloak's namespace, whose egress policy the probe Pods meet, a Service every other Pod reaches and a host
+          # outside the cluster.
           EGRESS_NAMESPACE: keycloak
-          APP_SERVICE: hopin/hopin
+          CLUSTER_SERVICE: default/kubernetes
           OUTSIDE_TARGET: github.com:443
           # The egress probe Pods' image; local-path's helper runs busybox too.
           PROBE_IMAGE: docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
@@ -1354,11 +1435,12 @@ jobs:
             -o jsonpath='{.spec.podSelector.matchLabels}')"
           postgres_port="$(kubectl --namespace "$EGRESS_NAMESPACE" get service postgres -o jsonpath='{.spec.ports[0].port}')"
           postgres_target="postgres.$EGRESS_NAMESPACE.svc.cluster.local:$postgres_port"
-          app_port="$(kubectl --namespace "${APP_SERVICE%/*}" get service "${APP_SERVICE#*/}" -o jsonpath='{.spec.ports[0].port}')"
-          app_target="${APP_SERVICE#*/}.${APP_SERVICE%/*}.svc.cluster.local:$app_port"
+          service_port="$(kubectl --namespace "${CLUSTER_SERVICE%/*}" get service "${CLUSTER_SERVICE#*/}" \
+            -o jsonpath='{.spec.ports[0].port}')"
+          service_target="${CLUSTER_SERVICE#*/}.${CLUSTER_SERVICE%/*}.svc.cluster.local:$service_port"
           # egress_probe <name> <labels as JSON>: sets probe_log to one "<target> open|closed" line per target.
           egress_probe() {
-            NAME="$1" LABELS="$2" IMAGE="$PROBE_IMAGE" TARGETS="$postgres_target $app_target $OUTSIDE_TARGET" yq --null-input '
+            NAME="$1" LABELS="$2" IMAGE="$PROBE_IMAGE" TARGETS="$postgres_target $service_target $OUTSIDE_TARGET" yq --null-input '
               {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(NAME), "labels": (strenv(LABELS) | from_yaml)},
                "spec": {"restartPolicy": "Never", "automountServiceAccountToken": false,
                  "securityContext": {"runAsNonRoot": true, "runAsUser": 65534, "seccompProfile": {"type": "RuntimeDefault"}},
@@ -1372,17 +1454,22 @@ jobs:
             kubectl --namespace "$EGRESS_NAMESPACE" delete pod "$1" --wait --timeout=2m
           }
           egress_probe keycloak-egress-probe "$keycloak_labels"
-          [ "$probe_log" = "$postgres_target open"$'\n'"$app_target closed"$'\n'"$OUTSIDE_TARGET closed" ] ||
+          [ "$probe_log" = "$postgres_target open"$'\n'"$service_target closed"$'\n'"$OUTSIDE_TARGET closed" ] ||
             fail "a Pod with Keycloak's labels $keycloak_labels does not reach exactly its Postgres"
           egress_probe free-egress-probe '{}'
-          [ "$probe_log" = "$postgres_target open"$'\n'"$app_target open"$'\n'"$OUTSIDE_TARGET open" ] ||
+          [ "$probe_log" = "$postgres_target open"$'\n'"$service_target open"$'\n'"$OUTSIDE_TARGET open" ] ||
             fail "a Pod without Keycloak's labels does not reach every target, so the probe proves no policy"
-          echo "a Pod with Keycloak's labels resolves names and reaches its Postgres, neither $APP_SERVICE nor $OUTSIDE_TARGET"
+          echo "a Pod with Keycloak's labels resolves names and reaches its Postgres, neither $CLUSTER_SERVICE nor $OUTSIDE_TARGET"
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: |
           flux get all --all-namespaces
+          # A layer's timeout ends the wait for every Kustomization, so each one not Ready is named with its reason.
+          kubectl get kustomizations.kustomize.toolkit.fluxcd.io -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}|{.status.conditions[?(@.type=="Ready")].status}|{.status.conditions[?(@.type=="Ready")].reason}: {.status.conditions[?(@.type=="Ready")].message}{"\n"}{end}' |
+            while IFS='|' read -r kustomization ready reason; do
+              [ "$ready" = True ] || echo "::error::the Kustomization $kustomization is not Ready: $reason"
+            done
           flux logs --all-namespaces --level=error
           # Pod Security's refusal of a Pod appears only in Warning events and the workloads' conditions, never in Flux's state.
           kubectl get events --all-namespaces --field-selector type=Warning
@@ -1391,10 +1478,12 @@ jobs:
             -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.message}{"\n"}{end}'
           df --human-readable /
           kubectl get deployments,replicasets --all-namespaces -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]} {.type}={.status}({.reason}: {.message}){end}{"\n"}{end}'
-          # A start an app refuses appears only in its own log.
-          kubectl get pods --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"|"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' |
-            while IFS='|' read -r pod ready; do
-              [ "$ready" = True ] || kubectl --namespace "${pod%/*}" logs "pod/${pod#*/}" --all-containers --tail=20 || true
+          # A start an app refuses appears only in its own log, a refused pull only in its container's waiting state.
+          kubectl get pods --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}|{.status.conditions[?(@.type=="Ready")].status}|{.status.containerStatuses[*].state.waiting.reason} {.status.containerStatuses[*].state.waiting.message}{"\n"}{end}' |
+            while IFS='|' read -r pod ready waiting; do
+              [ "$ready" != True ] || continue
+              echo "the Pod $pod is not Ready: $waiting"
+              kubectl --namespace "${pod%/*}" logs "pod/${pod#*/}" --all-containers --tail=20 || true
             done
 
   bootstrap:

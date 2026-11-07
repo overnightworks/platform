@@ -59,6 +59,10 @@ spec:
               value: /run/secrets/litellm_key
             - name: HOPIN_AGENT__API_GROUP
               value: /services/agent-service/api
+            # The pod network, where Traefik's pods change address on every restart; the NetworkPolicy below admits
+            # only Traefik's, so no other pod can name a client address in X-Forwarded-For.
+            - name: HOPIN_TRUSTED_PROXIES
+              value: 10.42.0.0/16
           # No liveness probe: a restart ends every call and session.
           readinessProbe:
             httpGet:
@@ -96,3 +100,44 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+---
+# Cloudflare terminates TLS, so the route is plain HTTP on Traefik's web port, and it names its host, so every other
+# host keeps Traefik's 404.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hopin
+  namespace: hopin
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: hopin.hallucinai.de
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hopin
+                port:
+                  number: 8080
+---
+# hopin trusts the X-Forwarded-For of the pod network, so only Traefik's pods may reach it; the kubelet's probe comes
+# from the node, which a NetworkPolicy never blocks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: http-from-traefik-only
+  namespace: hopin
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - port: http
+          protocol: TCP
