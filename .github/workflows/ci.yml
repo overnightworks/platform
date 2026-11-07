@@ -200,6 +200,9 @@ jobs:
           touch "$SOPS_AGE_KEY_FILE.drill"
           check_refuses "a drill file beside the key file" "$SOPS_AGE_KEY_FILE.drill"
 
+      - name: Check that bootstrap:secrets prints no key block for a source that turns Ready within the minute
+        run: tests/secrets/bootstrap_secrets.sh
+
       - name: Assert that k3s runs with host/k3s/config.yaml
         run: |
           fail() { echo "::error::$1"; exit 1; }
