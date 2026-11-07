@@ -1,0 +1,13 @@
+# The base keycloak and litellm include, no Flux layer of its own: each sets its namespace and its key-tables, the
+# tables whose row counts check-key-tables.sh compares with a dump, as SQL names without quotes.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - postgres.yaml
+configMapGenerator:
+  - name: postgres
+    files:
+      - check-key-tables.sh
+    options:
+      # The pod reads the files where they are mounted, so a changed check needs no restart of the database.
+      disableNameSuffixHash: true
