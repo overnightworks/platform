@@ -610,16 +610,19 @@ jobs:
           done <<<"$image_ids"
           echo "every running Traefik container carries the Deployment's digest"
 
-      - name: SCRATCH timeline of fresh cloudflared pods reaching web
+      - name: SCRATCH encoded characters, dot segments and denied ports from cloudflared
         if: always()
         run: |
-          probe() {
-            local name="$1" count="$2"
-            kubectl -n cloudflared create -f - <<POD
+          kubectl create namespace probe-routes
+          kubectl -n probe-routes create service clusterip no-endpoints --tcp=80:80
+          kubectl -n probe-routes create ingress routed --rule="routed.invalid/*=no-endpoints:80"
+          traefik_ip="$(kubectl -n traefik get pod -l app.kubernetes.io/name=traefik -o jsonpath='{.items[0].status.podIP}')"
+          echo "SCRATCH traefik pod ip $traefik_ip"
+          kubectl -n cloudflared create -f - <<POD
           apiVersion: v1
           kind: Pod
           metadata:
-            name: $name
+            name: paths
           spec:
             restartPolicy: Never
             automountServiceAccountToken: false
@@ -630,29 +633,21 @@ jobs:
                 command: [sh, -c]
                 args:
                   - |
-                    start=\$(date +%s)
-                    i=0
-                    while [ \$i -lt $count ]; do
-                      code=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 -H 'Host: x.invalid' http://traefik.traefik.svc:80/ || true)
-                      echo "t+\$((\$(date +%s)-start))s \$code"
-                      i=\$((i+1)); sleep 1
+                    sleep 5
+                    for path in / /a%2Fb /a%2fb /a%5Cb /a%00b /a%3Bb /a%25b /a%3Fb /a%23b /a/../b /a/./b //a /a%2e%2e/b /%2e%2e/%2e%2e/etc /a%252Fb; do
+                      code=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 --path-as-is -H 'Host: routed.invalid' "http://traefik.traefik.svc:80\$path" || true)
+                      echo "PATH \$path \$code"
                     done
+                    for port in 80 8000 8080 8443 9100; do
+                      code=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 -H 'Host: routed.invalid' "http://$traefik_ip:\$port/" || true)
+                      echo "PODPORT \$port \$code"
+                    done
+                    code=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 -H 'Host: routed.invalid' -H 'X_Forwarded_For: 192.0.2.9' "http://traefik.traefik.svc:80/" || true)
+                    echo "ALIAS-HEADER \$code"
                 securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
           POD
-          }
-          collect() {
-            kubectl -n cloudflared wait "pod/$1" --timeout=5m --for=jsonpath='{.status.phase}'=Succeeded
-            echo "SCRATCH timeline $1: $(kubectl -n cloudflared logs "pod/$1" | tr '\n' ';')"
-            kubectl -n cloudflared delete pod "$1" --wait
-          }
-          echo "SCRATCH quiet cluster"
-          probe quiet 40; collect quiet
-          echo "SCRATCH after churn: a new namespace with a Deployment"
-          kubectl create namespace churn
-          kubectl -n churn create deployment churn --image="$CLIENT_IMAGE" -- sleep 600
-          probe afterchurn 60; collect afterchurn
-          echo "SCRATCH second round, quiet again"
-          probe quiet2 40; collect quiet2
+          kubectl -n cloudflared wait pod/paths --timeout=3m --for=jsonpath='{.status.phase}'=Succeeded
+          kubectl -n cloudflared logs pod/paths | sed 's/^/SCRATCH /'
 
       - name: Assert that every workload layer depends on admission and was applied after it
         env:
