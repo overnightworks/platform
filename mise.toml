@@ -407,8 +407,8 @@ wait_alone() {
 }
 resume() {
   trap - EXIT INT TERM
-  wait_alone || fail "another session still holds the database $namespace after 2 minutes; the Kustomization stays \
-suspended and the writers at 0: run mise run db:load-dump --resume $namespace once it ended"
+  wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; the \
+Kustomization stays suspended and the writers at 0: run mise run db:load-dump --resume $namespace once it ended"
   flux resume kustomization "$namespace" --wait
 }
 if [ "${usage_resume:-false}" = true ]; then resume && exit 0; fi
@@ -427,10 +427,10 @@ deployments="$(kubectl --namespace "$namespace" get deployments -o name)"
 [ -z "$deployments" ] || kubectl --namespace "$namespace" scale $deployments --replicas=0
 # Foreground: the delete returns once the Jobs' pods are gone.
 kubectl --namespace "$namespace" delete job --selector "kustomize.toolkit.fluxcd.io/name=$namespace" --cascade=foreground
-writers="$(kubectl --namespace "$namespace" get pods -o go-template='{{range $pod := .items}}{{range .metadata.ownerReferences}}
-  {{- if eq .kind "ReplicaSet"}}pod/{{$pod.metadata.name}}{{"\n"}}{{end}}{{end}}{{end}}')"
+writers="$(kubectl --namespace "$namespace" get pods -o yaml |
+  yq '.items[] | select(.metadata.ownerReferences[]?.kind == "ReplicaSet") | "pod/" + .metadata.name')"
 [ -z "$writers" ] || kubectl --namespace "$namespace" wait $writers --for=delete --timeout=5m
-wait_alone || fail "another session holds the database $namespace after 2 minutes; nothing loaded"
+wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; nothing loaded"
 
 log="$file.load.log"
 : >"$log" && chmod 0600 "$log"
