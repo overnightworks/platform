@@ -653,6 +653,7 @@ jobs:
             template="{metadata: {labels: {probe: $name}}, spec: $spec}"
             case "$kind" in
               Pod) echo "{apiVersion: v1, kind: Pod, metadata: {name: $name}, spec: $spec}" ;;
+              ReplicationController) echo "{apiVersion: v1, kind: $kind, metadata: {name: $name}, spec: {selector: {probe: $name}, template: $template}}" ;;
               StatefulSet) echo "{apiVersion: apps/v1, kind: $kind, metadata: {name: $name}, spec: {serviceName: $name, selector: {matchLabels: {probe: $name}}, template: $template}}" ;;
               Deployment | DaemonSet | ReplicaSet) echo "{apiVersion: apps/v1, kind: $kind, metadata: {name: $name}, spec: {selector: {matchLabels: {probe: $name}}, template: $template}}" ;;
               Job) echo "{apiVersion: batch/v1, kind: Job, metadata: {name: $name}, spec: {template: $template}}" ;;
@@ -742,7 +743,7 @@ jobs:
             <<<"$(probe_object Deployment deployment-probe "$(one_container app "$unlisted")")"
 
           # kube-system refuses what a Flux controller writes and leaves the rest, as k3s's own parts, unjudged.
-          for kind in Pod Deployment; do
+          for kind in Pod Deployment ReplicationController; do
             object="$(probe_object "$kind" "${kind,,}-probe" "$(one_container app "$unlisted")")"
             refused "a $kind in kube-system written as $FLUX_CONTROLLER" kube-system "$FLUX_CONTROLLER" -- \
               kubectl --as="$FLUX_CONTROLLER" --namespace kube-system create --dry-run=server -f - <<<"$object"
