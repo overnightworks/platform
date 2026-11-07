@@ -8,8 +8,7 @@ set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 work_directory="$(mktemp -d)"
-leftovers=()
-trap 'for pid in "${leftovers[@]}"; do pkill -KILL --session "$pid" 2>/dev/null || true; done; rm -rf "$work_directory"' EXIT
+trap 'rm -rf "$work_directory"' EXIT
 fake_bin="$work_directory/bin"
 mkdir "$fake_bin"
 fail() { echo "load_dump: $1" >&2; exit 1; }
@@ -138,7 +137,7 @@ cell_interrupt_while_verifying() {
   : >"$FAKE_DIR/flux.log"
   FAKE_VERIFY_HANGS=1 setsid mise run db:load-dump x "$dump" >"$FAKE_DIR/output" 2>&1 &
   loader=$!
-  leftovers+=("$loader")
+  trap 'pkill -KILL --session "$loader" 2>/dev/null || true; wait "$loader" 2>/dev/null || true' EXIT
   for _ in $(seq 150); do [ -e "$FAKE_DIR/verifying" ] && break; sleep 0.2; done
   [ -e "$FAKE_DIR/verifying" ] || fail "the loader never reached its verification"
   pkill -INT --session "$loader"
