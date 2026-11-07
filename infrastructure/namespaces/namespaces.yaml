@@ -1,0 +1,8 @@
+# The namespaces that receive Secrets from platform-secrets. Flux never deletes one, neither on a prune nor with its
+# Kustomization, since its Secrets live in another repository and would go with it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: admission
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
