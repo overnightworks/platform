@@ -31,10 +31,13 @@
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
   at 0600, verifies each table `key-tables` names (all tables and their sorted rows' sha256 with `--compare`) and only
   then resumes Flux and waits for the namespace to converge. It refuses a suspended Kustomization; a failed load leaves
-  the data unchanged and resumes once, a differing one stays suspended with its writers at 0. After a hard kill,
-  `mise run db:load-dump --resume <namespace>` resumes once no other session holds the database, and verifies nothing.
-  It prints names, counts and outcomes, never a row. `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>`
-  interrupts a load inside its transaction and asserts that recovery.
+  the data unchanged and resumes once, a differing one, or one that ends before the comparison did, stays suspended with
+  its writers at 0. After a hard kill, `mise run db:load-dump --resume <namespace>` resumes once no other session holds
+  the database, and verifies nothing. It prints names, counts and outcomes, never a row.
+  `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>` interrupts a load inside its transaction and asserts
+  that recovery, writers included. `tests/postgres/load_dump.sh` drives the task and that script against fake commands
+  for the outcomes the cluster cannot arrange: a failed `flux resume`, an unreadable suspension, a signal during the
+  comparison and a table only the database holds.
 - `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
   pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else
@@ -147,7 +150,9 @@
   retains, each Postgres is Ready as its image's postgres user on a bound claim of it with the prune annotation at
   `<namespace>/<claim>`, and `pg_isready` passes as the namespace's user; deletes the Kustomization `litellm`, whose
   inventory goes while the claim, its volume and the Namespace stay, and the root re-creates it with the row written
-  before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on a synthetic dump it makes;
+  before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on a synthetic dump it makes, with the
+  Kustomization `litellm` pointed at `tests/postgres/writers` for a Deployment and a Job that Flux applies, stops and
+  restores;
   and shows that a busybox Pod with Keycloak's labels reaches its Postgres but neither the Service `kubernetes` nor
   github.com, while one without them reaches all three. k3d does not prove the egress to hal's Docker bridges or to
   hopin, whose own policy already refuses both Pods.

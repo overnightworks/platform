@@ -15,6 +15,14 @@ blocked_sessions() {
     --command="SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
       AND xact_start IS NOT NULL AND wait_event = 'ClientRead'"
 }
+# The writers the loader stops and Flux restores: "<name>=<replicas>" per Deployment, and the Jobs Flux applied.
+replicas() {
+  kubectl --namespace "$namespace" get deployments -o jsonpath='{range .items[*]}{.metadata.name}={.spec.replicas}{"\n"}{end}'
+}
+flux_jobs() {
+  kubectl --namespace "$namespace" get jobs --selector "kustomize.toolkit.fluxcd.io/name=$namespace" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+}
 # A positive count; a failed read counts as none, so an unread session is never one that blocks.
 blocked_count() { blocked_sessions 2>/dev/null || true; }
 blocks_inside_transaction() { [[ "$(blocked_count)" =~ ^[1-9][0-9]*$ ]]; }
@@ -39,6 +47,7 @@ cleanup() {
   fi
   rm -rf "$fifo_dir"
 }
+replicas_before="$(replicas)" jobs_before="$(flux_jobs)"
 fifo_dir="$(mktemp -d)"
 trap cleanup EXIT
 mkfifo -m 0600 "$fifo_dir/dump"
@@ -56,6 +65,8 @@ for _ in $(seq 300); do
   sleep 1
 done
 blocks_inside_transaction || fail "no pg_restore blocked inside its transaction within 300 seconds"
+[ -z "$(replicas | grep -v '=0$' || true)" ] && [ -z "$(flux_jobs)" ] ||
+  fail "a Deployment runs or a Flux Job exists while pg_restore blocks inside its transaction"
 echo "interrupt_load: pg_restore blocks inside its transaction; sending $signal to every process of the loader"
 # Their process groups decide which of them a terminal's signal would reach.
 ps -o pid=,pgid=,comm= --sid "$loader"
@@ -79,9 +90,14 @@ if [ "$signal" = KILL ]; then
   [ "$(blocked_sessions)" = 0 ] || fail "--resume returned while a session still blocks inside its transaction"
 fi
 [ "$(suspended)" != true ] || fail "the Kustomization $namespace is still suspended"
+[ "$(replicas)" = "$replicas_before" ] || fail "the Deployments of $namespace do not run at the replicas they had before"
 for deployment in $(kubectl --namespace "$namespace" get deployments -o name); do
   kubectl --namespace "$namespace" rollout status "$deployment" --timeout=5m
 done
+jobs="$(flux_jobs)"
+[ "$jobs" = "$jobs_before" ] || fail "the Flux Jobs of $namespace are not those before the load"
+[ -z "$jobs" ] || kubectl --namespace "$namespace" wait job --selector "kustomize.toolkit.fluxcd.io/name=$namespace" \
+  --for=condition=Complete --timeout=5m
 echo "interrupt_load: $signal recovered: the Kustomization $namespace runs and its Deployments are back"
 load --compare "$namespace" "$dump"
 echo "interrupt_load: the second load verified equal"

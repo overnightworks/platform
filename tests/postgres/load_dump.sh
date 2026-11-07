@@ -161,9 +161,27 @@ cell_interrupt_script_reaps() {
   fi
 }
 
+cell_interrupt_script_checks_writers() {
+  cell=interrupt-script-checks-writers
+  # A loader that blocks without having stopped its writers: the Deployment still runs while a session blocks.
+  mkdir "$work_directory/running"
+  cat >"$work_directory/running/mise" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  run*) sleep 60 ;;
+  *psql*) echo 1 ;;
+  *"get deployments"*) echo "writer=1" ;;
+esac
+FAKE
+  chmod +x "$work_directory/running/mise"
+  checked_output="$(PATH="$work_directory/running:$PATH" tests/postgres/interrupt_load.sh x "$dump" INT 2>&1)" && checked_status=0 || checked_status=$?
+  [ "$checked_status" != 0 ] && [[ $checked_output == *"a Deployment runs or a Flux Job exists"* ]] ||
+    fail "interrupt_load.sh exited $checked_status with '$checked_output' for a writer that still ran"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 failed=()
-for name in resume-fails suspension-unreadable suspended-by-another log-mode equal-with-empty-table extra-empty-table interrupt-while-verifying interrupt-script-reaps; do
+for name in resume-fails suspension-unreadable suspended-by-another log-mode equal-with-empty-table extra-empty-table interrupt-while-verifying interrupt-script-reaps interrupt-script-checks-writers; do
   ("cell_${name//-/_}") || failed+=("$name")
 done
 [ "${#failed[@]}" = 0 ] || { echo "load_dump: failed cells: ${failed[*]}" >&2; exit 1; }

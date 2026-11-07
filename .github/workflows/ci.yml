@@ -246,6 +246,9 @@ jobs:
       - name: Check that bootstrap:secrets prints only its own lines and no key block for a source that turns Ready within the minute
         run: tests/secrets/bootstrap_secrets.sh
 
+      - name: Check that db:load-dump and interrupt_load.sh end as they owe where a command fails, a signal arrives or a table is empty
+        run: tests/postgres/load_dump.sh
+
       - name: Assert that k3s runs with host/k3s/config.yaml
         run: |
           fail() { echo "::error::$1"; exit 1; }
@@ -1400,6 +1403,30 @@ jobs:
           echo "the root re-created the Kustomization $layer, and its new Postgres pod reads the row written before"
           sql "$layer" 'DROP TABLE prune_proof'
 
+          # The writers: a Deployment and a Job Flux applies from tests/postgres/writers on top of the layer, in place of
+          # the layer's own path and with the probe image, so the loader and the interrupts stop and restore real
+          # Flux-managed writers. The root would revert the path, so it stays suspended until the proofs are done.
+          layer_path="$(kubectl --namespace flux-system get kustomization "$layer" -o jsonpath='{.spec.path}')"
+          flux suspend kustomization flux-system
+          kubectl --namespace flux-system patch kustomization "$layer" --type merge --patch "$(
+            NAME="${PROBE_IMAGE%%:*}" DIGEST="${PROBE_IMAGE#*@}" yq --null-input --output-format json '
+              {"spec": {"path": "./tests/postgres/writers",
+                "images": [{"name": "busybox", "newName": strenv(NAME), "digest": strenv(DIGEST)}]}}')"
+          flux reconcile kustomization "$layer" --timeout=5m
+          job_uid=""
+          # writers_ran: the Deployment runs at its replicas from Git and the Job is a new one, Complete.
+          writers_ran() {
+            kubectl --namespace "$layer" rollout status deployment/writer --timeout=5m
+            [ "$(kubectl --namespace "$layer" get deployment writer -o jsonpath='{.spec.replicas}')" = 1 ] ||
+              fail "the Deployment writer does not run at the replicas of Git"
+            kubectl --namespace "$layer" wait job/writer-job --for=condition=Complete --timeout=5m
+            new_uid="$(kubectl --namespace "$layer" get job writer-job -o jsonpath='{.metadata.uid}')"
+            [ "$new_uid" != "$job_uid" ] || fail "the Job writer-job is the one before the load, not a re-created one"
+            job_uid="$new_uid"
+          }
+          writers_ran
+          echo "Flux applies the Deployment writer and the Job writer-job in $layer"
+
           # The loader on a synthetic dump made here: a fresh and a repeated load, a truncated copy, a refusal on a
           # suspension it did not make, and both interrupts. Its rows carry a marker no output may show.
           dump_dir="$RUNNER_TEMP/dumps"
@@ -1428,17 +1455,33 @@ jobs:
             return "$status"
           }
           loaded --compare "$layer" "$dump" || fail "the fresh load exited non-zero"
+          writers_ran
           grep -qxF "$key_table: 7 rows, 7 COPY lines in the dump, equal" "$output" &&
             grep -qxF 'public.spend_logs: 200000 rows loaded, 200000 in the dump, equal' "$output" ||
             fail "the fresh load did not verify $key_table and spend_logs equal"
           loaded --compare "$layer" "$dump" || fail "the repeated load exited non-zero"
-          echo "a fresh and a repeated load verified every table equal and printed no row"
+          writers_ran
+          echo "a fresh and a repeated load verified every table equal, printed no row and restored the writers"
+
+          # A table the database holds and the dump does not survives pg_restore --clean: the load must not resume.
+          sql "$layer" 'CREATE TABLE extra_empty (id integer)'
+          if loaded --compare "$layer" "$dump"; then fail "a table only in the database did not stop the load"; fi
+          grep -qxF 'public.extra_empty: 0 rows loaded, 0 in the dump, DIFFERS' "$output" ||
+            fail "the load did not name the table only the database holds"
+          [ "$(kubectl --namespace flux-system get kustomization "$layer" -o jsonpath='{.spec.suspend}')" = true ] &&
+            [ "$(kubectl --namespace "$layer" get deployment writer -o jsonpath='{.spec.replicas}')" = 0 ] ||
+            fail "the Kustomization $layer resumed or its writer runs on data that differs from the dump"
+          sql "$layer" 'DROP TABLE extra_empty'
+          loaded --resume "$layer" || fail "--resume exited non-zero"
+          writers_ran
+          echo "a table only in the database left $layer suspended with its writers at 0 until --resume"
 
           truncated="$dump_dir/truncated.dump"
           head -c "$(($(stat -c %s "$dump") / 2))" "$dump" > "$truncated"
           if loaded --compare "$layer" "$truncated"; then fail "the truncated load exited 0"; fi
           [ "$(kubectl --namespace flux-system get kustomization "$layer" -o jsonpath='{.spec.suspend}')" != true ] ||
             fail "the Kustomization $layer stayed suspended after the failed load"
+          writers_ran
           [ "$(sql "$layer" "SELECT count(*) FROM \"$key_table\"")" = 7 ] || fail "the failed load changed $key_table"
           [ "$(stat -c %a "$truncated.load.log")" = 600 ] || fail "$truncated.load.log is not at 0600"
           echo "the truncated copy failed to load, the data is unchanged and the Kustomization $layer resumed"
@@ -1454,6 +1497,14 @@ jobs:
             cat "$output"
             ! grep -q "$marker" "$output" || fail "interrupt_load.sh $signal printed a row"
           done
+
+          # The layer's own path again: the root, resumed, would revert the path, and Flux prunes the writers.
+          kubectl --namespace flux-system patch kustomization "$layer" --type merge \
+            --patch "{\"spec\": {\"path\": \"$layer_path\", \"images\": null}}"
+          flux resume kustomization flux-system --wait
+          flux reconcile kustomization "$layer" --timeout=5m
+          kubectl --namespace "$layer" wait deployment/writer job/writer-job --for=delete --timeout=2m
+          echo "the layer $layer is its own again and Flux pruned the writers"
 
           # Keycloak's egress: a Pod with Keycloak's labels reaches DNS and its Postgres only; one without them is free.
           keycloak_labels="$(kubectl --namespace "$EGRESS_NAMESPACE" get networkpolicy keycloak-egress \
