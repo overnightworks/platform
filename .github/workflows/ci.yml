@@ -32,6 +32,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      # The Secret ghcr-pull holds this job's token, which pulls hopin's private package.
+      packages: read
     defaults:
       run:
         # Every step after the bootstrap runs with the locked tools and the [env] of mise.toml.
@@ -78,6 +80,8 @@ jobs:
       # cloudflared's Namespace and the host its ingress names no rule for.
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
+      # The app whose pull Secret and files the job's platform-secrets serves, by the names its Deployment reads.
+      APP_MANIFEST: apps/hopin/hopin.yaml
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -205,64 +209,91 @@ jobs:
           [ "$route_localnet" = 0 ] || fail "net.ipv4.conf.all.route_localnet is $route_localnet in $server, not 0"
           echo "net.ipv4.conf.all.route_localnet is 0 in $server"
 
-      - name: Encrypt a dummy Secret to a throwaway age key
+      - name: Encrypt a dummy Secret and the app's Secrets to a throwaway age key
+        env:
+          # The app's pull Secret holds this job's own token, which GitHub masks; the app's package grants it Read.
+          PULL_USER: ${{ github.actor }}
+          PULL_TOKEN: ${{ github.token }}
         run: |
           fail() { echo "::error::$1"; exit 1; }
-          # The key, the dummy and the plain manifest exist only in this runner's temp directory; no step prints them.
+          # The key, the values and the plain manifests exist only in this runner's temp directory; no step prints them.
           umask 077
           private_dir="$RUNNER_TEMP/decryption-proof"
           artifact_dir="$RUNNER_TEMP/platform-secrets"
           mkdir "$private_dir" "$artifact_dir"
           key_file="$private_dir/ci.agekey"
           age-keygen -o "$key_file" 2>/dev/null
+          # Each Secret's data holds the files of its own directory, keyed by file name.
+          files_dir="$private_dir/files"
+          plain_files=()
+          secret_files() { mkdir -p "$files_dir/$1" && echo "$files_dir/$1"; }
+          plain_secret() {
+            local file
+            plain_files+=("$private_dir/$1.yaml")
+            NAME="$1" NAMESPACE="$2" TYPE="$3" yq --null-input \
+              '{"apiVersion": "v1", "kind": "Secret", "metadata": {"name": strenv(NAME), "namespace": strenv(NAMESPACE)}, "type": strenv(TYPE)}' \
+              > "${plain_files[-1]}"
+            while IFS= read -r file; do
+              KEY="${file##*/}" FILE="$file" yq --inplace '.data[strenv(KEY)] = (load_str(strenv(FILE)) | @base64)' "${plain_files[-1]}"
+            done < <(find "$files_dir/$1" -maxdepth 1 -type f | sort)
+          }
 
           # Eighteen fixed characters, a multiple of three, so the dummy's base64 form starts with a fixed string too.
           dummy="platform-ci-dummy-$(openssl rand -hex 16)"
           echo "::add-mask::$dummy"
-          dummy_base64="$(printf '%s' "$dummy" | base64 --wrap=0)"
-          echo "::add-mask::$dummy_base64"
-          printf '%s' "$dummy" > "$private_dir/dummy"
+          echo "::add-mask::$(printf '%s' "$dummy" | base64 --wrap=0)"
+          dummy_file="$(secret_files "$PROOF_SECRET_NAME")/value"
+          printf '%s' "$dummy" > "$dummy_file"
+          plain_secret "$PROOF_SECRET_NAME" "$PROOF_SECRET_NAMESPACE" Opaque
 
-          manifest="$(cat <<'YAML'
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: @NAME@
-            namespace: @NAMESPACE@
-          type: Opaque
-          data:
-            value: @VALUE@
-          YAML
-          )"
-          manifest="${manifest//@NAME@/${PROOF_SECRET_NAME}}"
-          manifest="${manifest//@NAMESPACE@/${PROOF_SECRET_NAMESPACE}}"
-          plain_file="$private_dir/$PROOF_SECRET_NAME.yaml"
-          printf '%s\n' "${manifest//@VALUE@/${dummy_base64}}" > "$plain_file"
+          # The app's files as dummies, one per key the PC's Secret holds; hex meets the TURN files' grammar, and 64
+          # characters the session secret's minimum.
+          deployment="$(yq 'select(.kind == "Deployment")' "$APP_MANIFEST")"
+          app_namespace="$(yq '.metadata.namespace' <<<"$deployment")"
+          app_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$deployment")"
+          pull_secret="$(yq '.spec.template.spec.imagePullSecrets[].name' <<<"$deployment")"
+          app_files="$(secret_files "$app_secret")"
+          for key in oidc_client_secret session_secret turn_key_id turn_api_token; do
+            value="$(openssl rand -hex 32)"
+            echo "::add-mask::$value"
+            printf '%s' "$value" > "$app_files/$key"
+          done
+          plain_secret "$app_secret" "$app_namespace" Opaque
+          auth="$(printf '%s:%s' "$PULL_USER" "$PULL_TOKEN" | base64 --wrap=0)"
+          echo "::add-mask::$auth"
+          pull_file="$(secret_files "$pull_secret")/.dockerconfigjson"
+          printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$auth" > "$pull_file"
+          echo "::add-mask::$(base64 --wrap=0 < "$pull_file")"
+          plain_secret "$pull_secret" "$app_namespace" kubernetes.io/dockerconfigjson
 
           # The recipient is the key's public half, so sops encrypts without reading any private key.
-          encrypted_file="$artifact_dir/$PROOF_SECRET_NAME.yaml"
-          sops --encrypt --age "$(age-keygen -y "$key_file")" --encrypted-regex '^(data|stringData)$' \
-            "$plain_file" > "$encrypted_file"
+          recipient="$(age-keygen -y "$key_file")"
+          data_values() { yq '.data // {} | .[]' "$1"; }
+          for plain_file in "${plain_files[@]}"; do
+            encrypted_file="$artifact_dir/${plain_file##*/}"
+            sops --encrypt --age "$recipient" --encrypted-regex '^(data|stringData)$' "$plain_file" > "$encrypted_file"
 
-          # Flux applies a value left outside the encrypted fields as it is, which would fake the proof.
-          encrypted="$(<"$encrypted_file")"
-          [[ $encrypted != *"$dummy"* && $encrypted != *"$dummy_base64"* ]] ||
-            fail "$encrypted_file holds the dummy in plain text"
-          values="$(kubectl create --dry-run=client --validate=false -f "$encrypted_file" \
-            -o go-template='{{range .data}}{{.}}{{"\n"}}{{end}}')"
-          [ -n "$values" ] || fail "$encrypted_file holds no data value"
-          while IFS= read -r value; do
-            [[ $value == 'ENC['* ]] || fail "a data value in $encrypted_file is not sops ciphertext"
-          done <<<"$values"
-          echo "every data value in $encrypted_file is sops ciphertext, and the dummy is absent from it"
+            # Flux applies a value left outside the encrypted fields as it is, which would fake the proof or leak it.
+            encrypted="$(<"$encrypted_file")"
+            while IFS= read -r value; do
+              [[ $encrypted != *"$value"* && $encrypted != *"$(base64 --decode <<<"$value")"* ]] ||
+                fail "$encrypted_file holds a value in plain text"
+            done < <(data_values "$plain_file")
+            values="$(data_values "$encrypted_file")"
+            [ -n "$values" ] || fail "$encrypted_file holds no data value"
+            while IFS= read -r value; do
+              [[ $value == 'ENC['* ]] || fail "a data value in $encrypted_file is not sops ciphertext"
+            done <<<"$values"
+            echo "every data value in $encrypted_file is sops ciphertext, and no plain value is in it"
+          done
 
           {
             echo "AGE_KEY_FILE=$key_file"
-            echo "DUMMY_FILE=$private_dir/dummy"
+            echo "DUMMY_FILE=$dummy_file"
             echo "SECRETS_ARTIFACT_DIR=$artifact_dir"
           } >> "$GITHUB_ENV"
 
-      - name: Push the encrypted Secret and serve it as the job's platform-secrets source
+      - name: Push the encrypted Secrets and serve them as the job's platform-secrets source
         run: |
           repository=platform-secrets
           tag=candidate
@@ -595,20 +626,95 @@ jobs:
             fail "a Pod in $OTHER_NAMESPACE got the status $status from Traefik's web port, curl exit code $exit_code"
           echo "a Pod in $OTHER_NAMESPACE got no answer from Traefik's web port (curl exit code $exit_code), and its namespace is gone"
 
-          # The runtime's imageID names the digest it resolved the Deployment's image to.
-          image="$(kubectl -n traefik get deployment traefik -o jsonpath='{.spec.template.spec.containers[*].image}')"
-          [[ $image =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]] || fail "the Deployment traefik runs '$image', not one image at a digest"
-          selector="$(kubectl -n traefik get deployment traefik \
-            -o go-template='{{range $key, $value := .spec.selector.matchLabels}}{{$key}}={{$value}},{{end}}')"
-          image_ids="$(kubectl -n traefik get pods --selector "${selector%,}" \
-            -o go-template='{{range .items}}{{range .status.containerStatuses}}{{.imageID}}{{"\n"}}{{end}}{{end}}')"
-          [ -n "$image_ids" ] || fail "no running Traefik container reports an imageID"
-          echo "Deployment image: $image"
-          while IFS= read -r image_id; do
-            echo "running imageID:  $image_id"
-            [ "${image_id##*@}" = "${image##*@}" ] || fail "the running Traefik container's imageID $image_id is not at the Deployment's digest"
-          done <<<"$image_ids"
-          echo "every running Traefik container carries the Deployment's digest"
+      - name: Assert that the app runs at its full app ref after platform-secrets, pulled through its pull Secret
+        env:
+          APP_LAYER: flux-system/apps
+          SECRETS_LAYER: flux-system/platform-secrets
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          layer() { kubectl --namespace "${1%/*}" get kustomization "${1#*/}" -o jsonpath="$2"; }
+          applied_revision="$(layer "$APP_LAYER" '{.status.lastAppliedRevision}')"
+          [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
+            fail "the Kustomization $APP_LAYER applied '$applied_revision', not the candidate $CANDIDATE_REVISION"
+          [[ " $(layer "$APP_LAYER" '{.spec.dependsOn[*].name}') " == *" ${SECRETS_LAYER#*/} "* ]] ||
+            fail "the Kustomization $APP_LAYER does not depend on $SECRETS_LAYER"
+          echo "the Kustomization $APP_LAYER applied the candidate and depends on $SECRETS_LAYER"
+
+          deployment="$(yq 'select(.kind == "Deployment") | .metadata.namespace + "/" + .metadata.name' "$APP_MANIFEST")"
+          namespace="${deployment%/*}" name="${deployment#*/}"
+          markers="$(kubectl get namespace "$namespace" \
+            -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}|{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}')"
+          [ "$markers" = "restricted|disabled" ] ||
+            fail "the Namespace $namespace reads '$markers', not Pod Security restricted and prune disabled"
+          echo "the Namespace $namespace enforces restricted, and Flux never prunes it"
+
+          kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
+          state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
+          [ "$state" = "1|Recreate" ] || fail "the Deployment $deployment reads '$state', not one Ready pod and Recreate"
+          image="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.containers[*].image}')"
+          [[ $image =~ ^ghcr[.]io/${GITHUB_REPOSITORY_OWNER,,}/[^[:space:]:@]+:[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] ||
+            fail "the Deployment $deployment runs '$image', not one full app ref"
+          echo "the Deployment $deployment is Available with one Ready pod, Recreate, and runs the full app ref $image"
+
+          # The Secrets the pod pulls and starts from are platform-secrets' objects, there before the Deployment.
+          created="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.metadata.creationTimestamp}')"
+          secrets_inventory="$(layer "$SECRETS_LAYER" '{range .status.inventory.entries[*]}{.id}{"\n"}{end}')"
+          pull_secrets="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.imagePullSecrets[*].name}')"
+          [ -n "$pull_secrets" ] || fail "the Deployment $deployment names no pull Secret"
+          for secret in $pull_secrets $(kubectl --namespace "$namespace" get deployment "$name" \
+            -o jsonpath='{.spec.template.spec.volumes[*].secret.secretName}'); do
+            grep -qxF "${namespace}_${secret}__Secret" <<<"$secrets_inventory" ||
+              fail "the Secret $namespace/$secret is not in the inventory of $SECRETS_LAYER"
+            secret_created="$(kubectl --namespace "$namespace" get secret "$secret" -o jsonpath='{.metadata.creationTimestamp}')"
+            [[ ! $created < "$secret_created" ]] ||
+              fail "the Deployment $deployment was created at $created, before its Secret $secret at $secret_created"
+            echo "the Secret $namespace/$secret of $SECRETS_LAYER was created at $secret_created, not after the Deployment at $created"
+          done
+          for secret in $pull_secrets; do
+            type="$(kubectl --namespace "$namespace" get secret "$secret" -o jsonpath='{.type}')"
+            [ "$type" = kubernetes.io/dockerconfigjson ] || fail "the pull Secret $namespace/$secret is of type $type"
+          done
+          echo "the Deployment $deployment pulled its private image through $pull_secrets"
+
+      - name: Assert that every Deployment outside the system namespaces runs the digests it names
+        env:
+          POLICY_FILE: infrastructure/admission/image-policy.yaml
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          policy="$(yq 'select(.kind == "ValidatingAdmissionPolicy" and .spec.paramKind != null) | .metadata.name' "$POLICY_FILE")"
+          exempt=" $(kubectl get validatingadmissionpolicy "$policy" -o jsonpath='{.spec.matchConstraints.namespaceSelector.matchExpressions[?(@.operator=="NotIn")].values[*]}') "
+          # The runtime's imageID names the digest it resolved each container's image to.
+          while IFS='|' read -r namespace name replicas; do
+            [[ $exempt != *" $namespace "* ]] || continue
+            declare -A image_of=()
+            while IFS='|' read -r container image; do
+              [[ $image =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]] ||
+                fail "the container $container of the Deployment $namespace/$name runs '$image', not an image at a digest"
+              image_of[$container]="$image"
+              echo "Deployment $namespace/$name, container $container: $image"
+            done < <(kubectl --namespace "$namespace" get deployment "$name" \
+              -o go-template='{{range .spec.template.spec.containers}}{{.name}}|{{.image}}{{"\n"}}{{end}}')
+            # A Deployment scaled to 0 has no running container, as cloudflared in this job.
+            if [ "$replicas" = 0 ]; then
+              unset image_of
+              echo "the Deployment $namespace/$name runs no container: scaled to 0 replicas"
+              continue
+            fi
+            selector="$(kubectl --namespace "$namespace" get deployment "$name" \
+              -o go-template='{{range $key, $value := .spec.selector.matchLabels}}{{$key}}={{$value}},{{end}}')"
+            image_ids="$(kubectl --namespace "$namespace" get pods --selector "${selector%,}" \
+              -o go-template='{{range .items}}{{range .status.containerStatuses}}{{.name}}|{{.imageID}}{{"\n"}}{{end}}{{end}}')"
+            [ -n "$image_ids" ] || fail "no running container of the Deployment $namespace/$name reports an imageID"
+            while IFS='|' read -r container image_id; do
+              echo "running $container: $image_id"
+              image="${image_of[$container]-}"
+              [ -n "$image" ] && [ "${image_id##*@}" = "${image##*@}" ] ||
+                fail "the running container $container of $namespace/$name has the imageID $image_id, not its Deployment's digest"
+            done <<<"$image_ids"
+            unset image_of
+            echo "every running container of the Deployment $namespace/$name carries its Deployment's digest"
+          done < <(kubectl get deployments --all-namespaces \
+            -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.spec.replicas}{"\n"}{end}')
 
       - name: Assert that every workload layer depends on admission and was applied after it
         env:
@@ -756,7 +862,9 @@ jobs:
           one_container() { echo "containers: [{name: $1, image: '$2'}]"; }
           template_containers='(.spec.template.spec.containers[], .spec.template.spec.initContainers[])'
 
-          # Each running vendor workload's Pod template, copied from the live object under a new name.
+          # Each running workload's Pod template, copied from the live object under a new name; the probes after this
+          # loop build on the vendor refs among its images.
+          app_prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/"
           live_refs=() live_deployment="" live_pod=""
           while IFS='|' read -r namespace workload; do
             [[ $exempt != *" $namespace "* ]] || continue
@@ -767,7 +875,9 @@ jobs:
             stripped="$(yq "$template_containers.image |= sub(\"@sha256:[0-9a-f]{64}\$\"; \"\")" <<<"$copy")"
             mapfile -t texts < <(yq "$template_containers | (.name, .image)" <<<"$stripped")
             refused "a copy of $namespace/$workload without its digests" "${texts[@]}" -- create_in "$namespace" <<<"$stripped"
-            mapfile -t -O "${#live_refs[@]}" live_refs < <(yq "$template_containers | .image" <<<"$copy")
+            while IFS= read -r image; do
+              [[ $image == "$app_prefix"* ]] || live_refs+=("$image")
+            done < <(yq "$template_containers | .image" <<<"$copy")
           done < <(kubectl get deployments,statefulsets,daemonsets --all-namespaces \
             -o jsonpath='{range .items[*]}{.metadata.namespace}|{.kind}/{.metadata.name}{"\n"}{end}')
           [ -n "$live_deployment" ] || fail "no vendor Deployment runs outside the namespaces$exempt"
@@ -793,7 +903,7 @@ jobs:
 
           generated_digest="sha256:$(openssl rand -hex 32)"
           unlisted="docker.io/someone/hopin@$generated_digest"
-          app="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/probe-app"
+          app="${app_prefix}probe-app"
           for image in "$unlisted" "${repository##*/}@$digest" "$repository:probe" "$repository:.probe@$digest" \
             "$app:v1.0.0" "$app@$generated_digest" "GHCR.io/${app#ghcr.io/}:v1.0.0@$generated_digest" \
             "quay.io/${app#ghcr.io/}:v1.0.0@$generated_digest"; do
@@ -967,6 +1077,11 @@ jobs:
           # Pod Security's refusal of a Pod appears only in Warning events and the workloads' conditions, never in Flux's state.
           kubectl get events --all-namespaces --field-selector type=Warning
           kubectl get deployments,replicasets --all-namespaces -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]} {.type}={.status}({.reason}: {.message}){end}{"\n"}{end}'
+          # A start an app refuses appears only in its own log.
+          kubectl get pods --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"|"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' |
+            while IFS='|' read -r pod ready; do
+              [ "$ready" = True ] || kubectl --namespace "${pod%/*}" logs "pod/${pod#*/}" --all-containers --tail=20 || true
+            done
 
   bootstrap:
     runs-on: ubuntu-latest
