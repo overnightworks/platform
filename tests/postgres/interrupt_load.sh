@@ -47,7 +47,8 @@ cleanup() {
   fi
   rm -rf "$fifo_dir"
 }
-replicas_before="$(replicas)" jobs_before="$(flux_jobs)"
+replicas_before="$(replicas)" || fail "cannot read the Deployments of $namespace"
+jobs_before="$(flux_jobs)" || fail "cannot read the Jobs of $namespace"
 fifo_dir="$(mktemp -d)"
 trap cleanup EXIT
 mkfifo -m 0600 "$fifo_dir/dump"
@@ -65,7 +66,9 @@ for _ in $(seq 300); do
   sleep 1
 done
 blocks_inside_transaction || fail "no pg_restore blocked inside its transaction within 300 seconds"
-[ -z "$(replicas | grep -v '=0$' || true)" ] && [ -z "$(flux_jobs)" ] ||
+running="$(replicas)" || fail "cannot read the Deployments of $namespace"
+existing_jobs="$(flux_jobs)" || fail "cannot read the Jobs of $namespace"
+[ -z "$(grep -v '=0$' <<<"$running" || true)" ] && [ -z "$existing_jobs" ] ||
   fail "a Deployment runs or a Flux Job exists while pg_restore blocks inside its transaction"
 echo "interrupt_load: pg_restore blocks inside its transaction; sending $signal to every process of the loader"
 # Their process groups decide which of them a terminal's signal would reach.
@@ -90,7 +93,8 @@ if [ "$signal" = KILL ]; then
   [ "$(blocked_sessions)" = 0 ] || fail "--resume returned while a session still blocks inside its transaction"
 fi
 [ "$(suspended)" != true ] || fail "the Kustomization $namespace is still suspended"
-[ "$(replicas)" = "$replicas_before" ] || fail "the Deployments of $namespace do not run at the replicas they had before"
+replicas_after="$(replicas)" || fail "cannot read the Deployments of $namespace"
+[ "$replicas_after" = "$replicas_before" ] || fail "the Deployments of $namespace do not run at the replicas they had before"
 for deployment in $(kubectl --namespace "$namespace" get deployments -o name); do
   kubectl --namespace "$namespace" rollout status "$deployment" --timeout=5m
 done

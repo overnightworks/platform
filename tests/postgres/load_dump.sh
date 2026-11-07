@@ -182,6 +182,29 @@ FAKE
     fail "interrupt_load.sh exited $checked_status with '$checked_output' for a writer that still ran"
 }
 
+cell_interrupt_script_fails_on_unreadable_writer_state() {
+  cell=interrupt-script-fails-on-unreadable-writer-state
+  # A loader that blocks while the Deployments cannot be read: the script must not take that for stopped writers.
+  mkdir "$work_directory/unreadable"
+  cat >"$work_directory/unreadable/mise" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  run*) sleep 60 ;;
+  *psql*) echo 1 ;;
+  *"get deployments"*)
+    if [ -e "$FAKE_FIRST_READ" ]; then exit 1; fi
+    : >"$FAKE_FIRST_READ"
+    echo "writer=0" ;;
+esac
+FAKE
+  chmod +x "$work_directory/unreadable/mise"
+  unreadable_output="$(FAKE_FIRST_READ="$work_directory/first-read" PATH="$work_directory/unreadable:$PATH" \
+    tests/postgres/interrupt_load.sh x "$dump" INT 2>&1)" && unreadable_status=0 || unreadable_status=$?
+  [ "$unreadable_status" != 0 ] && [[ $unreadable_output == *"cannot read the Deployments of x"* ]] &&
+    [[ $unreadable_output != *"sending INT"* ]] ||
+    fail "interrupt_load.sh exited $unreadable_status with '$unreadable_output' for Deployments it could not read"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 cells=(
   failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
@@ -193,6 +216,7 @@ cells=(
   interrupt-during-verification-stays-suspended
   interrupt-script-reaps
   interrupt-script-checks-writers
+  interrupt-script-fails-on-unreadable-writer-state
 )
 failed=()
 for name in "${cells[@]}"; do
