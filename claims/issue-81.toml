@@ -1,0 +1,8 @@
+claim_id = "8c9a93df9fc840fc8b0cf2c8b5ab3374"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "e49c84e3ed467ac0414636c56368f517a0e6974a"
+branch = "claude/issue-81-s4a-cloudflared-runs-in-k3s"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "clusters/pc/secrets.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/cloudflared/cloudflared.yaml", "infrastructure/namespaces/namespaces.yaml"]
+opened_commit = "1304265584f497b07ac7aac78170b7946dd39a6c"
+whole_reason = "Does not split: the namespaces layer, the tunnel's manifests and their k3d check have no caller apart, and the Secret cannot be applied without the layer (#45's whole)."
