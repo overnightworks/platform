@@ -1,0 +1,8 @@
+claim_id = "dabda63e612943b8b109aefd861d72e2"
+agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
+role = "builder"
+base = "0f4cdaff782906b9e277f7cd30f14326e5a6ca94"
+branch = "claude/issue-44-traefik-runs-in-the-cluster-from-manifes"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/traefik", "mise.lock", "mise.toml"]
+opened_commit = "406dadee2a9e33c19592be1bed21295bd4c76886"
+whole_reason = "The generator has no caller without the layer, the layer cannot exist without the generator, and the CI proof is the evidence of both."
