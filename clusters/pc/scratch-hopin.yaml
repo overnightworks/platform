@@ -1,0 +1,8 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: hopin, namespace: default}
+spec:
+  template:
+    spec:
+      containers:
+        - {name: main, image: "ghcr.io/overnightworks/hopin:2026.11.06.1@sha256:aaa309151f36d714fe49d8a285f85c4942b4e145e0befd32472167978c496ae6"}
