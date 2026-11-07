@@ -1,0 +1,4 @@
+red: .github/workflows/ci.yml .env.NO_DIGEST: 'docker.io/library/alpine:3.22': a listed vendor repository not at <repository>[:<tag>]@sha256:<64 hex>
+red: .github/workflows/ci.yml .env.UNLISTED: 'docker.io/someone/tool@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': not a repository of the vendor list
+red: .github/workflows/ci.yml .jobs.probe.env.NO_DIGEST: 'docker.io/library/alpine:3.22': a listed vendor repository not at <repository>[:<tag>]@sha256:<64 hex>
+red: .github/workflows/ci.yml .jobs.probe.env.UNLISTED: 'docker.io/someone/tool@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': not a repository of the vendor list
