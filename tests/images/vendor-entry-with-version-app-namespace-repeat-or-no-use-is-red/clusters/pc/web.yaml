@@ -6,3 +6,4 @@ spec:
     spec:
       containers:
         - {name: main, image: "docker.io/library/nginx@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        - {name: ours, image: "ghcr.io:443/overnightworks/hopin:2099.01.01.1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}

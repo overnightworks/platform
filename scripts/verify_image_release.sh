@@ -146,6 +146,12 @@ parse_host_qualified_reference() {
   [[ ${reference_name,,} =~ ${NAME_PATTERN} ]] || return 2
 }
 
+# Whether the repository $1 lies under the app namespace ghcr.io/<owner>/, in any case and with any port on the host,
+# since each such spelling pulls from the same registry.
+in_app_namespace() {
+  [[ ${1,,} =~ ^ghcr\.io(:[0-9]+)?/${owner}/ ]]
+}
+
 load_vendor_list() {
   local entry_key repository index
   if ! read_records "${VENDOR_LIST_SHAPE}" "${VENDOR_LIST}" 2>/dev/null; then
@@ -158,7 +164,7 @@ load_vendor_list() {
   read_records "${VENDOR_LIST_ENTRIES}" "${VENDOR_LIST}"
   for ((index = 0; index < ${#records[@]}; index += 2)); do
     entry_key="${VENDOR_LIST} entry ${records[index]}" repository="${records[index + 1]}"
-    if [[ ${repository,,} == "ghcr.io/${owner}/"* ]]; then
+    if in_app_namespace "${repository}"; then
       report_red "${entry_key}" "${repository}" "a vendor entry under the app namespace ghcr.io/${owner}/"
     elif ! parse_host_qualified_reference "${repository}" || [ "${repository}" != "${repository,,}" ]; then
       report_red "${entry_key}" "${repository}" "a vendor entry that is no lowercase <registry>/<repository>"
@@ -333,7 +339,7 @@ judge_image() {
     report_red "${location}" "${image}" "a registry host or repository path that is not lowercase"
   elif [ -n "${flux_own_images["${namespace} ${image}"]+own}" ]; then
     echo "images: ${location} runs ${image}, the locked flux2's own"
-  elif [[ ${image} == "ghcr.io/${owner}/"* ]]; then
+  elif in_app_namespace "${repository}"; then
     app_reference_count=$((app_reference_count + 1))
     if [[ ${repository} =~ ^ghcr\.io/${owner}/${PATH_COMPONENT}(/${PATH_COMPONENT})?$ && ${named} != "${repository}" &&
       ${named##*:} =~ ${TAG_PATTERN} && ${image#"${named}"} =~ ${SHA256_DIGEST_PATTERN} ]]; then
