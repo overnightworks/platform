@@ -26,6 +26,9 @@
   login, on any commit and without writing state (exit 0 no change, 2 changes, 1 failure). `--apply` applies that
   run's own plan, only from a clean `origin/main`, and is run only by the operator or on his word.
 - `mise run github:test` checks that root: format, init against the committed lock, validate and the mocked tests.
+- `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
+  which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
+  names and times only, and fails on any.
 - `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
   pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else
@@ -46,15 +49,16 @@
 
 - It runs from a checkout, in this order: `scripts/bootstrap_pc.sh --only tools`; `scripts/bootstrap_pc.sh plan
   --detailed-exitcode` (the script sets `LC_ALL=C`, which mise needs to read a localized ufw), which must list only
-  the entry state's changes; `scripts/bootstrap_pc.sh --only files,firewall`, which writes
-  `/etc/rancher/k3s/config.yaml` and adds mise's one ufw rule on `cni0` before k3s first starts;
-  `mise run bootstrap:k3s`; `mise run bootstrap:flux`; `mise run bootstrap:secrets`, by the operator.
+  the entry state's changes; `scripts/bootstrap_pc.sh --only files,firewall,services`, which writes
+  `/etc/rancher/k3s/config.yaml` and the pod-log parts, adds mise's one ufw rule on `cni0` before k3s first starts and
+  starts `pod-logs-clean.timer`; `mise run bootstrap:k3s`; `mise run bootstrap:flux`; `mise run bootstrap:secrets`, by
+  the operator; `mise run check:pod-logs`, by the operator.
 - `/usr/local/bin/k3s` decides the entry state. Absent, it is a first install (no `mise:` ufw rule and no
   `/var/lib/mise/bootstrap/firewall.json`; the plan lists `/etc/rancher/k3s`, its config file, the firewall and the
   rule) or the uninstalled state (the `mise:` rule and the state file kept, `/etc/rancher` holding at most
   `node/password`; the plan lists only `/etc/rancher/k3s` and its config file). Present with `k3s-uninstall.sh`
-  beside it, it is an existing install. Any other state, `/etc/rancher/k3s` without `/usr/local/bin/k3s` included,
-  stops the step.
+  beside it, it is an existing install. Each plan also lists the pod-log parts and the timer until they are applied.
+  Any other state, `/etc/rancher/k3s` without `/usr/local/bin/k3s` included, stops the step.
 - The undo is `sudo /usr/local/bin/k3s-uninstall.sh`, then the firewall section applied with `state = "absent"`, which
   deletes mise's rule and its state file and keeps the operator's own; deleting the section or reverting the
   commit changes nothing on the host. The uninstall leaves `/etc/rancher/node/password` (k3s's node password), the
@@ -64,6 +68,15 @@
   the operator's word only while the cluster holds no PersistentVolume, no claim and no Secret beyond its first
   install's; an inventory that differs or cannot be read stops k3s with `k3s-killall.sh`, which deletes nothing, and
   the uninstall waits for his word.
+- The pod-log parts (`host/pod-logs/`) keep every pod log line at most 30 days, as the apps' privacy texts promise:
+  `pod-logs.conf` in `/etc/tmpfiles.d/` deletes each file under `/var/log/pods` 28 days after its creation, with its
+  emptied directories; `pod-logs-clean.timer` and `.service` in `/etc/systemd/system/` run that clean daily by the
+  wall clock and after boot, then `check-pod-logs` from `/usr/local/sbin/`; `container-log-max-files=2` in
+  `host/k3s/config.yaml` keeps the kubelet from compressing a rotated file. A first apply on an existing install is
+  `scripts/bootstrap_pc.sh --only files,services`, then `mise run bootstrap:k3s` and `mise run check:pod-logs`. Their
+  undo declares the timer `state = "stopped"`, `enabled = false` and applies `--only services`, so systemd disables
+  it while its file exists; then declares the four files `state = "absent"` and applies `--only files`; then
+  drops the `kubelet-arg` and runs `mise run bootstrap:k3s`. Deleted logs stay deleted.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
   runs beside it.
@@ -92,7 +105,10 @@
   `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
   `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes the paths or the file
   sizes and timestamps under `~/.local/bin` and mise's data directory (directory timestamps are not compared, the paths
-  inside every directory are).
+  inside every directory are). It then runs `systemd-tmpfiles --clean` with `pod-logs.conf`'s line at a seconds-long
+  age on a test tree: the older file goes after an append and a read, with its emptied directories, and a newer file
+  stays; and it runs `check-pod-logs` against a fake `systemctl`, which passes fresh logs and names a timer that never
+  ran, ran 26 hours ago or failed, a `.gz` and a `.tmp`.
   `cluster` reconciles `clusters/pc` in k3d, with `host/k3s/config.yaml` mounted alone and read-only at
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
@@ -109,8 +125,11 @@
   runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request that turns Ready within the minute
   prints no key block.
   Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock` and the renders, and fails when git
-  status over them and `infrastructure/` is not empty or git ignores one of those files. After the reconcile it reads
-  Traefik from the cluster: its Service is ClusterIP with the one port `web`, whose trusted senders hold the nodes' pod
+  status over them and `infrastructure/` is not empty or git ignores one of those files. Before the reconcile the
+  kubelet's configz holds the `container-log-max-files` of `host/k3s/config.yaml`; after a writer pod's log directory
+  is deleted on the node, its file is back within 30 seconds and `kubectl logs` shows newer lines; and through two
+  rotations a busy writer's directory never holds more files than that or a `.gz` or `.tmp`. After the reconcile it
+  reads Traefik from the cluster: its Service is ClusterIP with the one port `web`, whose trusted senders hold the nodes' pod
   CIDRs; a client Pod in namespace `cloudflared` gets 404 for an unrouted host and 400 for `/a%2Fb` on a host a
   throwaway Ingress routes, and one in another namespace gets no answer; and no Service of type NodePort or LoadBalancer
   and no Pod on a host port or the host network exists in the cluster. The route of hopin's Ingress gets that client Pod
@@ -190,7 +209,8 @@
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's
   host step proves those two on the PC.
-- `mise.toml`: the tools, the k3s version and its installer's sha256, the PC's bootstrap parts (the k3s config file
+- `mise.toml`: the tools, the k3s version and its installer's sha256, the PC's bootstrap parts (the k3s config file,
+  the pod-log parts with `pod-logs-clean.timer` as a running, enabled service, which each unit file notifies,
   and the ufw rule `k3s-cni`, with `k3s-pods` and `k3s-services` declared absent, which deletes them from a host whose mise
   state holds them) and the tasks. `mise.lock` is generated by `mise lock`, not edited by hand, and `cluster`
   fails when a regeneration differs.
