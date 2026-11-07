@@ -1358,7 +1358,7 @@ jobs:
             fail "whoami never answered 200 through Traefik for $SCRATCH_HOST"
           }
           echo "=== alias header cell: one request with X_Forwarded_For and X-Forwarded-For to whoami"
-          echo_body="$(curl_body whoami-alias-header --silent --show-error --max-time 10 --header "Host: $SCRATCH_HOST" \
+          echo_body="$(curl_body whoami-alias-header --silent --show-error --max-time 10 --retry 5 --retry-connrefused --retry-delay 2 --retry-max-time 30 --header "Host: $SCRATCH_HOST" \
             --header 'X_Forwarded_For: 198.51.100.7' --header 'X-Forwarded-For: 192.0.2.7' "$web_url/")"
           echo "--- whoami echo begin"
           echo "$echo_body"
