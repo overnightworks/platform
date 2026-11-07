@@ -591,6 +591,17 @@ jobs:
           done
           [ -n "$config_file" ] || fail "the Deployment cloudflared's arguments name no --config file"
 
+          # cloudflared reads its config once, when it starts, and Flux rolls a Deployment only when its template
+          # changes: the template carries the hash of the lines, so a changed line cannot land without a rollout.
+          config_key="${config_file##*/}"
+          configmap_path="{.data.${config_key//./\\.}}"
+          expected_hash="$(kubectl -n "$TUNNEL_NAMESPACE" get configmap cloudflared -o jsonpath="$configmap_path" | sha256sum)"
+          expected_hash="${expected_hash%% *}"
+          annotated_hash="$(yq '.spec.template.metadata.annotations["checksum/config"] // ""' <<<"$deployment")"
+          [ "$annotated_hash" = "$expected_hash" ] ||
+            fail "the Deployment cloudflared's template carries checksum/config '$annotated_hash', but the lines of the ConfigMap cloudflared hash to $expected_hash: set the annotation to that hash, so the changed lines roll the pod"
+          echo "the Deployment cloudflared's template carries the hash of the ConfigMap's lines"
+
           # run_template_pod <name> <argument>...: a Pod from the Deployment's template with its Secret volumes dropped
           # and its arguments replaced, admitted by Pod Security or refused, run once; sets pod_log and pod_exit_code.
           run_template_pod() {
