@@ -270,9 +270,6 @@ subjects:
 - kind: ServiceAccount
   name: kustomize-controller
   namespace: flux-system
-- kind: ServiceAccount
-  name: helm-controller
-  namespace: flux-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -289,9 +286,6 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: kustomize-controller
-  namespace: flux-system
-- kind: ServiceAccount
-  name: helm-controller
   namespace: flux-system
 - kind: ServiceAccount
   name: source-controller

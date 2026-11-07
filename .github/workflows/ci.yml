@@ -109,6 +109,19 @@ jobs:
           kubectl apply --server-side -f clusters/pc/flux-system/gotk-components.yaml
           kubectl -n flux-system wait deployment --all --for=condition=Available --timeout=3m
 
+      # flux install writes a binding subject for every controller, omitted ones included.
+      - name: Assert that no binding names the removed helm-controller
+        run: |
+          bindings="$(kubectl get clusterrolebindings,rolebindings --all-namespaces \
+            -o jsonpath='{range .items[*]}{.kind}{" "}{.metadata.name}{"|"}{range .subjects[*]}{.kind}{"/"}{.namespace}{"/"}{.name}{" "}{end}{"\n"}{end}')"
+          holders="$(grep -F 'ServiceAccount/flux-system/helm-controller' <<<"$bindings" || true)"
+          if [ -n "$holders" ]; then
+            echo "::error::these bindings name the ServiceAccount helm-controller, which no Deployment runs:"
+            printf '%s\n' "$holders"
+            exit 1
+          fi
+          echo "no binding names the ServiceAccount flux-system/helm-controller"
+
       - name: Assert that k3s runs with host/k3s/config.yaml
         run: |
           fail() { echo "::error::$1"; exit 1; }

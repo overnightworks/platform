@@ -60,7 +60,16 @@ state = "absent"
 
 [tasks."flux:export"]
 description = "Regenerate the committed Flux components from the locked flux2"
-run = 'flux install --export --components="$FLUX_COMPONENTS" > clusters/pc/flux-system/gotk-components.yaml'
+# flux install writes the subjects of its ClusterRoleBindings for every controller, so the ServiceAccount of the
+# omitted helm-controller stays a subject of cluster-admin; no such account exists, so anyone able to create one in
+# flux-system would gain it.
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+flux install --export --components="$FLUX_COMPONENTS" |
+  sed '/^- kind: ServiceAccount$/{N;N;/\n  name: helm-controller\n  namespace: flux-system$/d}' \
+    > clusters/pc/flux-system/gotk-components.yaml
+'''
 
 [tasks."charts:render"]
 description = "Render each pinned chart with its values into infrastructure/<component>/rendered.yaml"
