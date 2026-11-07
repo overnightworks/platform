@@ -1248,12 +1248,12 @@ jobs:
           traefik_host="$(kubectl -n traefik get service traefik -o jsonpath='{.metadata.name}.{.metadata.namespace}.svc')"
           client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
           # cloudflared matches a path by regular expression, so the job judges a line's path only as one literal path.
-          literal_path_pattern='^\^(/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*)\$$'
+          literal_path_pattern='^\^(/[A-Za-z0-9_~-][A-Za-z0-9_~/-]*)\$$'
           for line_index in "${routed_lines[@]}"; do
             line="$(yq ".ingress[$line_index]" <<<"$config")"
             routed_host="$(yq '.hostname' <<<"$line")"
             line_path="$(yq '.path // ""' <<<"$line")"
-            forwarded_host="$(yq '.originRequest.httpHostHeader // .hostname' <<<"$line")"
+            forwarded_host="$(yq ".ingress[$line_index].originRequest.httpHostHeader // .originRequest.httpHostHeader // .ingress[$line_index].hostname" <<<"$config")"
             forwarded_as=""
             [ "$forwarded_host" = "$routed_host" ] || forwarded_as=" as $forwarded_host"
             request_path=""
