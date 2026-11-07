@@ -87,51 +87,51 @@ sql_for filled empty >"$work_directory/same.sql"
 sql_for filled empty extra_empty >"$work_directory/extra.sql"
 export FAKE_DUMP_SQL="$work_directory/dump.sql"
 
-cell_resume_fails() {
-  cell=resume-fails
+cell_failed_resume_exits_nonzero_and_does_not_claim_nothing_changed() {
+  cell=failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
   FAKE_RESUME_FAILS=1 run_loader --resume x
   [ "$status" != 0 ] && [[ $flux_calls == *resume* ]] && [[ $output != *"nothing changed"* ]] ||
     fail "--resume that failed at flux resume exited $status with '$output' after flux $flux_calls"
 }
 
-cell_suspension_unreadable() {
-  cell=suspension-unreadable
+cell_unreadable_suspension_stops_before_suspend() {
+  cell=unreadable-suspension-stops-before-suspend
   FAKE_READ_SUSPEND_FAILS=1 run_loader x "$dump"
   [ "$status" != 0 ] && [[ $flux_calls != *suspend* ]] ||
     fail "a load whose suspension state was unreadable exited $status after flux $flux_calls"
 }
 
-cell_suspended_by_another() {
-  cell=suspended-by-another
+cell_foreign_suspension_refused_naming_resume() {
+  cell=foreign-suspension-refused-naming-resume
   FAKE_SUSPENDED=true run_loader x "$dump"
   [ "$status" != 0 ] && [[ $flux_calls != *suspend* ]] && [[ $output == *"--resume x"* ]] ||
     fail "a load on a foreign suspension exited $status after flux $flux_calls"
 }
 
-cell_log_mode() {
-  cell=log-mode
+cell_load_log_created_at_0600() {
+  cell=load-log-created-at-0600
   rm -f "$dump.load.log"
   umask 022
   FAKE_LOADED_SQL="$work_directory/same.sql" run_loader x "$dump"
   [ "$(head -n 1 "$FAKE_DIR/created-at")" = 600 ] || fail "the load log was at $(head -n 1 "$FAKE_DIR/created-at") when chmod ran"
 }
 
-cell_equal_with_empty_table() {
-  cell=equal-with-empty-table
+cell_empty_table_compared_equal() {
+  cell=empty-table-compared-equal
   FAKE_LOADED_SQL="$work_directory/same.sql" run_loader --compare x "$dump"
   [ "$status" = 0 ] && [[ $output == *"public.empty: 0 rows loaded, 0 in the dump, equal"* ]] && [[ $flux_calls == *resume* ]] ||
     fail "an equal load with an empty table exited $status with '$output'"
 }
 
-cell_extra_empty_table() {
-  cell=extra-empty-table
+cell_table_only_in_database_differs_and_stays_suspended() {
+  cell=table-only-in-database-differs-and-stays-suspended
   FAKE_LOADED_SQL="$work_directory/extra.sql" run_loader --compare x "$dump"
   [ "$status" != 0 ] && [[ $output == *"public.extra_empty: 0 rows loaded, 0 in the dump, DIFFERS"* ]] &&
     [[ $flux_calls != *resume* ]] || fail "a table only in the database exited $status with '$output' after flux $flux_calls"
 }
 
-cell_interrupt_while_verifying() {
-  cell=interrupt-while-verifying
+cell_interrupt_during_verification_stays_suspended() {
+  cell=interrupt-during-verification-stays-suspended
   export FAKE_DIR="$work_directory/state-$cell"
   mkdir -p "$FAKE_DIR"
   : >"$FAKE_DIR/flux.log"
@@ -183,8 +183,19 @@ FAKE
 }
 
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
+cells=(
+  failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
+  unreadable-suspension-stops-before-suspend
+  foreign-suspension-refused-naming-resume
+  load-log-created-at-0600
+  empty-table-compared-equal
+  table-only-in-database-differs-and-stays-suspended
+  interrupt-during-verification-stays-suspended
+  interrupt-script-reaps
+  interrupt-script-checks-writers
+)
 failed=()
-for name in resume-fails suspension-unreadable suspended-by-another log-mode equal-with-empty-table extra-empty-table interrupt-while-verifying interrupt-script-reaps interrupt-script-checks-writers; do
+for name in "${cells[@]}"; do
   ("cell_${name//-/_}") || failed+=("$name")
 done
 [ "${#failed[@]}" = 0 ] || { echo "load_dump: failed cells: ${failed[*]}" >&2; exit 1; }
