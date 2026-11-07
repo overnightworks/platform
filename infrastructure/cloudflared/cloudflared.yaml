@@ -36,6 +36,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
+        runAsUser: 0
         seccompProfile:
           type: RuntimeDefault
       containers:
