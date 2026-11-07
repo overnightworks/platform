@@ -474,7 +474,11 @@ jobs:
           kubectl -n "$CLIENT_NAMESPACE" run unrouted-request --image="$CLIENT_IMAGE" --restart=Never -- \
             --silent --output /dev/null --write-out '%{http_code}' --max-time 10 \
             --retry 5 --retry-connrefused --retry-delay 2 --header "Host: $UNROUTED_HOST" "http://traefik.traefik.svc:$web_port/"
-          kubectl -n "$CLIENT_NAMESPACE" wait pod/unrouted-request --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m
+          kubectl -n "$CLIENT_NAMESPACE" wait pod/unrouted-request --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m || {
+            kubectl -n "$CLIENT_NAMESPACE" describe pod/unrouted-request
+            kubectl -n "$CLIENT_NAMESPACE" logs pod/unrouted-request || true
+            fail "the client Pod did not succeed"
+          }
           status="$(kubectl -n "$CLIENT_NAMESPACE" logs pod/unrouted-request)"
           kubectl delete namespace "$CLIENT_NAMESPACE" --wait --timeout=2m
           [ -z "$(kubectl get namespace "$CLIENT_NAMESPACE" --ignore-not-found -o name)" ] ||
