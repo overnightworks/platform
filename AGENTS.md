@@ -75,9 +75,9 @@
   `container-log-max-files=2` in `host/k3s/config.yaml` keeps the kubelet from compressing a rotated file. A first
   apply on an existing install is `scripts/bootstrap_pc.sh --only files,services`, then `mise run bootstrap:k3s` and
   `mise run check:pod-logs`. Their undo declares the timer `state = "stopped"` and `enabled = false` and applies
-  `--only services`, so systemd disables it while its file exists; then declares the four files `state = "absent"`
-  and applies `--only files`; then drops the `kubelet-arg` and runs `mise run bootstrap:k3s`. Deleted logs stay
-  deleted.
+  `--only services`, so systemd disables it while its file exists; then deletes the timer's entry, which a plan
+  reports unknown once its file is gone, declares the four files `state = "absent"` and applies `--only files`; then
+  drops the `kubelet-arg` and runs `mise run bootstrap:k3s`. Deleted logs stay deleted.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
   runs beside it.

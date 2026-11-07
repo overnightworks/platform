@@ -62,6 +62,8 @@ result="$(systemctl show "$service" --property=Result --value)"
 }
 oldest="no file"
 [ -z "$oldest_file" ] || oldest="the oldest $oldest_file, created at $(format_time "$oldest_birth")"
+# systemd schedules the next run only once the current one ends, so the clean's own check names none.
 next_run="$(unit_time "$timer" NextElapseUSecRealtime)"
-echo "check-pod-logs: $file_count files under $pods_dir, $oldest; $timer last ran at $(format_time "$last_run")" \
-  "and runs next at $([ -n "$next_run" ] && format_time "$next_run" || echo never)"
+[ -z "$next_run" ] || next_run=" and runs next at $(format_time "$next_run")"
+echo "check-pod-logs: $file_count files under $pods_dir, $oldest;" \
+  "$timer last ran at $(format_time "$last_run")$next_run"
