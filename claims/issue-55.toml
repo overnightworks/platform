@@ -3,6 +3,6 @@ agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
 role = "builder"
 base = "fa2f78e3046dd17b2519bcaaaece2ae63f2e6dd6"
 branch = "claude/issue-55-b1a-image-guard"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/admission/image-vendors.yaml", "mise.lock", "mise.toml", "quality/config.toml", "scripts/verify_image_release.sh"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/admission/image-vendors.yaml", "mise.lock", "mise.toml", "quality/config.toml", "scripts/verify_image_release.sh", "tests/images"]
 opened_commit = "b43bb2f906d4d3e5660aad3c7a21e1373db50bed"
 whole_reason = "The decoder without the job, the vendor list or the mandatory entry has no caller or breaks the gate invariant; point 10 proposes the one cut that serves callers, B1a now and B1b with the first release."
