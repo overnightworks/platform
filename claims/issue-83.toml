@@ -1,8 +1,0 @@
-claim_id = "6f5bbddde2874ea89662a98e00942c08"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "a9cfd47649d292bc02395501c9a96c87d0810a53"
-branch = "claude/issue-83-images-refuses-helm-sources"
-scope = ["scripts/verify_image_release.sh", "tests/images"]
-opened_commit = "fb55013a6962b39bfbc9fabd2be8b7c42302665c"
-whole_reason = "The selector and its fixture prove one refusal and change together."
