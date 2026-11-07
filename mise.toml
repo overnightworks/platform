@@ -45,7 +45,7 @@ group = "root"
 mode = "0644"
 
 [bootstrap.files."/usr/local/sbin/check-pod-logs"]
-source = "host/pod-logs/check-pod-logs"
+source = "host/pod-logs/scripts/check_pod_logs.sh"
 owner = "root"
 group = "root"
 mode = "0755"

@@ -1486,7 +1486,7 @@ jobs:
           esac
           FAKE
           chmod +x "$fake_bin/systemctl"
-          check() { PATH="$fake_bin:$PATH" host/pod-logs/check-pod-logs 2>&1; }
+          check() { PATH="$fake_bin:$PATH" host/pod-logs/scripts/check_pod_logs.sh 2>&1; }
           # A breach the check must name: the case, the fake timer's last run and result, and the text naming it.
           expect_breach() {
             local output

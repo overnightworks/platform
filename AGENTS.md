@@ -71,12 +71,13 @@
 - The pod-log parts (`host/pod-logs/`) keep every pod log line at most 30 days, as the apps' privacy texts promise:
   `pod-logs.conf` in `/etc/tmpfiles.d/` deletes each file under `/var/log/pods` 28 days after its creation, with its
   emptied directories; `pod-logs-clean.timer` and `.service` in `/etc/systemd/system/` run that clean daily by the
-  wall clock and after boot, then `check-pod-logs` from `/usr/local/sbin/`; `container-log-max-files=2` in
-  `host/k3s/config.yaml` keeps the kubelet from compressing a rotated file. A first apply on an existing install is
-  `scripts/bootstrap_pc.sh --only files,services`, then `mise run bootstrap:k3s` and `mise run check:pod-logs`. Their
-  undo declares the timer `state = "stopped"`, `enabled = false` and applies `--only services`, so systemd disables
-  it while its file exists; then declares the four files `state = "absent"` and applies `--only files`; then
-  drops the `kubelet-arg` and runs `mise run bootstrap:k3s`. Deleted logs stay deleted.
+  wall clock and after boot, then `scripts/check_pod_logs.sh` as `/usr/local/sbin/check-pod-logs`;
+  `container-log-max-files=2` in `host/k3s/config.yaml` keeps the kubelet from compressing a rotated file. A first
+  apply on an existing install is `scripts/bootstrap_pc.sh --only files,services`, then `mise run bootstrap:k3s` and
+  `mise run check:pod-logs`. Their undo declares the timer `state = "stopped"` and `enabled = false` and applies
+  `--only services`, so systemd disables it while its file exists; then declares the four files `state = "absent"`
+  and applies `--only files`; then drops the `kubelet-arg` and runs `mise run bootstrap:k3s`. Deleted logs stay
+  deleted.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
   runs beside it.
