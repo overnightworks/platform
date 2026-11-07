@@ -1189,9 +1189,9 @@ jobs:
           [ "$annotated_hash" = "$expected_hash" ] ||
             fail "the Deployment cloudflared's template carries checksum/config '$annotated_hash', but the lines of the ConfigMap cloudflared hash to $expected_hash: set the annotation to that hash, so the changed lines roll the pod"
           echo "the Deployment cloudflared's template carries the hash of the ConfigMap's lines"
-          mapfile -t routed_hosts < <(kubectl -n "$TUNNEL_NAMESPACE" get configmap cloudflared -o jsonpath="$configmap_path" |
-            yq '.ingress[] | select(has("hostname")) | .hostname')
-          [ "${#routed_hosts[@]}" -gt 0 ] || fail "the ConfigMap cloudflared names no hostname"
+          config="$(kubectl -n "$TUNNEL_NAMESPACE" get configmap cloudflared -o jsonpath="$configmap_path")"
+          mapfile -t routed_lines < <(yq '.ingress | to_entries | .[] | select(.value | has("hostname")) | .key' <<<"$config")
+          [ "${#routed_lines[@]}" -gt 0 ] || fail "the ConfigMap cloudflared names no hostname"
 
           # run_template_pod <name> <argument>...: a Pod from the Deployment's template with its Secret volumes dropped
           # and its arguments replaced, admitted by Pod Security or refused, run once; sets pod_log and pod_exit_code.
@@ -1218,11 +1218,13 @@ jobs:
             printf '%s\n' "$pod_log"
             kubectl -n "$TUNNEL_NAMESPACE" delete pod "$name" --wait --timeout=2m
           }
-          # match_rule <host>: sets matched_service to the service of the rule cloudflared matches for the host.
+          # match_rule <host> [<path>]: sets matched_index and matched_service to the index in the lines and the service
+          # of the rule cloudflared matches for the host and path.
           match_rule() {
-            local host="$1"
-            run_template_pod "ingress-rule-${host//./-}" tunnel --config "$config_file" ingress rule "https://$host"
-            [ "$pod_exit_code" = 0 ] || fail "cloudflared tunnel ingress rule exited $pod_exit_code for $host"
+            local host="$1" path="${2:-}"
+            run_template_pod "ingress-rule-${host//./-}" tunnel --config "$config_file" ingress rule "https://$host$path"
+            [ "$pod_exit_code" = 0 ] || fail "cloudflared tunnel ingress rule exited $pod_exit_code for $host$path"
+            matched_index="$(sed -n 's/^Matched rule #//p' <<<"$pod_log")"
             matched_service="$(sed -n 's/^\tservice: //p' <<<"$pod_log")"
           }
 
@@ -1237,25 +1239,47 @@ jobs:
             fail "the tunnel sends the unrouted host $UNROUTED_HOST to '$matched_service', not http_status:404"
           echo "the tunnel answers the unrouted host $UNROUTED_HOST with http_status:404"
 
-          # Every host the lines name goes to Traefik's Service at its web port, and a client Pod beside cloudflared sends
-          # the request cloudflared forwards: Traefik answers 404 for a host no Ingress routes, and passes on the others.
+          # Every line that names a host sends it, on the line's path if it names one, to Traefik's Service at its web
+          # port, and a client Pod beside cloudflared sends the request cloudflared forwards, as the line's
+          # httpHostHeader if it rewrites the host: Traefik answers 404 for a host no Ingress routes, and passes on the
+          # others. Another path on a host a line restricts by path falls through to the final http_status:404.
           ingress_hosts="$(kubectl get ingresses -A -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{"\n"}{end}{end}')"
           web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
           traefik_host="$(kubectl -n traefik get service traefik -o jsonpath='{.metadata.name}.{.metadata.namespace}.svc')"
           client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
-          for routed_host in "${routed_hosts[@]}"; do
-            match_rule "$routed_host"
+          # cloudflared matches a path by regular expression, so the job judges a line's path only as one literal path.
+          literal_path_pattern='^\^(/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*)\$$'
+          for line_index in "${routed_lines[@]}"; do
+            line="$(yq ".ingress[$line_index]" <<<"$config")"
+            routed_host="$(yq '.hostname' <<<"$line")"
+            line_path="$(yq '.path // ""' <<<"$line")"
+            forwarded_host="$(yq '.originRequest.httpHostHeader // .hostname' <<<"$line")"
+            forwarded_as=""
+            [ "$forwarded_host" = "$routed_host" ] || forwarded_as=" as $forwarded_host"
+            request_path=""
+            if [ -n "$line_path" ]; then
+              [[ $line_path =~ $literal_path_pattern ]] ||
+                fail "the line #$line_index restricts $routed_host to the path '$line_path', which the job judges only as ^/<literal path>\$"
+              request_path="${BASH_REMATCH[1]}"
+              match_rule "$routed_host" /
+              [ "$matched_service" = http_status:404 ] ||
+                fail "the tunnel sends $routed_host/, outside the path of the line #$line_index, to '$matched_service', not http_status:404"
+              echo "the tunnel answers $routed_host/, outside the path of the line #$line_index, with http_status:404"
+            fi
+            match_rule "$routed_host" "$request_path"
+            [ "$matched_index" = "$line_index" ] ||
+              fail "the tunnel sends $routed_host$request_path to the line #$matched_index, not to its own line #$line_index"
             routed_url="$matched_service"
             [[ $routed_url =~ ^http://([^:/]+):([0-9]+)/?$ ]] ||
-              fail "the tunnel sends $routed_host to '$routed_url', not to an http URL with a host and a port"
+              fail "the tunnel sends $routed_host$request_path to '$routed_url', not to an http URL with a host and a port"
             [[ ${BASH_REMATCH[1]} == "$traefik_host" || ${BASH_REMATCH[1]} == "$traefik_host.cluster.local" ]] ||
-              fail "the tunnel sends $routed_host to $routed_url, not to the Service traefik of namespace traefik"
+              fail "the tunnel sends $routed_host$request_path to $routed_url, not to the Service traefik of namespace traefik"
             [ "${BASH_REMATCH[2]}" = "$web_port" ] ||
-              fail "the tunnel sends $routed_host to $routed_url, not to Traefik's web port $web_port"
+              fail "the tunnel sends $routed_host$request_path to $routed_url, not to Traefik's web port $web_port"
             client_pod_name="routed-request-${routed_host//./-}"
             client_pod="${client_pod_template//@NAME@/${client_pod_name}}"
-            client_pod="${client_pod//@HOST@/${routed_host}}"
-            printf '%s\n' "${client_pod//@URL@/${routed_url}}" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
+            client_pod="${client_pod//@HOST@/${forwarded_host}}"
+            printf '%s\n' "${client_pod//@URL@/${routed_url%/}${request_path:-/}}" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
             kubectl -n "$TUNNEL_NAMESPACE" wait "pod/$client_pod_name" --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m || {
               kubectl -n "$TUNNEL_NAMESPACE" describe "pod/$client_pod_name"
               kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$client_pod_name" || true
@@ -1263,13 +1287,14 @@ jobs:
             }
             status="$(kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$client_pod_name")"
             kubectl -n "$TUNNEL_NAMESPACE" delete pod "$client_pod_name" --wait --timeout=2m
-            if grep -qxF "$routed_host" <<<"$ingress_hosts"; then
+            if grep -qxF "$forwarded_host" <<<"$ingress_hosts"; then
               [[ $status =~ ^[1-5][0-9][0-9]$ && $status != 404 ]] ||
-                fail "Traefik answered $status for $routed_host at $routed_url, which an Ingress routes"
-              echo "the tunnel sends $routed_host to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches its route ($status)"
+                fail "Traefik answered $status for $routed_host$request_path$forwarded_as at $routed_url, which an Ingress routes"
+              echo "the tunnel sends $routed_host$request_path$forwarded_as to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches its route ($status)"
             else
-              [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for $routed_host at $routed_url"
-              echo "the tunnel sends $routed_host to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
+              [ "$status" = 404 ] ||
+                fail "Traefik answered $status, not 404, for $routed_host$request_path$forwarded_as at $routed_url"
+              echo "the tunnel sends $routed_host$request_path$forwarded_as to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
             fi
           done
 
