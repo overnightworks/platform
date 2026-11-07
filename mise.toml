@@ -22,6 +22,8 @@ K3S_VERSION = "v1.37.2+k3s1"
 FLUX_COMPONENTS = "source-controller,kustomize-controller,notification-controller"
 # The sha256 of k3s's install.sh at that tag, the file bootstrap:k3s downloads; a bump changes both.
 K3S_INSTALLER_SHA256 = "ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4c78cc00b"
+# The one source of GitHub's host keys, which secrets:github-host-keys checks the deploy key's known_hosts against.
+GITHUB_META_URL = "https://api.github.com/meta"
 
 # mise creates no missing parent of a file, and k3s's own directory exists only once k3s has run.
 [bootstrap.directories."/etc/rancher/k3s"]
@@ -109,7 +111,6 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 kubectl --namespace flux-system create secret generic sops-age --from-file=age.agekey="${usage_key_file?}" >/dev/null
-echo "secrets:age-secret: Secret sops-age created"
 '''
 
 # The one owner of the age key's path: the file sops reads besides its other key sources.
@@ -134,7 +135,7 @@ if [ -e "$key_file.drill" ] || [ -L "$key_file.drill" ]; then
   fail "$key_file.drill exists" "move it back to $key_file to end the drill"
 fi
 if [ -e "$key_file" ] || [ -L "$key_file" ]; then
-  fail "$key_file exists and is kept unread" "bootstrap:secrets uses it"
+  fail "$key_file exists and is kept unread" "run mise run bootstrap:secrets to use it"
 fi
 existing_ancestor="$key_dir"
 until [ -e "$existing_ancestor" ] || [ -L "$existing_ancestor" ]; do
@@ -163,7 +164,7 @@ quiet = true
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-meta_url=https://api.github.com/meta
+meta_url="${GITHUB_META_URL?}"
 fail() { echo "secrets:github-host-keys: $1; nothing passed on" >&2; exit 1; }
 
 IFS= read -r -d '' manifest || true
@@ -184,7 +185,6 @@ while IFS= read -r line; do
     fail "the key on known_hosts line $line_number is none of the ssh_keys $meta_url lists"
 done < <(printf '%s\n' "$known_hosts")
 
-echo "secrets:github-host-keys: known_hosts verified against $meta_url" >&2
 printf '%s' "$manifest"
 '''
 
@@ -277,15 +277,15 @@ run = '''
 set -euo pipefail
 source_file=clusters/pc/secrets.yaml
 source_name=platform-secrets
-source="gitrepository/$source_name"
 fail() { echo "bootstrap:secrets: $1" >&2; exit 1; }
 read_source() {
   source_name="$source_name" yq "select(.kind == \"GitRepository\" and .metadata.name == strenv(source_name)) | $1" \
     "$source_file"
 }
+# Reads jsonpath $3 of the object of kind $1 named $2; the kind in lower case is its resource.
 read_object() {
-  kubectl --namespace flux-system get "$1" --output "jsonpath=$2" ||
-    fail "$1 in flux-system unreadable; run this task again once kubectl reads it"
+  kubectl --namespace flux-system get "${1,,}/$2" --output "jsonpath=$3" ||
+    fail "$1 $2 in flux-system unreadable; run this task again once kubectl reads it"
 }
 # A failed read stops the task instead of counting as a missing Secret.
 secret_exists() {
@@ -298,8 +298,9 @@ secret_exists() {
 request_reconcile() {
   token="$(date +%s%N)"
   requested_at=$SECONDS
-  kubectl --namespace flux-system annotate --overwrite "$source" "reconcile.fluxcd.io/requestedAt=$token" >/dev/null ||
-    fail "$source in flux-system not annotated; run this task again once kubectl reaches it"
+  kubectl --namespace flux-system annotate --overwrite "gitrepository/$source_name" \
+    "reconcile.fluxcd.io/requestedAt=$token" >/dev/null ||
+    fail "GitRepository $source_name in flux-system not annotated; run this task again once kubectl reaches it"
 }
 # True once the controller has handled this request with Ready, false when $1 seconds pass first; a handled request
 # that is not Ready may turn Ready on the controller's next try, so the window is always observed in full.
@@ -308,7 +309,7 @@ source_ready_within() {
   request_reconcile
   while [ "$SECONDS" -lt $((requested_at + $1)) ]; do
     # The caller's until and if suspend set -e here, so a failed read exits explicitly.
-    state="$(read_object "$source" \
+    state="$(read_object GitRepository "$source_name" \
       '{.status.lastHandledReconcileAt} {.status.conditions[?(@.type=="Ready")].status}')" || exit 1
     if [ "${state% *}" = "$token" ] && [ "${state#* }" = True ]; then return 0; fi
     sleep 2
@@ -323,6 +324,7 @@ if secret_exists sops-age; then
   echo "bootstrap:secrets: Secret sops-age kept"
 else
   mise run secrets:age-secret "$key_file"
+  echo "bootstrap:secrets: Secret sops-age created"
 fi
 
 source_url="$(read_source .spec.url)"
@@ -339,18 +341,18 @@ if secret_exists "$deploy_key_secret"; then
 /etc/rancher/k3s/k3s.yaml --namespace flux-system delete secret $deploy_key_secret, delete its key at \
 https://github.com/$repository/settings/keys and run this task again"
   }
-  echo "bootstrap:secrets: Secret $deploy_key_secret kept"
+  echo "bootstrap:secrets: Secret $deploy_key_secret kept, host keys verified against $GITHUB_META_URL"
 else
   # The private key exists only in this pipeline, and kubectl create never replaces an existing Secret.
   flux create secret git "$deploy_key_secret" --namespace=flux-system --url="$source_url" --ssh-key-algorithm=ed25519 \
     --export | mise run secrets:github-host-keys | kubectl create --filename - >/dev/null ||
     fail "Secret $deploy_key_secret not created; run this task again once the cause above is fixed"
-  echo "bootstrap:secrets: Secret $deploy_key_secret created"
+  echo "bootstrap:secrets: Secret $deploy_key_secret created, host keys verified against $GITHUB_META_URL"
 fi
 
 # source-controller retries a failed source after a pause that doubles up to 15 minutes, so the task requests each try.
 if ! source_ready_within 60; then
-  public_key="$(read_object "secret/$deploy_key_secret" '{.data.identity\.pub}' | base64 --decode)"
+  public_key="$(read_object Secret "$deploy_key_secret" '{.data.identity\.pub}' | base64 --decode)"
   echo "bootstrap:secrets: add the deploy key at https://github.com/$repository/settings/keys/new"
   echo "  Title: $(yq '.["node-name"]' host/k3s/config.yaml)"
   echo "  Key:   $public_key"
@@ -359,16 +361,16 @@ if ! source_ready_within 60; then
   deadline=$((SECONDS + 900))
   until source_ready_within 30; do
     [ "$SECONDS" -lt "$deadline" ] || fail "GitRepository $source_name not Ready after 15 minutes: $(read_object \
-"$source" '{.status.conditions[?(@.type=="Ready")].message}'); check its key at \
+GitRepository "$source_name" '{.status.conditions[?(@.type=="Ready")].message}'); check its key at \
 https://github.com/$repository/settings/keys and run this task again"
   done
 fi
-source_revision="$(read_object "$source" '{.status.artifact.revision}')"
+source_revision="$(read_object GitRepository "$source_name" '{.status.artifact.revision}')"
 echo "bootstrap:secrets: GitRepository $source_name Ready at $source_revision"
 
 kubectl --namespace flux-system wait "kustomization/$source_name" --for=condition=Ready --timeout=5m >/dev/null ||
-  fail "Kustomization $source_name not Ready: $(read_object "kustomization/$source_name" \
+  fail "Kustomization $source_name not Ready: $(read_object Kustomization "$source_name" \
 '{.status.conditions[?(@.type=="Ready")].message}'); fix its cause in $repository and run this task again"
-applied_revision="$(read_object "kustomization/$source_name" '{.status.lastAppliedRevision}')"
+applied_revision="$(read_object Kustomization "$source_name" '{.status.lastAppliedRevision}')"
 echo "bootstrap:secrets: Kustomization $source_name Ready at $applied_revision"
 '''

@@ -36,9 +36,11 @@
   missing, and passes the deploy key only once GitHub's meta API lists every host key it holds, a check an existing
   one passes on every run. It then requests a reconcile of the source `platform-secrets`, and only when that is not
   Ready within a minute prints the public key to add once, read-only, in GitHub's web form, requesting a reconcile
-  every 30 seconds for up to 15 minutes; then it waits for the Kustomization. Each line it and the `secrets:` tasks
-  print reads `<task>: <object> <state>`, or `<task>: <condition>; <the way back>`. `mise run bootstrap` runs the three
-  in order, as a full `mise bootstrap` does after its declarative parts.
+  every 30 seconds for up to 15 minutes; then it waits for the Kustomization. Its lines name each object as `<Kind>
+  <name>`; the `secrets:` tasks it calls print only their refusals, under their own prefix. A refusal reads `<task>:
+  <condition>; <the way back>`, except the host-key filter's `; nothing passed on`, after which `bootstrap:secrets`
+  names the way back. `mise run bootstrap` runs the three in order, as a full `mise bootstrap` does after its
+  declarative parts.
 
 ## The PC's host step
 

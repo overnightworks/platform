@@ -70,6 +70,8 @@ run_task "${ready_at_read}"
 [ "${reads_at_key}" = none ] || fail "a handled failure followed by Ready within the minute fetched the deploy key"
 if grep --quiet 'Key:   ' "${output_file}"; then fail "a handled failure followed by Ready within the minute printed the key block"; fi
 grep --quiet 'GitRepository platform-secrets Ready at' "${output_file}" || fail "the Ready source was not reported"
+# The operator reads only the task he ran, so the subtasks it calls print nothing on success.
+if grep --quiet --invert-match '^bootstrap:secrets: ' "${output_file}"; then fail "a line came from another task"; fi
 
 run_task 0
 [ "${status}" != 0 ] || fail "a source that never turns Ready exited 0"

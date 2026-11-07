@@ -187,9 +187,9 @@ jobs:
           cat "$proof_dir/stderr"
           [ "$passes_status" = 0 ] || fail "flux's export did not pass secrets:github-host-keys unchanged"
 
-          github_ed25519="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 https://api.github.com/meta |
+          github_ed25519="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$GITHUB_META_URL" |
             yq -p json '.ssh_keys[] | select(test("^ssh-ed25519 "))')"
-          [ -n "$github_ed25519" ] || fail "https://api.github.com/meta lists no ssh-ed25519 key"
+          [ -n "$github_ed25519" ] || fail "$GITHUB_META_URL lists no ssh-ed25519 key"
           check_refuses() {
             local status=0
             known_hosts="$2" yq --null-input '.apiVersion = "v1" | .kind = "Secret" |
@@ -238,7 +238,7 @@ jobs:
           [ "$(stat --format=%a "$proof_dir/target/keys.txt")" = 600 ] ||
             fail "secrets:new-key did not create the key at mode 600 in the symlink's target"
 
-      - name: Check that bootstrap:secrets prints no key block for a source that turns Ready within the minute
+      - name: Check that bootstrap:secrets prints only its own lines and no key block for a source that turns Ready within the minute
         run: tests/secrets/bootstrap_secrets.sh
 
       - name: Assert that k3s runs with host/k3s/config.yaml
