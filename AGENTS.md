@@ -153,9 +153,10 @@
   changes the task's chart digest, `image.digest` and `versionOverride` together and regenerates, by hand in a pull
   request the operator merges. Its NetworkPolicy admits only pods of namespace `cloudflared`, and only to the `web`
   port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied, while the node's
-  probes pass. `web` trusts the forwarded headers of k3s's default cluster CIDR, which `host/k3s/config.yaml` keeps,
-  and carries hal's entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character
-  refused with 400 by each route, so an unrouted host still gets 404.
+  probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
+  `host/k3s/config.yaml` sets no `cluster-cidr`, which `cluster` checks against the nodes' pod CIDRs, and carries hal's
+  entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character refused with 400 by
+  each route, so an unrouted host still gets 404.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's
