@@ -46,6 +46,11 @@ while IFS=' ' read -r -d '' birth file; do
     oldest_file="$file"
   fi
 done < <(find "$pods_dir" -type f -exec stat --printf='%W %n\0' {} +)
+# An unreadable directory or a failed stat omits files from the loop, so the listing must have succeeded.
+wait "$!" || {
+  echo "check-pod-logs: listing the files under $pods_dir failed, so the 30-day bound is unchecked" >&2
+  exit 1
+}
 
 last_run="$(unit_time "$timer" LastTriggerUSec)"
 if [ -z "$last_run" ]; then

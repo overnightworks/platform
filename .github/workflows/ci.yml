@@ -1486,6 +1486,15 @@ jobs:
           esac
           FAKE
           chmod +x "$fake_bin/systemctl"
+          # A fake stat answers with the creation time in FAKE_BIRTH, fails when FAKE_STAT_FAIL is set and else is stat.
+          cat >"$fake_bin/stat" <<'FAKE'
+          #!/usr/bin/env bash
+          [ -z "${FAKE_STAT_FAIL:-}" ] || { echo "fake stat: failed" >&2; exit 1; }
+          [ -n "${FAKE_BIRTH:-}" ] || exec /usr/bin/stat "$@"
+          shift
+          for file; do printf '%s %s\0' "$FAKE_BIRTH" "$file"; done
+          FAKE
+          chmod +x "$fake_bin/stat"
           check() { PATH="$fake_bin:$PATH" host/pod-logs/scripts/check_pod_logs.sh 2>&1; }
           # A breach the check must name: the case, the fake timer's last run and result, and the text naming it.
           expect_breach() {
@@ -1505,6 +1514,7 @@ jobs:
           expect_breach "a timer that never ran" n/a success "never run"
           expect_breach "a run 26 hours ago" "@$(($(date +%s) - 26 * 3600))" success "hours ago"
           expect_breach "a failed run" "$recent" exit-code "ended with exit-code"
+          FAKE_STAT_FAIL=1 expect_breach "a listing that failed" "$recent" success "listing the files under $pods_dir failed"
           touch "$pods_dir/ns_pod_1/app/0.log.20261101-000000.gz" "$pods_dir/ns_pod_1/app/0.log.20261101-000000.tmp"
           expect_breach "a compressed copy" "$recent" success "0.log.20261101-000000.gz is a compressed copy"
           expect_breach "a copy in compression" "$recent" success "0.log.20261101-000000.tmp is a copy"
