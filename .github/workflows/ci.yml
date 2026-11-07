@@ -972,6 +972,51 @@ jobs:
             echo "the tunnel sends $routed_host to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
           done
 
+      - name: H15 revert the workload while the Secrets stay, then the control without the prune annotation
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          current="$PULL_REQUEST_REF"
+          branch_revision() { git ls-remote origin "refs/heads/$1" | cut -f1; }
+          follow() {
+            local ref="$1" patches
+            patches="$(kubectl -n flux-system get kustomization flux-system -o json |
+              jq -c --arg from "$current" --arg to "$ref" '.spec.patches | map(.patch |= gsub($from; $to))')"
+            kubectl -n flux-system patch kustomization flux-system --type merge -p "{\"spec\":{\"patches\":$patches}}"
+            kubectl -n flux-system patch gitrepository flux-system --type merge -p "{\"spec\":{\"ref\":{\"name\":\"$ref\"}}}"
+            current="$ref"
+            flux reconcile source git flux-system -n flux-system --timeout=3m
+            flux reconcile kustomization flux-system -n flux-system --timeout=5m
+            flux reconcile kustomization namespaces -n flux-system --timeout=5m
+          }
+          applied() { kubectl -n flux-system get kustomization "$1" -o jsonpath='{.status.lastAppliedRevision}'; }
+          ready() { kubectl -n flux-system get kustomization "$1" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'; }
+          revert_revision="$(branch_revision scratch-82-h15-b)"
+          bare_revision="$(branch_revision scratch-82-h15-a2)"
+          [ -n "$revert_revision" ] && [ -n "$bare_revision" ] || fail "a scratch branch is missing"
+
+          echo "== first: revert S5a's manifests, the Secrets stay =="
+          follow refs/heads/scratch-82-h15-b
+          kubectl -n hopin wait deployment/hopin --for=delete --timeout=3m
+          kubectl -n flux-system get kustomization apps && fail "the Kustomization apps still exists"
+          kubectl get namespace hopin
+          kubectl -n hopin get secret hopin ghcr-pull
+          [ "$(applied namespaces)" = "refs/heads/scratch-82-h15-b@sha1:$revert_revision" ] || fail "namespaces applied '$(applied namespaces)'"
+          [ "$(ready namespaces)" = True ] && [ "$(ready platform-secrets)" = True ] || fail "namespaces or platform-secrets is not Ready"
+          echo "H15 first: Deployment gone, Namespace hopin and its Secrets kept, namespaces and platform-secrets Ready at $revert_revision"
+
+          echo "== control: the same without the prune annotation =="
+          follow refs/heads/scratch-82-h15-a2
+          kubectl -n flux-system wait kustomization/apps --for=condition=Ready --timeout=5m
+          [ -z "$(kubectl get namespace hopin -o jsonpath='{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}')" ] ||
+            fail "the Namespace hopin still carries the prune annotation"
+          follow refs/heads/scratch-82-h15-b
+          kubectl wait namespace/hopin --for=delete --timeout=5m
+          flux reconcile kustomization platform-secrets -n flux-system --timeout=3m || true
+          [ "$(ready platform-secrets)" = False ] || fail "platform-secrets is Ready without the Namespace hopin"
+          message="$(kubectl -n flux-system get kustomization platform-secrets -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}')"
+          echo "H15 control: platform-secrets Ready=False: $message"
+          [[ $message == *hopin* ]] || fail "the message does not name the Namespace hopin"
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: |
