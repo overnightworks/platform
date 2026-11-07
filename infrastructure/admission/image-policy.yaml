@@ -1,0 +1,87 @@
+# Outside k3s's packaged components in kube-system and Flux's controllers in flux-system, the API server admits a Pod
+# or a workload only while each image is a listed vendor repository at a sha256 digest, with an optional tag before
+# it, or a full app ref; in the namespace of the vendor list it admits listed vendor refs only. It judges every create
+# and every update that changes the Pod spec, so an old ReplicaSet still scales down after its image left the list.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: app-and-vendor-images
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, flux-system]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods, pods/ephemeralcontainers]
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets, replicasets]
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [jobs, cronjobs]
+  variables:
+    # The Pod spec of the object, and on an update that of the old object after it.
+    - name: podSpecs
+      expression: >-
+        (request.operation == 'UPDATE' ? [object, oldObject] : [object]).map(judged,
+          request.kind.kind == 'Pod' ? judged.spec :
+          request.kind.kind == 'CronJob' ? judged.spec.jobTemplate.spec.template.spec :
+          judged.spec.template.spec)
+    - name: podSpecUnchanged
+      expression: size(variables.podSpecs) == 2 && variables.podSpecs[0] == variables.podSpecs[1]
+    # Every image the node pulls for the Pod, as [what, name, image].
+    - name: images
+      expression: >-
+        variables.podSpecs[0].containers.map(c, ['container', string(c.name), has(c.image) ? string(c.image) : ''])
+        + (has(variables.podSpecs[0].initContainers) ? variables.podSpecs[0].initContainers.map(c,
+            ['init container', string(c.name), has(c.image) ? string(c.image) : '']) : [])
+        + (has(variables.podSpecs[0].ephemeralContainers) ? variables.podSpecs[0].ephemeralContainers.map(c,
+            ['ephemeral container', string(c.name), has(c.image) ? string(c.image) : '']) : [])
+        + (has(variables.podSpecs[0].volumes) ? variables.podSpecs[0].volumes.filter(v, has(v.image)).map(v,
+            ['image volume', string(v.name), has(v.image.reference) ? string(v.image.reference) : '']) : [])
+    - name: vendorRepositories
+      expression: "has(params.data) ? params.data.map(key, string(params.data[key])) : []"
+    - name: inVendorListNamespace
+      expression: request.namespace == params.metadata.namespace
+    # The tag follows the reference grammar of distribution/reference, and an app ref's path components too.
+    - name: refused
+      expression: >-
+        variables.images.filter(image, !(
+          variables.vendorRepositories.exists(repository, image[2].startsWith(repository)
+            && image[2].substring(size(repository)).matches('^(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?@sha256:[0-9a-f]{64}$'))
+          || (!variables.inVendorListNamespace && image[2].matches(
+            '^ghcr[.]io/overnightworks/[a-z0-9]+(([.]|_|__|-+)[a-z0-9]+)*(/[a-z0-9]+(([.]|_|__|-+)[a-z0-9]+)*)?:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[0-9a-f]{64}$'))))
+  validations:
+    - expression: variables.podSpecUnchanged || size(variables.refused) == 0
+      reason: Forbidden
+      messageExpression: >-
+        variables.refused.map(image, image[0] + ' ' + image[1] + " runs '" + image[2] + "'").join(', ')
+        + (variables.inVendorListNamespace
+          ? ', not a listed vendor repository at a sha256 digest, <repository>[:<tag>]@sha256:<64 hex>; namespace '
+            + request.namespace + ' admits no app ref'
+          : ', neither a listed vendor repository at a sha256 digest, <repository>[:<tag>]@sha256:<64 hex>, nor a full'
+            + ' app ref ghcr.io/overnightworks/<repo>[/<name>]:<version>@sha256:<64 hex>')
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: app-and-vendor-images
+spec:
+  policyName: app-and-vendor-images
+  validationActions: [Deny]
+  # An empty namespace would read the parameter from each judged object's own namespace.
+  paramRef:
+    name: image-vendors
+    namespace: admission
+    parameterNotFoundAction: Deny

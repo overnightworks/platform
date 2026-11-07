@@ -1,0 +1,10 @@
+name: ci
+on: push
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run a probe
+        env:
+          PROBE_NAMESPACE: probe
+        run: "true"

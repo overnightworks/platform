@@ -61,19 +61,19 @@
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
   `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
-  It judges every image of every rendered Pod template, image volumes included: a vendor ref passes only as a
-  repository of the vendor list at a sha256 digest, an app ref under `ghcr.io/<owner>/` passes only through its
-  release checks (its tag v<version> resolved through `git ls-remote` and peeled, `gh attestation verify` by digest
-  with that commit as source digest, and the signer commit on quality's main; the job logs in to ghcr.io through
-  stdin and grants `packages: read`), and Flux's controllers pass in flux-system as `flux install --export` names
-  them for the components `FLUX_COMPONENTS` in `mise.toml` lists. It refuses another
-  kind that carries an image, every Helm object, a `substituteFrom` ConfigMap, a remote kustomize resource, a changed
+  It judges every image of every rendered Pod template, image volumes included, and every host-qualified value of a
+  step `env` in this workflow: a vendor ref passes only as a repository of the vendor list at a sha256 digest, an app
+  ref under `ghcr.io/<owner>/` passes only through its release checks (its tag v<version> resolved through
+  `git ls-remote` and peeled, `gh attestation verify` by digest with that commit as source digest, and the signer commit
+  on quality's main; the job logs in to ghcr.io through stdin and grants `packages: read`), and Flux's controllers pass
+  in flux-system as `flux install --export` names them for the components `FLUX_COMPONENTS` in `mise.toml` lists. It
+  refuses another kind that carries an image, every Helm object, a `substituteFrom` ConfigMap, a remote kustomize resource, a changed
   root, and every source but this repository's default branch and the owner's repository `platform-secrets`, as well as
   the source fields, ignore files, symlinks and Kustomization paths above their source's root that would make what
   Flux applies differ from the render. Its gaps: it does not
-  render `platform-secrets`, and a `substituteFrom` Secret's variables render empty or at their defaults. No check
-  on the PC judges these yet; overnightworks/platform#50 owns that check, and overnightworks/platform#49 lists the
-  gaps. `tests/images/` holds the matrix's cases, which the job runs.
+  render `platform-secrets`, and a `substituteFrom` Secret's variables render empty or at their defaults. On the PC
+  the admission policy judges their images by form only; overnightworks/platform#50 owns the attestation check, and
+  overnightworks/platform#49 lists the gaps. `tests/images/` holds the matrix's cases, which the job runs.
   `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
   `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes the paths or the file
   sizes and timestamps under `~/.local/bin` and mise's data directory (directory timestamps are not compared, the paths
@@ -89,8 +89,12 @@
   status over them and `infrastructure/` is not empty or git ignores one of those files. After the reconcile it reads
   Traefik from the cluster: its Service is ClusterIP with the one port `web`, an unrouted host gets 404, its container
   runs the Deployment's digest, and no Service of type NodePort or LoadBalancer and no Pod on a host port or the host
-  network exists in the cluster. It fails naming a Namespace of the layer `namespaces` without the prune annotation.
-  It runs Pods built from `cloudflared`'s template, its Secret volumes dropped and its arguments replaced: Pod Security
+  network exists in the cluster. Every Kustomization but the root and `admission` whose inventory holds a workload
+  kind or a HelmRelease depends on `admission` and created its workloads after `admission`'s objects, the root's
+  workloads are the Deployments of `gotk-components.yaml`, and `namespaces` holds only Namespaces Flux never prunes:
+  the job fails naming one without the prune annotation. It then probes the image policy by server-side dry-run on
+  generated objects and live ones; every image a step runs in the cluster is a listed vendor ref at a digest. Last,
+  it runs Pods built from `cloudflared`'s template, its Secret volumes dropped and its arguments replaced: Pod Security
   `restricted` admits them, `cloudflared tunnel ingress validate` passes on the committed config, an unrouted host gets
   `http_status:404`, and the rule of every host the config names points at the Service `traefik` of namespace `traefik`
   at its `web` port, where a client Pod in namespace `cloudflared` gets Traefik's 404. k3d does not prove the edge
@@ -103,11 +107,16 @@
   `healthChecks` with it, and `cluster` fails when they differ from the root's inventory.
 - `clusters/pc/infrastructure.yaml`: one Flux Kustomization per directory under `infrastructure/`, each with
   `wait: true` and a `timeout`. `namespaces`, then `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel`
-  apply in that order through `dependsOn`.
+  apply in that order through `dependsOn`; `admission` depends on `namespaces`, and every layer that runs a workload,
+  `tunnel` included, on `admission`.
 - `infrastructure/namespaces/`: the Namespaces that receive Secrets from `platform-secrets`, each carrying
-  `kustomize.toolkit.fluxcd.io/prune: disabled`, so Flux never deletes one with its Secrets.
+  `kustomize.toolkit.fluxcd.io/prune: disabled`, so neither a prune nor a revert deletes one with its Secrets.
   A Namespace removed from Git stays in the cluster; it leaves only after its Secrets left `platform-secrets`, by a
   deletion on the PC.
+- `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
+  binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
+  and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at
+  a sha256 digest or a full app ref, and in `admission` a vendor ref only.
 - `infrastructure/cloudflared/`: the platform's own tunnel `platform`. The ConfigMap holds its lines, one per host to
   Traefik's Service and a final `http_status:404`; the Deployment `cloudflared` reads the tunnel and its credential
   only from the token file of the Secret `tunnel-token`, which `platform-secrets` applies, so no tunnel id, credential
