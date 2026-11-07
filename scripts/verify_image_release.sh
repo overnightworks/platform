@@ -5,8 +5,9 @@
 # quality's main), and Flux's controllers pass in their namespace as the locked flux2 exports them. What the rule cannot
 # judge is red too.
 # Usage: mise exec -- scripts/verify_image_release.sh [tree], the tree defaulting to this checkout. The run names
-# GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, DEFAULT_BRANCH and RENDER_IMAGE, the image the render
-# runs in; gh reads GH_TOKEN or its own login, and reads the registry through Docker's login to ghcr.io.
+# GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, DEFAULT_BRANCH, RENDER_IMAGE, the image the render
+# runs in, and FLUX_COMPONENTS, which mise.toml sets; gh reads GH_TOKEN or its own login, and reads the registry through
+# Docker's login to ghcr.io.
 # Exit: 0 nothing is red, 1 after at least one red record, 2 on any other failure.
 set -Eeuo pipefail
 trap 'echo "verify_image_release: line ${LINENO} failed: ${BASH_COMMAND}" >&2; exit 2' ERR
@@ -325,7 +326,7 @@ judge_unknown_kinds() {
   local -A judged_objects=()
   read_records "${HELM_OBJECTS}"
   for ((index = 0; index < ${#records[@]}; index += 2)); do
-    report_red "${records[index]}" "${records[index + 1]}" "a Helm object, which the render does not render yet"
+    report_red "${records[index]}" "${records[index + 1]}" "a Helm object, which the render does not render"
   done
   read_records "${UNKNOWN_KIND_TRIGGERS}"
   for ((index = 0; index < ${#records[@]}; index += 5)); do
@@ -436,7 +437,7 @@ check_app_release() {
 main() {
   local variable index repository image reds_before released_count=0
   local -a app_references=()
-  for variable in GITHUB_SERVER_URL GITHUB_REPOSITORY GITHUB_REPOSITORY_OWNER DEFAULT_BRANCH RENDER_IMAGE; do
+  for variable in GITHUB_SERVER_URL GITHUB_REPOSITORY GITHUB_REPOSITORY_OWNER DEFAULT_BRANCH RENDER_IMAGE FLUX_COMPONENTS; do
     [ -n "${!variable:-}" ] || fail "${variable} is not set"
   done
   tree="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
@@ -445,7 +446,7 @@ main() {
   work_directory="$(mktemp -d)"
   trap 'rm -rf "${work_directory}"' EXIT
   rendered="${work_directory}/rendered.yaml"
-  flux install --export >"${work_directory}/flux-components.yaml"
+  flux install --export --components="${FLUX_COMPONENTS}" >"${work_directory}/flux-components.yaml"
   read_records "${POD_IMAGES}" "${work_directory}/flux-components.yaml"
   for ((index = 0; index < ${#records[@]}; index += 4)); do
     flux_own_images["${records[index + 1]} ${records[index + 3]}"]=own

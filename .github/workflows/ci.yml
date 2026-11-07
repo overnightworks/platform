@@ -109,6 +109,19 @@ jobs:
           kubectl apply --server-side -f clusters/pc/flux-system/gotk-components.yaml
           kubectl -n flux-system wait deployment --all --for=condition=Available --timeout=3m
 
+      # flux install writes a binding subject for every controller, omitted ones included.
+      - name: Assert that no binding names the removed helm-controller
+        run: |
+          bindings="$(kubectl get clusterrolebindings,rolebindings --all-namespaces \
+            -o jsonpath='{range .items[*]}{.kind}{" "}{.metadata.name}{"|"}{range .subjects[*]}{.kind}{"/"}{.namespace}{"/"}{.name}{" "}{end}{"\n"}{end}')"
+          holders="$(grep -F 'ServiceAccount/flux-system/helm-controller' <<<"$bindings" || true)"
+          if [ -n "$holders" ]; then
+            echo "::error::these bindings name the ServiceAccount helm-controller, which no Deployment runs:"
+            printf '%s\n' "$holders"
+            exit 1
+          fi
+          echo "no binding names the ServiceAccount flux-system/helm-controller"
+
       - name: Assert that k3s runs with host/k3s/config.yaml
         run: |
           fail() { echo "::error::$1"; exit 1; }
@@ -370,7 +383,7 @@ jobs:
           entries="$(inventory)"
           for entry in flux-system_flux-system_source.toolkit.fluxcd.io_GitRepository \
             flux-system_source-controller_apps_Deployment flux-system_kustomize-controller_apps_Deployment \
-            flux-system_helm-controller_apps_Deployment flux-system_notification-controller_apps_Deployment; do
+            flux-system_notification-controller_apps_Deployment; do
             grep -qxF "$entry" <<<"$entries" || fail "the flux-system inventory lacks $entry"
             echo "inventory holds: $entry"
           done
@@ -437,12 +450,15 @@ jobs:
           kubectl -n traefik wait deployment/traefik --for=condition=Available --timeout=3m
           echo "the Kustomization traefik applied the candidate, and the Deployment traefik is Available"
 
-          # Charts reach the cluster only as committed manifests; the job's own platform-secrets source is no chart.
-          sources="$(kubectl get helmreleases.helm.toolkit.fluxcd.io,ocirepositories.source.toolkit.fluxcd.io -A \
+          # Charts reach the cluster only as committed manifests: no HelmRelease can exist, as its CRD is not installed,
+          # and the job's own platform-secrets source is no chart.
+          helm_release_crd="$(kubectl get crd --ignore-not-found helmreleases.helm.toolkit.fluxcd.io -o name)"
+          [ -z "$helm_release_crd" ] || fail "the cluster holds the CRD $helm_release_crd"
+          sources="$(kubectl get ocirepositories.source.toolkit.fluxcd.io -A \
             -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{"\n"}{end}')"
           chart_sources="$(grep -vxF OCIRepository/flux-system/platform-secrets <<<"$sources" || true)"
           [ -z "$chart_sources" ] || fail "the cluster holds ${chart_sources//$'\n'/ }"
-          echo "no HelmRelease and no OCIRepository beyond the job's platform-secrets source exists"
+          echo "no HelmRelease CRD and no OCIRepository beyond the job's platform-secrets source exists"
           traefik_crds="$(kubectl get crd -o jsonpath='{range .items[*]}{.spec.group} {.metadata.name}{"\n"}{end}' |
             awk '$1 == "traefik.io" || $1 == "hub.traefik.io" { print $2 }')"
           [ -z "$traefik_crds" ] || fail "the cluster holds Traefik's CRDs ${traefik_crds//$'\n'/ }"
