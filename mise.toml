@@ -389,6 +389,7 @@ quiet = true
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 namespace="${usage_namespace?}" file="${usage_file:-}"
 pod=postgres-0

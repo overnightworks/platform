@@ -105,9 +105,17 @@ cell_suspended_by_another() {
     fail "a load on a foreign suspension exited $status after flux $flux_calls"
 }
 
+cell_log_mode() {
+  cell=log-mode
+  rm -f "$dump.load.log"
+  umask 022
+  FAKE_LOADED_SQL="$work_directory/same.sql" run_loader x "$dump"
+  [ "$(head -n 1 "$FAKE_DIR/created-at")" = 600 ] || fail "the load log was at $(head -n 1 "$FAKE_DIR/created-at") when chmod ran"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 failed=()
-for name in resume-fails suspension-unreadable suspended-by-another; do
+for name in resume-fails suspension-unreadable suspended-by-another log-mode; do
   ("cell_${name//-/_}") || failed+=("$name")
 done
 [ "${#failed[@]}" = 0 ] || { echo "load_dump: failed cells: ${failed[*]}" >&2; exit 1; }
