@@ -1,0 +1,37 @@
+# local-path-provisioner from its vendored manifest. Its namespace stays without Pod Security restricted, because the
+# helper pod mounts a hostPath; its teardown script (rm -rf) runs only for a class with reclaimPolicy Delete.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - local-path-storage.yaml
+patches:
+  - path: default-class.yaml
+  - target:
+      kind: Deployment
+      name: local-path-provisioner
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: docker.io/rancher/local-path-provisioner:v0.0.37@sha256:e757967a5ec338f6a9b371c5a9688bedaa8c3578ea3dd4db329ea0084be0a86f
+  # The helper pod's image sits in a string no rendered Pod template holds, so only admission judges it.
+  - target:
+      kind: ConfigMap
+      name: local-path-config
+    patch: |
+      - op: replace
+        path: /data/helperPod.yaml
+        value: |-
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: helper-pod
+          spec:
+            priorityClassName: system-node-critical
+            tolerations:
+              - key: node.kubernetes.io/disk-pressure
+                operator: Exists
+                effect: NoSchedule
+            containers:
+            - name: helper-pod
+              image: docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
+              imagePullPolicy: IfNotPresent
