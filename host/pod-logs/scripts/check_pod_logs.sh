@@ -29,14 +29,21 @@ file_count=0
 oldest_file=""
 oldest_birth=""
 # Prints one NUL-terminated path per file under the pods directory.
-list_files() { find "$pods_dir" -type f -print0; }
+# The kubelet removes and renames files while find walks the tree; -ignore_readdir_race silences only that.
+list_files() { find "$pods_dir" -ignore_readdir_race -type f -print0; }
+# Fails the check, naming the cause when the caller has one.
 listing_failed() {
-  echo "check-pod-logs: listing the files under $pods_dir failed, so the 30-day bound is unchecked" >&2
+  echo "check-pod-logs: listing the files under $pods_dir failed, so the 30-day bound is unchecked${1:+: $1}" >&2
   exit 1
 }
 # Prints the creation time of a file in unix seconds, or nothing when the file vanished since the listing.
 file_birth() {
-  stat --printf='%W' -- "$1" 2>/dev/null || [ ! -e "$1" ] || listing_failed
+  local birth
+  if birth="$(stat --printf='%W' -- "$1" 2>&1)"; then
+    printf '%s' "$birth"
+  else
+    [ ! -e "$1" ] || listing_failed "$birth"
+  fi
 }
 
 pods_listing="$(mktemp)"
@@ -45,7 +52,7 @@ no_pod_logs_yet=""
 if [ -d "$pods_dir" ]; then
   list_files >"$pods_listing" || listing_failed
 elif [ -e "$pods_dir" ]; then
-  listing_failed
+  listing_failed "$pods_dir is not a directory"
 else
   # k3s creates the directory with its first pod, after a first install has started the timer.
   no_pod_logs_yet=true

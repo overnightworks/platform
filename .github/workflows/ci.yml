@@ -1706,7 +1706,11 @@ jobs:
           mkdir -p "$pods_dir/ns_new_2/app"
           echo first >"$pods_dir/ns_new_2/app/0.log"
           touch "$pods_dir/ns_new_2/app/0.log.20261101-000000.gz" "$pods_dir/ns_new_2/app/0.log.20261101-000000.tmp"
-          systemd-tmpfiles --clean --remove --root="$root" "$root/etc/tmpfiles.d/pod-logs.conf"
+          # The flags are the service's own; only the root and the config path are the test tree's.
+          service_flags="$(sed -n 's/^ExecStart=[^ ]*//p' host/pod-logs/pod-logs-clean.service | tr ' ' '\n' |
+            grep -- '^--')"
+          # shellcheck disable=SC2086
+          systemd-tmpfiles $service_flags --root="$root" "$root/etc/tmpfiles.d/pod-logs.conf"
           [ ! -e "$pods_dir/ns_old_1" ] || fail "the clean kept $(find "$pods_dir/ns_old_1" | tr '\n' ' ')"
           [ -f "$pods_dir/ns_new_2/app/0.log" ] || fail "the clean deleted the file younger than ${age_seconds}s"
           [ "$(find "$pods_dir/ns_new_2" -type f | wc -l)" -eq 1 ] ||
@@ -1772,7 +1776,7 @@ jobs:
           FAKE_FIND_FAIL=1 expect_breach "a listing that failed" "$recent" success \
             "listing the files under $pods_dir failed"
           FAKE_STAT_FAIL=1 expect_breach "a stat that failed on a file that stays" "$recent" success \
-            "listing the files under $pods_dir failed"
+            "listing the files under $pods_dir failed, so the 30-day bound is unchecked: fake stat: failed"
           expect_breach "a failed run with one breach" "$recent" exit-code "1 breach of the 30-day bound"
           output="$(FAKE_LAST_RUN=n/a FAKE_RESULT=exit-code check)" && fail "the check passed two breaches"
           grep -q "2 breaches of the 30-day bound" <<<"$output" || fail "the check did not count two breaches: $output"
@@ -1798,6 +1802,10 @@ jobs:
             fail "the check failed a missing $pods_dir: $output"
           [ "$(wc -l <<<"$output")" -eq 1 ] || fail "the check did not pass a missing $pods_dir with one line: $output"
           echo "the check passes a missing $pods_dir: $output"
+          touch "$pods_dir"
+          expect_breach "a file in place of $pods_dir" "$recent" success \
+            "unchecked: $pods_dir is not a directory"
+          rm "$pods_dir"
 
   opentofu:
     runs-on: ubuntu-latest

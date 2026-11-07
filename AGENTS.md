@@ -87,9 +87,10 @@
   the uninstall waits for his word.
 - The pod-log parts (`host/pod-logs/`) keep every pod log line at most 30 days, as the apps' privacy texts promise:
   `pod-logs.conf` in `/etc/tmpfiles.d/` deletes each file under `/var/log/pods` 28 days after its creation, with its
-  emptied directories, and every `.gz` and `.tmp` there whatever its age, since the kubelet makes none and a copy's
-  creation time is younger than its lines; `pod-logs-clean.timer` and `.service` in `/etc/systemd/system/` run that clean daily by the
-  wall clock and after boot, then `scripts/check_pod_logs.sh` as `/usr/local/sbin/check-pod-logs`;
+  emptied directories, and every `.gz` and `.tmp` in each container directory whatever its age, since the kubelet
+  makes none and a copy's creation time is younger than its lines; `pod-logs-clean.timer` and `.service` in
+  `/etc/systemd/system/` run that clean daily by the wall clock and after boot, then `scripts/check_pod_logs.sh` as
+  `/usr/local/sbin/check-pod-logs`;
   `container-log-max-files=2` in `host/k3s/config.yaml` keeps the kubelet from compressing a rotated file. A first
   apply on an existing install is `scripts/bootstrap_pc.sh --only files,services`, then `mise run bootstrap:k3s`,
   `sudo systemctl start pod-logs-clean.service` and `mise run check:pod-logs`. Their undo declares the timer
