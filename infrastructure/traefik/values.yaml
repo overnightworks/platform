@@ -20,6 +20,9 @@ ports:
   websecure:
     expose:
       default: false
+podSecurityContext:
+  runAsUser: 0
+  runAsNonRoot: false
 service:
   spec:
     # Reached only from inside the cluster: a NodePort or LoadBalancer would take the forward path ufw never sees.

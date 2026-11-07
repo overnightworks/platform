@@ -247,8 +247,8 @@ spec:
       hostNetwork: false
       securityContext:
         runAsGroup: 65532
-        runAsNonRoot: true
-        runAsUser: 65532
+        runAsNonRoot: false
+        runAsUser: 0
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: traefik
