@@ -438,9 +438,9 @@ jobs:
           echo "the Kustomization traefik applied the candidate, and the Deployment traefik is Available"
 
           # Charts reach the cluster only as committed manifests; the job's own platform-secrets source is no chart.
-          chart_sources="$(kubectl get helmreleases.helm.toolkit.fluxcd.io,ocirepositories.source.toolkit.fluxcd.io -A \
-            -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{"\n"}{end}' |
-            grep -vxF OCIRepository/flux-system/platform-secrets || true)"
+          sources="$(kubectl get helmreleases.helm.toolkit.fluxcd.io,ocirepositories.source.toolkit.fluxcd.io -A \
+            -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{"\n"}{end}')"
+          chart_sources="$(grep -vxF OCIRepository/flux-system/platform-secrets <<<"$sources" || true)"
           [ -z "$chart_sources" ] || fail "the cluster holds ${chart_sources//$'\n'/ }"
           echo "no HelmRelease and no OCIRepository beyond the job's platform-secrets source exists"
           traefik_crds="$(kubectl get crd -o jsonpath='{range .items[*]}{.spec.group} {.metadata.name}{"\n"}{end}' |
