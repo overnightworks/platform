@@ -199,6 +199,16 @@ jobs:
           chmod 700 "$key_dir"
           touch "$SOPS_AGE_KEY_FILE.drill"
           check_refuses "a drill file beside the key file" "$SOPS_AGE_KEY_FILE.drill"
+          rm "$SOPS_AGE_KEY_FILE.drill"
+          touch "$proof_dir/blocker"
+          SOPS_AGE_KEY_FILE="$proof_dir/blocker/age/keys.txt" \
+            check_refuses "a regular file where the key directory would be" "$proof_dir/blocker"
+          # The key directory a symlink names is judged by its target, so a link to a 700 directory is accepted.
+          mkdir -m 700 "$proof_dir/target"
+          ln -s target "$proof_dir/link"
+          SOPS_AGE_KEY_FILE="$proof_dir/link/keys.txt" mise run secrets:new-key
+          [ "$(stat --format=%a "$proof_dir/target/keys.txt")" = 600 ] ||
+            fail "secrets:new-key did not create the key at mode 600 in the symlink's target"
 
       - name: Check that bootstrap:secrets prints no key block for a source that turns Ready within the minute
         run: tests/secrets/bootstrap_secrets.sh
