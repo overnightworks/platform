@@ -1,0 +1,7 @@
+claim_id = "38d3819bce5f494281c878fa07468635"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "874b2819d2e2d079f361bfabefc7831fdfb35263"
+branch = "claude/issue-138-speech-runtime-2026-11-07-2"
+scope = ["apps/speech-runtime/speech-runtime.yaml"]
+opened_commit = "2999c8ecf32918d24ff9e3d524a5a0dbcce50fa5"
