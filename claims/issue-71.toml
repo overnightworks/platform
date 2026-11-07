@@ -1,8 +1,0 @@
-claim_id = "b68885437ad14a0c9fdf8e767f91b9f7"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "e49c84e3ed467ac0414636c56368f517a0e6974a"
-branch = "claude/issue-71-flux-runs-without-a-helm-reconciler"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/flux-system/gotk-components.yaml", "clusters/pc/flux-system/gotk-sync.yaml", "host/k3s/config.yaml", "mise.toml", "scripts/verify_image_release.sh", "tests/images"]
-opened_commit = "0dcc3d03a30848e0466513ea8bfd4c5b284a9d36"
-whole_reason = "The component set, the root's health checks, the cluster job's inventory check and the refusal's wording describe one controller and change together: a regeneration without the matching checks turns cluster red."
