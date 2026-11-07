@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: scratch-web, namespace: default}
+spec:
+  selector: {matchLabels: {app: scratch-web}}
+  template:
+    metadata: {labels: {app: scratch-web}}
+    spec:
+      containers:
+        - {name: main, image: "nginx:1"}
