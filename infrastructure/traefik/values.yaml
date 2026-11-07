@@ -18,10 +18,6 @@ providers:
 ports:
   # Only web is on the Service: traffic reaches Traefik over plain HTTP from inside the cluster.
   web:
-    forwardedHeaders:
-      # k3s's default cluster CIDR, which host/k3s/config.yaml keeps: network-policy.yaml lets only cloudflared's pods
-      # reach web, so the X-Forwarded-For they send is the one kept.
-      trustedIPs: [10.42.0.0/16]
     # web is where the internet first reaches Traefik, so it carries the entrypoint hardening of hal's own Traefik.
     http:
       # Drop headers like X_Forwarded_For that CGI/WSGI-style backends read as the header Traefik manages.

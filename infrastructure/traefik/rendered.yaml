@@ -191,7 +191,6 @@ spec:
         - --entryPoints.web.http.encodedCharacters.allowEncodedSlash=false
         - --entryPoints.web.http.sanitizePath=true
         - --entryPoints.web.http.aliasHeadersStrategy=delete
-        - --entryPoints.web.forwardedHeaders.trustedIPs=10.42.0.0/16
         - --entryPoints.websecure.http.tls=true
         - --log.level=INFO
         env:
