@@ -16,6 +16,8 @@ providers:
   kubernetesCRD:
     enabled: false
 ports:
+  web:
+    hostPort: 8000
   # Only web is on the Service: traffic reaches Traefik over plain HTTP from inside the cluster.
   websecure:
     expose:
