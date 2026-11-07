@@ -19,6 +19,8 @@ spec:
         app.kubernetes.io/name: hopin
     spec:
       automountServiceAccountToken: false
+      # The Service hopin would inject HOPIN_PORT=tcp://<address>:8080, which hopin reads as its own port setting.
+      enableServiceLinks: false
       imagePullSecrets:
         - name: ghcr-pull
       securityContext:
