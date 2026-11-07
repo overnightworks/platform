@@ -487,6 +487,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      packages: read
     env:
       # The image the render runs in without network; flux2 is a static binary, mounted from the lock.
       RENDER_IMAGE: ubuntu:26.04
@@ -502,7 +503,15 @@ jobs:
           scripts/bootstrap_pc.sh --only tools
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # gh reads an image's digest from the registry with Docker's keychain; the token reaches it only through stdin.
+      - name: Log in to the registry
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
       - name: Render the tree and judge every image
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: mise exec -- scripts/verify_image_release.sh
 
       - name: Run the fixture cases through the script
