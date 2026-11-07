@@ -50,7 +50,7 @@ jobs:
       PROOF_SECRET_NAMESPACE: default
       PROOF_SECRET_NAME: decryption-proof
       # The client Pods' image: each sends one request and is deleted after it.
-      CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+      CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0
       # cloudflared's Namespace and the host its ingress names no rule for.
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
