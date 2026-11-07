@@ -229,7 +229,7 @@ jobs:
           app_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$deployment")"
           pull_secret="$(yq '.spec.template.spec.imagePullSecrets[].name' <<<"$deployment")"
           app_files="$(secret_files "$app_secret")"
-          for key in oidc_client_secret session_secret turn_key_id turn_api_token; do
+          for key in oidc_client_secret turn_key_id turn_api_token; do
             value="$(openssl rand -hex 32)"
             echo "::add-mask::$value"
             printf '%s' "$value" > "$app_files/$key"
