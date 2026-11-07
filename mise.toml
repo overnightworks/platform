@@ -447,6 +447,12 @@ dump_into_postgres env PGOPTIONS='-c log_min_messages=panic -c log_min_error_sta
   --if-exists --no-owner --role="$namespace" --single-transaction --exit-on-error --dbname="$namespace" 2>"$log" ||
   load_status=$?
 [ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log; the data is unchanged"
+# The data is committed: until it is verified, a signal or a failure leaves the writers stopped, not resumed on it.
+unverified() {
+  echo "db:load-dump: the loaded data is not verified against $file; the Kustomization $namespace stays suspended and \
+its writers at 0: load the dump again, or run mise run db:load-dump --resume $namespace to start them on this data" >&2
+}
+trap unverified EXIT
 
 # Every table's data lines in a dump (stdin as SQL), sorted, as "<sha256> - <table> <rows>" per table, an empty one
 # included. Each line is the table, a tab, then "R" and a row or "E" for the table's end, which only an empty table
@@ -472,11 +478,7 @@ if [ "${usage_compare:-false}" = true ]; then
             same ? "equal" : "DIFFERS" }
         exit differing > 0 }' <(printf '%s\n' "$dumped") <(printf '%s\n' "$loaded") || verified=false
 fi
-if [ "$verified" != true ]; then
-  trap - EXIT INT TERM
-  fail "the loaded data differs from $file or could not be compared; the Kustomization $namespace stays suspended and \
-its writers at 0: load the dump again, or run mise run db:load-dump --resume $namespace to start them on this data"
-fi
+[ "$verified" = true ] || exit 1
 
 say "verified; resuming the Kustomization $namespace"
 resume

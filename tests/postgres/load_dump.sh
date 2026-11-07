@@ -127,9 +127,26 @@ cell_extra_empty_table() {
     [[ $flux_calls != *resume* ]] || fail "a table only in the database exited $status with '$output' after flux $flux_calls"
 }
 
+cell_interrupt_while_verifying() {
+  cell=interrupt-while-verifying
+  export FAKE_DIR="$work_directory/state-$cell"
+  mkdir -p "$FAKE_DIR"
+  : >"$FAKE_DIR/flux.log"
+  FAKE_VERIFY_HANGS=1 setsid mise run db:load-dump x "$dump" >"$FAKE_DIR/output" 2>&1 &
+  loader=$!
+  leftovers+=("$loader")
+  for _ in $(seq 150); do [ -e "$FAKE_DIR/verifying" ] && break; sleep 0.2; done
+  [ -e "$FAKE_DIR/verifying" ] || fail "the loader never reached its verification"
+  pkill -INT --session "$loader"
+  status=0
+  wait "$loader" || status=$?
+  [ "$status" != 0 ] && ! grep -q resume "$FAKE_DIR/flux.log" && grep -q -- "--resume x" "$FAKE_DIR/output" ||
+    fail "an interrupt during verification exited $status after flux $(tr '\n' ' ' <"$FAKE_DIR/flux.log")"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 failed=()
-for name in resume-fails suspension-unreadable suspended-by-another log-mode equal-with-empty-table extra-empty-table; do
+for name in resume-fails suspension-unreadable suspended-by-another log-mode equal-with-empty-table extra-empty-table interrupt-while-verifying; do
   ("cell_${name//-/_}") || failed+=("$name")
 done
 [ "${#failed[@]}" = 0 ] || { echo "load_dump: failed cells: ${failed[*]}" >&2; exit 1; }
