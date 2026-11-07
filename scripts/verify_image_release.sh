@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Render the tree as Flux applies it, with the locked flux2 and without network, and judge every image of every rendered
-# Pod template, and every image a CI step passes in an env value: a vendor ref passes only as a repository of the vendor list at a sha256 digest, an app ref under
-# ghcr.io/<owner>/ passes only through its release checks (its tag, its attestation and the signer's commit on
-# quality's main), and Flux's controllers pass in their namespace as the locked flux2 exports them. What the rule cannot
-# judge is red too.
+# Pod template, and every host-qualified value of a step env in the CI workflow: a vendor ref passes only as a
+# repository of the vendor list at a sha256 digest, an app ref under ghcr.io/<owner>/ passes only through its release
+# checks (its tag, its attestation and the signer's commit on quality's main), and Flux's controllers pass in their
+# namespace as the locked flux2 exports them. What the rule cannot judge is red too.
 # Usage: mise exec -- scripts/verify_image_release.sh [tree], the tree defaulting to this checkout. The run names
 # GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, DEFAULT_BRANCH, RENDER_IMAGE, the image the render
 # runs in, and FLUX_COMPONENTS, which mise.toml sets; gh reads GH_TOKEN or its own login, and reads the registry through
@@ -485,7 +485,7 @@ main() {
   judge_ci_step_env_images
   for repository in "${!vendor_entry_by_repository[@]}"; do
     [ -n "${used_vendor_repositories[${repository}]+used}" ] ||
-      report_red "${VENDOR_LIST} entry ${vendor_entry_by_repository[${repository}]}" "${repository}" "a vendor entry no rendered image uses"
+      report_red "${VENDOR_LIST} entry ${vendor_entry_by_repository[${repository}]}" "${repository}" "a vendor entry no rendered image or CI step env value uses"
   done
   echo "images: ${vendor_reference_count} vendor references pass"
   [ "${#app_reference_locations[@]}" -eq 0 ] ||

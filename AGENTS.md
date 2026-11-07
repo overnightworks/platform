@@ -62,12 +62,12 @@
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
   `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
   It judges every image of every rendered Pod template, image volumes included, and every host-qualified value of a
-  step `env` in this workflow: a vendor ref passes only as a repository of the vendor list at a sha256 digest, an app ref under `ghcr.io/<owner>/` passes only through its
-  release checks (its tag v<version> resolved through `git ls-remote` and peeled, `gh attestation verify` by digest
-  with that commit as source digest, and the signer commit on quality's main; the job logs in to ghcr.io through
-  stdin and grants `packages: read`), and Flux's controllers pass in flux-system as `flux install --export` names
-  them for the components `FLUX_COMPONENTS` in `mise.toml` lists. It refuses another
-  kind that carries an image, every Helm object, a `substituteFrom` ConfigMap, a remote kustomize resource, a changed
+  step `env` in this workflow: a vendor ref passes only as a repository of the vendor list at a sha256 digest, an app
+  ref under `ghcr.io/<owner>/` passes only through its release checks (its tag v<version> resolved through
+  `git ls-remote` and peeled, `gh attestation verify` by digest with that commit as source digest, and the signer commit
+  on quality's main; the job logs in to ghcr.io through stdin and grants `packages: read`), and Flux's controllers pass
+  in flux-system as `flux install --export` names them for the components `FLUX_COMPONENTS` in `mise.toml` lists. It
+  refuses another kind that carries an image, every Helm object, a `substituteFrom` ConfigMap, a remote kustomize resource, a changed
   root, and every source but this repository's default branch and the owner's repository `platform-secrets`, as well as
   the source fields, ignore files, symlinks and Kustomization paths above their source's root that would make what
   Flux applies differ from the render. Its gaps: it does not

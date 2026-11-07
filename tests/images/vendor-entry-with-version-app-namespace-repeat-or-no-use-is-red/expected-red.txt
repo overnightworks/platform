@@ -1,6 +1,6 @@
 red: infrastructure/admission/image-vendors.yaml entry tagged: 'docker.io/library/traefik:v3.7.17': a vendor entry with a version
 red: infrastructure/admission/image-vendors.yaml entry ours: 'ghcr.io/overnightworks/hopin': a vendor entry under the app namespace ghcr.io/overnightworks/
 red: infrastructure/admission/image-vendors.yaml entry nginx-again: 'docker.io/library/nginx': a vendor repository listed under two keys: nginx and nginx-again
-red: infrastructure/admission/image-vendors.yaml entry unused: 'docker.io/cloudflare/cloudflared': a vendor entry no rendered image uses
+red: infrastructure/admission/image-vendors.yaml entry unused: 'docker.io/cloudflare/cloudflared': a vendor entry no rendered image or CI step env value uses
 red: infrastructure/admission/image-vendors.yaml entry ours-with-port: 'ghcr.io:443/overnightworks/hopin': a vendor entry under the app namespace ghcr.io/overnightworks/
 red: Deployment/default/web .spec.template.spec.containers[ours].image: 'ghcr.io:443/overnightworks/hopin:2099.01.01.1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': not one full app ref ghcr.io/overnightworks/<repo>[/<name>]:<version>@sha256:<64 hex>
