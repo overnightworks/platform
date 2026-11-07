@@ -1,0 +1,4 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: benign, namespace: default}
+data: {judged: "in CI"}

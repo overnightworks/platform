@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vendors
+  namespace: default
+data: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: image-vendors, namespace: admission}
+data: {}

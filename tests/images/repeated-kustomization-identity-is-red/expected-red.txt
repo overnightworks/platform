@@ -1,0 +1,1 @@
+red: Kustomization/flux-system/apps: '': a repeated Kustomization identity

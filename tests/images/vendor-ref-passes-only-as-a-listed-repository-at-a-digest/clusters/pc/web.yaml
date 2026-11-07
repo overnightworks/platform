@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web, namespace: default}
+spec:
+  template:
+    spec:
+      containers:
+        - {name: digest, image: "docker.io/library/traefik@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        - {name: tag-and-digest, image: "docker.io/library/traefik:v3.7.17@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        - {name: upper-case-tag, image: "docker.io/library/traefik:V3.7.17@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        - {name: no-digest, image: "docker.io/library/traefik:v3.7.17"}
+        - {name: unlisted, image: "docker.io/someone/hopin@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        - {name: short, image: "nginx:1"}

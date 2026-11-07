@@ -52,8 +52,22 @@
 
 ## Layout
 
-- `.github/workflows/ci.yml`: the `checks` job, the `cluster` job, the `bootstrap` job, the `opentofu` job and the `quality` job that
-  calls quality's `gate.yml`. `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
+- `.github/workflows/ci.yml`: the `checks` job, the `cluster` job, the `bootstrap` job, the `opentofu` job, the `images`
+  job and the `quality` job that calls quality's `gate.yml`.
+  `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
+  (`flux build kustomization --dry-run --recursive` from the root Kustomization in
+  `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
+  It judges every image of every rendered Pod template, image volumes included: a vendor ref passes only as a
+  repository of the vendor list at a sha256 digest, every app ref under `ghcr.io/<owner>/` is red until the release
+  checks exist, and Flux's controllers pass in flux-system as `flux install --export` names them. It refuses another
+  kind that carries an image, every Helm object, a `substituteFrom` ConfigMap, a remote kustomize resource, a changed
+  root, and every source but this repository's default branch and the owner's repository `platform-secrets`, as well as
+  the source fields, ignore files, symlinks and Kustomization paths above their source's root that would make what
+  Flux applies differ from the render. Its gaps: it does not
+  render `platform-secrets`, and a `substituteFrom` Secret's variables render empty or at their defaults. No check
+  on the PC judges these yet; overnightworks/platform#50 owns that check, and overnightworks/platform#49 lists the
+  gaps. `tests/images/` holds the matrix's cases, which the job runs.
+  `bootstrap` installs the prerequisites in a bare `ubuntu:26.04` container, runs
   `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes the paths or the file
   sizes and timestamps under `~/.local/bin` and mise's data directory (directory timestamps are not compared, the paths
   inside every directory are).
@@ -86,5 +100,8 @@
 ## Owners
 
 - A GitHub setting `src/opentofu/github` holds changes only through that root and the command, never by hand.
+- `infrastructure/admission/image-vendors.yaml` is the one vendor list, which `images` and the admission layer read;
+  platform's head owns it. An entry changes only when a vendor is added or removed, with its first or last ref, in a
+  pull request the operator merges; its review checks the vendor's page and that the repository is no app of ours.
 - quality owns the gate, its workflows and its docs; the jobs and pins here follow its README and `docs/`.
 - overnightworks/platform#1 holds the plan.

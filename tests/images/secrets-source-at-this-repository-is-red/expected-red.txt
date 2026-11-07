@@ -1,0 +1,1 @@
+red: GitRepository/flux-system/platform-secrets .spec.url: 'https://github.com/overnightworks/platform': the PC-only source is not the repository overnightworks/platform-secrets

@@ -1,0 +1,6 @@
+red: Deployment/default/a .spec.template.spec.containers[main].image: 'docker.io/someone/hopin:1': not a repository of the vendor list
+red: Deployment/default/b .spec.template.spec.containers[main].image: 'nginx:1': not a repository of the vendor list
+red: Deployment/default/c .spec.template.spec.containers[main].image: 'busybox:1': not a repository of the vendor list
+red: Deployment/default/d .spec.template.spec.containers[main].image: 'docker.io/library/traefik:2:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': not a repository of the vendor list
+red: Deployment/default/e .spec.template.spec.containers[main].image: 'docker.io/someone/substituted:1': not a repository of the vendor list
+red: Deployment/tns/pre-web .spec.template.spec.initContainers[side].image: 'docker.io/someone/sidecar:1': not a repository of the vendor list

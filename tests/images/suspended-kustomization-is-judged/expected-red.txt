@@ -1,0 +1,1 @@
+red: Deployment/default/web .spec.template.spec.containers[main].image: 'nginx:1': not a repository of the vendor list

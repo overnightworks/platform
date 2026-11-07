@@ -1,0 +1,19 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: set-by-spec-images, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/set-by-spec-images
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  images:
+    - {name: placeholder, newName: ghcr.io/overnightworks/hopin}
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: set-by-transformer, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/set-by-transformer
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}

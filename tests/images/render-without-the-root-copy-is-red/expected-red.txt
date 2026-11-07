@@ -1,0 +1,1 @@
+red: Kustomization/flux-system/flux-system: '': a missing self-reference: the render holds no copy of the root

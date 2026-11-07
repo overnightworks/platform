@@ -10,6 +10,7 @@ k3d = "5"
 kubectl = "1.37"
 sops = "3"
 opentofu = "1.13"
+yq = "4"
 
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.

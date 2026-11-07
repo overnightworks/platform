@@ -1,0 +1,3 @@
+red: infrastructure/admission/image-vendors.yaml: '': metadata.name is not image-vendors
+red: infrastructure/admission/image-vendors.yaml: '': metadata.namespace is not admission
+red: infrastructure/admission/image-vendors.yaml: '': the file holds more than one document

@@ -1,0 +1,4 @@
+red: Deployment/default/encoded .spec.template.spec.containers[escape].image: 'ghcr.io/overnightworks/hopin:2099.01.01.1': not one full app ref ghcr.io/overnightworks/<repo>[/<name>]:<version>@sha256:<64 hex>
+red: Deployment/default/encoded .spec.template.spec.containers[alias].image: 'ghcr.io/overnightworks/hopin:2099.01.01.1': not one full app ref ghcr.io/overnightworks/<repo>[/<name>]:<version>@sha256:<64 hex>
+red: Deployment/default/encoded .spec.template.spec.containers[custom-tag].image: 'ghcr.io/overnightworks/hopin:2099.01.01.1': not one full app ref ghcr.io/overnightworks/<repo>[/<name>]:<version>@sha256:<64 hex>
+red: Deployment/default/second-document .spec.template.spec.containers[main].image: 'ghcr.io/overnightworks/hopin:2099.01.01.1': not one full app ref ghcr.io/overnightworks/<repo>[/<name>]:<version>@sha256:<64 hex>

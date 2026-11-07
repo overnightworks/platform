@@ -1,0 +1,1 @@
+red: Deployment/flux-system/kustomize-controller: '': the render lacks a Deployment the root health-checks

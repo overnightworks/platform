@@ -1,0 +1,6 @@
+red: GitRepository/flux-system/flux-system .spec.ignore: '': a source field that makes Flux's artifact differ from the checkout
+red: GitRepository/flux-system/flux-system .spec.include: '': a source field that makes Flux's artifact differ from the checkout
+red: GitRepository/flux-system/flux-system .spec.recurseSubmodules: '': a source field that makes Flux's artifact differ from the checkout
+red: GitRepository/flux-system/flux-system .spec.sparseCheckout: '': a source field that makes Flux's artifact differ from the checkout
+red: GitRepository/flux-system/flux-system .spec.url: 'https://github.com/someone/platform': the root's source is not https://github.com/overnightworks/platform
+red: GitRepository/flux-system/flux-system .spec.ref: '{"branch":"main","tag":"v1"}': the root's source is not the branch main

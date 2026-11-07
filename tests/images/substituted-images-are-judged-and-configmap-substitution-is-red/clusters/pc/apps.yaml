@@ -1,0 +1,45 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: secret-beside-inline, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/a
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  postBuild:
+    substitute: {TEAM: web}
+    substituteFrom: [{kind: Secret, name: images}]
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: secret-alone, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/b
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  postBuild:
+    substituteFrom: [{kind: Secret, name: images}]
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: secret-with-default, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/c
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  postBuild:
+    substitute: {TEAM: web}
+    substituteFrom: [{kind: Secret, name: images}]
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: configmap, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/d
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  postBuild:
+    substituteFrom: [{kind: ConfigMap, name: images}]
