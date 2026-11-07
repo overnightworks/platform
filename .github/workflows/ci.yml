@@ -698,6 +698,39 @@ jobs:
           admitted "$ref in ${vendor_list%/*}" create_in "${vendor_list%/*}" <<<"$(probe_object Pod probe "$(one_container app "$ref")")"
           kubectl delete namespace "$PROBE_NAMESPACE" --wait --timeout=2m
 
+      - name: SCRATCH A10, admission suspended and image-vendors deleted
+        env:
+          SUSPEND_NAMESPACE: suspend-probe
+          HOLDER_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          restore() { flux resume kustomization admission || true; }
+          trap restore EXIT
+          kubectl create namespace "$SUSPEND_NAMESPACE"
+          kubectl --namespace "$SUSPEND_NAMESPACE" wait serviceaccount/default --for=create --timeout=1m
+          probe() {
+            kubectl --namespace "$SUSPEND_NAMESPACE" create --dry-run=server -f - <<YAML
+          {"apiVersion":"v1","kind":"Pod","metadata":{"name":"probe"},"spec":{"containers":[{"name":"app","image":"$HOLDER_IMAGE"}]}}
+          YAML
+          }
+          output="$(probe 2>&1)" || fail "the probe was refused before the suspension: $output"
+          echo "admitted (before): $output"
+          flux suspend kustomization admission
+          kubectl --namespace admission delete configmap image-vendors
+          kubectl --namespace flux-system get kustomization admission -o jsonpath='suspend={.spec.suspend}{"\n"}'
+          if output="$(probe 2>&1)"; then fail "the probe was admitted without the vendor list: $output"; fi
+          echo "refused (suspended, list deleted): $output"
+          [[ $output == *app-and-vendor-images* ]] || fail "the refusal does not name the policy"
+          flux resume kustomization admission
+          kubectl --namespace admission wait configmap/image-vendors --for=create --timeout=2m
+          echo "the ConfigMap image-vendors is back"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if output="$(probe 2>&1)"; then echo "admitted (after resume, attempt $attempt): $output"; break; fi
+            [ "$attempt" -lt 10 ] || fail "the probe is still refused after the resume: $output"
+            echo "attempt $attempt refused: $output"; sleep 3
+          done
+          kubectl delete namespace "$SUSPEND_NAMESPACE" --wait --timeout=2m
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: |
