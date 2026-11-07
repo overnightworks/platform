@@ -39,8 +39,10 @@ for case_directory in "${cases_directory}"/*/; do
   mkdir "${tree}"
   cp -R "${cases_directory}/base/." "${case_directory}." "${tree}"
   rm "${tree}/expected-exit.txt" "${tree}/expected-red.txt"
-  # A case stores a dotfile as dot.<name>: a .sourceignore in this repository is itself red.
+  # A case stores a dotfile as dot.<name> and a symlink as symlink.<name> holding its target: a .sourceignore or a
+  # symlink in this repository is itself red.
   find "${tree}" -name 'dot.*' -exec sh -c 'mv "$1" "${1%/*}/.${1##*/dot.}"' rename {} \;
+  find "${tree}" -name 'symlink.*' -exec sh -c 'ln -s "$(cat "$1")" "${1%/*}/${1##*/symlink.}" && rm "$1"' link {} \;
   status=0
   "${verify}" "${tree}" >"${tree}.log" 2>&1 || status=$?
   grep '^red: ' "${tree}.log" >"${tree}.red" || true

@@ -1,0 +1,1 @@
+red: apps/kustomization.yaml: '': a symlink, which source-controller leaves out of the artifact and the render follows

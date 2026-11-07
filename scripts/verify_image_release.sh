@@ -61,6 +61,7 @@ HELM_OBJECTS="select((.apiVersion // \"\") | test(\"^helm[.]toolkit[.]fluxcd[.]i
 # Fact, object, value.
 KUSTOMIZATION_FACTS="select(${KUSTOMIZATION}) | ${OBJECT} as \$object | (
     [\"identity\", \$object, ([.apiVersion, .spec] | sort_keys(..) | to_json(0))],
+    [\"path\", \$object, ((.spec.path // \"\") | tostring)],
     (select(.spec.ignoreMissingComponents == true) | [\"ignoreMissingComponents\", \$object, \"true\"]),
     ((.spec.postBuild.substituteFrom // [])[]
       | [\"substituteFrom\", \$object, .kind + \"/\" + (\$object | split(\"/\") | .[1]) + \"/\" + .name])
@@ -202,8 +203,24 @@ render() {
   esac
 }
 
-# Red: a changed, missing or repeated self-reference, a repeated Kustomization identity, a skipped missing component, a
-# ConfigMap substitution and a health-checked Deployment the render lacks. A Secret substitution is gap G2.
+# Whether the path $1, cleaned from its source's root, climbs above that root: flux build joins it to the checkout,
+# while kustomize-controller clamps it inside the artifact (securejoin).
+climbs_above_source_root() {
+  local remainder="$1/" segment depth=0
+  while [ -n "${remainder}" ]; do
+    segment="${remainder%%/*}" remainder="${remainder#*/}"
+    case "${segment}" in
+      "" | .) ;;
+      ..) depth=$((depth - 1)) && [ "${depth}" -ge 0 ] || return 0 ;;
+      *) depth=$((depth + 1)) ;;
+    esac
+  done
+  return 1
+}
+
+# Red: a changed, missing or repeated self-reference, a repeated Kustomization identity, a path above its source's root,
+# a skipped missing component, a ConfigMap substitution and a health-checked Deployment the render lacks. A Secret
+# substitution is gap G2.
 judge_kustomizations() {
   local index object value root_copies=0
   local -A identity_count=() rendered_deployments=()
@@ -217,6 +234,11 @@ judge_kustomizations() {
           root_copies=$((root_copies + 1))
           [ "${value}" = "${root_identity}" ] ||
             report_red "${object}" "" "a changed self-reference: the rendered root differs from the root of ${ROOT_SYNC_FILE}"
+        fi
+        ;;
+      path)
+        if climbs_above_source_root "${value}"; then
+          report_red "${object} .spec.path" "${value}" "a path above its source's root, which the render resolves in the checkout and Flux inside its artifact"
         fi
         ;;
       ignoreMissingComponents)
@@ -245,11 +267,11 @@ judge_kustomizations() {
   done
 }
 
-# Red: a mapped source not rendered exactly once, a source field or ignore file that makes Flux's artifact differ from
-# the checkout, a root source other than this repository's default branch, and a PC-only source other than the owner's
-# repository of its name.
+# Red: a mapped source not rendered exactly once, a source field, ignore file or symlink that makes Flux's artifact
+# differ from the checkout, a root source other than this repository's default branch, and a PC-only source other than
+# the owner's repository of its name.
 judge_sources() {
-  local source index count field url ref ignore_file host="${GITHUB_SERVER_URL#*://}"
+  local source index count field url ref ignore_file symlink host="${GITHUB_SERVER_URL#*://}"
   local pc_only_url_pattern="^(https://|ssh://git@)${host//./\\.}/${owner}/${PC_ONLY_SOURCE##*/}(\\.git)?\$"
   read_records "${SOURCES}"
   for source in "${root_source}" "${PC_ONLY_SOURCE}"; do
@@ -275,6 +297,10 @@ judge_sources() {
   while IFS= read -r ignore_file; do
     report_red "${ignore_file#./}" "" "a .sourceignore, which source-controller applies to the whole artifact and the render does not"
   done <"${work_directory}/ignore-files"
+  find . -name .git -prune -o -type l -print >"${work_directory}/symlinks"
+  while IFS= read -r symlink; do
+    report_red "${symlink#./}" "" "a symlink, which source-controller leaves out of the artifact and the render follows"
+  done <"${work_directory}/symlinks"
 }
 
 # Red: every Helm object, and every other kind the rule does not know that carries an image, once per object.

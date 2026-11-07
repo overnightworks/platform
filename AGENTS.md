@@ -62,7 +62,8 @@
   checks exist, and Flux's controllers pass in flux-system as `flux install --export` names them. It refuses another
   kind that carries an image, every Helm object, a `substituteFrom` ConfigMap, a remote kustomize resource, a changed
   root, and every source but this repository's default branch and the owner's repository `platform-secrets`, as well as
-  the source fields and ignore files that would make Flux's artifact differ from the checkout. Its gaps: it does not
+  the source fields, ignore files, symlinks and Kustomization paths above their source's root that would make what
+  Flux applies differ from the render. Its gaps: it does not
   render `platform-secrets`, and a `substituteFrom` Secret's variables render empty or at their defaults. No check
   on the PC judges these yet; overnightworks/platform#50 owns that check, and overnightworks/platform#49 lists the
   gaps. `tests/images/` holds the matrix's cases, which the job runs.
