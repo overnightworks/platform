@@ -1323,34 +1323,43 @@ jobs:
           kubectl -n "$SCRATCH_NAMESPACE" wait pod/whoami --for=condition=Ready --timeout=3m
           web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
           traefik_ip="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.clusterIP}')"
+          web_url="http://traefik.traefik.svc:${web_port}"
+          echo "web_port=$web_port traefik_ip=$traefik_ip"
           base_pod() {
             local pod="${CLIENT_POD//@NAME@/$1}"
             pod="${pod//@IMAGE@/$2}"; pod="${pod//@HOST@/unused}"; pod="${pod//@URL@/unused}"
             printf '%s\n' "$pod"
           }
-          # curl_body <name> <curl argument>...: prints the response body of a curl Pod in cloudflared.
+          # curl_body <name> <curl argument>...: a curl Pod in cloudflared; prints its exit code, then its output.
           curl_body() {
-            local name="$1" pod
+            local name="$1" pod code
             shift
             pod="$(CURL_ARGUMENTS="$(printf '%s\n' "$@")" yq '.spec.containers[0].args = (strenv(CURL_ARGUMENTS) | split("\n"))' <<<"$(base_pod "$name" "$CLIENT_IMAGE")")"
             printf '%s\n' "$pod" | kubectl -n "$TUNNEL_NAMESPACE" create -f - >&2
             kubectl -n "$TUNNEL_NAMESPACE" wait "pod/$name" --timeout=2m \
               --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' >&2
-            kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$name"
+            code="$(kubectl -n "$TUNNEL_NAMESPACE" get "pod/$name" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
+            echo "curl-exit=$code"
+            kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$name" 2>&1
             kubectl -n "$TUNNEL_NAMESPACE" delete pod "$name" --wait --timeout=2m >&2
           }
           echo "=== route up"
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            code="$(curl_body "whoami-route-$attempt" --silent --output /dev/null --write-out '%{http_code}' --max-time 10 \
-              --header "Host: $SCRATCH_HOST" "http://traefik.traefik.svc:$web_port/")"
-            echo "attempt $attempt: $code"
-            [ "$code" != 200 ] || break
+            result="$(curl_body "whoami-route-$attempt" --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 10 \
+              --retry 5 --retry-connrefused --retry-delay 2 --retry-max-time 30 \
+              --header "Host: $SCRATCH_HOST" "$web_url/")"
+            echo "attempt $attempt: $(tr '\n' ' ' <<<"$result")"
+            grep -q '200$' <<<"$result" && break
             sleep 3
           done
-          [ "$code" = 200 ] || fail "whoami never answered 200 through Traefik for $SCRATCH_HOST"
+          grep -q '200$' <<<"$result" || {
+            kubectl -n traefik logs deployment/traefik --tail=20 || true
+            kubectl get ingress,svc,endpoints,networkpolicy -A -o wide || true
+            fail "whoami never answered 200 through Traefik for $SCRATCH_HOST"
+          }
           echo "=== alias header cell: one request with X_Forwarded_For and X-Forwarded-For to whoami"
-          echo_body="$(curl_body whoami-alias-header --silent --max-time 10 --header "Host: $SCRATCH_HOST" \
-            --header 'X_Forwarded_For: 198.51.100.7' --header 'X-Forwarded-For: 192.0.2.7' "http://traefik.traefik.svc:$web_port/")"
+          echo_body="$(curl_body whoami-alias-header --silent --show-error --max-time 10 --header "Host: $SCRATCH_HOST" \
+            --header 'X_Forwarded_For: 198.51.100.7' --header 'X-Forwarded-For: 192.0.2.7' "$web_url/")"
           echo "--- whoami echo begin"
           echo "$echo_body"
           echo "--- whoami echo end"
@@ -1359,14 +1368,14 @@ jobs:
           else
             echo "H12-ALIAS: X_Forwarded_For is NOT in whoami's echo (dropped)"
           fi
-          grep -i '^X-Forwarded-For:' <<<"$echo_body" || echo "H12-ALIAS: no X-Forwarded-For line either"
+          grep -i '^X-Forwarded-For:' <<<"$echo_body" || echo "H12-ALIAS: no X-Forwarded-For line"
 
           echo "=== H12 WebSocket cell"
           ws_pod() {
             local name="$1" pod
             shift
-            pod="$(ARGS="$(printf '%s\n' -v "$@" "ws://$SCRATCH_HOST:$web_port/echo")" ALIAS_IP="$traefik_ip" ALIAS_HOST="$SCRATCH_HOST" \
-              yq '.spec.containers[0].args = (strenv(ARGS) | split("\n")) | .spec.containers[0].stdin = true | .spec.hostAliases = [{"ip": strenv(ALIAS_IP), "hostnames": [strenv(ALIAS_HOST)]}]' \
+            pod="$(ARGS="$(printf '%s\n' -v "$@" mirror: "ws://$SCRATCH_HOST:$web_port/echo")" ALIAS_IP="$traefik_ip" ALIAS_HOST="$SCRATCH_HOST" \
+              yq '.spec.containers[0].args = (strenv(ARGS) | split("\n")) | .spec.hostAliases = [{"ip": strenv(ALIAS_IP), "hostnames": [strenv(ALIAS_HOST)]}]' \
               <<<"$(base_pod "$name" "$WEBSOCAT_IMAGE")")"
             printf '%s\n' "$pod" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
           }
@@ -1375,6 +1384,9 @@ jobs:
           kubectl -n "$TUNNEL_NAMESPACE" wait pod/ws-idle pod/ws-ping --for=jsonpath='{.status.phase}'=Running --timeout=3m
           start="$(date +%s)"
           echo "both connections started at $(date -u +%T)"
+          sleep 5
+          kubectl -n "$TUNNEL_NAMESPACE" logs pod/ws-idle || true
+          kubectl -n "$TUNNEL_NAMESPACE" logs pod/ws-ping || true
           declare -A closed_at=()
           while [ "$(( $(date +%s) - start ))" -lt "$HOLD_SECONDS" ]; do
             sleep 2
@@ -1400,20 +1412,6 @@ jobs:
           done
           kubectl -n "$TUNNEL_NAMESPACE" delete pod ws-idle ws-ping --wait --timeout=2m
           kubectl delete namespace "$SCRATCH_NAMESPACE" --wait --timeout=2m
-
-      - name: Print Flux's state and the controllers' errors
-        if: failure() && steps.create-cluster.outcome == 'success'
-        run: |
-          flux get all --all-namespaces
-          flux logs --all-namespaces --level=error
-          # Pod Security's refusal of a Pod appears only in Warning events and the workloads' conditions, never in Flux's state.
-          kubectl get events --all-namespaces --field-selector type=Warning
-          kubectl get deployments,replicasets --all-namespaces -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]} {.type}={.status}({.reason}: {.message}){end}{"\n"}{end}'
-          # A start an app refuses appears only in its own log.
-          kubectl get pods --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"|"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' |
-            while IFS='|' read -r pod ready; do
-              [ "$ready" = True ] || kubectl --namespace "${pod%/*}" logs "pod/${pod#*/}" --all-containers --tail=20 || true
-            done
 
   bootstrap:
     runs-on: ubuntu-latest
