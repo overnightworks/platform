@@ -546,7 +546,7 @@ jobs:
           [ -n "$admission_applied" ] || fail "the Kustomization $ADMISSION_LAYER holds no object"
           echo "the last object of $ADMISSION_LAYER was created at $admission_applied"
 
-          flux_deployments="$(yq eval-all 'select(.kind == "Deployment") | .metadata.namespace + "_" + .metadata.name + "_apps_Deployment"' \
+          flux_deployments="$(yq --no-doc 'select(.kind == "Deployment") | .metadata.namespace + "_" + .metadata.name + "_apps_Deployment"' \
             clusters/pc/flux-system/gotk-components.yaml | sort)"
           layers="$(kubectl get kustomizations.kustomize.toolkit.fluxcd.io --all-namespaces \
             -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"|"}{range .spec.dependsOn[*]}{.namespace}/{.name}{" "}{end}{"\n"}{end}')"
