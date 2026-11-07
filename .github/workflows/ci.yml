@@ -177,7 +177,7 @@ jobs:
           check_refuses "a @cert-authority line with GitHub's ed25519 key" "@cert-authority github.com $github_ed25519"
           check_refuses "GitHub's own ed25519 key under evil.example" "evil.example $github_ed25519"
 
-      - name: Check that secrets:new-key refuses a key directory not at 700 and a present drill file
+      - name: Check that secrets:new-key refuses a key directory not at 700, a present drill file and a regular file in the key path, and accepts a symlinked 700 key directory
         run: |
           fail() { echo "::error::$1"; exit 1; }
           # A key file under the runner's temp directory, so no real key and no home directory is touched.
@@ -202,7 +202,7 @@ jobs:
           rm "$SOPS_AGE_KEY_FILE.drill"
           touch "$proof_dir/blocker"
           SOPS_AGE_KEY_FILE="$proof_dir/blocker/age/keys.txt" \
-            check_refuses "a regular file where the key directory would be" "$proof_dir/blocker"
+            check_refuses "a regular file where the key directory would be" "secrets:new-key: $proof_dir/blocker is no directory"
           # The key directory a symlink names is judged by its target, so a link to a 700 directory is accepted.
           mkdir -m 700 "$proof_dir/target"
           ln -s target "$proof_dir/link"

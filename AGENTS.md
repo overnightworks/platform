@@ -100,7 +100,7 @@
   the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
   It also proves that `secrets:github-host-keys` passes flux's real export of a throwaway deploy key unchanged and
   refuses host keys GitHub does not list for `github.com`, and that `secrets:new-key` refuses a key directory not at
-  700 and a drill file. `tests/secrets/` runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request
+  700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/` runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request
   that turns Ready within the minute prints no key block.
   Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock` and the renders, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. After the reconcile it reads
