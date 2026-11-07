@@ -113,9 +113,23 @@ cell_log_mode() {
   [ "$(head -n 1 "$FAKE_DIR/created-at")" = 600 ] || fail "the load log was at $(head -n 1 "$FAKE_DIR/created-at") when chmod ran"
 }
 
+cell_equal_with_empty_table() {
+  cell=equal-with-empty-table
+  FAKE_LOADED_SQL="$work_directory/same.sql" run_loader --compare x "$dump"
+  [ "$status" = 0 ] && [[ $output == *"public.empty: 0 rows loaded, 0 in the dump, equal"* ]] && [[ $flux_calls == *resume* ]] ||
+    fail "an equal load with an empty table exited $status with '$output'"
+}
+
+cell_extra_empty_table() {
+  cell=extra-empty-table
+  FAKE_LOADED_SQL="$work_directory/extra.sql" run_loader --compare x "$dump"
+  [ "$status" != 0 ] && [[ $output == *"public.extra_empty: 0 rows loaded, 0 in the dump, DIFFERS"* ]] &&
+    [[ $flux_calls != *resume* ]] || fail "a table only in the database exited $status with '$output' after flux $flux_calls"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 failed=()
-for name in resume-fails suspension-unreadable suspended-by-another log-mode; do
+for name in resume-fails suspension-unreadable suspended-by-another log-mode equal-with-empty-table extra-empty-table; do
   ("cell_${name//-/_}") || failed+=("$name")
 done
 [ "${#failed[@]}" = 0 ] || { echo "load_dump: failed cells: ${failed[*]}" >&2; exit 1; }

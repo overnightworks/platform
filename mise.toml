@@ -448,11 +448,15 @@ dump_into_postgres env PGOPTIONS='-c log_min_messages=panic -c log_min_error_sta
   load_status=$?
 [ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log; the data is unchanged"
 
-# Every table's data lines in a dump (stdin as SQL), sorted, as "<sha256> - <table> <rows>" per table with rows.
-table_digests='awk '\''table == "" && /^COPY / { table = $2; next } table != "" && /^\\[.]$/ { table = ""; next }
-  table != "" { print table "\t" $0 }'\'' | LC_ALL=C sort | awk -F "\t" '\''
+# Every table's data lines in a dump (stdin as SQL), sorted, as "<sha256> - <table> <rows>" per table, an empty one
+# included. Each line is the table, a tab, then "R" and a row or "E" for the table's end, which only an empty table
+# keeps beside no row.
+table_digests='awk '\''table == "" && /^COPY / { table = $2; rows = 0; next }
+  table != "" && /^\\[.]$/ { if (rows == 0) print table "\tE"; table = ""; next }
+  table != "" { rows++; print table "\tR" $0 }'\'' | LC_ALL=C sort | awk -F "\t" '\''
   function finish() { if (table != "") { close("sha256sum"); print table, rows; fflush() } }
-  $1 != table { finish(); table = $1; rows = 0 } { rows++; print substr($0, length($1) + 2) | "sha256sum" }
+  $1 != table { finish(); table = $1; rows = 0; printf "" | "sha256sum" }
+  substr($0, length($1) + 2, 1) == "R" { rows++; print substr($0, length($1) + 3) | "sha256sum" }
   END { finish() }'\'' | paste -d " " - -'
 verified=true
 dump_into_postgres sh /etc/postgres-checks/check-key-tables.sh || verified=false
