@@ -1,5 +1,6 @@
 # The one default class: a released volume keeps its directory, so its data outlives its claim, and each claim's
-# directory under /opt/local-path-provisioner is <namespace>/<claim>.
+# directory under /opt/local-path-provisioner is <namespace>/<claim>. The provisioner takes only a pattern whose path
+# starts with <namespace>/<claim>/, so the slash ends it.
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -8,4 +9,4 @@ metadata:
     storageclass.kubernetes.io/is-default-class: "true"
 reclaimPolicy: Retain
 parameters:
-  pathPattern: "{{ .PVC.Namespace }}/{{ .PVC.Name }}"
+  pathPattern: "{{ .PVC.Namespace }}/{{ .PVC.Name }}/"
