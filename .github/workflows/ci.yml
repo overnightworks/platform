@@ -1414,10 +1414,11 @@ jobs:
                 "images": [{"name": "busybox", "newName": strenv(NAME), "digest": strenv(DIGEST)}]}}')"
           flux reconcile kustomization "$layer" --timeout=5m
           job_uid=""
+          git_replicas="$(yq 'select(.kind == "Deployment") | .spec.replicas' tests/postgres/writers/writers.yaml)"
           # writers_ran: the Deployment runs at its replicas from Git and the Job is a new one, Complete.
           writers_ran() {
             kubectl --namespace "$layer" rollout status deployment/writer --timeout=5m
-            [ "$(kubectl --namespace "$layer" get deployment writer -o jsonpath='{.spec.replicas}')" = 1 ] ||
+            [ "$(kubectl --namespace "$layer" get deployment writer -o jsonpath='{.spec.replicas}')" = "$git_replicas" ] ||
               fail "the Deployment writer does not run at the replicas of Git"
             kubectl --namespace "$layer" wait job/writer-job --for=condition=Complete --timeout=5m
             new_uid="$(kubectl --namespace "$layer" get job writer-job -o jsonpath='{.metadata.uid}')"
