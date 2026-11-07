@@ -576,9 +576,6 @@ jobs:
           echo "the Deployment cloudflared is applied at 0 replicas"
 
       - name: Assert cloudflared's ingress from Pods built from its Deployment's template
-        env:
-          # The one host the tunnel's ingress sends to Traefik.
-          ROUTED_HOST: hopin.hallucinai.de
         run: |
           fail() { echo "::error::$1"; exit 1; }
           deployment="$(kubectl -n "$TUNNEL_NAMESPACE" get deployment cloudflared -o json)"
@@ -601,6 +598,9 @@ jobs:
           [ "$annotated_hash" = "$expected_hash" ] ||
             fail "the Deployment cloudflared's template carries checksum/config '$annotated_hash', but the lines of the ConfigMap cloudflared hash to $expected_hash: set the annotation to that hash, so the changed lines roll the pod"
           echo "the Deployment cloudflared's template carries the hash of the ConfigMap's lines"
+          mapfile -t routed_hosts < <(kubectl -n "$TUNNEL_NAMESPACE" get configmap cloudflared -o jsonpath="$configmap_path" |
+            yq '.ingress[] | select(has("hostname")) | .hostname')
+          [ "${#routed_hosts[@]}" -gt 0 ] || fail "the ConfigMap cloudflared names no hostname"
 
           # run_template_pod <name> <argument>...: a Pod from the Deployment's template with its Secret volumes dropped
           # and its arguments replaced, admitted by Pod Security or refused, run once; sets pod_log and pod_exit_code.
@@ -646,18 +646,15 @@ jobs:
             fail "the tunnel sends the unrouted host $UNROUTED_HOST to '$matched_service', not http_status:404"
           echo "the tunnel answers the unrouted host $UNROUTED_HOST with http_status:404"
 
-          match_rule "$ROUTED_HOST"
-          routed_url="$matched_service"
-          [[ $routed_url == http://* ]] || fail "the tunnel sends $ROUTED_HOST to '$routed_url', not to an http URL"
+          # Every host the lines name goes to Traefik's Service at its web port, and a client Pod beside cloudflared sends
+          # the request cloudflared forwards; no Ingress routes the host yet, so Traefik answers 404.
           web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
-          [[ $routed_url =~ :${web_port}/?$ ]] || fail "the tunnel sends $ROUTED_HOST to $routed_url, not Traefik's web port $web_port"
-          # A client Pod beside cloudflared sends the request cloudflared forwards; no Ingress routes the host yet, so
-          # Traefik answers 404.
-          client_pod="$(cat <<'YAML'
+          traefik_host="$(kubectl -n traefik get service traefik -o jsonpath='{.metadata.name}.{.metadata.namespace}.svc')"
+          client_pod_template="$(cat <<'YAML'
           apiVersion: v1
           kind: Pod
           metadata:
-            name: routed-request
+            name: @NAME@
           spec:
             restartPolicy: Never
             automountServiceAccountToken: false
@@ -677,18 +674,30 @@ jobs:
                     drop: [ALL]
           YAML
           )"
-          client_pod="${client_pod//@IMAGE@/${CLIENT_IMAGE}}"
-          client_pod="${client_pod//@HOST@/${ROUTED_HOST}}"
-          printf '%s\n' "${client_pod//@URL@/${routed_url}}" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
-          kubectl -n "$TUNNEL_NAMESPACE" wait pod/routed-request --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m || {
-            kubectl -n "$TUNNEL_NAMESPACE" describe pod/routed-request
-            kubectl -n "$TUNNEL_NAMESPACE" logs pod/routed-request || true
-            fail "the client Pod in $TUNNEL_NAMESPACE did not succeed"
-          }
-          status="$(kubectl -n "$TUNNEL_NAMESPACE" logs pod/routed-request)"
-          kubectl -n "$TUNNEL_NAMESPACE" delete pod routed-request --wait --timeout=2m
-          [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for $ROUTED_HOST at $routed_url"
-          echo "the tunnel sends $ROUTED_HOST to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
+          client_pod_template="${client_pod_template//@IMAGE@/${CLIENT_IMAGE}}"
+          for routed_host in "${routed_hosts[@]}"; do
+            match_rule "$routed_host"
+            routed_url="$matched_service"
+            [[ $routed_url =~ ^http://([^:/]+):([0-9]+)/?$ ]] ||
+              fail "the tunnel sends $routed_host to '$routed_url', not to an http URL with a host and a port"
+            [[ ${BASH_REMATCH[1]} == "$traefik_host" || ${BASH_REMATCH[1]} == "$traefik_host.cluster.local" ]] ||
+              fail "the tunnel sends $routed_host to $routed_url, not to the Service traefik of namespace traefik"
+            [ "${BASH_REMATCH[2]}" = "$web_port" ] ||
+              fail "the tunnel sends $routed_host to $routed_url, not to Traefik's web port $web_port"
+            client_pod_name="routed-request-${routed_host//./-}"
+            client_pod="${client_pod_template//@NAME@/${client_pod_name}}"
+            client_pod="${client_pod//@HOST@/${routed_host}}"
+            printf '%s\n' "${client_pod//@URL@/${routed_url}}" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
+            kubectl -n "$TUNNEL_NAMESPACE" wait "pod/$client_pod_name" --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m || {
+              kubectl -n "$TUNNEL_NAMESPACE" describe "pod/$client_pod_name"
+              kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$client_pod_name" || true
+              fail "the client Pod in $TUNNEL_NAMESPACE did not succeed for $routed_host"
+            }
+            status="$(kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$client_pod_name")"
+            kubectl -n "$TUNNEL_NAMESPACE" delete pod "$client_pod_name" --wait --timeout=2m
+            [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for $routed_host at $routed_url"
+            echo "the tunnel sends $routed_host to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
+          done
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
