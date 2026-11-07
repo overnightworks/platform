@@ -1,8 +1,0 @@
-claim_id = "aea2ce23f7274a38aa24fb0632c6d0d2"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "6fb4bde3aaeb405751b625b77f5701fd7d9bd70c"
-branch = "claude/issue-61-the-pc-creates-its-age-key-once-and-reac"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "mise.lock", "mise.toml", "tests/secrets"]
-opened_commit = "3970f7f798b9d8e6805744406b56d0e14f0f7b1c"
-whole_reason = "The age key task, the deploy-key task, the host-key filter and their CI proofs share one key file path and one filter with no caller apart; CI steps and AGENTS.md describe exactly those tasks."
