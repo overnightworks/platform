@@ -6,6 +6,7 @@ locked = true
 [tools]
 age = "1"
 flux2 = "2"
+gh = "2"
 helm = "4.3"
 k3d = "5"
 kubectl = "1.37"
