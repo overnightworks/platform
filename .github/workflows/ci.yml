@@ -469,10 +469,11 @@ jobs:
           fi
           echo "no NodePort or LoadBalancer Service and no Pod on a host port or the host network exists"
 
+          web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
           kubectl create namespace "$CLIENT_NAMESPACE"
           kubectl -n "$CLIENT_NAMESPACE" run unrouted-request --image="$CLIENT_IMAGE" --restart=Never -- \
             --silent --output /dev/null --write-out '%{http_code}' --max-time 10 \
-            --retry 5 --retry-connrefused --retry-delay 2 --header "Host: $UNROUTED_HOST" http://traefik.traefik.svc/
+            --retry 5 --retry-connrefused --retry-delay 2 --header "Host: $UNROUTED_HOST" "http://traefik.traefik.svc:$web_port/"
           kubectl -n "$CLIENT_NAMESPACE" wait pod/unrouted-request --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m
           status="$(kubectl -n "$CLIENT_NAMESPACE" logs pod/unrouted-request)"
           kubectl delete namespace "$CLIENT_NAMESPACE" --wait --timeout=2m
