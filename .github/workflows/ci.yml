@@ -670,7 +670,7 @@ jobs:
           ingress="$(yq 'select(.kind == "Ingress") | .metadata.namespace + "/" + .metadata.name' "$APP_MANIFEST")"
           app_namespace="${ingress%/*}"
           route='{.spec.rules[0].host} {.spec.rules[0].http.paths[0].backend.service.name}'
-          route+=' {.spec.rules[0].http.paths[0].backend.service.port.number}'
+          route+=' {.spec.rules[0].http.paths[0].backend.service.port.number}{"\n"}'
           read -r app_host app_service app_port < <(kubectl -n "$app_namespace" get ingress "${ingress#*/}" -o jsonpath="$route")
           app_deployment="$(yq 'select(.kind == "Deployment") | .metadata.name' "$APP_MANIFEST")"
           app="$(kubectl -n "$app_namespace" get deployment "$app_deployment" -o json)"
