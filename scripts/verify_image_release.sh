@@ -415,10 +415,8 @@ check_app_release() {
     report_red "${locations}" "${image}" "no attestation verifies with the tag v${version}'s commit ${tag_commit} as source digest: $(one_line "${work_directory}/attestation-errors")"
     return
   fi
-  yq --input-format json --output-format yaml --nul-output \
-    '.[] | (.verificationResult.signature.certificate.buildSignerDigest // "") | tostring' \
-    "${work_directory}/attestations.json" >"${work_directory}/records"
-  mapfile -d '' records <"${work_directory}/records"
+  read_records '.[] | (.verificationResult.signature.certificate.buildSignerDigest // "") | tostring' \
+    "${work_directory}/attestations.json"
   [ "${#records[@]}" -gt 0 ] || report_red "${locations}" "${image}" "gh verified no attestation"
   for index in "${!records[@]}"; do
     signer="${records[index]}"
