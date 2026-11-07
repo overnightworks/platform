@@ -245,10 +245,13 @@ repository="${source_url#ssh://git@github.com/}"
 [ "$repository" != "$source_url" ] || fail "$source_file's $source_name is no ssh URL on github.com"
 if secret_exists "$deploy_key_secret"; then
   kubectl --namespace flux-system get secret "$deploy_key_secret" --output yaml |
-    mise run secrets:github-host-keys >/dev/null ||
+    mise run secrets:github-host-keys >/dev/null || {
+    statuses=("${PIPESTATUS[@]}")
+    [ "${statuses[0]}" -eq 0 ] || fail "the Secret $deploy_key_secret in flux-system cannot be read"
     fail "the Secret $deploy_key_secret fails the host-key check above and is kept; to replace it, run \
-kubectl --namespace flux-system delete secret $deploy_key_secret, delete its key at \
-https://github.com/$repository/settings/keys and run this task again"
+kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml --namespace flux-system delete secret $deploy_key_secret, delete its \
+key at https://github.com/$repository/settings/keys and run this task again"
+  }
 else
   # The private key exists only in this pipeline, and kubectl create never replaces an existing Secret.
   flux create secret git "$deploy_key_secret" --namespace=flux-system --url="$source_url" --ssh-key-algorithm=ed25519 \
@@ -258,7 +261,7 @@ fi
 public_key="$(kubectl --namespace flux-system get secret "$deploy_key_secret" \
   --output 'jsonpath={.data.identity\.pub}' | base64 --decode)"
 echo "bootstrap:secrets: add this deploy key once at https://github.com/$repository/settings/keys/new"
-echo "Title: $(sed -n 's/^node-name: *//p' host/k3s/config.yaml)"
+echo "Title: $(yq '.["node-name"]' host/k3s/config.yaml)"
 echo "Key: $public_key"
 echo "Leave Allow write access unticked."
 
