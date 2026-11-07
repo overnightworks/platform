@@ -1,11 +1,21 @@
-# The namespaces that receive Secrets from platform-secrets. Flux never deletes one, neither on a prune nor with its
-# Kustomization, since its Secrets live in another repository and would go with it.
+# The Namespaces that receive Secrets from platform-secrets, applied before that layer. Flux never deletes one, neither
+# on a prune nor with its Kustomization: its Secrets live in another repository and would go with it, and
+# platform-secrets would fail on it. The cluster job fails naming a Namespace of this layer without the annotation.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: admission
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudflared
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
 ---
 apiVersion: v1
 kind: Namespace
