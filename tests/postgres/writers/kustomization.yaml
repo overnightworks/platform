@@ -1,0 +1,8 @@
+# The layer litellm plus two writers, which the cluster job points the Kustomization litellm at while it drives
+# db:load-dump, so the loader stops and restores writers Flux really applies. The image is a placeholder the job
+# replaces through the Kustomization's spec.images.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../infrastructure/litellm
+  - writers.yaml
