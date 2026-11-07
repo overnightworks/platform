@@ -9,4 +9,6 @@ The GitHub security and merge settings of the fleet's repositories live here as 
 It is not an application and holds no app code or libraries. Libraries release through their own CI-gated GitHub
 releases.
 
+An app that runs on the platform follows [docs/app.md](docs/app.md).
+
 The plan and the target picture are in [overnightworks/platform#1](https://github.com/overnightworks/platform/issues/1).
