@@ -29,9 +29,9 @@
 - `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
   which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
   names and times only, and fails on any; it passes with no pod logs yet while `/var/log/pods` does not exist, and
-  fails when it cannot list the directory. It reads the clean's last start and result from the service, whoever
-  started it, so a failed or never-run clean keeps failing the check until `sudo systemctl start
-  pod-logs-clean.service` has run, then `mise run check:pod-logs`.
+  fails when it cannot list the directory. It reads the clean's last start (the later of the service's and the timer's
+  last trigger, which a reboot keeps) and result, whoever started it, so a failed or never-run clean keeps failing the
+  check until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command, which the operator runs:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
@@ -129,8 +129,8 @@
   inside every directory are). It then runs `systemd-tmpfiles --clean` with `pod-logs.conf`'s line at a seconds-long
   age on a test tree: the older file goes after an append and a read, with its emptied directories, a newer file
   stays and a `.gz` and a `.tmp` go; and it runs `check-pod-logs` against a fake `systemctl`, which passes fresh logs,
-  files that vanish before their stat and a missing `/var/log/pods`, and names a timer that never ran, ran 26 hours
-  ago or failed, a failed listing, a `.gz` and a `.tmp`.
+  files that vanish before their stat and a missing `/var/log/pods`, passes a clean the timer started before a
+  reboot, and names a clean that never ran, last started 26 hours ago or failed, a failed listing, a `.gz` and a `.tmp`.
   `cluster` reconciles `clusters/pc` in k3d, with `host/k3s/config.yaml` mounted alone and read-only at
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,

@@ -1707,10 +1707,10 @@ jobs:
           echo first >"$pods_dir/ns_new_2/app/0.log"
           touch "$pods_dir/ns_new_2/app/0.log.20261101-000000.gz" "$pods_dir/ns_new_2/app/0.log.20261101-000000.tmp"
           # The flags are the service's own; only the root and the config path are the test tree's.
-          service_flags="$(sed -n 's/^ExecStart=[^ ]*//p' host/pod-logs/pod-logs-clean.service | tr ' ' '\n' |
-            grep -- '^--')"
-          # shellcheck disable=SC2086
-          systemd-tmpfiles $service_flags --root="$root" "$root/etc/tmpfiles.d/pod-logs.conf"
+          mapfile -t service_flags < <(sed -n 's/^ExecStart=[^ ]*//p' host/pod-logs/pod-logs-clean.service | tr ' ' '\n' |
+            grep -- '^--')
+          [ "${#service_flags[@]}" -gt 0 ] || fail "pod-logs-clean.service's ExecStart holds no flag"
+          systemd-tmpfiles "${service_flags[@]}" --root="$root" "$root/etc/tmpfiles.d/pod-logs.conf"
           [ ! -e "$pods_dir/ns_old_1" ] || fail "the clean kept $(find "$pods_dir/ns_old_1" | tr '\n' ' ')"
           [ -f "$pods_dir/ns_new_2/app/0.log" ] || fail "the clean deleted the file younger than ${age_seconds}s"
           [ "$(find "$pods_dir/ns_new_2" -type f | wc -l)" -eq 1 ] ||
@@ -1722,13 +1722,14 @@ jobs:
         run: |
           fail() { echo "::error::$1"; exit 1; }
           # systemd does not run in this container, so a fake systemctl answers for the timer and its service. The timer
-          # has not fired, as after a first install or a manual start; the service's start time is FAKE_LAST_RUN.
+          # has not fired, as after a first install or a manual start, unless FAKE_LAST_TRIGGER sets its last trigger;
+          # the service's start time is FAKE_LAST_RUN.
           fake_bin="$RUNNER_TEMP/fake-systemctl"
           mkdir -p "$fake_bin"
           cat >"$fake_bin/systemctl" <<'FAKE'
           #!/usr/bin/env bash
           case "$*" in
-            *LastTriggerUSec*) echo "n/a" ;;
+            *LastTriggerUSec*) echo "${FAKE_LAST_TRIGGER:-n/a}" ;;
             *InactiveExitTimestamp*) echo "$FAKE_LAST_RUN" ;;
             *NextElapseUSecRealtime*) echo "@$(($(date +%s) + 3600))" ;;
             *Result*) echo "$FAKE_RESULT" ;;
@@ -1769,6 +1770,9 @@ jobs:
           output="$(FAKE_LAST_RUN="$recent" FAKE_RESULT=success check)" || fail "the check failed fresh logs: $output"
           grep -q "ns_pod_1/app/0.log" <<<"$output" || fail "the check did not name the oldest file: $output"
           echo "the check passes fresh logs while the timer has not fired: $output"
+          output="$(FAKE_LAST_TRIGGER="$recent" FAKE_LAST_RUN=n/a FAKE_RESULT=success check)" ||
+            fail "the check failed a timer that fired after a reboot lost the service's start: $output"
+          echo "the check passes a clean the timer started before a reboot: $output"
           expect_breach "a clean that never ran" n/a success \
             "has never run: sudo systemctl start pod-logs-clean.service"
           expect_breach "a run 26 hours ago" "@$(($(date +%s) - 26 * 3600))" success "hours ago"

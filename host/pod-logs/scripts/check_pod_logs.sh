@@ -78,9 +78,14 @@ while IFS= read -r -d '' file; do
   fi
 done <"$pods_listing"
 
-# The service's own start counts, whoever started it: the timer's last trigger stays empty after a manual run.
+# The service's own start counts, whoever started it: the timer's last trigger stays empty after a manual run. The
+# service's start is lost on a reboot while the timer's last trigger survives it, so the later of the two is the start.
 rerun_hint="sudo systemctl start $service, then mise run check:pod-logs"
 last_run="$(unit_time "$service" InactiveExitTimestamp)"
+last_trigger="$(unit_time "$timer" LastTriggerUSec)"
+if [ -n "$last_trigger" ] && { [ -z "$last_run" ] || [ "$last_trigger" -gt "$last_run" ]; }; then
+  last_run="$last_trigger"
+fi
 if [ -z "$last_run" ]; then
   breach "$service has never run: $rerun_hint"
 elif [ $((now - last_run)) -gt "$max_clean_age_seconds" ]; then
