@@ -514,6 +514,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: mise exec -- scripts/verify_image_release.sh
 
+      - name: Scratch, drive the cells
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: mise exec -- scripts/scratch_cells.sh
+
       - name: Run the fixture cases through the script
         run: mise exec -- tests/images/run.sh
 
