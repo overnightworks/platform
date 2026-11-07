@@ -599,7 +599,7 @@ jobs:
             secret_created="$(kubectl --namespace "$namespace" get secret "$secret" -o jsonpath='{.metadata.creationTimestamp}')"
             [[ ! $created < "$secret_created" ]] ||
               fail "the Deployment $deployment was created at $created, before its Secret $secret at $secret_created"
-            echo "the Secret $namespace/$secret of $SECRETS_LAYER was created at $secret_created, before the Deployment at $created"
+            echo "the Secret $namespace/$secret of $SECRETS_LAYER was created at $secret_created, not after the Deployment at $created"
           done
           for secret in $pull_secrets; do
             type="$(kubectl --namespace "$namespace" get secret "$secret" -o jsonpath='{.type}')"
