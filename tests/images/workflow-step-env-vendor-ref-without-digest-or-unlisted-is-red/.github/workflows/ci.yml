@@ -1,0 +1,11 @@
+name: ci
+on: push
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run malformed clients
+        env:
+          NO_DIGEST: docker.io/curlimages/curl:8.23.0
+          UNLISTED: docker.io/someone/tool@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        run: "true"
