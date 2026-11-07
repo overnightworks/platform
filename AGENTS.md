@@ -89,13 +89,14 @@
   Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock` and the renders, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. After the reconcile it reads
   Traefik from the cluster: its Service is ClusterIP with the one port `web`, whose trusted senders hold the nodes' pod
-  CIDRs; a client Pod in namespace `cloudflared` gets 404 for an unrouted host and 400 for `/a%2Fb`, and one in another
-  namespace gets no answer; its container runs the Deployment's digest, and no Service of type NodePort or
-  LoadBalancer and no Pod on a host port or the host network exists in the cluster. Every Kustomization but the root
-  and `admission` whose inventory holds a workload kind or a HelmRelease depends on `admission` and created its
-  workloads after `admission`'s objects, the root's workloads are the Deployments of `gotk-components.yaml`, and
-  `namespaces` holds only Namespaces Flux never prunes: the job fails naming one without the prune annotation. It then probes the image policy by server-side dry-run on
-  generated objects and live ones; every image a step runs in the cluster is a listed vendor ref at a digest. Last,
+  CIDRs; a client Pod in namespace `cloudflared` gets 404 for an unrouted host and 400 for `/a%2Fb` on a host a
+  throwaway Ingress routes, and one in another namespace gets no answer; its container runs the Deployment's digest,
+  and no Service of type NodePort or LoadBalancer and no Pod on a host port or the host network exists in the cluster.
+  Every Kustomization but the root and `admission` whose inventory holds a workload kind or a HelmRelease depends on
+  `admission` and created its workloads after `admission`'s objects, the root's workloads are the Deployments of
+  `gotk-components.yaml`, and `namespaces` holds only Namespaces Flux never prunes: the job fails naming one without the
+  prune annotation. It then probes the image policy by server-side dry-run on generated objects and live ones; every
+  image a step runs in the cluster is a listed vendor ref at a digest. Last,
   it runs Pods built from `cloudflared`'s template, its Secret volumes dropped and its arguments replaced: Pod Security
   `restricted` admits them, `cloudflared tunnel ingress validate` passes on the committed config, an unrouted host gets
   `http_status:404`, and the rule of every host the config names points at the Service `traefik` of namespace `traefik`
@@ -133,8 +134,8 @@
   request the operator merges. Its NetworkPolicy admits only pods of namespace `cloudflared`, and only to the `web`
   port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied, while the node's
   probes pass. `web` trusts the forwarded headers of k3s's default cluster CIDR, which `host/k3s/config.yaml` keeps,
-  and carries hal's entrypoint hardening: alias headers deleted, paths sanitized, every encoded path character
-  refused with 400.
+  and carries hal's entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character
+  refused with 400 by each route, so an unrouted host still gets 404.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's

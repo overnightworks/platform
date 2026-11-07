@@ -488,8 +488,9 @@ jobs:
 
       - name: Assert that Traefik runs from its render, ClusterIP only, and answers only cloudflared's pods
         env:
-          # A client Pod's namespace that is neither Traefik's nor the tunnel's.
+          # A client Pod's namespace that is neither Traefik's nor the tunnel's, and the host its Ingress routes.
           OTHER_NAMESPACE: ingress-client
+          ROUTED_HOST: routed.invalid
         run: |
           fail() { echo "::error::$1"; exit 1; }
           applied_revision="$(kubectl -n flux-system get kustomization traefik -o jsonpath='{.status.lastAppliedRevision}')"
@@ -548,12 +549,12 @@ jobs:
 
           web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
           client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
-          client_pod_template="${client_pod_template//@HOST@/${UNROUTED_HOST}}"
-          # request <namespace> <name> <path>: a client Pod in the namespace asks Traefik's web port for the path of the
-          # unrouted host, runs to its end and is deleted; sets status to the status it printed and exit_code to curl's.
+          # request <namespace> <name> <host> <path>: a client Pod in the namespace asks Traefik's web port for the path
+          # of the host, runs to its end and is deleted; sets status to the status it printed and exit_code to curl's.
           request() {
-            local namespace="$1" name="$2" path="$3" client_pod
+            local namespace="$1" name="$2" host="$3" path="$4" client_pod
             client_pod="${client_pod_template//@NAME@/${name}}"
+            client_pod="${client_pod//@HOST@/${host}}"
             printf '%s\n' "${client_pod//@URL@/http://traefik.traefik.svc:${web_port}${path}}" | kubectl -n "$namespace" create -f -
             kubectl -n "$namespace" wait "pod/$name" --timeout=2m \
               --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' || {
@@ -565,17 +566,28 @@ jobs:
             kubectl -n "$namespace" delete pod "$name" --wait --timeout=2m
           }
 
-          request "$TUNNEL_NAMESPACE" unrouted-request /
+          request "$TUNNEL_NAMESPACE" unrouted-request "$UNROUTED_HOST" /
           [ "$status" = 404 ] || fail "Traefik answered $status, not 404, to a Pod in $TUNNEL_NAMESPACE for the unrouted host $UNROUTED_HOST"
           echo "Traefik answered 404 to a Pod in $TUNNEL_NAMESPACE for the unrouted host $UNROUTED_HOST"
 
-          request "$TUNNEL_NAMESPACE" encoded-slash-request /a%2Fb
-          [ "$status" = 400 ] || fail "Traefik answered $status, not 400, to a Pod in $TUNNEL_NAMESPACE for the path /a%2Fb"
-          echo "Traefik answered 400 to a Pod in $TUNNEL_NAMESPACE for the path /a%2Fb"
+          # Traefik refuses encoded path characters in each route's chain, so an unrouted host gets 404 for them: the
+          # encoded slash goes to a host an Ingress routes to a Service without endpoints, which Traefik answers with 503
+          # once it serves the route.
+          kubectl create namespace "$OTHER_NAMESPACE"
+          kubectl -n "$OTHER_NAMESPACE" create service clusterip no-endpoints --tcp=80:80
+          kubectl -n "$OTHER_NAMESPACE" create ingress encoded-path --rule="$ROUTED_HOST/*=no-endpoints:80"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            request "$TUNNEL_NAMESPACE" "route-request-$attempt" "$ROUTED_HOST" /
+            [ "$status" = 404 ] || break
+          done
+          [ "$status" = 503 ] || fail "Traefik answered $status, not 503, for $ROUTED_HOST, routed to a Service without endpoints"
+          echo "Traefik serves the route of $ROUTED_HOST and answers its Service without endpoints with 503"
+          request "$TUNNEL_NAMESPACE" encoded-slash-request "$ROUTED_HOST" /a%2Fb
+          [ "$status" = 400 ] || fail "Traefik answered $status, not 400, to a Pod in $TUNNEL_NAMESPACE for $ROUTED_HOST/a%2Fb"
+          echo "Traefik answered 400 to a Pod in $TUNNEL_NAMESPACE for $ROUTED_HOST/a%2Fb"
 
           # A refused connection (curl's 7) or no reply within the timeout (28) both leave the client without a status.
-          kubectl create namespace "$OTHER_NAMESPACE"
-          request "$OTHER_NAMESPACE" denied-request /
+          request "$OTHER_NAMESPACE" denied-request "$ROUTED_HOST" /
           kubectl delete namespace "$OTHER_NAMESPACE" --wait --timeout=2m
           [ -z "$(kubectl get namespace "$OTHER_NAMESPACE" --ignore-not-found -o name)" ] ||
             fail "the namespace $OTHER_NAMESPACE outlived its deletion"
