@@ -100,8 +100,9 @@
   `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token) and, on a pull
   request, the pull request's ref. It first fails when the committed root or `tunnel` carries `spec.patches`, which
   the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
-  Its `platform-secrets` source also serves the two Secrets `apps/hopin/hopin.yaml` names, hopin's files as dummies and
-  the pull Secret from the job's own token, whose `packages: read` reads hopin's private package; neither is printed.
+  Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's files as dummies and
+  each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
+  printed.
   It also proves that `secrets:github-host-keys` passes flux's real export of a throwaway deploy key unchanged and
   refuses host keys GitHub does not list for `github.com`, and that `secrets:new-key` refuses a key directory not at
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
@@ -117,14 +118,16 @@
   forwarded address but not for the next from another; that Pod gets no answer from Traefik's probe port, it and one in
   another namespace none from hopin's Service, and every Traefik pod's address lies in a CIDR of hopin's
   `HOPIN_TRUSTED_PROXIES`. A Kustomization that never becomes Ready fails the job naming its reason, with each unready
-  pod's waiting state and last log lines. hopin's Deployment, applied by `apps` after its Secrets, is Available with one
-  Ready pod and `Recreate` at a full app ref in a Namespace that enforces `restricted`, and every running container of a
-  Deployment outside kube-system and flux-system, Traefik's included, carries that Deployment's digest, a Deployment
-  scaled to 0 aside. Every Kustomization but the root and `admission` whose inventory holds a workload kind or a
-  HelmRelease depends on `admission` and created its workloads after `admission`'s objects, the root's workloads are the
-  Deployments of `gotk-components.yaml`, and `namespaces` holds only Namespaces Flux never prunes: the job fails naming
-  one without the prune annotation. It then probes the image policies by server-side dry-run on generated objects and
-  live ones; every image a step runs in the cluster is a listed vendor ref at a digest. Last, it runs Pods built from
+  pod's waiting state and last log lines. Every app's Deployment, applied by `apps` after its Secrets, is Available
+  with one Ready pod and `Recreate` at a full app ref in a Namespace that enforces `restricted` (the step prints the
+  kubelet's pull report and the runner's free disk); a client Pod in `hopin` gets 200 from speech-runtime's `/health`
+  and one in another namespace gets no answer; and every running container of a Deployment outside kube-system and
+  flux-system, Traefik's included, carries that Deployment's digest, a Deployment scaled to 0 aside. Every
+  Kustomization but the root and `admission` whose inventory holds a workload kind or a HelmRelease depends on
+  `admission` and created its workloads after `admission`'s objects, the root's workloads are the Deployments of
+  `gotk-components.yaml`, and `namespaces` holds only Namespaces Flux never prunes: the job fails naming one without
+  the prune annotation. It then probes the image policies by server-side dry-run on generated objects and live ones;
+  every image a step runs in the cluster is a listed vendor ref at a digest. Last, it runs Pods built from
   `cloudflared`'s template, its Secret volumes dropped and its arguments replaced: Pod Security `restricted` admits
   them, `cloudflared tunnel ingress validate` passes on the committed config, an unrouted host gets `http_status:404`,
   and the rule of every host the config names points at the Service `traefik` of namespace `traefik` at its `web` port,
@@ -147,6 +150,11 @@
   Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`. Its Ingress routes `hopin.hallucinai.de`
   through Traefik's `web`; its NetworkPolicy admits only namespace `traefik` to hopin's port, so hopin trusts the
   forwarded addresses of the pod network in `HOPIN_TRUSTED_PROXIES` only behind that policy.
+- `apps/speech-runtime/`: speech-runtime's Deployment, Service, caller table (a ConfigMap) and NetworkPolicy, which
+  admits port 8080 only from the namespaces `hopin` and `presentator`. One pod runs on the CPU with a read-only root
+  and a memory-backed `/tmp`, its image the full app ref of a release that changes only in a pull request the operator
+  merges, together with the caller table's keys the image knows, and pulled through the Secret `ghcr-pull` from
+  `platform-secrets`. It has no Secret of its own and no route; it is ready when both models are.
 - `infrastructure/namespaces/`: the Namespaces that receive Secrets from `platform-secrets`, each carrying
   `kustomize.toolkit.fluxcd.io/prune: disabled`, so neither a prune nor a revert deletes one with its Secrets.
   A Namespace removed from Git stays in the cluster; it leaves only after its Secrets left `platform-secrets`, by a
