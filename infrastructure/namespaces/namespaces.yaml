@@ -9,3 +9,4 @@ metadata:
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     pod-security.kubernetes.io/enforce: restricted
+    scratch: "not a valid label value!"
