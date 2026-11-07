@@ -1,0 +1,19 @@
+# The apps, one directory each under apps/. They start from Secrets in platform-secrets, so they wait for that layer,
+# and run workloads, so they wait for admission.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: platform-secrets
+    - name: admission
+  interval: 10m0s
+  path: ./apps
+  prune: true
+  wait: true
+  timeout: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
