@@ -615,7 +615,7 @@ jobs:
           policy="$(yq 'select(.kind == "ValidatingAdmissionPolicy") | .metadata.name' "$POLICY_FILE")"
           exempt=" $(kubectl get validatingadmissionpolicy "$policy" -o jsonpath='{.spec.matchConstraints.namespaceSelector.matchExpressions[?(@.operator=="NotIn")].values[*]}') "
           # The runtime's imageID names the digest it resolved each container's image to.
-          while IFS='|' read -r namespace name; do
+          while IFS='|' read -r namespace name replicas; do
             [[ $exempt != *" $namespace "* ]] || continue
             declare -A image_of=()
             while IFS='|' read -r container image; do
@@ -625,6 +625,12 @@ jobs:
               echo "Deployment $namespace/$name, container $container: $image"
             done < <(kubectl --namespace "$namespace" get deployment "$name" \
               -o go-template='{{range .spec.template.spec.containers}}{{.name}}|{{.image}}{{"\n"}}{{end}}')
+            # A Deployment scaled to 0 has no running container, as cloudflared in this job.
+            if [ "$replicas" = 0 ]; then
+              unset image_of
+              echo "the Deployment $namespace/$name runs no container: scaled to 0 replicas"
+              continue
+            fi
             selector="$(kubectl --namespace "$namespace" get deployment "$name" \
               -o go-template='{{range $key, $value := .spec.selector.matchLabels}}{{$key}}={{$value}},{{end}}')"
             image_ids="$(kubectl --namespace "$namespace" get pods --selector "${selector%,}" \
@@ -639,7 +645,7 @@ jobs:
             unset image_of
             echo "every running container of the Deployment $namespace/$name carries its Deployment's digest"
           done < <(kubectl get deployments --all-namespaces \
-            -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}{"\n"}{end}')
+            -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}|{.spec.replicas}{"\n"}{end}')
 
       - name: Assert that every workload layer depends on admission and was applied after it
         env:

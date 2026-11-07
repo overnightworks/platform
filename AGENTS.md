@@ -93,8 +93,8 @@
   Traefik from the cluster: its Service is ClusterIP with the one port `web`, an unrouted host gets 404, and no Service
   of type NodePort or LoadBalancer and no Pod on a host port or the host network exists in the cluster. hopin's
   Deployment, applied by `apps` after its Secrets, is Available with one Ready pod and `Recreate` at a full app ref in
-  a Namespace that enforces `restricted`, and every running container outside kube-system and flux-system carries its
-  Deployment's digest. Every Kustomization but the root and
+  a Namespace that enforces `restricted`, and every running container of a Deployment outside kube-system and
+  flux-system carries that Deployment's digest, a Deployment scaled to 0 aside. Every Kustomization but the root and
   `admission` whose inventory holds a workload kind or a HelmRelease depends on `admission` and created its workloads after `admission`'s objects, the root's
   workloads are the Deployments of `gotk-components.yaml`, and `namespaces` holds only Namespaces Flux never prunes:
   the job fails naming one without the prune annotation. It then probes the image policy by server-side dry-run on
