@@ -15,7 +15,13 @@
   nothing when the chart cannot be fetched or rendered or the render holds a helm hook, which it names. helm runs
   only here, never on the PC.
 - `mise run secrets:age-secret <key file>` creates the Secret `sops-age` in flux-system, the age key Flux decrypts
-  `platform-secrets` with, from the given file; it has no default path.
+  `platform-secrets` with, from the given file; it has no default path. The PC calls it only through
+  `bootstrap:secrets`, since a bare run talks to `~/.kube/config`.
+- `mise run secrets:new-key` is the operator's: it creates the age key once in the file sops reads, `SOPS_AGE_KEY_FILE`
+  if set and non-empty, else `${XDG_CONFIG_HOME:-~/.config}/sops/age/keys.txt` (mode 600 in a directory at 700), and
+  prints only its recipient. It refuses, changing nothing, an existing key file, an existing directory (or a link's
+  target) at another mode, a key directory a file blocks and a `<key file>.drill`. The PC's key lives in that file, and
+  its one copy in the operator's password manager.
 - `scripts/apply_github_settings.sh` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
   login, on any commit and without writing state (exit 0 no change, 2 changes, 1 failure). `--apply` applies that
   run's own plan, only from a clean `origin/main`, and is run only by the operator or on his word.
@@ -25,7 +31,15 @@
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else
   changes nothing; it stops when that file is missing or differs from `host/k3s/config.yaml`. Then it waits for the
   node. `mise run bootstrap:flux` applies Flux from `clusters/pc/flux-system` through k3s's own kubeconfig and waits
-  for its controllers. `mise run bootstrap` runs the two in order, as a full `mise bootstrap` does after its
+  for its controllers. `mise run bootstrap:secrets` is the operator's, since it reads the age key file: through k3s's
+  own kubeconfig it creates `sops-age` from that file and the deploy-key Secret `platform-secrets`, each only when
+  missing, and passes the deploy key only once GitHub's meta API lists every host key it holds, a check an existing
+  one passes on every run. It then requests a reconcile of the source `platform-secrets`, and only when that is not
+  Ready within a minute prints the public key to add once, read-only, in GitHub's web form, requesting a reconcile
+  every 30 seconds for up to 15 minutes; then it waits for the Kustomization. Its lines name each object as `<Kind>
+  <name>`; the `secrets:` tasks it calls print only their refusals, under their own prefix. A refusal reads `<task>:
+  <condition>; <the way back>`, except the host-key filter's `; nothing passed on`, after which `bootstrap:secrets`
+  names the way back. `mise run bootstrap` runs the three in order, as a full `mise bootstrap` does after its
   declarative parts.
 
 ## The PC's host step
@@ -34,7 +48,7 @@
   --detailed-exitcode` (the script sets `LC_ALL=C`, which mise needs to read a localized ufw), which must list only
   the entry state's changes; `scripts/bootstrap_pc.sh --only files,firewall`, which writes
   `/etc/rancher/k3s/config.yaml` and adds mise's one ufw rule on `cni0` before k3s first starts;
-  `mise run bootstrap:k3s`; `mise run bootstrap:flux`.
+  `mise run bootstrap:k3s`; `mise run bootstrap:flux`; `mise run bootstrap:secrets`, by the operator.
 - `/usr/local/bin/k3s` decides the entry state. Absent, it is a first install (no `mise:` ufw rule and no
   `/var/lib/mise/bootstrap/firewall.json`; the plan lists `/etc/rancher/k3s`, its config file, the firewall and the
   rule) or the uninstalled state (the `mise:` rule and the state file kept, `/etc/rancher` holding at most
@@ -88,6 +102,11 @@
   the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
   Its `platform-secrets` source also serves the two Secrets `apps/hopin/hopin.yaml` names, hopin's files as dummies and
   the pull Secret from the job's own token, whose `packages: read` reads hopin's private package; neither is printed.
+  It also proves that `secrets:github-host-keys` passes flux's real export of a throwaway deploy key unchanged and
+  refuses host keys GitHub does not list for `github.com`, and that `secrets:new-key` refuses a key directory not at
+  700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
+  runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request that turns Ready within the minute
+  prints no key block.
   Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock` and the renders, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. After the reconcile it reads
   Traefik from the cluster: its Service is ClusterIP with the one port `web`, whose trusted senders hold the nodes' pod
