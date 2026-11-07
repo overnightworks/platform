@@ -1515,6 +1515,13 @@ jobs:
           expect_breach "a run 26 hours ago" "@$(($(date +%s) - 26 * 3600))" success "hours ago"
           expect_breach "a failed run" "$recent" exit-code "ended with exit-code"
           FAKE_STAT_FAIL=1 expect_breach "a listing that failed" "$recent" success "listing the files under $pods_dir failed"
+          now="$(date +%s)"
+          # The check keeps a file up to 29 days old; a minute either side of the boundary stays clear of the clock.
+          FAKE_BIRTH=$((now - 29 * 86400 + 60)) FAKE_LAST_RUN="$recent" FAKE_RESULT=success check >/dev/null ||
+            fail "the check failed a file a minute short of 29 days old"
+          FAKE_BIRTH=$((now - 29 * 86400 - 60)) expect_breach "a file a minute over 29 days old" "$recent" success \
+            "days ago"
+          FAKE_BIRTH=0 expect_breach "a file without a creation time" "$recent" success "has no creation time"
           touch "$pods_dir/ns_pod_1/app/0.log.20261101-000000.gz" "$pods_dir/ns_pod_1/app/0.log.20261101-000000.tmp"
           expect_breach "a compressed copy" "$recent" success "0.log.20261101-000000.gz is a compressed copy"
           expect_breach "a copy in compression" "$recent" success "0.log.20261101-000000.tmp is a copy"
