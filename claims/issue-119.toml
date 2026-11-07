@@ -1,8 +1,0 @@
-claim_id = "5bd804dee221429fbe21488d7b2afa2e"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "226d67abd148991b023918f1db03a6d07c872b1a"
-branch = "claude/issue-119-speech-runtime-runs-in-k3d"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/speech-runtime/speech-runtime.yaml", "clusters/pc/apps.yaml", "infrastructure/namespaces/namespaces.yaml"]
-opened_commit = "e3197d1e5a83a73498cfd3f99df9e5921a300733"
-whole_reason = "One Deployment, its Namespace and its job proof have no caller apart, and AGENTS.md describes them in the same change."
