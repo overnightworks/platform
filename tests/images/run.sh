@@ -31,10 +31,16 @@ red_set_matches() {
 
 work_directory="$(mktemp -d)"
 trap 'rm -rf "${work_directory}"' EXIT
-failed=0
+failed=0 case_count=0
 for case_directory in "${cases_directory}"/*/; do
   case_name="$(basename "${case_directory}")"
-  [ -f "${case_directory}/expected-exit.txt" ] || continue
+  [ "${case_name}" != base ] || continue
+  case_count=$((case_count + 1))
+  if [ ! -f "${case_directory}/expected-exit.txt" ] || [ ! -f "${case_directory}/expected-red.txt" ]; then
+    failed=1
+    echo "images case ${case_name}: lacks expected-exit.txt or expected-red.txt"
+    continue
+  fi
   tree="${work_directory}/${case_name}"
   mkdir "${tree}"
   cp -R "${cases_directory}/base/." "${case_directory}." "${tree}"
@@ -57,4 +63,5 @@ for case_directory in "${cases_directory}"/*/; do
     cat "${case_directory}/expected-red.txt"
   fi
 done
+[ "${case_count}" -gt 0 ] || { echo "images: no case under ${cases_directory}" && exit 1; }
 exit "${failed}"
