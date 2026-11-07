@@ -1,0 +1,1 @@
+red: Deployment/default/hopin .spec.template.spec.containers[main].image: 'ghcr.io/overnightworks/hopin:2099.01.01.1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': the tag v2099.01.01.1 is missing in overnightworks/hopin

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Render the tree as Flux applies it, with the locked flux2 and without network, and judge every image of every rendered
-# Pod template: a vendor ref passes only as a repository of the vendor list at a sha256 digest, every app ref under
-# ghcr.io/<owner>/ is red, since no release check exists here, and Flux's controllers pass in their namespace as the
-# locked flux2 exports them. What the rule cannot judge is red too.
+# Pod template: a vendor ref passes only as a repository of the vendor list at a sha256 digest, an app ref under
+# ghcr.io/<owner>/ passes only through its release checks (its tag, its attestation and the signer's commit on
+# quality's main), and Flux's controllers pass in their namespace as the locked flux2 exports them. What the rule cannot
+# judge is red too.
 # Usage: mise exec -- scripts/verify_image_release.sh [tree], the tree defaulting to this checkout. The run names
 # GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, DEFAULT_BRANCH and RENDER_IMAGE, the image the render
-# runs in.
+# runs in; gh reads GH_TOKEN or its own login, and reads the registry through Docker's login to ghcr.io.
 # Exit: 0 nothing is red, 1 after at least one red record, 2 on any other failure.
 set -Eeuo pipefail
 trap 'echo "verify_image_release: line ${LINENO} failed: ${BASH_COMMAND}" >&2; exit 2' ERR
@@ -17,6 +18,14 @@ VENDOR_LIST_NAME="image-vendors"
 VENDOR_LIST_NAMESPACE="admission"
 # The PC-only source, rendered empty since CI holds no key for it; the cluster job's overlay swaps the same source.
 PC_ONLY_SOURCE="GitRepository/flux-system/platform-secrets"
+# An app's release: its image is built and attested by quality's reusable workflow from the app's main, and the
+# signer's commit must lie on quality's main.
+SIGNER_REPOSITORY_NAME="quality"
+SIGNER_WORKFLOW=".github/workflows/image.yml"
+SIGNER_BRANCH="main"
+RELEASE_SOURCE_REF="refs/heads/main"
+# Passed although it is gh's default, so a changed default cannot loosen the check.
+RELEASE_PREDICATE_TYPE="https://slsa.dev/provenance/v1"
 
 # The reference grammar of distribution/reference; names and digests are matched against the lowercased string.
 DOMAIN_COMPONENT='[a-z0-9]([a-z0-9-]*[a-z0-9])?'
@@ -103,6 +112,7 @@ records=()
 declare -A vendor_entry_by_repository=()
 declare -A used_vendor_repositories=()
 declare -A flux_own_images=()
+declare -A app_reference_locations=()
 
 fail() {
   echo "verify_image_release: $1" >&2
@@ -343,7 +353,7 @@ judge_image() {
     app_reference_count=$((app_reference_count + 1))
     if [[ ${repository} =~ ^ghcr\.io/${owner}/${PATH_COMPONENT}(/${PATH_COMPONENT})?$ && ${named} != "${repository}" &&
       ${named##*:} =~ ${TAG_PATTERN} && ${image#"${named}"} =~ ${SHA256_DIGEST_PATTERN} ]]; then
-      report_red "${location}" "${image}" "an app ref, and no release check exists yet"
+      app_reference_locations["${image}"]+="${app_reference_locations[${image}]:+; }${location}"
     else
       report_red "${location}" "${image}" "not one full app ref ghcr.io/${owner}/<repo>[/<name>]:<version>@sha256:<64 hex>"
     fi
@@ -359,8 +369,73 @@ judge_image() {
   fi
 }
 
+# Prints the file $1 on one line.
+one_line() {
+  tr '\n' ' ' <"$1"
+}
+
+# Sets tag_commit to the commit the tag v$2 of the owner's repository $1 names, peeled when annotated. Returns 1 with
+# release_failure set when git cannot list the tags or the tag is missing. ls-remote matches its patterns against the
+# tail of each ref name, so only the two exact names count.
+resolve_tag_commit() {
+  local url="${GITHUB_SERVER_URL}/${owner}/$1" tag="refs/tags/v$2" object name direct="" peeled=""
+  tag_commit=""
+  if ! GIT_TERMINAL_PROMPT=0 git ls-remote "${url}" "${tag}" "${tag}^{}" >"${work_directory}/tags" \
+    2>"${work_directory}/tag-errors"; then
+    release_failure="git ls-remote ${url} failed: $(one_line "${work_directory}/tag-errors")"
+    return 1
+  fi
+  while read -r object name; do
+    case "${name}" in
+      "${tag}") direct="${object}" ;;
+      "${tag}^{}") peeled="${object}" ;;
+    esac
+  done <"${work_directory}/tags"
+  tag_commit="${peeled:-${direct}}"
+  [ -n "${tag_commit}" ] || { release_failure="the tag v$2 is missing in ${owner}/$1" && return 1; }
+}
+
+# Red unless the app ref $1, used at the locations $2, passes its release checks: its tag v<version> resolves to a
+# commit, gh verifies an attestation of its digest from that commit through flags on fields the signer cannot forge
+# (the attestations come from GitHub's API, and nothing is read from their statement), and every verified attestation's
+# signer commit lies on quality's main.
+check_app_release() {
+  local image="$1" locations="$2" named="${1%@*}" repository version repository_name status signer index
+  local signer_repository="${owner}/${SIGNER_REPOSITORY_NAME}" reds_before="${red_count}"
+  repository="${named%:*}" version="${named##*:}"
+  repository_name="${repository#*/*/}" repository_name="${repository_name%%/*}"
+  if ! resolve_tag_commit "${repository_name}" "${version}"; then
+    report_red "${locations}" "${image}" "${release_failure}"
+    return
+  fi
+  if ! gh attestation verify "oci://${repository}@${image#*@}" --repo "${owner}/${repository_name}" \
+    --signer-workflow "${signer_repository}/${SIGNER_WORKFLOW}" --source-digest "${tag_commit}" \
+    --source-ref "${RELEASE_SOURCE_REF}" --predicate-type "${RELEASE_PREDICATE_TYPE}" --deny-self-hosted-runners \
+    --format json >"${work_directory}/attestations.json" 2>"${work_directory}/attestation-errors"; then
+    report_red "${locations}" "${image}" "no attestation verifies with the tag v${version}'s commit ${tag_commit} as source digest: $(one_line "${work_directory}/attestation-errors")"
+    return
+  fi
+  read_records '.[] | (.verificationResult.signature.certificate.buildSignerDigest // "") | tostring' \
+    "${work_directory}/attestations.json"
+  [ "${#records[@]}" -gt 0 ] || report_red "${locations}" "${image}" "gh verified no attestation"
+  for index in "${!records[@]}"; do
+    signer="${records[index]}"
+    if [[ ! ${signer} =~ ^[0-9a-f]{40}$ ]]; then
+      report_red "${locations}" "${image}" "a verified attestation's signer digest '${signer}' is no commit"
+    elif ! status="$(gh api "repos/${signer_repository}/compare/${signer}...${SIGNER_BRANCH}" --jq .status \
+      2>"${work_directory}/compare-errors")"; then
+      report_red "${locations}" "${image}" "the signer commit ${signer} is not on ${signer_repository}'s ${SIGNER_BRANCH}: $(one_line "${work_directory}/compare-errors")"
+    elif [ "${status}" != ahead ] && [ "${status}" != identical ]; then
+      report_red "${locations}" "${image}" "the signer commit ${signer} is not on ${signer_repository}'s ${SIGNER_BRANCH}: ${status}"
+    fi
+  done
+  [ "${red_count}" -eq "${reds_before}" ] || return 0
+  echo "images: ${image} at ${locations}: the tag v${version} of ${owner}/${repository_name} is commit ${tag_commit}, its attestation verifies, and the signer commits ${records[*]} are on ${signer_repository}'s ${SIGNER_BRANCH}"
+}
+
 main() {
-  local variable index repository
+  local variable index repository image reds_before released_count=0
+  local -a app_references=()
   for variable in GITHUB_SERVER_URL GITHUB_REPOSITORY GITHUB_REPOSITORY_OWNER DEFAULT_BRANCH RENDER_IMAGE; do
     [ -n "${!variable:-}" ] || fail "${variable} is not set"
   done
@@ -392,10 +467,17 @@ main() {
       report_red "${VENDOR_LIST} entry ${vendor_entry_by_repository[${repository}]}" "${repository}" "a vendor entry no rendered image uses"
   done
   echo "images: ${vendor_reference_count} vendor references pass"
+  [ "${#app_reference_locations[@]}" -eq 0 ] ||
+    mapfile -t app_references < <(printf '%s\n' "${!app_reference_locations[@]}" | sort)
+  for image in "${app_references[@]}"; do
+    reds_before="${red_count}"
+    check_app_release "${image}" "${app_reference_locations[${image}]}"
+    [ "${red_count}" -ne "${reds_before}" ] || released_count=$((released_count + 1))
+  done
   if [ "${app_reference_count}" -eq 0 ]; then
     echo "images: no app image reference was found"
   else
-    echo "images: ${app_reference_count} app image references, none passes before the release checks exist"
+    echo "images: ${app_reference_count} app image references, ${#app_reference_locations[@]} distinct full refs, ${released_count} pass their release checks"
   fi
   [ "${red_count}" -eq 0 ] || { echo "images: ${red_count} red" && exit 1; }
 }
