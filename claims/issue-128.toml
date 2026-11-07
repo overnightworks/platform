@@ -1,7 +1,0 @@
-claim_id = "6fe3a8c892ed4372a2f817a90d488147"
-agent = "Claude e0e0679e-2570-4f43-ae88-709fd28a0c4d"
-role = "builder"
-base = "6466f1bb31d637b278bb7b0da99bea3cdb604894"
-branch = "claude/issue-128-c12-revert-tunnel-check-line"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/cloudflared/cloudflared.yaml"]
-opened_commit = "c56485ac2da05d23af9f95e61de4860f774c9f95"
