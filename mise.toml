@@ -414,7 +414,7 @@ resume() {
 Kustomization stays suspended and the writers at 0: run mise run db:load-dump --resume $namespace once it ended"
   flux resume kustomization "$namespace" --wait
 }
-if [ "${usage_resume:-false}" = true ]; then resume && exit 0; fi
+if [ "${usage_resume:-false}" = true ]; then resume; exit 0; fi
 
 [ -r "$file" ] && [ ! -d "$file" ] || fail "no readable dump file given; nothing changed"
 [ "$(kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.spec.suspend}')" != true ] ||
