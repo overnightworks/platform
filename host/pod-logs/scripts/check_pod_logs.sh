@@ -28,7 +28,31 @@ unit_time() {
 file_count=0
 oldest_file=""
 oldest_birth=""
-while IFS=' ' read -r -d '' birth file; do
+# Prints one NUL-terminated path per file under the pods directory.
+list_files() { find "$pods_dir" -type f -print0; }
+listing_failed() {
+  echo "check-pod-logs: listing the files under $pods_dir failed, so the 30-day bound is unchecked" >&2
+  exit 1
+}
+# Prints the creation time of a file in unix seconds, or nothing when the file vanished since the listing.
+file_birth() {
+  stat --printf='%W' -- "$1" 2>/dev/null || [ ! -e "$1" ] || listing_failed
+}
+
+pods_listing="$(mktemp)"
+trap 'rm -f "$pods_listing"' EXIT
+no_pod_logs_yet=""
+if [ -d "$pods_dir" ]; then
+  list_files >"$pods_listing" || listing_failed
+elif [ -e "$pods_dir" ]; then
+  listing_failed
+else
+  # k3s creates the directory with its first pod, after a first install has started the timer.
+  no_pod_logs_yet=true
+fi
+while IFS= read -r -d '' file; do
+  birth="$(file_birth "$file")"
+  [ -n "$birth" ] || continue
   file_count=$((file_count + 1))
   case "$file" in
     *.gz) breach "$file is a compressed copy, created after its oldest line" ;;
@@ -45,12 +69,7 @@ while IFS=' ' read -r -d '' birth file; do
     oldest_birth="$birth"
     oldest_file="$file"
   fi
-done < <(find "$pods_dir" -type f -exec stat --printf='%W %n\0' {} +)
-# An unreadable directory or a failed stat omits files from the loop, so the listing must have succeeded.
-wait "$!" || {
-  echo "check-pod-logs: listing the files under $pods_dir failed, so the 30-day bound is unchecked" >&2
-  exit 1
-}
+done <"$pods_listing"
 
 last_run="$(unit_time "$timer" LastTriggerUSec)"
 if [ -z "$last_run" ]; then
@@ -59,10 +78,13 @@ elif [ $((now - last_run)) -gt "$max_timer_age_seconds" ]; then
   breach "$timer last ran at $(format_time "$last_run"), more than $((max_timer_age_seconds / 3600)) hours ago"
 fi
 result="$(systemctl show "$service" --property=Result --value)"
-[ "$result" = success ] || breach "the last run of $service ended with $result"
+[ "$result" = success ] || breach "the last run of $service ended with $result, which stays until the service runs again:"\
+" sudo systemctl start $service, then mise run check:pod-logs"
 
 [ "$breaches" -eq 0 ] || {
-  echo "check-pod-logs: $breaches breaches of the 30-day bound" >&2
+  plural=breaches
+  [ "$breaches" -ne 1 ] || plural=breach
+  echo "check-pod-logs: $breaches $plural of the 30-day bound" >&2
   exit 1
 }
 oldest="no file"
@@ -70,5 +92,7 @@ oldest="no file"
 # systemd schedules the next run only once the current one ends, so the clean's own check names none.
 next_run="$(unit_time "$timer" NextElapseUSecRealtime)"
 [ -z "$next_run" ] || next_run=" and runs next at $(format_time "$next_run")"
-echo "check-pod-logs: $file_count files under $pods_dir, $oldest;" \
+files_summary="$file_count files under $pods_dir, $oldest"
+[ -z "$no_pod_logs_yet" ] || files_summary="no pod logs yet, $pods_dir does not exist"
+echo "check-pod-logs: $files_summary;" \
   "$timer last ran at $(format_time "$last_run")$next_run"

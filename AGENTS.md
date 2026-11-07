@@ -28,7 +28,9 @@
 - `mise run github:test` checks that root: format, init against the committed lock, validate and the mocked tests.
 - `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
   which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
-  names and times only, and fails on any.
+  names and times only, and fails on any; it passes with no pod logs yet while `/var/log/pods` does not exist, and
+  fails when it cannot list the directory. It reads the clean's result from its last run, so after a fix a failed
+  check keeps failing until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
 - `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
   pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else
@@ -70,7 +72,8 @@
   the uninstall waits for his word.
 - The pod-log parts (`host/pod-logs/`) keep every pod log line at most 30 days, as the apps' privacy texts promise:
   `pod-logs.conf` in `/etc/tmpfiles.d/` deletes each file under `/var/log/pods` 28 days after its creation, with its
-  emptied directories; `pod-logs-clean.timer` and `.service` in `/etc/systemd/system/` run that clean daily by the
+  emptied directories, and every `.gz` and `.tmp` there whatever its age, since the kubelet makes none and a copy's
+  creation time is younger than its lines; `pod-logs-clean.timer` and `.service` in `/etc/systemd/system/` run that clean daily by the
   wall clock and after boot, then `scripts/check_pod_logs.sh` as `/usr/local/sbin/check-pod-logs`;
   `container-log-max-files=2` in `host/k3s/config.yaml` keeps the kubelet from compressing a rotated file. A first
   apply on an existing install is `scripts/bootstrap_pc.sh --only files,services`, then `mise run bootstrap:k3s` and
@@ -107,9 +110,10 @@
   `scripts/bootstrap_pc.sh --only tools`, asserts the tools and fails when a second run changes the paths or the file
   sizes and timestamps under `~/.local/bin` and mise's data directory (directory timestamps are not compared, the paths
   inside every directory are). It then runs `systemd-tmpfiles --clean` with `pod-logs.conf`'s line at a seconds-long
-  age on a test tree: the older file goes after an append and a read, with its emptied directories, and a newer file
-  stays; and it runs `check-pod-logs` against a fake `systemctl`, which passes fresh logs and names a timer that never
-  ran, ran 26 hours ago or failed, a `.gz` and a `.tmp`.
+  age on a test tree: the older file goes after an append and a read, with its emptied directories, a newer file
+  stays and a `.gz` and a `.tmp` go; and it runs `check-pod-logs` against a fake `systemctl`, which passes fresh logs,
+  files that vanish before their stat and a missing `/var/log/pods`, and names a timer that never ran, ran 26 hours
+  ago or failed, a failed listing, a `.gz` and a `.tmp`.
   `cluster` reconciles `clusters/pc` in k3d, with `host/k3s/config.yaml` mounted alone and read-only at
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,

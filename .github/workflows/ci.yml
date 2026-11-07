@@ -1449,13 +1449,14 @@ jobs:
           apt-get install --yes --no-install-recommends systemd >/dev/null
           # The committed line with its age shortened to seconds; its type, path and kind of age stay as committed.
           age_seconds=3
-          line="$(grep -v '^#' host/pod-logs/pod-logs.conf)"
+          line="$(grep '^e ' host/pod-logs/pod-logs.conf)"
           short_line="$(sed -E "s/b:[0-9a-z]+\$/b:${age_seconds}s/" <<<"$line")"
           [ "$short_line" != "$line" ] || fail "the line '$line' sets no age by creation time"
           root="$RUNNER_TEMP/pod-logs-root"
           pods_dir="$root$(awk '{ print $2 }' <<<"$line")"
           mkdir -p "$pods_dir/ns_old_1/app" "$root/etc/tmpfiles.d"
-          echo "$short_line" >"$root/etc/tmpfiles.d/pod-logs.conf"
+          # The committed file's other lines stay as committed.
+          { echo "$short_line"; grep '^r ' host/pod-logs/pod-logs.conf; } >"$root/etc/tmpfiles.d/pod-logs.conf"
           echo first >"$pods_dir/ns_old_1/app/0.log"
           [ "$(stat --format=%W "$pods_dir/ns_old_1/app/0.log")" -gt 0 ] || fail "$RUNNER_TEMP records no creation time"
           sleep $((age_seconds + 2))
@@ -1464,11 +1465,14 @@ jobs:
           cat "$pods_dir/ns_old_1/app/0.log" >/dev/null
           mkdir -p "$pods_dir/ns_new_2/app"
           echo first >"$pods_dir/ns_new_2/app/0.log"
-          systemd-tmpfiles --clean --root="$root" "$root/etc/tmpfiles.d/pod-logs.conf"
+          touch "$pods_dir/ns_new_2/app/0.log.20261101-000000.gz" "$pods_dir/ns_new_2/app/0.log.20261101-000000.tmp"
+          systemd-tmpfiles --clean --remove --root="$root" "$root/etc/tmpfiles.d/pod-logs.conf"
           [ ! -e "$pods_dir/ns_old_1" ] || fail "the clean kept $(find "$pods_dir/ns_old_1" | tr '\n' ' ')"
           [ -f "$pods_dir/ns_new_2/app/0.log" ] || fail "the clean deleted the file younger than ${age_seconds}s"
+          [ "$(find "$pods_dir/ns_new_2" -type f | wc -l)" -eq 1 ] ||
+            fail "the clean kept $(find "$pods_dir/ns_new_2" -type f | tr '\n' ' ')"
           echo "the line at ${age_seconds}s deleted the older file after an append and a read, with its emptied" \
-            "container and pod directories, and kept the newer file"
+            "container and pod directories, and kept the newer file; the clean deleted the new pod's .gz and .tmp"
 
       - name: Check that check-pod-logs passes fresh logs and names each breach it can see without a month's wait
         run: |
@@ -1486,15 +1490,23 @@ jobs:
           esac
           FAKE
           chmod +x "$fake_bin/systemctl"
-          # A fake stat answers with the creation time in FAKE_BIRTH, fails when FAKE_STAT_FAIL is set and else is stat.
+          # A fake stat answers with the creation time in FAKE_BIRTH, fails when FAKE_STAT_FAIL is set, deletes its
+          # file before failing when FAKE_STAT_VANISH is set, and else is stat.
           cat >"$fake_bin/stat" <<'FAKE'
           #!/usr/bin/env bash
           [ -z "${FAKE_STAT_FAIL:-}" ] || { echo "fake stat: failed" >&2; exit 1; }
+          [ -z "${FAKE_STAT_VANISH:-}" ] || { rm -f "${@: -1}"; echo "fake stat: vanished" >&2; exit 1; }
           [ -n "${FAKE_BIRTH:-}" ] || exec /usr/bin/stat "$@"
-          shift
-          for file; do printf '%s %s\0' "$FAKE_BIRTH" "$file"; done
+          printf '%s' "$FAKE_BIRTH"
           FAKE
           chmod +x "$fake_bin/stat"
+          # A fake find fails when FAKE_FIND_FAIL is set, as an unreadable directory does, and else is find.
+          cat >"$fake_bin/find" <<'FAKE'
+          #!/usr/bin/env bash
+          [ -z "${FAKE_FIND_FAIL:-}" ] || { echo "fake find: failed" >&2; exit 1; }
+          exec /usr/bin/find "$@"
+          FAKE
+          chmod +x "$fake_bin/find"
           check() { PATH="$fake_bin:$PATH" host/pod-logs/scripts/check_pod_logs.sh 2>&1; }
           # A breach the check must name: the case, the fake timer's last run and result, and the text naming it.
           expect_breach() {
@@ -1514,7 +1526,20 @@ jobs:
           expect_breach "a timer that never ran" n/a success "never run"
           expect_breach "a run 26 hours ago" "@$(($(date +%s) - 26 * 3600))" success "hours ago"
           expect_breach "a failed run" "$recent" exit-code "ended with exit-code"
-          FAKE_STAT_FAIL=1 expect_breach "a listing that failed" "$recent" success "listing the files under $pods_dir failed"
+          FAKE_FIND_FAIL=1 expect_breach "a listing that failed" "$recent" success \
+            "listing the files under $pods_dir failed"
+          FAKE_STAT_FAIL=1 expect_breach "a stat that failed on a file that stays" "$recent" success \
+            "listing the files under $pods_dir failed"
+          expect_breach "a failed run with one breach" "$recent" exit-code "1 breach of the 30-day bound"
+          output="$(FAKE_LAST_RUN=n/a FAKE_RESULT=exit-code check)" && fail "the check passed two breaches"
+          grep -q "2 breaches of the 30-day bound" <<<"$output" || fail "the check did not count two breaches: $output"
+          grep -q "sudo systemctl start pod-logs-clean.service, then mise run check:pod-logs" <<<"$output" ||
+            fail "the check did not name the rerun of a failed clean: $output"
+          output="$(FAKE_STAT_VANISH=1 FAKE_LAST_RUN="$recent" FAKE_RESULT=success check)" ||
+            fail "the check failed files that vanished before their stat: $output"
+          grep -q "0 files under $pods_dir" <<<"$output" || fail "the check counted files that vanished: $output"
+          echo "the check skips files that vanished before their stat: $output"
+          echo line >"$pods_dir/ns_pod_1/app/0.log"
           now="$(date +%s)"
           # The check keeps a file up to 29 days old; a minute either side of the boundary stays clear of the clock.
           FAKE_BIRTH=$((now - 29 * 86400 + 60)) FAKE_LAST_RUN="$recent" FAKE_RESULT=success check >/dev/null ||
@@ -1525,6 +1550,11 @@ jobs:
           touch "$pods_dir/ns_pod_1/app/0.log.20261101-000000.gz" "$pods_dir/ns_pod_1/app/0.log.20261101-000000.tmp"
           expect_breach "a compressed copy" "$recent" success "0.log.20261101-000000.gz is a compressed copy"
           expect_breach "a copy in compression" "$recent" success "0.log.20261101-000000.tmp is a copy"
+          rm -r "$pods_dir"
+          output="$(FAKE_LAST_RUN="$recent" FAKE_RESULT=success check)" ||
+            fail "the check failed a missing $pods_dir: $output"
+          [ "$(wc -l <<<"$output")" -eq 1 ] || fail "the check did not pass a missing $pods_dir with one line: $output"
+          echo "the check passes a missing $pods_dir: $output"
 
   opentofu:
     runs-on: ubuntu-latest
