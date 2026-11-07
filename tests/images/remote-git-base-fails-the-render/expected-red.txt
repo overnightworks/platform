@@ -1,0 +1,1 @@
+red: Kustomization/flux-system/flux-system: '✗ kustomize build failed: *network is unreachable*': the render failed

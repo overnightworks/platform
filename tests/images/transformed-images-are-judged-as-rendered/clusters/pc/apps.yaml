@@ -1,0 +1,82 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: json-patch, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/a
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  patches:
+    - target: {kind: Deployment, name: a}
+      patch: |
+        - op: replace
+          path: /spec/template/spec/containers/0/image
+          value: docker.io/someone/hopin:1
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: strategic-merge, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/b
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  patches:
+    - patch: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: {name: b}
+        spec: {template: {spec: {containers: [{name: main, image: "nginx:1"}]}}}
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: replacements, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/c
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: delimiter, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/d
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: substitute, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/e
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  postBuild:
+    substitute: {IMAGE: docker.io/someone/substituted:1}
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: spec-images, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/f
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  images:
+    - {name: traefik, newName: docker.io/library/traefik, digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: {name: layered, namespace: flux-system}
+spec:
+  interval: 10m
+  path: ./apps/g
+  prune: true
+  sourceRef: {kind: GitRepository, name: flux-system}
+  targetNamespace: tns
+  namePrefix: pre-
+  commonMetadata: {labels: {team: web}}
+  components: [../../components/sidecar]

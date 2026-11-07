@@ -1,0 +1,1 @@
+red: Kustomization/flux-system/apps .spec.path: '../tree/benign': a path above its source's root, which the render resolves in the checkout and Flux inside its artifact

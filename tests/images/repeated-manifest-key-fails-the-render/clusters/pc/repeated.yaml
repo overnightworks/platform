@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: repeated, namespace: default}
+spec:
+  template:
+    spec:
+      containers:
+        - name: main
+          image: docker.io/library/traefik:v3.7.17
+          image: ghcr.io/overnightworks/hopin:2099.01.01.1

@@ -1,0 +1,2 @@
+red: Deployment/default/case .spec.template.spec.containers[app].image: 'GHCR.io/overnightworks/hopin:2026.11.1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': a registry host or repository path that is not lowercase
+red: Deployment/default/case .spec.template.spec.containers[vendor].image: 'Docker.io/library/traefik@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': a registry host or repository path that is not lowercase

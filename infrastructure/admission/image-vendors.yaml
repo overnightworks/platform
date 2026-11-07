@@ -1,0 +1,8 @@
+# The vendor repositories platform runs. One key per vendor, its value <registry>/<repository> without a version,
+# under a comment naming the manifest that runs it and the vendor's page naming that repository.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: image-vendors
+  namespace: admission
+data: {}

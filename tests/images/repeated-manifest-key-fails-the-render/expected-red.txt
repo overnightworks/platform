@@ -1,0 +1,1 @@
+red: Kustomization/flux-system/flux-system: '✗ *mapping key "image" already defined*': the render failed

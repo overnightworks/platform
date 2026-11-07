@@ -1,0 +1,29 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata: {name: traefik, namespace: traefik}
+spec:
+  interval: 10m
+  url: oci://ghcr.io/traefik/helm/traefik
+  ref: {tag: 42.3.1, digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: {name: traefik, namespace: traefik}
+spec:
+  interval: 10m
+  chartRef: {kind: OCIRepository, name: traefik}
+  values:
+    image: {registry: docker.io, repository: library/traefik, tag: v3.7.17, digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta2
+kind: HelmRelease
+metadata: {name: plain, namespace: default}
+spec:
+  interval: 10m
+  chart: {spec: {chart: plain, sourceRef: {kind: HelmRepository, name: plain}}}
+---
+apiVersion: example.com/v1
+kind: HelmRelease
+metadata: {name: other, namespace: default}
+spec:
+  image: nginx:1

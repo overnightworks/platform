@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target: {kind: Deployment, name: web}
+    patch: |
+      - op: add
+        path: /spec/template/spec/initContainers
+        value: [{name: side, image: "docker.io/someone/sidecar:1"}]

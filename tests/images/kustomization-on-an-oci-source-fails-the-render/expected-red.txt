@@ -1,0 +1,1 @@
+red: Kustomization/flux-system/flux-system: '✗ *cannot get local path for OCIRepository/flux-system/some-oci of kustomization other*': the render failed

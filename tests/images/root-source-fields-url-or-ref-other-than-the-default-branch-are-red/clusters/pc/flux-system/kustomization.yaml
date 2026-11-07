@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gotk-sync.yaml
+patches:
+  - target: {kind: GitRepository, name: flux-system}
+    patch: |
+      apiVersion: source.toolkit.fluxcd.io/v1
+      kind: GitRepository
+      metadata: {name: flux-system}
+      spec:
+        include:
+          - repository: {name: other}
+            toPath: clusters/pc/apps
+        ignore: /clusters/pc/apps/kustomization.yaml
+        recurseSubmodules: true
+        sparseCheckout: [clusters/pc]
+        url: https://github.com/someone/platform
+        ref: {tag: v1}

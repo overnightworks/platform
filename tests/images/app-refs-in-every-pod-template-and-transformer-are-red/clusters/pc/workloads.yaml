@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: report, namespace: default}
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - {name: report, image: "ghcr.io/overnightworks/hopin:1"}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: db, namespace: default}
+spec:
+  template:
+    spec:
+      initContainers:
+        - {name: migrate, image: "ghcr.io/overnightworks/hopin/migrate:2026.11.1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: debug, namespace: default}
+spec:
+  ephemeralContainers:
+    - {name: shell, image: "ghcr.io/overnightworks/hopin:2026.11.1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}

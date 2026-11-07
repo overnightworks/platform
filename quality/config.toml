@@ -1,5 +1,5 @@
 [gate]
-mandatory_jobs = ["checks", "cluster", "bootstrap", "opentofu"]
+mandatory_jobs = ["checks", "cluster", "bootstrap", "opentofu", "images"]
 legacy = "fail"
 
 [[root.allow]]
@@ -13,6 +13,10 @@ reason = "the tool lock beside mise.toml; mise finds project config only in the 
 [[root.allow]]
 entry = "clusters/"
 reason = "Flux's documented layout, ruled Q9 on platform#1"
+
+[[root.allow]]
+entry = "infrastructure/"
+reason = "Flux's documented layout: the cluster-wide add-ons beside clusters/, the admission vendor list first"
 
 [[root.allow]]
 entry = "host/"
