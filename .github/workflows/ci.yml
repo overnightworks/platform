@@ -323,9 +323,9 @@ jobs:
           kubectl wait pod/log-ticker pod/log-burst --for=condition=Ready --timeout=3m
           # container_dir <pod>: the pod's log directory of its one container, found by the pod's uid on the node.
           container_dir() {
-            local uid
-            uid="$(kubectl get pod "$1" -o jsonpath='{.metadata.uid}')"
-            docker exec "$server" sh -c 'ls -d /var/log/pods/*_"$1"/"$2"' sh "$uid" "$1"
+            local pod="$1" uid
+            uid="$(kubectl get pod "$pod" -o jsonpath='{.metadata.uid}')"
+            docker exec "$server" sh -c 'ls -d /var/log/pods/*_"$1"/"$2"' sh "$uid" "$pod"
           }
 
           # The clean of host/pod-logs deletes a live file and its emptied directories, here the whole pod directory.
@@ -1489,10 +1489,11 @@ jobs:
           check() { PATH="$fake_bin:$PATH" host/pod-logs/scripts/check_pod_logs.sh 2>&1; }
           # A breach the check must name: the case, the fake timer's last run and result, and the text naming it.
           expect_breach() {
-            local output
-            output="$(FAKE_LAST_RUN="$2" FAKE_RESULT="$3" check)" && fail "the check passed $1: $output"
-            grep -q -- "$4" <<<"$output" || fail "the check did not name $1: $output"
-            echo "the check fails on $1: $(grep -- "$4" <<<"$output")"
+            local case_name="$1" last_run="$2" result="$3" named="$4" output
+            output="$(FAKE_LAST_RUN="$last_run" FAKE_RESULT="$result" check)" &&
+              fail "the check passed $case_name: $output"
+            grep -q -- "$named" <<<"$output" || fail "the check did not name $case_name: $output"
+            echo "the check fails on $case_name: $(grep -- "$named" <<<"$output")"
           }
           pods_dir=/var/log/pods
           mkdir -p "$pods_dir/ns_pod_1/app"
