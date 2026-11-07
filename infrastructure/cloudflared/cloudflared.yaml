@@ -1,0 +1,95 @@
+# The tunnel platform's lines. A host reaches the internet only through a line here, which changes by a pull request
+# the operator merges; every other host gets the tunnel's 404. A line without an Ingress gets Traefik's 404.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared
+  namespace: cloudflared
+data:
+  config.yaml: |
+    ingress:
+      - hostname: hopin.hallucinai.de
+        service: http://traefik.traefik.svc.cluster.local:80
+      - service: http_status:404
+---
+# The token in the Secret tunnel-token, applied from platform-secrets, names the tunnel and carries its credential, so
+# this tree holds neither.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: cloudflared
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cloudflared
+      annotations:
+        # cloudflared reads its lines once, when it starts, so a changed line must roll the pod: this is the sha256 of
+        # the ConfigMap's data config.yaml, and `cluster` fails with the right value when the two differ.
+        checksum/config: 76601cc9d6f5940ca9ebddf41807c21285307fcc3ca7b1f8e5d2ed3fcb859d5f
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cloudflared
+          image: docker.io/cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+          # --metrics fixes the port of /ready, which the image would pick from a range.
+          args:
+            - tunnel
+            - --no-autoupdate
+            - --metrics
+            - 0.0.0.0:2000
+            - --config
+            - /etc/cloudflared/config/config.yaml
+            - run
+            - --token-file
+            - /etc/cloudflared/token/token
+          ports:
+            - name: metrics
+              containerPort: 2000
+          # /ready answers 200 only while the tunnel holds an edge connection. No liveness probe: cloudflared
+          # reconnects on its own, and a restart creates no connection.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: metrics
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cloudflared/config
+              readOnly: true
+            - name: token
+              mountPath: /etc/cloudflared/token
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: cloudflared
+        - name: token
+          secret:
+            secretName: tunnel-token
+---
+# No pod reads cloudflared's metrics, /ready or diagnostics. The kubelet's probes come from the node, which a
+# NetworkPolicy never blocks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress
+  namespace: cloudflared
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

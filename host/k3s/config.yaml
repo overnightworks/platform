@@ -7,7 +7,7 @@ write-kubeconfig-group: docker
 write-kubeconfig-mode: "0640"
 # Takes effect only on a first start.
 secrets-encryption: true
-# Flux's helm-controller is the cluster's one Helm reconciler.
+# No Helm reconciler runs on the PC, so k3s's own is disabled.
 disable-helm-controller: true
 # Flux owns ingress and storage; servicelb would open host ports; the RuntimeClasses name runtimes this host lacks;
 # the Gateway API chart needs the Helm controller disabled above.

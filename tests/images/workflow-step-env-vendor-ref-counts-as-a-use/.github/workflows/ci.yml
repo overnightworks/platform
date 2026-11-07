@@ -1,0 +1,13 @@
+name: ci
+on: push
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the listed client
+        env:
+          CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          CLIENT_NAMESPACE: ingress-client
+          UNROUTED_HOST: unrouted.invalid
+          VENDOR_LIST: infrastructure/admission/image-vendors.yaml
+        run: "true"

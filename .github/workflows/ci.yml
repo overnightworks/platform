@@ -49,6 +49,11 @@ jobs:
       # The dummy Secret the job encrypts, serves as platform-secrets and reads back decrypted.
       PROOF_SECRET_NAMESPACE: default
       PROOF_SECRET_NAME: decryption-proof
+      # The client Pods' image: each sends one request and is deleted after it.
+      CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+      # cloudflared's Namespace and the host its ingress names no rule for.
+      TUNNEL_NAMESPACE: cloudflared
+      UNROUTED_HOST: unrouted.invalid
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -108,6 +113,19 @@ jobs:
         run: |
           kubectl apply --server-side -f clusters/pc/flux-system/gotk-components.yaml
           kubectl -n flux-system wait deployment --all --for=condition=Available --timeout=3m
+
+      # flux install writes a binding subject for every controller, omitted ones included.
+      - name: Assert that no binding names the removed helm-controller
+        run: |
+          bindings="$(kubectl get clusterrolebindings,rolebindings --all-namespaces \
+            -o jsonpath='{range .items[*]}{.kind}{" "}{.metadata.name}{"|"}{range .subjects[*]}{.kind}{"/"}{.namespace}{"/"}{.name}{" "}{end}{"\n"}{end}')"
+          holders="$(grep -F 'ServiceAccount/flux-system/helm-controller' <<<"$bindings" || true)"
+          if [ -n "$holders" ]; then
+            echo "::error::these bindings name the ServiceAccount helm-controller, which no Deployment runs:"
+            printf '%s\n' "$holders"
+            exit 1
+          fi
+          echo "no binding names the ServiceAccount flux-system/helm-controller"
 
       - name: Check that secrets:github-host-keys passes only GitHub's own keys under github.com
         run: |
@@ -325,9 +343,10 @@ jobs:
       - name: Dry-run the layer files on the API server
         run: kubectl apply --server-side --dry-run=server -f clusters/pc
 
-      - name: Check that the committed root carries no spec.patches
+      - name: Check that the committed root and tunnel carry no spec.patches
         run: |
-          # The job root's overlay adds spec.patches, which would replace committed ones without a word (RFC 6902 add).
+          # The job root's overlay adds spec.patches to both, which would replace committed ones without a word (RFC 6902
+          # add).
           fail() { echo "::error::$1"; exit 1; }
           root_file=clusters/pc/flux-system/gotk-sync.yaml
           objects="$(kubectl create --dry-run=client -f "$root_file" \
@@ -337,6 +356,15 @@ jobs:
             "Kustomization with spec.patches")
               fail "the root Kustomization in $root_file carries spec.patches, which the job root's overlay would replace" ;;
             *) fail "$root_file holds not exactly one Kustomization" ;;
+          esac
+          tunnel_file=clusters/pc/infrastructure.yaml
+          tunnel="$(kubectl create --dry-run=client -f "$tunnel_file" -o go-template='{{if eq .metadata.name "tunnel"}}
+            {{- .kind}}{{if .spec.patches}} with spec.patches{{end}}{{"\n"}}{{end}}')"
+          case "$tunnel" in
+            Kustomization) echo "the Kustomization tunnel in $tunnel_file carries no spec.patches" ;;
+            "Kustomization with spec.patches")
+              fail "the Kustomization tunnel in $tunnel_file carries spec.patches, which the job root's patch would replace" ;;
+            *) fail "$tunnel_file holds not exactly one Kustomization tunnel" ;;
           esac
 
       - name: Reconcile the candidate tree
@@ -373,6 +401,17 @@ jobs:
                         - op: replace
                           path: /spec/sourceRef/kind
                           value: OCIRepository
+                    # cloudflared's manifests apply, but no pod runs: its token is the PC's alone.
+                    - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: tunnel}
+                      patch: |
+                        - op: add
+                          path: /spec/patches
+                          value:
+                            - target: {group: apps, kind: Deployment, name: cloudflared}
+                              patch: |
+                                - op: replace
+                                  path: /spec/replicas
+                                  value: 0
           YAML
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             pull_request_patches="$(cat <<'YAML'
@@ -443,7 +482,7 @@ jobs:
           entries="$(inventory)"
           for entry in flux-system_flux-system_source.toolkit.fluxcd.io_GitRepository \
             flux-system_source-controller_apps_Deployment flux-system_kustomize-controller_apps_Deployment \
-            flux-system_helm-controller_apps_Deployment flux-system_notification-controller_apps_Deployment; do
+            flux-system_notification-controller_apps_Deployment; do
             grep -qxF "$entry" <<<"$entries" || fail "the flux-system inventory lacks $entry"
             echo "inventory holds: $entry"
           done
@@ -498,10 +537,8 @@ jobs:
 
       - name: Assert that Traefik runs from its render, ClusterIP only, and answers 404 for an unrouted host
         env:
-          # A client Pod in its own namespace, outside Traefik's, deleted after its one request.
-          CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+          # The client Pod's own namespace, outside Traefik's.
           CLIENT_NAMESPACE: ingress-client
-          UNROUTED_HOST: unrouted.invalid
         run: |
           fail() { echo "::error::$1"; exit 1; }
           applied_revision="$(kubectl -n flux-system get kustomization traefik -o jsonpath='{.status.lastAppliedRevision}')"
@@ -510,12 +547,15 @@ jobs:
           kubectl -n traefik wait deployment/traefik --for=condition=Available --timeout=3m
           echo "the Kustomization traefik applied the candidate, and the Deployment traefik is Available"
 
-          # Charts reach the cluster only as committed manifests; the job's own platform-secrets source is no chart.
-          sources="$(kubectl get helmreleases.helm.toolkit.fluxcd.io,ocirepositories.source.toolkit.fluxcd.io -A \
+          # Charts reach the cluster only as committed manifests: no HelmRelease can exist, as its CRD is not installed,
+          # and the job's own platform-secrets source is no chart.
+          helm_release_crd="$(kubectl get crd --ignore-not-found helmreleases.helm.toolkit.fluxcd.io -o name)"
+          [ -z "$helm_release_crd" ] || fail "the cluster holds the CRD $helm_release_crd"
+          sources="$(kubectl get ocirepositories.source.toolkit.fluxcd.io -A \
             -o jsonpath='{range .items[*]}{.kind}/{.metadata.namespace}/{.metadata.name}{"\n"}{end}')"
           chart_sources="$(grep -vxF OCIRepository/flux-system/platform-secrets <<<"$sources" || true)"
           [ -z "$chart_sources" ] || fail "the cluster holds ${chart_sources//$'\n'/ }"
-          echo "no HelmRelease and no OCIRepository beyond the job's platform-secrets source exists"
+          echo "no HelmRelease CRD and no OCIRepository beyond the job's platform-secrets source exists"
           traefik_crds="$(kubectl get crd -o jsonpath='{range .items[*]}{.spec.group} {.metadata.name}{"\n"}{end}' |
             awk '$1 == "traefik.io" || $1 == "hub.traefik.io" { print $2 }')"
           [ -z "$traefik_crds" ] || fail "the cluster holds Traefik's CRDs ${traefik_crds//$'\n'/ }"
@@ -573,6 +613,327 @@ jobs:
             [ "${image_id##*@}" = "${image##*@}" ] || fail "the running Traefik container's imageID $image_id is not at the Deployment's digest"
           done <<<"$image_ids"
           echo "every running Traefik container carries the Deployment's digest"
+
+      - name: Assert that every workload layer depends on admission and was applied after it
+        env:
+          ROOT_LAYER: flux-system/flux-system
+          ADMISSION_LAYER: flux-system/admission
+          NAMESPACES_LAYER: flux-system/namespaces
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          # An inventory id is <namespace>_<name>_<group>_<kind>; Kubernetes names hold no underscore.
+          workload_id='_(apps_(Deployment|StatefulSet|DaemonSet|ReplicaSet)|batch_(Job|CronJob)|_(Pod|ReplicationController)|helm[.]toolkit[.]fluxcd[.]io_HelmRelease)$'
+          created() {
+            local namespace name group kind
+            IFS=_ read -r namespace name group kind <<<"$1"
+            kubectl get "$kind${group:+.$group}" "$name" ${namespace:+"--namespace=$namespace"} \
+              -o jsonpath='{.metadata.creationTimestamp}'
+          }
+          inventory() {
+            kubectl --namespace "${1%/*}" get kustomization "${1#*/}" \
+              -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}'
+          }
+
+          # Timestamps in one RFC 3339 form in UTC order as strings.
+          admission_applied=""
+          while IFS= read -r id; do
+            timestamp="$(created "$id")"
+            [[ $timestamp < "$admission_applied" ]] || admission_applied="$timestamp"
+          done < <(inventory "$ADMISSION_LAYER")
+          [ -n "$admission_applied" ] || fail "the Kustomization $ADMISSION_LAYER holds no object"
+          echo "the last object of $ADMISSION_LAYER was created at $admission_applied"
+
+          flux_deployments="$(yq --no-doc 'select(.kind == "Deployment") | .metadata.namespace + "_" + .metadata.name + "_apps_Deployment"' \
+            clusters/pc/flux-system/gotk-components.yaml | sort)"
+          layers="$(kubectl get kustomizations.kustomize.toolkit.fluxcd.io --all-namespaces \
+            -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"|"}{range .spec.dependsOn[*]}{.namespace}/{.name}{" "}{end}{"\n"}{end}')"
+          while IFS='|' read -r layer depends_on; do
+            entries="$(inventory "$layer")"
+            workloads="$(grep -E "$workload_id" <<<"$entries" | sort || true)"
+            case "$layer" in
+              "$ROOT_LAYER")
+                [ "$workloads" = "$flux_deployments" ] ||
+                  fail "the workloads of $layer are '${workloads//$'\n'/ }', not the Deployments of gotk-components.yaml"
+                echo "the workloads of $layer are the $(wc -l <<<"$flux_deployments") Deployments of gotk-components.yaml"
+                continue ;;
+              "$ADMISSION_LAYER") continue ;;
+              # Their Secrets live in platform-secrets, so Flux must never delete one of these namespaces.
+              "$NAMESPACES_LAYER")
+                while IFS= read -r id; do
+                  [[ $id =~ ^_([^_]+)__Namespace$ ]] || fail "$layer holds $id, which is no Namespace"
+                  prune="$(kubectl get namespace "${BASH_REMATCH[1]}" -o jsonpath='{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}')"
+                  [ "$prune" = disabled ] || fail "the Namespace ${BASH_REMATCH[1]} of $layer lacks kustomize.toolkit.fluxcd.io/prune: disabled"
+                done <<<"$entries"
+                echo "every object of $layer is a Namespace Flux never prunes" ;;
+            esac
+            [ -n "$workloads" ] || continue
+            dependencies=" "
+            for dependency in $depends_on; do dependencies+="${dependency/#\//${layer%/*}/} "; done
+            [[ $dependencies == *" $ADMISSION_LAYER "* ]] || fail "$layer holds workloads but does not depend on $ADMISSION_LAYER"
+            while IFS= read -r id; do
+              timestamp="$(created "$id")"
+              [[ ! $timestamp < "$admission_applied" ]] || fail "$id of $layer was created at $timestamp, before $ADMISSION_LAYER"
+            done <<<"$workloads"
+            echo "$layer depends on $ADMISSION_LAYER, and its workloads were created after it"
+          done <<<"$layers"
+
+      - name: Probe the image policy by server-side dry-run
+        env:
+          # The policy covers this namespace like every other one; the step deletes it after the probes.
+          PROBE_NAMESPACE: admission-probe
+          POLICY_FILE: infrastructure/admission/image-policy.yaml
+          VENDOR_LIST: infrastructure/admission/image-vendors.yaml
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          policy="$(yq 'select(.kind == "ValidatingAdmissionPolicy") | .metadata.name' "$POLICY_FILE")"
+          binding="$(yq 'select(.kind == "ValidatingAdmissionPolicyBinding") | .metadata.name' "$POLICY_FILE")"
+          vendor_list="$(yq '.metadata.namespace + "/" + .metadata.name' "$VENDOR_LIST")"
+          failure_policy="$(kubectl get validatingadmissionpolicy "$policy" -o jsonpath='{.spec.failurePolicy}')"
+          [ "$failure_policy" = Fail ] || fail "the policy $policy has failurePolicy '$failure_policy', not Fail"
+          settings="$(kubectl get validatingadmissionpolicybinding "$binding" -o jsonpath='{.spec.policyName}|{.spec.validationActions[*]}|{.spec.paramRef.namespace}/{.spec.paramRef.name}|{.spec.paramRef.parameterNotFoundAction}')"
+          [ "$settings" = "$policy|Deny|$vendor_list|Deny" ] ||
+            fail "the binding $binding reads '$settings', not '$policy|Deny|$vendor_list|Deny'"
+          echo "$policy fails closed; $binding only denies, reads $vendor_list and denies without it"
+
+          create_in() { kubectl --namespace "$1" create --dry-run=server -f -; }
+          admitted() {
+            local what="$1" output
+            shift
+            output="$("$@" 2>&1)" || fail "$what was refused: $output"
+            echo "admitted: $what"
+          }
+          # refused <what> <text>... -- <command>...: the refusal names the policy, the digest and each text.
+          refused() {
+            local what="$1" texts=() text output
+            shift
+            while [ "$1" != -- ]; do texts+=("$1") && shift; done
+            shift
+            if output="$("$@" 2>&1)"; then fail "$what was admitted"; fi
+            for text in "$policy" digest "${texts[@]}"; do
+              [[ $output == *"$text"* ]] || fail "$what was refused without naming '$text': $output"
+            done
+            echo "refused: $what: $output"
+          }
+          # probe_object <kind> <name> <Pod spec fields>: a YAML flow mapping of that kind whose Pods have the fields.
+          probe_object() {
+            local kind="$1" name="$2" spec="{$3}" template
+            case "$kind" in Pod | Job | CronJob) spec="{restartPolicy: Never, $3}" ;; esac
+            template="{metadata: {labels: {probe: $name}}, spec: $spec}"
+            case "$kind" in
+              Pod) echo "{apiVersion: v1, kind: Pod, metadata: {name: $name}, spec: $spec}" ;;
+              StatefulSet) echo "{apiVersion: apps/v1, kind: $kind, metadata: {name: $name}, spec: {serviceName: $name, selector: {matchLabels: {probe: $name}}, template: $template}}" ;;
+              Deployment | DaemonSet | ReplicaSet) echo "{apiVersion: apps/v1, kind: $kind, metadata: {name: $name}, spec: {selector: {matchLabels: {probe: $name}}, template: $template}}" ;;
+              Job) echo "{apiVersion: batch/v1, kind: Job, metadata: {name: $name}, spec: {template: $template}}" ;;
+              CronJob) echo "{apiVersion: batch/v1, kind: CronJob, metadata: {name: $name}, spec: {schedule: '@daily', jobTemplate: {spec: {template: $template}}}}" ;;
+            esac
+          }
+          one_container() { echo "containers: [{name: $1, image: '$2'}]"; }
+          template_containers='(.spec.template.spec.containers[], .spec.template.spec.initContainers[])'
+
+          # Each running vendor workload's Pod template, copied from the live object under a new name.
+          exempt=" $(kubectl get validatingadmissionpolicy "$policy" -o jsonpath='{.spec.matchConstraints.namespaceSelector.matchExpressions[?(@.operator=="NotIn")].values[*]}') "
+          live_refs=() live_deployment="" live_pod=""
+          while IFS='|' read -r namespace workload; do
+            [[ $exempt != *" $namespace "* ]] || continue
+            [ -n "$live_deployment" ] || [[ $workload != Deployment/* ]] || live_deployment="$namespace|$workload"
+            copy="$(kubectl --namespace "$namespace" get "$workload" -o yaml |
+              yq '{"apiVersion": .apiVersion, "kind": .kind, "metadata": {"name": .metadata.name + "-probe"}, "spec": .spec}')"
+            admitted "a copy of $namespace/$workload with its digests" create_in "$namespace" <<<"$copy"
+            stripped="$(yq "$template_containers.image |= sub(\"@sha256:[0-9a-f]{64}\$\"; \"\")" <<<"$copy")"
+            mapfile -t texts < <(yq "$template_containers | (.name, .image)" <<<"$stripped")
+            refused "a copy of $namespace/$workload without its digests" "${texts[@]}" -- create_in "$namespace" <<<"$stripped"
+            mapfile -t -O "${#live_refs[@]}" live_refs < <(yq "$template_containers | .image" <<<"$copy")
+          done < <(kubectl get deployments,statefulsets,daemonsets --all-namespaces \
+            -o jsonpath='{range .items[*]}{.metadata.namespace}|{.kind}/{.metadata.name}{"\n"}{end}')
+          [ -n "$live_deployment" ] || fail "no vendor Deployment runs outside the namespaces$exempt"
+          while IFS='|' read -r namespace pod; do
+            [[ $exempt == *" $namespace "* ]] || { live_pod="$namespace|pod/$pod" && break; }
+          done < <(kubectl get pods --all-namespaces --field-selector=status.phase=Running \
+            -o jsonpath='{range .items[*]}{.metadata.namespace}|{.metadata.name}{"\n"}{end}')
+          [ -n "$live_pod" ] || fail "no Pod runs outside the namespaces$exempt"
+
+          kubectl create namespace "$PROBE_NAMESPACE"
+          for namespace in "$PROBE_NAMESPACE" "${vendor_list%/*}"; do
+            kubectl --namespace "$namespace" wait serviceaccount/default --for=create --timeout=1m
+          done
+          pod() { create_in "$PROBE_NAMESPACE" <<<"$(probe_object Pod probe "$(one_container app "$1")")"; }
+          # The probes after this loop build on its last live vendor ref, its repository and its digest.
+          for ref in "${live_refs[@]}"; do
+            named="${ref%@*}" digest="${ref##*@}"
+            repository="$named"
+            [[ ${named##*/} != *:* ]] || repository="${named%:*}"
+            admitted "$repository@$digest" pod "$repository@$digest"
+            admitted "$repository:probe@$digest" pod "$repository:probe@$digest"
+          done
+
+          generated_digest="sha256:$(openssl rand -hex 32)"
+          unlisted="docker.io/someone/hopin@$generated_digest"
+          app="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/probe-app"
+          for image in "$unlisted" "${repository##*/}@$digest" "$repository:probe" "$repository:.probe@$digest" \
+            "$app:v1.0.0" "$app@$generated_digest" "GHCR.io/${app#ghcr.io/}:v1.0.0@$generated_digest" \
+            "quay.io/${app#ghcr.io/}:v1.0.0@$generated_digest"; do
+            refused "$image" app "$image" -- pod "$image"
+          done
+          admitted "the full app ref $app:v1.0.0@$generated_digest" pod "$app:v1.0.0@$generated_digest"
+          refused "an init container running $unlisted" setup "$unlisted" -- create_in "$PROBE_NAMESPACE" \
+            <<<"$(probe_object Pod probe "$(one_container app "$ref"), initContainers: [{name: setup, image: '$unlisted'}]")"
+          for kind in Pod Deployment StatefulSet DaemonSet ReplicaSet Job CronJob; do
+            refused "a $kind running $unlisted" app "$unlisted" -- create_in "$PROBE_NAMESPACE" \
+              <<<"$(probe_object "$kind" "${kind,,}-probe" "$(one_container app "$unlisted")")"
+          done
+          IFS='|' read -r namespace workload <<<"$live_deployment"
+          patch='[{"op": "replace", "path": "/spec/template/spec/containers/0/image", "value": "'"$unlisted"'"}]'
+          refused "$namespace/$workload patched to $unlisted" "$unlisted" -- \
+            kubectl --namespace "$namespace" patch "$workload" --type=json --patch="$patch" --dry-run=server
+          IFS='|' read -r namespace pod <<<"$live_pod"
+          refused "$namespace/$pod patched in place to $unlisted" "$unlisted" -- \
+            kubectl --namespace "$namespace" patch "$pod" --type=json --patch="${patch//template\/spec\//}" --dry-run=server
+
+          # The namespace of the vendor list admits listed vendor refs only.
+          refused "the full app ref in ${vendor_list%/*}" app "$app:v1.0.0@$generated_digest" -- create_in "${vendor_list%/*}" \
+            <<<"$(probe_object Pod probe "$(one_container app "$app:v1.0.0@$generated_digest")")"
+          admitted "$ref in ${vendor_list%/*}" create_in "${vendor_list%/*}" <<<"$(probe_object Pod probe "$(one_container app "$ref")")"
+          kubectl delete namespace "$PROBE_NAMESPACE" --wait --timeout=2m
+
+      - name: Assert that namespaces and tunnel applied the candidate and cloudflared runs at 0 replicas
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          # platform-secrets runs on the job's own source, whose revision is its artifact's digest.
+          for kustomization in namespaces tunnel; do
+            applied_revision="$(kubectl -n flux-system get kustomization "$kustomization" \
+              -o jsonpath='{.status.lastAppliedRevision}')"
+            [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
+              fail "the Kustomization $kustomization applied '$applied_revision', not the candidate $CANDIDATE_REVISION"
+            echo "the Kustomization $kustomization is Ready at the candidate"
+          done
+
+          replicas="$(kubectl -n "$TUNNEL_NAMESPACE" get deployment cloudflared -o jsonpath='{.spec.replicas}')"
+          [ "$replicas" = 0 ] || fail "the Deployment cloudflared runs $replicas replicas in the job, not 0"
+          echo "the Deployment cloudflared is applied at 0 replicas"
+
+      - name: Assert cloudflared's ingress from Pods built from its Deployment's template
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          deployment="$(kubectl -n "$TUNNEL_NAMESPACE" get deployment cloudflared -o json)"
+          [ "$(yq '.spec.template.spec.containers | length' <<<"$deployment")" = 1 ] ||
+            fail "the Deployment cloudflared has not exactly one container"
+          mapfile -t run_arguments < <(yq '.spec.template.spec.containers[0].args[]' <<<"$deployment")
+          config_file=""
+          for index in "${!run_arguments[@]}"; do
+            [ "${run_arguments[index]}" != --config ] || config_file="${run_arguments[index + 1]:-}"
+          done
+          [ -n "$config_file" ] || fail "the Deployment cloudflared's arguments name no --config file"
+
+          # cloudflared reads its config once, when it starts, and Flux rolls a Deployment only when its template
+          # changes: the template carries the hash of the lines, so a changed line cannot land without a rollout.
+          config_key="${config_file##*/}"
+          configmap_path="{.data.${config_key//./\\.}}"
+          expected_hash="$(kubectl -n "$TUNNEL_NAMESPACE" get configmap cloudflared -o jsonpath="$configmap_path" | sha256sum)"
+          expected_hash="${expected_hash%% *}"
+          annotated_hash="$(yq '.spec.template.metadata.annotations["checksum/config"] // ""' <<<"$deployment")"
+          [ "$annotated_hash" = "$expected_hash" ] ||
+            fail "the Deployment cloudflared's template carries checksum/config '$annotated_hash', but the lines of the ConfigMap cloudflared hash to $expected_hash: set the annotation to that hash, so the changed lines roll the pod"
+          echo "the Deployment cloudflared's template carries the hash of the ConfigMap's lines"
+          mapfile -t routed_hosts < <(kubectl -n "$TUNNEL_NAMESPACE" get configmap cloudflared -o jsonpath="$configmap_path" |
+            yq '.ingress[] | select(has("hostname")) | .hostname')
+          [ "${#routed_hosts[@]}" -gt 0 ] || fail "the ConfigMap cloudflared names no hostname"
+
+          # run_template_pod <name> <argument>...: a Pod from the Deployment's template with its Secret volumes dropped
+          # and its arguments replaced, admitted by Pod Security or refused, run once; sets pod_log and pod_exit_code.
+          run_template_pod() {
+            local name="$1"
+            shift
+            POD_NAME="$name" POD_ARGUMENTS="$(printf '%s\n' "$@")" yq -o json '
+              (.spec.template.spec.volumes | map(select(has("secret"))) | map(.name)) as $secret_volumes |
+              {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(POD_NAME)}, "spec": .spec.template.spec} |
+              .spec.restartPolicy = "Never" |
+              .spec.volumes |= map(select(has("secret") | not)) |
+              .spec.containers[0].volumeMounts |= map(select(.name as $mount | $secret_volumes | any_c(. == $mount) | not)) |
+              .spec.containers[0].args = (strenv(POD_ARGUMENTS) | split("\n"))' <<<"$deployment" |
+              kubectl -n "$TUNNEL_NAMESPACE" create -f - ||
+              fail "the API server refused the Pod $name built from the Deployment cloudflared's template"
+            kubectl -n "$TUNNEL_NAMESPACE" wait "pod/$name" --timeout=2m \
+              --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' || {
+              kubectl -n "$TUNNEL_NAMESPACE" describe "pod/$name"
+              fail "the Pod $name did not run to its end"
+            }
+            pod_exit_code="$(kubectl -n "$TUNNEL_NAMESPACE" get "pod/$name" \
+              -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
+            pod_log="$(kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$name")"
+            printf '%s\n' "$pod_log"
+            kubectl -n "$TUNNEL_NAMESPACE" delete pod "$name" --wait --timeout=2m
+          }
+          # match_rule <host>: sets matched_service to the service of the rule cloudflared matches for the host.
+          match_rule() {
+            local host="$1"
+            run_template_pod "ingress-rule-${host//./-}" tunnel --config "$config_file" ingress rule "https://$host"
+            [ "$pod_exit_code" = 0 ] || fail "cloudflared tunnel ingress rule exited $pod_exit_code for $host"
+            matched_service="$(sed -n 's/^\tservice: //p' <<<"$pod_log")"
+          }
+
+          # cloudflared prints OK only after it parsed the rules of the file it names; the last must match every host.
+          run_template_pod ingress-validate tunnel --config "$config_file" ingress validate
+          [ "$pod_exit_code" = 0 ] && grep -qx OK <<<"$pod_log" ||
+            fail "cloudflared tunnel ingress validate refused $config_file of the ConfigMap cloudflared"
+          echo "the Pod from the Deployment's template was admitted, and ingress validate passes on $config_file"
+
+          match_rule "$UNROUTED_HOST"
+          [ "$matched_service" = http_status:404 ] ||
+            fail "the tunnel sends the unrouted host $UNROUTED_HOST to '$matched_service', not http_status:404"
+          echo "the tunnel answers the unrouted host $UNROUTED_HOST with http_status:404"
+
+          # Every host the lines name goes to Traefik's Service at its web port, and a client Pod beside cloudflared sends
+          # the request cloudflared forwards; no Ingress routes the host yet, so Traefik answers 404.
+          web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
+          traefik_host="$(kubectl -n traefik get service traefik -o jsonpath='{.metadata.name}.{.metadata.namespace}.svc')"
+          client_pod_template="$(cat <<'YAML'
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: @NAME@
+          spec:
+            restartPolicy: Never
+            automountServiceAccountToken: false
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: client
+                image: @IMAGE@
+                args: [--silent, --output, /dev/null, --write-out, '%{http_code}', --max-time, '10', --retry, '5',
+                  --retry-connrefused, --retry-delay, '2', --header, 'Host: @HOST@', '@URL@']
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: [ALL]
+          YAML
+          )"
+          client_pod_template="${client_pod_template//@IMAGE@/${CLIENT_IMAGE}}"
+          for routed_host in "${routed_hosts[@]}"; do
+            match_rule "$routed_host"
+            routed_url="$matched_service"
+            [[ $routed_url =~ ^http://([^:/]+):([0-9]+)/?$ ]] ||
+              fail "the tunnel sends $routed_host to '$routed_url', not to an http URL with a host and a port"
+            [[ ${BASH_REMATCH[1]} == "$traefik_host" || ${BASH_REMATCH[1]} == "$traefik_host.cluster.local" ]] ||
+              fail "the tunnel sends $routed_host to $routed_url, not to the Service traefik of namespace traefik"
+            [ "${BASH_REMATCH[2]}" = "$web_port" ] ||
+              fail "the tunnel sends $routed_host to $routed_url, not to Traefik's web port $web_port"
+            client_pod_name="routed-request-${routed_host//./-}"
+            client_pod="${client_pod_template//@NAME@/${client_pod_name}}"
+            client_pod="${client_pod//@HOST@/${routed_host}}"
+            printf '%s\n' "${client_pod//@URL@/${routed_url}}" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
+            kubectl -n "$TUNNEL_NAMESPACE" wait "pod/$client_pod_name" --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m || {
+              kubectl -n "$TUNNEL_NAMESPACE" describe "pod/$client_pod_name"
+              kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$client_pod_name" || true
+              fail "the client Pod in $TUNNEL_NAMESPACE did not succeed for $routed_host"
+            }
+            status="$(kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$client_pod_name")"
+            kubectl -n "$TUNNEL_NAMESPACE" delete pod "$client_pod_name" --wait --timeout=2m
+            [ "$status" = 404 ] || fail "Traefik answered $status, not 404, for $routed_host at $routed_url"
+            echo "the tunnel sends $routed_host to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches Traefik's 404"
+          done
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
