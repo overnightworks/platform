@@ -56,7 +56,7 @@ Not provided: a backup of an app's state and a copy of anything off the PC. A de
 | Namespace enforces `restricted`; Deployment is `Recreate`, Available with one Ready pod, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
 | Manifests live under `apps/<app>/` and reconcile | the `cluster` job through the Kustomization `apps` |
 | No tracked `.env` file; published compose ports bind loopback | quality's gate rules `env-file` and `compose-port`, in the app repository |
-| A readiness check exists; secrets are files; no second deploy path | no check exists yet; the move checklist's answers carry them |
+| A readiness check exists; secrets are files; no second deploy path | not machine-checked; the move checklist's answers carry them |
 
 ## The move checklist
 
