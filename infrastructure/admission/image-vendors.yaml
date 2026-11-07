@@ -12,5 +12,3 @@ data:
   cloudflared: docker.io/cloudflare/cloudflared
   # .github/workflows/ci.yml, the cluster job's env CLIENT_IMAGE; https://hub.docker.com/r/curlimages/curl
   curl: docker.io/curlimages/curl
-  # SCRATCH C9 only; https://hub.docker.com/r/traefik/whoami
-  whoami: docker.io/traefik/whoami
