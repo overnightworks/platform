@@ -9,7 +9,7 @@ data:
   config.yaml: |
     ingress:
       - hostname: hopin.hallucinai.de
-        service: http://traefik.traefik.svc.cluster.local:80
+        service: http://other.traefik.svc.cluster.local:80
       - service: http_status:404
 ---
 # The token in the Secret tunnel-token, applied from platform-secrets, names the tunnel and carries its credential, so
@@ -31,7 +31,7 @@ spec:
       annotations:
         # cloudflared reads its lines once, when it starts, so a changed line must roll the pod: this is the sha256 of
         # the ConfigMap's data config.yaml, and `cluster` fails with the right value when the two differ.
-        checksum/config: 76601cc9d6f5940ca9ebddf41807c21285307fcc3ca7b1f8e5d2ed3fcb859d5f
+        checksum/config: 9610644cb56f4ad4916d8901a7de4af8c3c3335abead8b775d7f242af2599c47
     spec:
       automountServiceAccountToken: false
       securityContext:
