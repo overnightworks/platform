@@ -486,65 +486,6 @@ jobs:
           echo "GitRepository spec.ref after the reconcile: $source_ref"
           assert_job_source
 
-      - name: SCRATCH C9 whoami behind an Ingress, asked from cloudflared with X-Forwarded-For
-        env:
-          EXPECT: trusted
-        run: |
-          fail() { echo "::error::$1"; exit 1; }
-          kubectl create namespace whoami-scratch
-          kubectl -n whoami-scratch create deployment whoami --image=docker.io/traefik/whoami:v1.12.0@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44 --port=80
-          kubectl -n whoami-scratch expose deployment whoami --port=80
-          kubectl -n whoami-scratch create ingress whoami --rule="whoami.invalid/*=whoami:80"
-          kubectl -n whoami-scratch rollout status deployment/whoami --timeout=3m
-          kubectl -n traefik get deployment traefik -o json | yq '.spec.template.spec.containers[0].args[] | select(test("forwardedHeaders"))' || true
-          pod_template='apiVersion: v1
-          kind: Pod
-          metadata:
-            name: @NAME@
-          spec:
-            restartPolicy: Never
-            automountServiceAccountToken: false
-            securityContext:
-              runAsNonRoot: true
-              runAsUser: 65534
-              seccompProfile:
-                type: RuntimeDefault
-            containers:
-              - name: client
-                image: @IMAGE@
-                args: [--silent, --show-error, --max-time, "10", --write-out, "\nHTTP_STATUS=%{http_code} EXIT=%{exitcode} ERR=%{errormsg}\n", --header, "Host: whoami.invalid", --header, "X-Forwarded-For: 192.0.2.1", "http://traefik.traefik.svc:80/"]
-                securityContext:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop: [ALL]'
-          kubectl -n traefik get pods,endpoints,networkpolicy -o wide || true
-          kubectl -n traefik get svc traefik -o wide || true
-          body=""
-          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-            name="whoami-request-$attempt"
-            pod="${pod_template//@NAME@/$name}"
-            printf '%s\n' "${pod//@IMAGE@/$CLIENT_IMAGE}" | kubectl -n cloudflared create -f -
-            kubectl -n cloudflared wait "pod/$name" --timeout=2m --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}'
-            client_ip="$(kubectl -n cloudflared get "pod/$name" -o jsonpath='{.status.podIP}')"
-            body="$(kubectl -n cloudflared logs "pod/$name")"
-            kubectl -n cloudflared delete pod "$name" --wait --timeout=2m
-            grep -q 'HTTP_STATUS=200' <<<"$body" && break
-            sleep 4
-          done
-          echo "SCRATCH client Pod address: $client_ip"
-          echo "SCRATCH whoami echo begins"
-          echo "$body"
-          echo "SCRATCH whoami echo ends"
-          xff="$(grep -i '^X-Forwarded-For:' <<<"$body" || true)"
-          echo "SCRATCH xff line: $xff"
-          if [ "$EXPECT" = trusted ]; then
-            [ "$xff" = "X-Forwarded-For: 192.0.2.1, $client_ip" ] || fail "SCRATCH C9 trusted: expected 192.0.2.1 ahead of $client_ip, got '$xff'"
-            echo "SCRATCH C9 trusted HELD: 192.0.2.1 stands ahead of the client address $client_ip"
-          else
-            [ "$xff" = "X-Forwarded-For: $client_ip" ] || fail "SCRATCH C9 untrusted: expected only $client_ip, got '$xff'"
-            echo "SCRATCH C9 untrusted HELD: only the client address $client_ip"
-          fi
-
       - name: Assert that Traefik runs from its render, ClusterIP only, and answers only cloudflared's pods
         env:
           # A client Pod's namespace that is neither Traefik's nor the tunnel's, and the host its Ingress routes.
@@ -668,6 +609,66 @@ jobs:
             [ "${image_id##*@}" = "${image##*@}" ] || fail "the running Traefik container's imageID $image_id is not at the Deployment's digest"
           done <<<"$image_ids"
           echo "every running Traefik container carries the Deployment's digest"
+
+      - name: SCRATCH C9 whoami behind an Ingress, asked from cloudflared with X-Forwarded-For
+        if: always()
+        env:
+          EXPECT: trusted
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          kubectl create namespace whoami-scratch
+          kubectl -n whoami-scratch create deployment whoami --image=docker.io/traefik/whoami:v1.12.0@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44 --port=80
+          kubectl -n whoami-scratch expose deployment whoami --port=80
+          kubectl -n whoami-scratch create ingress whoami --rule="whoami.invalid/*=whoami:80"
+          kubectl -n whoami-scratch rollout status deployment/whoami --timeout=3m
+          kubectl -n traefik get deployment traefik -o json | yq '.spec.template.spec.containers[0].args[] | select(test("forwardedHeaders"))' || true
+          pod_template='apiVersion: v1
+          kind: Pod
+          metadata:
+            name: @NAME@
+          spec:
+            restartPolicy: Never
+            automountServiceAccountToken: false
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: client
+                image: @IMAGE@
+                args: [--silent, --show-error, --max-time, "10", --retry, "5", --retry-connrefused, --retry-delay, "2", --write-out, "\nHTTP_STATUS=%{http_code} EXIT=%{exitcode} ERR=%{errormsg}\n", --header, "Host: whoami.invalid", --header, "X-Forwarded-For: 192.0.2.1", "http://traefik.traefik.svc:80/"]
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: [ALL]'
+          kubectl -n traefik get pods,endpoints,networkpolicy -o wide || true
+          kubectl -n traefik get svc traefik -o wide || true
+          body=""
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            name="whoami-request-$attempt"
+            pod="${pod_template//@NAME@/$name}"
+            printf '%s\n' "${pod//@IMAGE@/$CLIENT_IMAGE}" | kubectl -n cloudflared create -f -
+            kubectl -n cloudflared wait "pod/$name" --timeout=2m --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}'
+            client_ip="$(kubectl -n cloudflared get "pod/$name" -o jsonpath='{.status.podIP}')"
+            body="$(kubectl -n cloudflared logs "pod/$name")"
+            kubectl -n cloudflared delete pod "$name" --wait --timeout=2m
+            grep -q 'HTTP_STATUS=200' <<<"$body" && break
+            sleep 4
+          done
+          echo "SCRATCH client Pod address: $client_ip"
+          echo "SCRATCH whoami echo begins"
+          echo "$body"
+          echo "SCRATCH whoami echo ends"
+          xff="$(grep -i '^X-Forwarded-For:' <<<"$body" || true)"
+          echo "SCRATCH xff line: $xff"
+          if [ "$EXPECT" = trusted ]; then
+            [ "$xff" = "X-Forwarded-For: 192.0.2.1, $client_ip" ] || fail "SCRATCH C9 trusted: expected 192.0.2.1 ahead of $client_ip, got '$xff'"
+            echo "SCRATCH C9 trusted HELD: 192.0.2.1 stands ahead of the client address $client_ip"
+          else
+            [ "$xff" = "X-Forwarded-For: $client_ip" ] || fail "SCRATCH C9 untrusted: expected only $client_ip, got '$xff'"
+            echo "SCRATCH C9 untrusted HELD: only the client address $client_ip"
+          fi
 
       - name: Assert that every workload layer depends on admission and was applied after it
         env:
