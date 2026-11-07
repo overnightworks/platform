@@ -42,6 +42,9 @@ SHA256_DIGEST_PATTERN='^@sha256:[0-9a-f]{64}$'
 # The yq programs. Each prints its records as NUL-terminated fields.
 OBJECT='(.kind + "/" + (.metadata.namespace // "") + "/" + .metadata.name)'
 FIELD_PATH='("." + (path | map(tostring) | join(".")))'
+# Every object of the Helm reconciler's group, and the two source kinds that only fetch charts.
+HELM_OBJECT='(((.apiVersion // "") | test("^helm[.]toolkit[.]fluxcd[.]io/"))
+  or (((.apiVersion // "") | test("^source[.]toolkit[.]fluxcd[.]io/")) and (.kind == "HelmRepository" or .kind == "HelmChart")))'
 KUSTOMIZATION='(.kind == "Kustomization" and ((.apiVersion // "") | test("^kustomize[.]toolkit[.]fluxcd[.]io/")))'
 POD_SPEC_PATH='({"v1 Pod": ".spec", "v1 PodTemplate": ".template.spec", "v1 ReplicationController": ".spec.template.spec",
   "apps/v1 ReplicaSet": ".spec.template.spec", "apps/v1 Deployment": ".spec.template.spec",
@@ -67,7 +70,7 @@ CI_ENV_VALUES='(["", .], ((.jobs // {}) | to_entries | .[] | .key as $job | (
 UNKNOWN_KIND_TRIGGERS="select(${POD_SPEC_PATH} == null)
   | select((.apiVersion == \"kustomize.toolkit.fluxcd.io/v1\" and .kind == \"Kustomization\") | not)
   | select((.apiVersion == \"apiextensions.k8s.io/v1\" and .kind == \"CustomResourceDefinition\") | not)
-  | select((.apiVersion // \"\") | test(\"^helm[.]toolkit[.]fluxcd[.]io/\") | not)
+  | select(${HELM_OBJECT} | not)
   | ${OBJECT} as \$object | .apiVersion as \$api_version | (
     (.. | select(tag == \"!!map\" and has(\"image\"))
       | [\$object, \$api_version, ${FIELD_PATH} + \".image\", ((.image | select(kind == \"scalar\") | tostring) // \"\"), \"key\"]),
@@ -75,7 +78,7 @@ UNKNOWN_KIND_TRIGGERS="select(${POD_SPEC_PATH} == null)
       | [\$object, \$api_version, ${FIELD_PATH}, ., \"candidate\"])
   ) | .[]"
 # Object, apiVersion.
-HELM_OBJECTS="select((.apiVersion // \"\") | test(\"^helm[.]toolkit[.]fluxcd[.]io/\")) | [${OBJECT}, .apiVersion] | .[]"
+HELM_OBJECTS="select(${HELM_OBJECT}) | [${OBJECT}, .apiVersion] | .[]"
 # Fact, object, value.
 KUSTOMIZATION_FACTS="select(${KUSTOMIZATION}) | ${OBJECT} as \$object | (
     [\"identity\", \$object, ([.apiVersion, .spec] | sort_keys(..) | to_json(0))],

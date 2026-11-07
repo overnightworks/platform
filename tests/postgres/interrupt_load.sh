@@ -36,6 +36,8 @@ for _ in $(seq 300); do
 done
 [ "$(blocked_sessions)" != 0 ] || fail "no pg_restore blocked inside its transaction within 300 seconds"
 echo "interrupt_load: pg_restore blocks inside its transaction; sending $signal to every process of the loader"
+# Their process groups decide which of them a terminal's signal would reach.
+ps -o pid=,pgid=,comm= --sid "$loader"
 pkill "-$signal" --session "$loader"
 kill "$writer" 2>/dev/null || true
 exec 3>&-
