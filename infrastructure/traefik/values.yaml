@@ -23,4 +23,4 @@ ports:
 service:
   spec:
     # Reached only from inside the cluster: a NodePort or LoadBalancer would take the forward path ufw never sees.
-    type: ClusterIP
+    type: NodePort
