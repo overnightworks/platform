@@ -15,6 +15,9 @@ blocked_sessions() {
     --command="SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
       AND xact_start IS NOT NULL AND wait_event = 'ClientRead'"
 }
+# A positive count; a failed read counts as none, so an unread session is never one that blocks.
+blocked_count() { blocked_sessions 2>/dev/null || true; }
+blocks_inside_transaction() { [[ "$(blocked_count)" =~ ^[1-9][0-9]*$ ]]; }
 case "$signal" in INT | KILL) ;; *) fail "the signal is INT or KILL, not $signal" ;; esac
 [ -f "$dump" ] || fail "$dump is no file"
 
@@ -31,10 +34,10 @@ writer=$!
 
 for _ in $(seq 300); do
   kill -0 "$loader" 2>/dev/null || fail "the loader exited before its pg_restore blocked inside its transaction"
-  [ "$(blocked_sessions)" = 0 ] || break
+  ! blocks_inside_transaction || break
   sleep 1
 done
-[ "$(blocked_sessions)" != 0 ] || fail "no pg_restore blocked inside its transaction within 300 seconds"
+blocks_inside_transaction || fail "no pg_restore blocked inside its transaction within 300 seconds"
 echo "interrupt_load: pg_restore blocks inside its transaction; sending $signal to every process of the loader"
 # Their process groups decide which of them a terminal's signal would reach.
 ps -o pid=,pgid=,comm= --sid "$loader"
