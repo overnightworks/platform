@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/instance: traefik-traefik
     app.kubernetes.io/version: "v3.7.17"
     helm.sh/chart: traefik-42.3.1
-    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/managed-by: Hand
   annotations:
 automountServiceAccountToken: false
 ---
