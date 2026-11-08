@@ -1,0 +1,8 @@
+claim_id = "6b1798637801469f9912b35c32a7cc5a"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "d57d0ea2bc2758fa2bdb0ac0d5b7c5a9d1b99829"
+branch = "claude/issue-209-p5e-grafana"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/gatus/gatus-config.yaml", "infrastructure/grafana", "mise.toml", "tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh", "tests/grafana", "tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh"]
+opened_commit = "7c449933a44b98381b3c8e82552da1d280d81a81"
+whole_reason = "One layer: its render, Flux Kustomization, vendor entry, policy, command, cell and documents prove one reachable Grafana together, and the P5c cell cannot keep creating its Namespace."
