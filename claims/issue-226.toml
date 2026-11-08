@@ -1,0 +1,8 @@
+claim_id = "bd013c2382184041a44db36d8889d34e"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "bf570f037df102d6cf79287f8db451744ff449dd"
+branch = "claude/issue-226-p9c2-admin-budget"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/keycloak/realm.yaml", "mise.toml", "scripts/litellm_keys.sh", "tests/litellm"]
+opened_commit = "3ad18548a69f790bd5ba78d12a4fd9d49e1adf55"
+whole_reason = "One command and its proof: the group it writes, the budget it links and the cell that shows both are one behaviour."
