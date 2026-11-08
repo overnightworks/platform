@@ -49,10 +49,19 @@ echo "$1" >>"$FAKE_DIR/flux.log"
 FAKE
 cat >"$fake_bin/pg_restore" <<'FAKE'
 #!/usr/bin/env bash
-case "$*" in *--data-only*) cat "$FAKE_DUMP_SQL" ;; *) cat >/dev/null ;; esac
+case "$*" in
+  *--data-only*) cat "$FAKE_DUMP_SQL" ;;
+  *)
+    cat >/dev/null
+    : >"$FAKE_DIR/restored"
+    [ -z "${FAKE_RESTORE_FAILS:-}" ] ;;
+esac
 FAKE
+# FAKE_PG_DUMP_FAILS_AT names the call, counted from 1 in each cell, that fails.
 cat >"$fake_bin/pg_dump" <<'FAKE'
 #!/usr/bin/env bash
+echo >>"$FAKE_DIR/pg_dump-calls"
+[ "$(wc -l <"$FAKE_DIR/pg_dump-calls")" != "${FAKE_PG_DUMP_FAILS_AT:-}" ] || exit 1
 cat "$FAKE_LOADED_SQL"
 FAKE
 cat >"$fake_bin/chmod" <<'FAKE'
@@ -88,7 +97,7 @@ sql_for() {
 sql_for filled empty >"$work_directory/dump.sql"
 sql_for filled empty >"$work_directory/same.sql"
 sql_for filled empty extra_empty >"$work_directory/extra.sql"
-export FAKE_DUMP_SQL="$work_directory/dump.sql"
+export FAKE_DUMP_SQL="$work_directory/dump.sql" FAKE_LOADED_SQL="$work_directory/same.sql"
 
 cell_failed_resume_exits_nonzero_and_does_not_claim_nothing_changed() {
   cell=failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
@@ -157,6 +166,22 @@ cell_interrupt_during_verification_stays_suspended() {
     fail "an interrupt during verification exited $status after flux $(tr '\n' ' ' <"$FAKE_DIR/flux.log")"
 }
 
+cell_unreadable_database_before_load_loads_nothing_and_resumes() {
+  cell=unreadable-database-before-load-loads-nothing-and-resumes
+  FAKE_PG_DUMP_FAILS_AT=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [ ! -e "$FAKE_DIR/restored" ] && [[ $flux_calls == *resume* ]] &&
+    [[ $output == *"nothing loaded"* ]] ||
+    fail "a load whose database was unreadable before it exited $status with '$output' after flux $flux_calls"
+}
+
+cell_unreadable_database_after_failed_load_is_unknown_and_stays_suspended() {
+  cell=unreadable-database-after-failed-load-is-unknown-and-stays-suspended
+  FAKE_RESTORE_FAILS=1 FAKE_PG_DUMP_FAILS_AT=2 run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"is unknown"* ]] &&
+    [[ $output == *"--resume x"* ]] && [[ $output != *unchanged* ]] ||
+    fail "a failed load on a database unreadable after it exited $status with '$output' after flux $flux_calls"
+}
+
 cell_interrupt_script_reaps() {
   cell=interrupt-script-reaps
   # A loader that refuses at once leaves nobody reading the FIFO; the dump the writer feeds exceeds the FIFO's buffer.
@@ -215,6 +240,26 @@ FAKE
     fail "interrupt_load.sh exited $unreadable_status with '$unreadable_output' for Deployments it could not read"
 }
 
+cell_interrupt_script_names_unreadable_suspension_after_kill() {
+  cell=interrupt-script-names-unreadable-suspension-after-kill
+  # A loader that blocks until killed, after which the suspension cannot be read.
+  mkdir "$work_directory/killed"
+  cat >"$work_directory/killed/mise" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  run*) umask 077; : >"$4.load.log"; sleep 60 ;;
+  *psql*) echo 1 ;;
+  *"get deployments"*) echo "writer=0" ;;
+  *"get kustomization"*) exit 1 ;;
+esac
+FAKE
+  chmod +x "$work_directory/killed/mise"
+  killed_output="$(PATH="$work_directory/killed:$PATH" tests/postgres/interrupt_load.sh x "$dump" KILL 2>&1)" &&
+    killed_status=0 || killed_status=$?
+  [ "$killed_status" != 0 ] && [[ $killed_output == *"cannot read whether the Kustomization x is suspended"* ]] ||
+    fail "interrupt_load.sh exited $killed_status with '$killed_output' for a suspension it could not read after KILL"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 cells=(
   failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
@@ -228,6 +273,9 @@ cells=(
   interrupt-script-reaps
   interrupt-script-checks-writers
   interrupt-script-fails-on-unreadable-writer-state
+  unreadable-database-before-load-loads-nothing-and-resumes
+  unreadable-database-after-failed-load-is-unknown-and-stays-suspended
+  interrupt-script-names-unreadable-suspension-after-kill
 )
 failed=()
 for name in "${cells[@]}"; do

@@ -1563,9 +1563,11 @@ jobs:
           if loaded --compare "$layer" "$dump"; then fail "a table only in the database did not stop the load"; fi
           grep -qxF 'public.extra_empty: 0 rows loaded, 0 in the dump, DIFFERS' "$output" ||
             fail "the load did not name the table only the database holds"
-          [ "$(kubectl --namespace flux-system get kustomization "$layer" -o jsonpath='{.spec.suspend}')" = true ] &&
-            [ "$(kubectl --namespace "$layer" get deployment writer -o jsonpath='{.spec.replicas}')" = 0 ] ||
-            fail "the Kustomization $layer resumed or its writer runs on data that differs from the dump"
+          held_back() {
+            [ "$(kubectl --namespace flux-system get kustomization "$layer" -o jsonpath='{.spec.suspend}')" = true ] &&
+              [ "$(kubectl --namespace "$layer" get deployment writer -o jsonpath='{.spec.replicas}')" = 0 ]
+          }
+          held_back || fail "the Kustomization $layer resumed or its writer runs on data that differs from the dump"
           sql "$layer" 'DROP TABLE extra_empty'
           loaded --resume "$layer" || fail "--resume exited non-zero"
           writers_ran
@@ -1580,6 +1582,55 @@ jobs:
           [ "$(sql "$layer" "SELECT count(*) FROM \"$key_table\"")" = 7 ] || fail "the failed load changed $key_table"
           [ "$(stat -c %a "$truncated.load.log")" = 600 ] || fail "$truncated.load.log is not at 0600"
           echo "the truncated copy failed to load, the data is unchanged and the Kustomization $layer resumed"
+
+          # An INT after the restore committed, before the loader saw kubectl's status. The wrapper lets the real
+          # kubectl run to its end and sends the INT only after the load's exec returned 0, which pg_restore
+          # --single-transaction gives only after its COMMIT; the emptied key table differs from the dump's.
+          sql "$layer" "DELETE FROM \"$key_table\""
+          after_commit="$dump_dir/interrupt-after-commit"
+          mkdir "$after_commit"
+          cat > "$after_commit/kubectl" <<'WRAPPER'
+          #!/usr/bin/env bash
+          "$REAL_KUBECTL" "$@" || exit
+          case "$*" in *"pg_restore --clean"*) kill -INT "$PPID"; exit 130 ;; esac
+          WRAPPER
+          chmod +x "$after_commit/kubectl"
+          real_kubectl="$(mise which kubectl)"
+          if REAL_KUBECTL="$real_kubectl" PATH="$after_commit:$PATH" MISE_DISABLE_TOOLS=kubectl \
+            loaded "$layer" "$dump"; then
+            fail "the load interrupted after its commit exited 0"
+          fi
+          [ "$(sql "$layer" "SELECT count(*) FROM \"$key_table\"")" = 7 ] ||
+            fail "the restore had not committed when the INT came, so the cell missed the window after the commit"
+          grep -qF 'is unknown' "$output" && grep -qF -- "--resume $layer" "$output" &&
+            ! grep -qF unchanged "$output" ||
+            fail "the load interrupted after its commit did not report an unknown outcome naming --resume"
+          held_back || fail "the Kustomization $layer resumed or its writer runs after an INT after the commit"
+          loaded --resume "$layer" || fail "--resume exited non-zero"
+          writers_ran
+          echo "an INT after the commit left $layer suspended with its writers at 0, named --resume and claimed nothing"
+
+          # A foreign session held through the whole run: the load waits for it once, names it once and resumes.
+          foreign_sessions() {
+            sql "$layer" "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'foreign_session'"
+          }
+          kubectl --namespace "$layer" exec postgres-0 --container postgres -- env PGAPPNAME=foreign_session \
+            psql --no-psqlrc --command='SELECT pg_sleep(600)' > /dev/null 2>&1 &
+          foreign=$!
+          for _ in $(seq 30); do [ "$(foreign_sessions)" = 1 ] && break; sleep 1; done
+          [ "$(foreign_sessions)" = 1 ] || fail "the foreign session did not start within 30 seconds"
+          if loaded "$layer" "$dump"; then fail "the load ran beside a foreign session"; fi
+          held_through="$(foreign_sessions)"
+          sql "$layer" "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+            WHERE application_name = 'foreign_session'" > /dev/null
+          wait "$foreign" || true
+          [ "$held_through" = 1 ] || fail "the foreign session ended before the load did"
+          [ "$(grep -c 'still holds another session' "$output")" = 1 ] && ! grep -qF 'in one transaction' "$output" ||
+            fail "a foreign session did not cost exactly one wait and one line, or the load ran"
+          [ "$(kubectl --namespace flux-system get kustomization "$layer" -o jsonpath='{.spec.suspend}')" != true ] ||
+            fail "the Kustomization $layer stayed suspended after a load that loaded nothing"
+          writers_ran
+          echo "a foreign session cost one wait and one line, nothing loaded and the Kustomization $layer resumed"
 
           flux suspend kustomization "$layer"
           if loaded "$layer" "$dump"; then fail "the load ran on a Kustomization suspended by another"; fi

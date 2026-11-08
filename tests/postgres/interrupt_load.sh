@@ -14,6 +14,13 @@ kubectl() { mise exec -- kubectl "$@"; }
 load() { mise run db:load-dump "$@"; }
 # The name leads, so a read that printed nothing is not taken for a Kustomization that is not suspended.
 suspended() { kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.metadata.name}:{.spec.suspend}'; }
+# Sets suspension to the Kustomization's spec.suspend, and fails on a read that failed or did not name it.
+read_suspension() {
+  local state
+  state="$(suspended)" || fail "cannot read whether the Kustomization $namespace is suspended"
+  [[ $state == "$namespace:"* ]] || fail "the suspension of the Kustomization $namespace read as '$state'"
+  suspension="${state#*:}"
+}
 # Sessions of the database inside a transaction that wait for their client, as a pg_restore without input does.
 blocked_sessions() {
   kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only --no-align \
@@ -93,16 +100,16 @@ session_ended || fail "a process of the loader still runs 600 seconds after $sig
   fail "$fifo_dir is not at 0700 or its load log not at 0600"
 
 if [ "$signal" = KILL ]; then
-  [ "$(suspended)" = "$namespace:true" ] || fail "the Kustomization $namespace is not suspended after the killed load"
+  read_suspension
+  [ "$suspension" = true ] || fail "the Kustomization $namespace is not suspended after the killed load"
   refusal="$(load "$namespace" "$dump" 2>&1)" && fail "a new load ran while the Kustomization was suspended"
   [[ $refusal == *"--resume $namespace"* ]] || fail "the refused load does not name --resume"
   echo "interrupt_load: a new load refuses and names --resume"
   load --resume "$namespace"
   [ "$(blocked_sessions)" = 0 ] || fail "--resume returned while a session still blocks inside its transaction"
 fi
-state="$(suspended)" || fail "cannot read whether the Kustomization $namespace is suspended"
-[[ $state == "$namespace:"* ]] || fail "the suspension of the Kustomization $namespace read as '$state'"
-[ "$state" != "$namespace:true" ] || fail "the Kustomization $namespace is still suspended"
+read_suspension
+[ "$suspension" != true ] || fail "the Kustomization $namespace is still suspended"
 replicas_after="$(replicas)" || fail "cannot read the Deployments of $namespace"
 [ "$replicas_after" = "$replicas_before" ] || fail "the Deployments of $namespace do not run at the replicas they had before"
 for deployment in $(kubectl --namespace "$namespace" get deployments -o name); do

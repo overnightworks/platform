@@ -444,14 +444,36 @@ wait_alone() {
   local deadline=$((SECONDS + 120))
   until [ "$(other_sessions)" = 0 ]; do [ "$SECONDS" -lt "$deadline" ] || return 1; sleep 2; done
 }
-# A Ctrl-C reaches mise and this script, and mise forwards it once more, so the resume ignores INT and runs at most
+# A Ctrl-C reaches mise and this script, and mise forwards it once more, so each exit path ignores INT and runs at most
 # once, to its end.
+resume_flux() {
+  trap - EXIT TERM
+  trap '' INT
+  flux resume kustomization "$namespace" --wait
+}
 resume() {
   trap - EXIT TERM
   trap '' INT
   wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; the \
 Kustomization stays suspended and the writers at 0: run mise run db:load-dump --resume $namespace once it ended"
-  flux resume kustomization "$namespace" --wait
+  resume_flux
+}
+# The sha256 of the whole database as pg_dump writes it: schema, rows and sequence values. The fixed restrict key
+# keeps pg_dump's output, and so the sum, the same while the data stays the same.
+fingerprint() { in_postgres sh -c 'set -o pipefail; pg_dump --restrict-key=fingerprint | sha256sum'; }
+# A non-zero status or a signal can follow a committed restore, and a client that died can leave its remote pg_restore
+# running, so the data counts as unchanged only once the database is alone and its fingerprint is the one before.
+failed_load() {
+  trap - EXIT TERM
+  trap '' INT
+  local after_load
+  if wait_alone && after_load="$(fingerprint)" && [ "$after_load" = "$before_load" ]; then
+    echo "db:load-dump: the data is unchanged; resuming the Kustomization $namespace" >&2
+    resume_flux
+  else
+    echo "db:load-dump: whether the load changed the data is unknown; the Kustomization $namespace stays suspended \
+and its writers at 0: check the data, then run mise run db:load-dump --resume $namespace" >&2
+  fi
 }
 if [ "${usage_resume:-false}" = true ]; then
   existing="$(kubectl --namespace flux-system get kustomization "$namespace" --ignore-not-found --output name)" ||
@@ -468,7 +490,8 @@ suspended="$(kubectl --namespace flux-system get kustomization "$namespace" -o j
   fail "the Kustomization $namespace is suspended; nothing changed. After a killed load of this command run mise run \
 db:load-dump --resume $namespace, else ask whoever suspended it"
 flux suspend kustomization "$namespace"
-trap resume EXIT
+# Before the load no session of this run writes to the database, so the resume waits for none.
+trap resume_flux EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -481,16 +504,18 @@ writers="$(kubectl --namespace "$namespace" get pods -o yaml |
   yq '.items[] | select(.metadata.ownerReferences[]?.kind == "ReplicaSet") | "pod/" + .metadata.name')"
 [ -z "$writers" ] || kubectl --namespace "$namespace" wait $writers --for=delete --timeout=5m
 wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; nothing loaded"
+before_load="$(fingerprint)" || fail "cannot read the database $namespace before the load; nothing loaded"
 
 log="$file.load.log"
 : >"$log" && chmod 0600 "$log"
 say "loading $file in one transaction; pg_restore's messages go to $log"
 # A COPY error quotes a row, also in the server's log, which these settings keep silent for this session.
+trap failed_load EXIT
 load_status=0
 dump_into_postgres env PGOPTIONS='-c log_min_messages=panic -c log_min_error_statement=panic' pg_restore --clean \
   --if-exists --no-owner --role="$namespace" --single-transaction --exit-on-error --dbname="$namespace" 2>"$log" ||
   load_status=$?
-[ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log; the data is unchanged"
+[ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log"
 # The data is committed: until it is verified, a signal or a failure leaves the writers stopped, not resumed on it.
 unverified() {
   echo "db:load-dump: the loaded data is not verified against $file; the Kustomization $namespace stays suspended and \
