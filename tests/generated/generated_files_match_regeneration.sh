@@ -6,6 +6,7 @@ generated=(clusters/pc/flux-system/gotk-components.yaml mise.lock infrastructure
 mise run flux:export
 mise lock
 mise run charts:render
+mise run legal:build
 
 # An ignored output would escape the status below.
 ignore_status=0
