@@ -6,6 +6,7 @@
 # the finished file into memory, where only Alertmanager's user reads it.
 alertmanager:
   image:
+    repository: quay.io/prometheus/alertmanager
     # The chart renders repository:tag, so the digest follows the tag; the tag alone can move.
     tag: v0.34.2@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
   # The ServiceAccount's token is of no use to it.
