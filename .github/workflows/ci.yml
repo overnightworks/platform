@@ -140,6 +140,10 @@ jobs:
         if: matrix.part == 'core'
         run: tests/generated/generated_files_match_regeneration.sh
 
+      - name: Check Prometheus' rules and their tests with promtool from the rendered image
+        if: matrix.part == 'core'
+        run: tests/prometheus/rules_pass_promtool_and_their_tests.sh
+
       - name: Create the k3d cluster with its registry
         id: create-cluster
         run: |
@@ -367,6 +371,17 @@ jobs:
           SOURCE_NAMESPACE: hopin
           OTHER_NAMESPACE: alloy-client
         run: tests/alloy/alloy_ships_pod_lines_to_loki.sh
+
+      - name: Assert that Prometheus scrapes every target and Flux's Kustomizations, goes pending on real failures, answers only its readers and keeps its claim
+        if: matrix.part == 'core'
+        env:
+          PROMETHEUS_NAMESPACE: prometheus
+          # The throwaway namespaces the step creates and removes: one of the readers the NetworkPolicy admits, one that
+          # is not and holds the Deployment at a dead image, and the Kustomization at a missing path.
+          READER_NAMESPACE: grafana
+          OTHER_NAMESPACE: prometheus-probe
+          BROKEN_KUSTOMIZATION: prometheus-probe
+        run: tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
