@@ -196,27 +196,30 @@ expect_reach '{}' open closed open open
 echo "LiteLLM reaches only its Postgres and agent-egress, agent-egress and the front no target, though DNS resolves for" \
   "both, a Pod without labels all but agent-egress"
 
-# The gateway's own TLS alert ends a handshake whose SNI no router allows. The provider's SNI passes to a dial of the
-# provider's resolved address, which the closed egress fails: the gateway logs that dial's error and closes the
-# handshake without an alert. curl waits past Traefik's 30 s dial timeout, so a dropped dial ends in the gateway too.
-# Exit 35 is curl's failed handshake: a refused connection to the gateway (7), a certificate (60) or a timeout (28)
-# fail the cell, and so does a dial error that names a DNS lookup.
+# A handshake whose SNI no router allows ends in the gateway, which dials nothing. The provider's SNI passes to a dial
+# of the provider's resolved address, which the closed egress fails: the gateway logs that dial's error and ends the
+# handshake. curl waits past Traefik's 30 s dial timeout, so a dropped dial ends in the gateway too. Exit 35 is curl's
+# failed handshake: a refused connection to the gateway (7), a certificate (60) or a timeout (28) fail the cell, and so
+# does a dial error that names a DNS lookup.
+# sni_handshake <SNI>: a Pod with LiteLLM's labels opens TLS with the SNI to agent-egress; sets exit_code, output to
+# curl's error and dial_error to the dial errors the gateway logged since.
 sni_handshake() {
+  local start
+  start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   run_client "$namespace" litellm-sni '{"app.kubernetes.io/name": "litellm"}' --silent --show-error --output /dev/null \
     --max-time 45 "${retry[@]}" --resolve "$1:$egress_port:$egress_address" "https://$1:$egress_port/"
+  dial_error="$(kubectl --namespace "$namespace" logs deployment/agent-egress --since-time="$start" |
+    grep 'Error while dialing backend' || true)"
 }
 sni_handshake "$THIRD_SNI"
-[ "$exit_code" = 35 ] && grep -q alert <<<"$output" ||
-  fail "the SNI $THIRD_SNI did not end in the gateway's alert: exit $exit_code"
-dial_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+[ "$exit_code" = 35 ] && [ -z "$dial_error" ] ||
+  fail "the SNI $THIRD_SNI did not end in the gateway without a dial: exit $exit_code, $output, [$dial_error]"
+echo "agent-egress ends the SNI $THIRD_SNI without a dial: $output"
 sni_handshake "$provider_host"
-[ "$exit_code" = 35 ] && ! grep -q alert <<<"$output" ||
-  fail "the SNI $provider_host got an alert, an answer or no handshake end from the gateway: exit $exit_code"
-dial_error="$(kubectl --namespace "$namespace" logs deployment/agent-egress --since-time="$dial_start" |
-  grep 'Error while dialing backend' || true)"
-grep -Eq "dial tcp [^ ]+:443: " <<<"$dial_error" && ! grep -q lookup <<<"$dial_error" ||
-  fail "agent-egress logged no failed dial of a resolved provider address: [$dial_error]"
-echo "agent-egress ends the SNI $THIRD_SNI with its alert and passes $provider_host to a dial the closed egress fails:"
+[ "$exit_code" = 35 ] && grep -Eq "dial tcp [^ ]+:443: " <<<"$dial_error" && ! grep -q lookup <<<"$dial_error" ||
+  fail "the SNI $provider_host did not end in a failed dial of a resolved provider address: exit $exit_code, $output,
+[$dial_error]"
+echo "agent-egress passes $provider_host to a dial the closed egress fails: $output"
 printf '%s\n' "$dial_error"
 
 # LiteLLM's start check, read from the live Deployment, runs in a client Pod under the same busybox sh with fake

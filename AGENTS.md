@@ -212,9 +212,9 @@
   or in `litellm` gets no answer from the front, and one in `hopin` or `litellm` none from LiteLLM, while each gets
   one from the API server; of its Postgres, agent-egress, the Service `kubernetes` and the first provider host, each
   name resolved, a Pod with LiteLLM's labels reaches only the first two, one with agent-egress's or the front's labels
-  none, and one without labels all but agent-egress; through agent-egress a third SNI ends in the gateway's TLS
-  alert, while the provider's ends without one after the gateway logged its failed dial of a resolved provider
-  address; and LiteLLM's start, read from its Deployment and run with fake values in a client Pod's busybox sh,
+  none, and one without labels all but agent-egress; through agent-egress a third SNI's handshake ends in the gateway
+  without a dial, while the provider's ends after the gateway logged its failed dial of a resolved provider address;
+  and LiteLLM's start, read from its Deployment and run with fake values in a client Pod's busybox sh,
   refuses each key and the password empty, ending in a newline, with a space or a non-ASCII byte, and the password
   outside the URL-safe alphabet, naming only the variable, while a good set reaches the exec at core limit 0. k3d
   does not prove a provider call through an open egress.
