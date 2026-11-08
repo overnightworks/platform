@@ -1,8 +1,112 @@
 # Prometheus' chart values; mise run charts:render renders them into rendered.yaml beside this file. A bump changes the
 # chart digest in that task and each image tag and digest here together and regenerates.
-# Alertmanager, node-exporter (host mounts, which Pod Security restricted refuses) and the pushgateway are not run.
+# node-exporter (host mounts, which Pod Security restricted refuses) and the pushgateway are not run.
+# Alertmanager mails each alert once when it fires and once when it resolves. The route stands here as a template; the
+# init container fills in the four values of the Secret alertmanager, which stand only in platform-secrets, and writes
+# the finished file into memory, where only Alertmanager's user reads it.
 alertmanager:
-  enabled: false
+  image:
+    # The chart renders repository:tag, so the digest follows the tag; the tag alone can move.
+    tag: v0.34.2@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
+  # The ServiceAccount's token is of no use to it.
+  automountServiceAccountToken: false
+  # Without the reloader the chart puts checksum/config on the pod, so a changed route rolls it.
+  configmapReload:
+    enabled: false
+  extraArgs:
+    config.file: /run/alertmanager/alertmanager.yml
+    # The notification log ends with this retention, after which a still-firing alert would be mailed again; the
+    # repeat interval below is as long.
+    data.retention: 8760h
+  persistence:
+    # Annotated so neither a prune nor the StatefulSet's deletion takes the claim, whose notification log keeps a
+    # restart from mailing every firing alert again. The log and the silences take kilobytes.
+    size: 100Mi
+    storageClass: local-path
+    annotations:
+      kustomize.toolkit.fluxcd.io/prune: disabled
+  extraVolumes:
+    - name: mail-config
+      emptyDir:
+        medium: Memory
+        sizeLimit: 1Mi
+  extraVolumeMounts:
+    - name: mail-config
+      mountPath: /run/alertmanager
+      readOnly: true
+  extraInitContainers:
+    - name: mail-config
+      image: docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+      env:
+        - name: SMARTHOST
+          valueFrom: {secretKeyRef: {name: alertmanager, key: smarthost}}
+        - name: USERNAME
+          valueFrom: {secretKeyRef: {name: alertmanager, key: username}}
+        - name: TO
+          valueFrom: {secretKeyRef: {name: alertmanager, key: to}}
+        - name: PASSWORD
+          valueFrom: {secretKeyRef: {name: alertmanager, key: password}}
+      volumeMounts:
+        - name: config
+          mountPath: /etc/alertmanager
+          readOnly: true
+        - name: mail-config
+          mountPath: /run/alertmanager
+      command:
+        - sh
+        - -c
+        - |
+          set -eu
+          umask 077
+          # A refusal names the key and never its value. The template holds the three values in quoted YAML scalars
+          # and sed's s|..|..| puts them there, so each is limited to the characters of a host:port or an address.
+          refuse() { echo "mail-config: the key $1 of the Secret alertmanager is empty, malformed or holds a character the mail template cannot hold" >&2; exit 1; }
+          case $SMARTHOST in ''|*[!A-Za-z0-9.:-]*) refuse smarthost ;; esac
+          # Alertmanager refuses a smarthost without a port at load, naming the host in its log.
+          case $SMARTHOST in [A-Za-z0-9]*:[0-9]*) ;; *) refuse smarthost ;; esac
+          case $USERNAME in ''|*[!A-Za-z0-9._%+@-]*) refuse username ;; esac
+          case $TO in ''|*[!A-Za-z0-9._%+@-]*) refuse to ;; esac
+          # The password goes to its own file, which Alertmanager reads; only a newline cannot be part of it.
+          newline='
+          '
+          case $PASSWORD in ''|*"$newline"*) refuse password ;; esac
+          printf '%s' "$PASSWORD" > /run/alertmanager/password
+          sed -e "s|@SMARTHOST@|$SMARTHOST|g" -e "s|@USERNAME@|$USERNAME|g" -e "s|@TO@|$TO|g" \
+            /etc/alertmanager/alertmanager.yml > /run/alertmanager/alertmanager.yml
+  # One mail per alert: every label is a grouping label, so no two alerts share a mail. The repeat interval is a year,
+  # so none is repeated while it fires; the resolved mail follows within the group interval.
+  config:
+    templates: []
+    global:
+      smtp_smarthost: '@SMARTHOST@'
+      smtp_from: '@USERNAME@'
+      smtp_auth_username: '@USERNAME@'
+      smtp_auth_password_file: /run/alertmanager/password
+    route:
+      receiver: mail
+      group_by: ['...']
+      group_wait: 10s
+      group_interval: 30s
+      repeat_interval: 8760h
+    receivers:
+      - name: mail
+        email_configs:
+          - to: '@TO@'
+            send_resolved: true
+            html: ''
+            headers:
+              Subject: '[{{ .Status }}] {{ .CommonLabels.alertname }}'
+            text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
 prometheus-node-exporter:
   enabled: false
 prometheus-pushgateway:
@@ -92,6 +196,9 @@ scrapeConfigs:
   kube-state-metrics:
     static_configs:
       - targets: [prometheus-kube-state-metrics.prometheus.svc:8080]
+  alertmanager:
+    static_configs:
+      - targets: [prometheus-alertmanager.prometheus.svc:9093]
   # Flux's controllers serve their metrics on the port http-prom, which flux-system's NetworkPolicy opens to every namespace.
   flux-controllers:
     kubernetes_sd_configs:
@@ -99,6 +206,10 @@ scrapeConfigs:
         namespaces:
           names: [flux-system]
     relabel_configs:
+      # A Pod that has finished keeps a target that reads down, which would fire TargetDown for nothing.
+      - source_labels: [__meta_kubernetes_pod_phase]
+        action: keep
+        regex: Running
       - source_labels: [__meta_kubernetes_pod_container_port_name]
         action: keep
         regex: http-prom

@@ -109,9 +109,10 @@ metadata:
   name: prometheus
   namespace: flux-system
 spec:
-  # storage for the claim, admission for the workloads.
+  # storage for the claims, admission for the workloads, platform-secrets for the Secret alertmanager.
   dependsOn:
     - name: admission
+    - name: platform-secrets
     - name: storage
   interval: 10m0s
   path: ./infrastructure/prometheus

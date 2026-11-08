@@ -28,3 +28,51 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
+---
+# Alertmanager takes alerts from Prometheus and a read from the status page, and it sends only to cluster DNS and to a
+# mail provider's submission ports (465, 587) outside the pod and service networks, so the Service kubernetes and
+# every other cluster address stay out of reach of the pod that holds the provider's password.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager
+  namespace: prometheus
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [gatus, prometheus]
+      ports:
+        - port: 9093
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.42.0.0/16, 10.43.0.0/16]
+      ports:
+        - port: 465
+          protocol: TCP
+        - port: 587
+          protocol: TCP

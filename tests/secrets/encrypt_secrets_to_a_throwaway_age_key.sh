@@ -84,11 +84,16 @@ done
 [ "${#postgres_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $POSTGRES_BASE"
 
 # Each Secret a container of a layer in SECRET_KEY_LAYERS reads by key, beside the Postgres base's, gets a dummy per
-# key, in the URL-safe alphabet.
+# key, in the URL-safe alphabet; Alertmanager's smarthost, username and recipient take the forms its init container
+# accepts, on a name that never resolves, so a send fails at the lookup.
 key_secrets=()
 while read -r secret_namespace secret_name secret_key; do
   [ "$secret_name" != "$postgres_secret" ] || continue
-  value="$(openssl rand -hex 32)"
+  case "$secret_namespace/$secret_name/$secret_key" in
+    prometheus/alertmanager/smarthost) value="mail.invalid:587" ;;
+    prometheus/alertmanager/username | prometheus/alertmanager/to) value="$secret_key@mail.invalid" ;;
+    *) value="$(openssl rand -hex 32)" ;;
+  esac
   echo "::add-mask::$value"
   printf '%s' "$value" > "$(secret_files "$secret_name" "$secret_namespace")/$secret_key"
   [[ " ${key_secrets[*]} " == *" $secret_namespace/$secret_name "* ]] || key_secrets+=("$secret_namespace/$secret_name")
