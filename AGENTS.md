@@ -64,6 +64,8 @@
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
   per host and hal's console answers on another port of `localhost`.
+- `mise run gatus:open` forwards `127.0.0.1` at the port of Gatus's Service to it and prints the address of the status page;
+  the page has no other way in.
 - `mise run keycloak:agent-owner [--adder] <client> <username>` runs through kcadm in Keycloak's
   container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
   `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
@@ -356,7 +358,7 @@
   through Traefik's `web`; its NetworkPolicy admits only namespace `traefik` to hopin's port, so hopin trusts the
   forwarded addresses of the pod network in `HOPIN_TRUSTED_PROXIES` only behind that policy.
 - `apps/speech-runtime/`: speech-runtime's Deployment, Service, caller table (a ConfigMap) and NetworkPolicy, which
-  admits port 8080 only from the namespaces `hopin` and `presentator`. One pod runs on the CPU with a read-only root
+  admits port 8080 only from the namespaces `hopin`, `presentator` and `gatus`. One pod runs on the CPU with a read-only root
   and a memory-backed `/tmp`, its image the full app ref of a release that changes only in a pull request, together
   with the caller table's keys the image knows, and pulled through the Secret `ghcr-pull` from
   `platform-secrets`. It has no Secret of its own and no route; it is ready when both models are.
@@ -397,7 +399,7 @@
   not start unless each key and the password is one non-empty printable line and the password URL-safe; it starts
   with core dumps off, admits only the front and sends only to cluster DNS, its Postgres and agent-egress, which its
   `hostAliases` name for the provider hosts at the fixed ClusterIP of agent-egress's Service, in k3s's default
-  service CIDR. The front, a Traefik on port 4000, admits only the namespaces `hopin`, `presentator` and `songmaker`
+  service CIDR. The front, a Traefik on port 4000, admits only the namespaces `hopin`, `presentator`, `songmaker` and `gatus`
   and passes only `POST /v1/chat/completions`, `POST /v1/images/generations` and `GET /v1/models` without a query
   string. agent-egress, a Traefik on 443 that admits only LiteLLM, passes TLS
   only for the SNIs of `egress-allowed.yml` and sends only to cluster DNS, so nothing the copy of hal's data holds
@@ -441,8 +443,8 @@
   `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A chart or image bump
   changes the task's chart digest, `image.digest` and `versionOverride` together and regenerates, by hand in a pull
   request, and the `images:` entry of `infrastructure/litellm/kustomization.yaml`, the image of the Deployments
-  `litellm-front` and `agent-egress`, with them. Its NetworkPolicy admits only pods of namespace `cloudflared`, and
-  only to the `web` port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied,
+  `litellm-front` and `agent-egress`, with them. Its NetworkPolicy admits only pods of namespaces `cloudflared` and `gatus`,
+  and only to the `web` port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied,
   while the node's probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
   `host/k3s/config.yaml` sets no `cluster-cidr` (`cluster` checks it against the nodes' pod CIDRs), and carries hal's
   entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character refused with 400 by
@@ -456,11 +458,11 @@
   `loki.image.digest` together and regenerates, by hand in a pull request. `limits_config.retention_period` of 28 days
   with the compactor's retention on is the one rule for Loki's copy of every line, which the privacy texts promise gone
   before 30 days; the compactor runs at start, so a PC that was off deletes shortly after its next start. The claim
-  is on the Retain class and carries the prune annotation. Its NetworkPolicy admits only the namespaces `alloy` and
-  `grafana`, and only to port 3100. In k3d a client Pod in namespace `alloy`, which the layer `alloy` owns and the cell
-  leaves, pushes a line and reads it back by LogQL; the configuration at `/config` has the retention on at most 28 days
-  with a `delete_request_store`; a Pod in a throwaway namespace gets no answer; the claim is Bound on a Retain volume
-  with prune disabled; the throwaway namespace is gone on every exit.
+  is on the Retain class and carries the prune annotation. Its NetworkPolicy admits only the namespaces `alloy`, `grafana`
+  and `gatus`, and only to port 3100. In k3d a client Pod in a throwaway namespace `alloy` pushes a line and reads it
+  back by LogQL; the configuration at `/config` has the retention on at most 28 days with a `delete_request_store`; a
+  Pod in another namespace gets no answer; the claim is Bound on a Retain volume with prune disabled; the throwaway
+  namespaces are gone on every exit.
 - `infrastructure/alloy/`: Alloy, one pod with the image `docker.io/grafana/alloy` at a digest, in a Namespace that
   enforces Pod Security `restricted`; a plain manifest, since the chart's ClusterRole grants `secrets`, `configmaps` and
   `nodes` and no value narrows it. `config.alloy` is `discovery.kubernetes` into `loki.source.kubernetes`, which reads
@@ -495,6 +497,18 @@
   path make `DeploymentUnavailable` and `KustomizationNotReady` pending, a Pod in the throwaway namespace `grafana`
   gets 200 and one in another namespace no answer, the claim is Bound on a Retain volume with prune disabled, and the
   throwaway objects are gone on every exit.
+- `infrastructure/gatus/`: Gatus, the status page, in a Namespace that enforces Pod Security `restricted`: one pod with
+  `Recreate`, storage `memory` (a restart forgets the history; nothing is backed up) and metrics off. Its configuration
+  is a generated ConfigMap whose name carries its content's hash, so a change rolls the pod. Every 60 seconds it asks
+  hopin's `/health` and Keycloak's discovery of the realm `hallucinai` through Traefik's `web` with each app's Host
+  header, speech-runtime's `/health`, skat's `/health`, Loki's `/ready` and Prometheus's `/-/ready` directly at each
+  Service, and LiteLLM's front for `GET /v1/models` without a key, which must answer 401 since Gatus holds no key. The
+  NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus and the front admit the namespace `gatus` on the port
+  its request uses; hopin and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
+  Service and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
+  headers from; it sends only the requests of its configuration. In k3d, through a port-forward, every endpoint of the
+  configuration is healthy, speech-runtime at scale 0 turns unhealthy and, restored and Ready, healthy again, and a Pod
+  in another namespace gets no answer from Gatus.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's

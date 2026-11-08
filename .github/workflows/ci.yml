@@ -224,7 +224,7 @@ jobs:
       - name: Assert that Flux reconciled the candidate commit and decrypted the dummy
         run: tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh
 
-      - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's pods and routes the app, and that speech-runtime answers only its callers' pods
+      - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's and Gatus's pods and routes the app, and that speech-runtime answers only its callers' pods
         if: matrix.part == 'core'
         env:
           # A client Pod's namespace that is neither Traefik's nor the tunnel's nor speech-runtime's callers', and the
@@ -371,6 +371,17 @@ jobs:
           WRITER_NAMESPACE: alloy
           OTHER_NAMESPACE: loki-client
         run: tests/loki/loki_keeps_lines_under_28_days.sh
+
+      - name: Assert that Gatus shows every endpoint healthy, shows a stopped service unhealthy and healthy again, and answers no Pod
+        if: matrix.part == 'core'
+        env:
+          # The service the cell stops and restores, by its Namespace, Deployment and Gatus endpoint, and a namespace for
+          # the Pod that must get no answer.
+          STOPPED_NAMESPACE: speech-runtime
+          STOPPED_DEPLOYMENT: speech-runtime
+          STOPPED_ENDPOINT: speech-runtime
+          OTHER_NAMESPACE: gatus-client
+        run: tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh
 
       - name: Assert that Alloy ships a pod's line to Loki with three labels, holds one ClusterRole with exactly two rules and answers nobody
         if: matrix.part == 'core'
