@@ -181,12 +181,16 @@ kubectl --namespace "$empty_namespace" delete configmap postgres-empty-first-tab
 echo "the restore test of $empty_namespace fails on an empty first key table"
 
 # A namespace reaches only its own repository; no credentials reach none; a namespace without one reaches the server not.
+# A fresh Pod's first connection can meet a refusal before the network policy admits its address, so the requests that
+# expect an answer retry a refused connection for a bounded time; curl retries no 401 or 403, and the request that expects
+# no answer carries no retry.
+retry=(--retry 5 --retry-connrefused --retry-delay 2 --retry-max-time 30)
 first="${BACKUP_NAMESPACES%% *}"
 second="${BACKUP_NAMESPACES##* }"
 [ "$first" != "$second" ] || fail "the isolation proof needs two backup namespaces, but BACKUP_NAMESPACES is '$BACKUP_NAMESPACES'"
-request "$first" no-credentials-own "$UNROUTED_HOST" "$rest_base/$first/config"
+request "$first" no-credentials-own "$UNROUTED_HOST" "$rest_base/$first/config" "${retry[@]}"
 [ "$status" = 401 ] || fail "without credentials the server answered $status under /$first/"
-request "$first" no-credentials-foreign "$UNROUTED_HOST" "$rest_base/$second/config"
+request "$first" no-credentials-foreign "$UNROUTED_HOST" "$rest_base/$second/config" "${retry[@]}"
 [ "$status" = 401 ] || fail "without credentials the server answered $status under /$second/"
 echo "without credentials the server answers 401 everywhere"
 request "$OUTSIDE_NAMESPACE" outside-namespace "$UNROUTED_HOST" "$rest_base/$first/config"
@@ -196,11 +200,12 @@ echo "a pod in $OUTSIDE_NAMESPACE gets no answer, while a pod in $first was answ
 credential_requests='
 status() {
   printf "user = \"%s:%s\"\n" "$RESTIC_REST_USERNAME" "$RESTIC_REST_PASSWORD" |
-    curl --silent --output /dev/null --write-out "%{http_code}\n" --config - "$@"
+    curl --silent --output /dev/null --write-out "%{http_code}\n" @RETRY@ --config - "$@"
 }
 status "@BASE@/@OWN@/config"
 status "@BASE@/@OTHER@/config"
 status --request DELETE "@BASE@/@OTHER@/config"'
+credential_requests="${credential_requests//@RETRY@/${retry[*]}}"
 credential_requests="${credential_requests//@BASE@/$rest_base}"
 credential_requests="${credential_requests//@OWN@/$first}"
 run_restic "$first" isolation-check "${credential_requests//@OTHER@/$second}"
