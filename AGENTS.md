@@ -178,9 +178,9 @@
   route for a host an Ingress routes; on a host a line restricts by path, `/` gets `http_status:404`. k3d does not
   prove the edge connection, the token mount or `/ready`. The step "P7a cells" then asserts the one default class
   retains, each Postgres is Ready as its image's postgres user on a bound claim of it with the prune annotation at
-  `<namespace>/<claim>`, and `pg_isready` passes as the namespace's user; shows that each Kustomization over an app that
-  includes the base holds exactly the base's objects of the app's namespace, that no other Kustomization holds one but
-  platform-secrets' Secrets, and that it depends on `admission`, `platform-secrets` and `storage`; deletes the Kustomization `litellm`, whose
+  `<namespace>/<claim>`, and `pg_isready` passes as the namespace's user; shows that each Postgres namespace's Kustomization,
+  named like it, holds the base's objects of the namespace, that no other Kustomization holds one but platform-secrets'
+  Secrets, and that it depends on `admission`, `platform-secrets` and `storage`; deletes the Kustomization `litellm`, whose
   inventory goes while the claim, its volume and the Namespace stay, and the root re-creates it with the row written
   before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two synthetic dumps it
   makes, one of data and one whose table of contents is most of the file, with the Kustomization `litellm` pointed at
