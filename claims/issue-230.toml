@@ -1,0 +1,7 @@
+claim_id = "dc5791c458354cd4a414024278274fbb"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "bb72860500087f82c1273aed60c1e89a5345702c"
+branch = "claude/issue-230-remove-link-before-worker"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "tests/no_network"]
+opened_commit = "0a600b3c2174785550f85d6b868423a5d5817b38"
