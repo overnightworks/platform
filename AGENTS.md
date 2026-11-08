@@ -335,7 +335,7 @@
   `mise run charts:render`, not edited by hand; `cluster` fails when a regeneration differs. `skipSnapshotSync` keeps
   k8up from writing Snapshot objects, which would record the REST repository URL with its password, and
   `skipWithoutAnnotation` makes a backup hold only what a Pod's `k8up.io/backupcommand` streams;
-  a volume without that annotation is skipped.
+  a claim without k8up's backup annotation is skipped.
 - `infrastructure/backup/`: the platform's one `rest-server` with `--private-repos`, in namespace `backup`: one user and
   repository per namespace, its htpasswd built by an initContainer from the Secret `rest-users` (one file per user,
   from `platform-secrets`); the user equals the namespace, since `--private-repos` admits a user only to the path of its

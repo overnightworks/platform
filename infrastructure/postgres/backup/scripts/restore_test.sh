@@ -17,8 +17,7 @@ pg_ctl --pgdata="$server/data" --wait --silent --log="$server/server.log" \
 trap 'pg_ctl --pgdata="$server/data" --mode=immediate --silent stop' EXIT
 createdb "$PGDATABASE"
 restore_status=0
-PGOPTIONS='-c log_min_messages=panic -c log_min_error_statement=panic' \
-  pg_restore --exit-on-error --no-owner --dbname="$PGDATABASE" "$dump" 2>"$server/restore.log" || restore_status=$?
+pg_restore --exit-on-error --no-owner --dbname="$PGDATABASE" "$dump" 2>"$server/restore.log" || restore_status=$?
 if [ "$restore_status" != 0 ]; then
   echo "restore-test: pg_restore exited $restore_status with $(grep -c . "$server/restore.log" || true) message lines"
   exit 1

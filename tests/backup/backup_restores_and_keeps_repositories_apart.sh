@@ -68,7 +68,7 @@ echo "the restore test of each namespace reads with the operator's own image"
 # The restore test fails on the empty repository that restic init made; its positive control follows.
 for namespace in $BACKUP_NAMESPACES; do
   run_restic "$namespace" "repository-init" 'restic --no-cache init'
-  [ "$restic_exit" = 0 ] || fail "restic init did not initialise the repository of $namespace (exit $restic_exit)"
+  [ "$restic_exit" = 0 ] || fail "restic init did not initialise the repository of $namespace (exit $restic_exit): $restic_output"
   run_restore_test "$namespace" no-snapshot-test
   [ "$status" = failed ] || fail "the restore test of $namespace passed on a repository without a snapshot"
 done
@@ -78,22 +78,22 @@ for namespace in $BACKUP_NAMESPACES; do
   # One backup, as the Schedule would start it.
   schedule="$(kubectl --namespace "$namespace" get schedule postgres --output json)"
   kubectl --namespace "$namespace" create --filename - <<<"$(yq --output-format json \
-    '{ "apiVersion": "k8up.io/v1", "kind": "Backup", "metadata": { "name": "d1-backup" },
+    '{ "apiVersion": "k8up.io/v1", "kind": "Backup", "metadata": { "name": "first-backup" },
        "spec": { "backend": .spec.backend, "podConfigRef": .spec.podConfigRef } }' <<<"$schedule")" >/dev/null
   deadline=$((SECONDS + 600))
   while :; do
-    reason="$(kubectl --namespace "$namespace" get backup d1-backup \
+    reason="$(kubectl --namespace "$namespace" get backup first-backup \
       --output jsonpath='{.status.conditions[?(@.type=="Completed")].reason}')"
     [ -z "$reason" ] || break
     if [ "$SECONDS" -ge "$deadline" ]; then
-      kubectl --namespace "$namespace" describe backup d1-backup
+      kubectl --namespace "$namespace" describe backup first-backup
       kubectl --namespace "$namespace" get jobs,pods
       fail "the Backup of $namespace did not complete within 10 minutes"
     fi
     sleep 5
   done
   [ "$reason" = Succeeded ] || {
-    kubectl --namespace "$namespace" describe backup d1-backup
+    kubectl --namespace "$namespace" describe backup first-backup
     fail "the Backup of $namespace ended with reason $reason"
   }
 
