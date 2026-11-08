@@ -9,6 +9,12 @@ data:
   # infrastructure/traefik/rendered.yaml and infrastructure/litellm/kustomization.yaml;
   # https://hub.docker.com/_/traefik
   traefik: docker.io/library/traefik
+  # infrastructure/prometheus/rendered.yaml; https://quay.io/repository/prometheus/prometheus
+  prometheus: quay.io/prometheus/prometheus
+  # infrastructure/prometheus/rendered.yaml; https://quay.io/repository/prometheus-operator/prometheus-config-reloader
+  prometheus-config-reloader: quay.io/prometheus-operator/prometheus-config-reloader
+  # infrastructure/prometheus/rendered.yaml; https://github.com/kubernetes/kube-state-metrics#container-image
+  kube-state-metrics: registry.k8s.io/kube-state-metrics/kube-state-metrics
   # infrastructure/loki/rendered.yaml; https://hub.docker.com/r/grafana/loki
   loki: docker.io/grafana/loki
   # infrastructure/alloy/alloy.yaml; https://hub.docker.com/r/grafana/alloy
@@ -22,6 +28,8 @@ data:
   # infrastructure/storage/kustomization.yaml, local-path's helper pod, and .github/workflows/ci.yml, the cluster job's
   # env PROBE_IMAGE; https://hub.docker.com/_/busybox
   busybox: docker.io/library/busybox
+  # infrastructure/legal/legal.yaml; https://hub.docker.com/r/nginxinc/nginx-unprivileged
+  nginx-unprivileged: docker.io/nginxinc/nginx-unprivileged
   # infrastructure/postgres/postgres.yaml; https://hub.docker.com/_/postgres
   postgres: docker.io/library/postgres
   # infrastructure/litellm/litellm.yaml; https://github.com/BerriAI/litellm/pkgs/container/litellm

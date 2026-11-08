@@ -1,0 +1,30 @@
+# Prometheus holds every metric of the platform: only the namespaces grafana (reads), gatus (reads) and its own, labels
+# the API server sets and no other namespace can carry, may open its web port, and only its own namespace
+# kube-state-metrics' port. Every other sender and port is denied; the kubelet's probes come from the node, which a
+# NetworkPolicy never blocks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-from-readers-only
+  namespace: prometheus
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [grafana, gatus, prometheus]
+      ports:
+        - port: 9090
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: prometheus
+      ports:
+        - port: 8080
+          protocol: TCP
