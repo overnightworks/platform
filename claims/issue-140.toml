@@ -1,8 +1,0 @@
-claim_id = "24fd4712179a444aaedb3d4f1c9cea0d"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "68b0a107b25bfd5d2c987257b53e3ffa94761e2a"
-branch = "claude/issue-140-grant-no-sudo-steps"
-scope = ["AGENTS.md", "docs/app.md", "infrastructure/cloudflared/cloudflared.yaml", "mise.toml"]
-opened_commit = "19911e68cc117f173a9034fbbdfd2055525aad30"
-whole_reason = "One ruling frees the same reserved steps in four files that say it; splitting would leave the tree contradicting itself between landings."
