@@ -3,6 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "6f10bdf87c1b13048e5f0d340e7f9708df1308b9"
 branch = "claude/issue-190-p5f-gatus"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/speech-runtime/speech-runtime.yaml", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/gatus", "infrastructure/litellm/front.yaml", "infrastructure/loki/network-policy.yaml", "infrastructure/traefik/network-policy.yaml", "mise.toml", "tests/gatus"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/speech-runtime/speech-runtime.yaml", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/gatus", "infrastructure/litellm/front.yaml", "infrastructure/loki/network-policy.yaml", "infrastructure/traefik/network-policy.yaml", "infrastructure/traefik/values.yaml", "mise.toml", "tests/gatus"]
 opened_commit = "ed96f885175ffc9626bcb0393e60df1b5365abed"
 whole_reason = "One layer: its manifests, the targets' policies that admit it, its command, cell and documents prove one status page together."
