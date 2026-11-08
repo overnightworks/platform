@@ -1,18 +1,36 @@
-# The apps, one directory each under apps/. They start from Secrets in platform-secrets, so they wait for that layer,
-# and run workloads, so they wait for admission.
+# One Kustomization per directory under apps/, named like the directory and the app's namespace, so that an app's
+# objects share one owner that db:load-dump can suspend. Each starts from Secrets in platform-secrets, so it waits for
+# that layer, and runs workloads, so it waits for admission.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: apps
+  name: hopin
   namespace: flux-system
 spec:
   dependsOn:
     - name: platform-secrets
     - name: admission
   interval: 10m0s
-  path: ./apps
-  # Pruning stays off, so deleting this Kustomization, whose apps move to their own, keeps their objects running.
-  prune: false
+  path: ./apps/hopin
+  prune: true
+  wait: true
+  timeout: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: speech-runtime
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: platform-secrets
+    - name: admission
+  interval: 10m0s
+  path: ./apps/speech-runtime
+  prune: true
   wait: true
   timeout: 10m0s
   sourceRef:
