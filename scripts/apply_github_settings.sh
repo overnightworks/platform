@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Plan the GitHub settings src/opentofu/github declares, or with --apply also apply that plan, with the operator's gh login.
 # Usage: scripts/apply_github_settings.sh [--apply]
-# Exit: 0 no change, 2 changes planned (without --apply), 1 failure. A plan-only run works on any commit and writes no
-# state; --apply runs only at a clean origin/main.
+# Exit: 0 no change, 2 changes planned (without --apply), 1 failure, which includes a plan that deletes an object (a
+# deliberate removal is a `removed` block with destroy = false, which plans a forget). A plan-only run works on any
+# commit and writes no state; --apply runs only at a clean origin/main.
 set -euo pipefail
 
 LOCK_WAIT_SECONDS=30
@@ -61,8 +62,9 @@ login="$("${child_environment[@]}" gh api --hostname github.com user --jq .login
 echo "apply_github_settings: planning as ${login}"
 
 cd "${repository_root}"
-mise install --quiet opentofu
+mise install --quiet opentofu yq
 tofu="$(mise which tofu)"
+yq="$(mise which yq)"
 
 run_tofu() {
   "${child_environment[@]}" "${tofu}" -chdir="${root_directory}" "$@"
@@ -73,6 +75,19 @@ run_tofu init -input=false -lockfile=readonly -backend-config="path=${state_file
 plan_status=0
 run_tofu plan -input=false -detailed-exitcode -out="${plan_file}" || plan_status=$?
 [ "${plan_status}" -eq 0 ] || [ "${plan_status}" -eq 2 ] || fail "the plan failed with status ${plan_status}"
+
+# An object's state may lack skip_destroy (an import does not write it), so only the plan shows whether a removal
+# destroys; `delete` is also half of a replacement, in either order, and `forget` is the removal that keeps the object.
+planned_deletions="$(run_tofu show -json "${plan_file}" |
+  "${yq}" --input-format json --output-format tsv '.resource_changes[] | select(.change.actions[] == "delete") | .address')" ||
+  fail "the plan could not be read"
+if [ -n "${planned_deletions}" ]; then
+  echo "apply_github_settings: the plan deletes or replaces these objects; nothing was applied:" >&2
+  while IFS= read -r address; do
+    echo "  ${address}" >&2
+  done <<<"${planned_deletions}"
+  fail "a deliberate removal is a removed block with lifecycle { destroy = false }"
+fi
 
 if [ "${apply}" = true ] && [ "${plan_status}" -eq 2 ]; then
   run_tofu apply -input=false "${plan_file}"

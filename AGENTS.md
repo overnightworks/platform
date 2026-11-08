@@ -27,8 +27,11 @@
   its one copy in the operator's password manager.
 - `scripts/apply_github_settings.sh` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
   login, on any commit and without writing state (exit 0 no change, 2 changes, 1 failure). `--apply` applies that
-  run's own plan, only from a clean `origin/main`.
-- `mise run github:test` checks that root: format, init against the committed lock, validate and the mocked tests.
+  run's own plan, only from a clean `origin/main`. A plan with a `delete` action, a replacement included, fails with
+  exit 1 on both runs, names each address and applies nothing; a deliberate removal is a `removed` block with
+  `lifecycle { destroy = false }`, which plans a forget.
+- `mise run github:test` checks that root: format, init against the committed lock, validate, the mocked tests and
+  `tests/github/plan_with_a_delete_is_refused.sh`, which drives the script against a fake tofu and gh.
 - `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
   which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
   names and times only, and fails on any; it passes with no pod logs yet while `/var/log/pods` does not exist, and
@@ -49,7 +52,9 @@
   read marks its row incomplete and prints the remainders as `?`, never as a number.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
-  Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
+  Deployments at 0 and its Flux Jobs deleted, waiting for the deletion of the Pods a ReplicaSet owns except those in phase
+  `Failed` or `Succeeded` none of whose containers or init containers reports `running` (an evicted Pod stays and holds
+  no session; a Pod marked `Failed` from outside can still run, and one with no readable phase is waited for), in one `pg_restore` transaction whose messages go to `<file>.load.log`
   at 0600, verifies each table `key-tables` names (all tables and their sorted rows' sha256 with `--compare`) and only
   then resumes Flux and waits for the namespace to converge. It refuses a suspended Kustomization. Another session
   that holds the database before the load, a database it cannot read then, or an INT before the load costs at most one
@@ -64,7 +69,8 @@
   `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>` interrupts a load inside its transaction and asserts
   that recovery, writers included. `tests/postgres/load_dump.sh` drives the task and that script against fake commands
   for the outcomes the cluster cannot arrange: a failed `flux resume`, an unreadable suspension (also after a kill), a
-  signal during the comparison, a table only the database holds, a database it cannot read before or after the load,
+  signal during the comparison, an evicted Pod beside a running one, which alone is waited for, and one alone, which costs
+  no wait, a `Failed` Pod that reports a running container, which is waited for, a table only the database holds, a database it cannot read before or after the load,
   a materialized view, a `pg_restore` that outlives its status while its backend commits, a TERM during the check
   after a failed restore, and an INT after the commit, whose outcome reaches the operator and not the load log.
 - `mise run legal:check <key> <dir>` checks an app's `<dir>/legal/datenschutz.html` and, if present,
@@ -73,7 +79,14 @@
   <rule>`, never the text, and exits non-zero. It refuses a link or directory in place of a file, a missing
   `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
   `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
-  with branch coverage at 100 % and writes `src/legal/coverage.xml`. Both run through `uv` (locked in `mise.toml`),
+  with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads, from this checkout's root, the frame of
+  `infrastructure/legal/frame/`, the sections of `infrastructure/legal/sections/` and their `stand.toml`, builds the three
+  pages with `src/legal/src/legal/pages.py`, which checks their ids and links, and writes only `infrastructure/legal/built/impressum.html`, the other two pages staying in memory; it needs no
+  network, prints `legal:build: wrote <file>` and exits 0, or prints `legal: <file> is missing; the frame is required`
+  (or the failed check's line, which names a directory under `sections/` that is neither `allgemein` nor one of `keycloak`,
+  `litellm` or `speech-runtime`, a section with no `stand.toml` entry, an entry without a file or a section whose sha256
+  differs from its entry, printing the file's) and exits non-zero, writing nothing. It reads the `zone` as `legal:check`
+  does. All three run through `uv` (locked in `mise.toml`),
   which fetches Python 3.14 on first use and keeps its environment under `~/.cache/platform/legal`.
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
@@ -252,7 +265,7 @@
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
   runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request that turns Ready within the minute
   prints no key block.
-  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock` and the renders, and fails when git
+  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock`, the renders and the imprint, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. Before the reconcile the
   kubelet's configz holds the `container-log-max-files` of `host/k3s/config.yaml`; after a writer pod's log directory
   is deleted on the node, its file is back within 30 seconds and `kubectl logs` shows newer lines; and through two
@@ -530,9 +543,13 @@
   kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
   never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body. The
   rpm and tpm limits are not in the table and stay as they are.
-- `infrastructure/legal/`: the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
+- `infrastructure/legal/`: the legal sections and the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
-  is hal's `legal/frame/impressum.html` byte for byte, which holds no template field, and `default.conf` serves only
+  is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
+  field. `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
+  operator's. `stand.toml` holds one table per section path with its `date` (the Stand it prints, `D. Monat YYYY`, a
+  page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand; nothing of
+  them is served yet. `default.conf` serves only
   `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
   host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
   only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
@@ -657,16 +674,34 @@
   and the ufw rule `k3s-cni`, with `k3s-pods` and `k3s-services` declared absent, which deletes them from a host whose mise
   state holds them) and the tasks. `mise.lock` is generated by `mise lock`, not edited by hand, and `cluster`
   fails when a regeneration differs.
-- `src/opentofu/github/`: the security and merge settings of the managed fleet repositories. `.terraform.lock.hcl` is
+- `src/opentofu/github/`: the security and merge settings of the managed fleet repositories and, in the child module
+  `organization/`, the organisation's three rulesets (`main: PR only`, `quality / verdict required`, `release tags are
+  immutable`, each with `prevent_destroy`, no bypass actor and enforcement `active`) and the schema of the property
+  `quality_gate`, every resource also `destroy = false`; `organization.tf` holds the module call and the `import` blocks
+  by id. The ruleset `quality / verdict required` reaches a repository only through `quality_gate=true`, requires the
+  check `quality / verdict` pinned to GitHub Actions (`integration_id` 15368) and is quality's contract; the property's
+  values are quality's merge command's and never declared, and the schema's `role` stays as set on GitHub. Two limits of
+  provider 6.13.0: it cannot carry `require_extra_approval_for_unattributed_changes` (true on
+  `main: PR only`, which takes effect only at a non-zero approval count), so the count stays 0 and a test holds it
+  there, and a later update of that ruleset sends the field not at all, with GitHub's answer unknown; and it returns no
+  default for a `true_false` property, so the default `false` is undeclared, a later update of the schema sends an empty
+  one, with GitHub's answer unknown, and drift detection does not see it. `tofu test` cannot plan an import, so
+  `tests/organization_rulesets.tftest.hcl` plans the module and judges its resources. `.terraform.lock.hcl` is
   generated by `tofu providers lock -platform=linux_amd64`; the job `opentofu` runs `mise run github:test`. The state
   lives at `${XDG_STATE_HOME:-~/.local/state}/platform/opentofu/github.tfstate` and the working files (lock, provider,
   kept plan `last.tfplan`) under `${XDG_CACHE_HOME:-~/.cache}/platform/opentofu/github/`, both outside the checkout.
+  An imported object's state carries no `skip_destroy` until an apply writes it, so removing a block can plan a delete;
+  the command refuses any such plan, which closes it for every object of the root.
 - `src/legal/`: the Python project of the legal validator, standard library only, with `uv.lock` and its own tests; there
   is no root `pyproject.toml`, which would make `tests/` a judged tree. `src/legal/src/legal/section.py` is hal's
-  `legal_section.py` without `parse_general`; `check.py` is the program. `checks` runs `legal:test`, uploads the report
+  `legal_section.py`; `check.py` is the program of `legal:check`; `pages.py` is hal's assembler of the three pages
+  (`legal_pages.py` without its fingerprints, plans and records) and `build.py` the program of `legal:build`. `checks` runs `legal:test`, uploads the report
   as artifact `coverage`, which the `quality` job passes as `coverage-artifact`, and runs
   `tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh`, which reads hopin's public repository at the tag of
-  the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails.
+  the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails, and
+  `tests/legal/sections_equal_hals_at_commit.sh`, which fetches hal's public repository at the commit its variable
+  `hal_commit` names and fails naming the step when that fetch fails or `diff -r` finds `infrastructure/legal/sections`
+  unlike hal's `legal/sections`; the pin moves when hal changes `legal/sections` before it leaves.
 - `.github/workflows/renovate.yml`: the job `renovate`, daily and on dispatch, runs Renovate's image at a digest by one
   `docker run`, with the job's own token (`contents: read`, `pull-requests: read`, `issues: write`: it can write no
   branch) and `.github/renovate.json5`. The configuration holds custom regex managers over the pin forms under

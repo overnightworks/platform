@@ -39,8 +39,11 @@ case "$*" in
     listings="$(wc -l <"$FAKE_DIR/listings")"
     [ "$listings" -gt 2 ] || exit 1
     [ "$listings" != 3 ] || : >"$FAKE_DIR/committing" ;;
-  *"get pods"*) echo "items: []" ;;
-  *"get deployments"* | *"get jobs"* | *"delete job"* | *" scale "* | *"rollout status"* | *" wait "*) ;;
+  *"get pods"*)
+    # FAKE_PODS names a file holding the namespace's Pod list; without it the namespace has no Pod.
+    if [ -n "${FAKE_PODS:-}" ]; then cat "$FAKE_PODS"; else echo "items: []"; fi ;;
+  *" wait "*) echo "$*" >>"$FAKE_DIR/waited" ;;
+  *"get deployments"* | *"get jobs"* | *"delete job"* | *" scale "* | *"rollout status"*) ;;
   *" exec "*)
     while [ "$1" != -- ]; do shift; done
     shift
@@ -132,7 +135,7 @@ sql_for filled empty extra_empty >"$work_directory/extra.sql"
 export FAKE_DUMP_SQL="$work_directory/dump.sql" FAKE_LOADED_SQL="$work_directory/same.sql"
 
 cell_failed_resume_exits_nonzero_and_does_not_claim_nothing_changed() {
-  cell=failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
+  cell="failed-resume-exits-nonzero-and-does-not-claim-nothing-changed"
   FAKE_RESUME_FAILS=1 run_loader --resume x
   [ "$status" != 0 ] && [[ $flux_calls == *resume* ]] && [[ $output != *"nothing changed"* ]] ||
     fail "--resume that failed at flux resume exited $status with '$output' after flux $flux_calls"
@@ -220,6 +223,56 @@ cell_materialized_view_after_failed_load_is_unknown_and_stays_suspended() {
   [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"is unknown"* ]] &&
     [[ $output != *unchanged* ]] ||
     fail "a failed load on a database with a relation pg_dump does not cover exited $status with '$output'"
+}
+
+# Writes the namespace's Pod list: one Pod per "name:phase[:detail]" argument, each owned by a ReplicaSet; a phase of "-"
+# leaves the status without one. A detail adds what the Pod reports: "running" a running container, "init-running" a
+# running init container, "terminated" a terminated container, "statefulset" a StatefulSet as owner instead.
+pods_file() {
+  local entry phase detail owner
+  echo "items:"
+  for entry; do
+    phase="${entry#*:}"
+    detail="${phase#*:}"
+    [ "$detail" != "$phase" ] || detail=""
+    phase="${phase%%:*}"
+    owner=ReplicaSet
+    [ "$detail" != statefulset ] || owner=StatefulSet
+    printf -- '- metadata: {name: %s, ownerReferences: [{kind: %s}]}\n' "${entry%%:*}" "$owner"
+    if [ "$phase" = - ]; then phase=""; else phase="phase: $phase"; fi
+    case "$detail" in
+      running) printf '  status: {%s, containerStatuses: [{state: {running: {startedAt: now}}}]}\n' "$phase" ;;
+      init-running) printf '  status: {%s, initContainerStatuses: [{state: {running: {startedAt: now}}}]}\n' "$phase" ;;
+      terminated) printf '  status: {%s, containerStatuses: [{state: {terminated: {exitCode: 137}}}], initContainerStatuses: [{state: {terminated: {exitCode: 0}}}]}\n' "$phase" ;;
+      *) printf '  status: {%s}\n' "$phase" ;;
+    esac
+  done
+}
+
+cell_evicted_pod_beside_running_one_waits_only_for_the_running_one() {
+  cell=evicted-pod-beside-running-one-waits-only-for-the-running-one
+  pods_file evicted:Failed running:Running done:Succeeded pending:Pending unknown:- owned:Running:statefulset >"$work_directory/pods-$cell"
+  FAKE_PODS="$work_directory/pods-$cell" run_loader x "$dump"
+  [ "$status" = 0 ] && [ -e "$FAKE_DIR/restored" ] &&
+    [ "$(sed 's/.*wait //; s/ --for.*//' "$FAKE_DIR/waited")" = "pod/running pod/pending pod/unknown" ] ||
+    fail "a load beside an evicted Pod exited $status after waiting '$(cat "$FAKE_DIR/waited" 2>/dev/null)'"
+}
+
+cell_evicted_pod_alone_costs_no_wait() {
+  cell=evicted-pod-alone-costs-no-wait
+  pods_file evicted:Failed:terminated done:Succeeded bare:Failed >"$work_directory/pods-$cell"
+  FAKE_PODS="$work_directory/pods-$cell" run_loader x "$dump"
+  [ "$status" = 0 ] && [ -e "$FAKE_DIR/restored" ] && [ ! -e "$FAKE_DIR/waited" ] ||
+    fail "a load with only an evicted Pod exited $status after waiting '$(cat "$FAKE_DIR/waited" 2>/dev/null)'"
+}
+
+cell_failed_pod_with_a_running_container_is_waited_for() {
+  cell="failed-pod-with-a-running-container-is-waited-for"
+  pods_file lost:Failed:running lost-init:Failed:init-running done:Succeeded:terminated >"$work_directory/pods-$cell"
+  FAKE_PODS="$work_directory/pods-$cell" run_loader x "$dump"
+  [ "$status" = 0 ] && [ -e "$FAKE_DIR/restored" ] &&
+    [ "$(sed 's/.*wait //; s/ --for.*//' "$FAKE_DIR/waited")" = "pod/lost pod/lost-init" ] ||
+    fail "a load beside a Failed Pod with a running container exited $status after waiting '$(cat "$FAKE_DIR/waited" 2>/dev/null)'"
 }
 
 cell_restore_that_outlives_its_status_is_awaited_through_its_commit() {
@@ -410,6 +463,9 @@ cells=(
   interrupt-script-prints-what-the-restore-did-on-timeout
   materialized-view-after-failed-load-is-unknown-and-stays-suspended
   restore-that-outlives-its-status-is-awaited-through-its-commit
+  evicted-pod-beside-running-one-waits-only-for-the-running-one
+  evicted-pod-alone-costs-no-wait
+  failed-pod-with-a-running-container-is-waited-for
   term-during-recovery-is-unknown-and-stays-suspended
   interrupt-after-commit-reports-unknown-to-the-operator-not-the-log
 )

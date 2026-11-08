@@ -66,6 +66,9 @@ jobs:
       - name: Check that legal:check passes hopin's legal files at the tag it runs, names file and line of a broken one and quotes no text
         run: mise exec -- tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh
 
+      - name: Check that the legal sections equal hal's legal/sections at the pinned commit
+        run: tests/legal/sections_equal_hals_at_commit.sh
+
       - name: Check that a failed LiteLLM write stops the rest and names what was made, and that no key value reaches an argument or an output
         run: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
 

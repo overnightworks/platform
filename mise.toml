@@ -417,6 +417,7 @@ tofu fmt -check -recursive
 tofu init -backend=false -lockfile=readonly -input=false
 tofu validate
 tofu test
+../../../tests/github/plan_with_a_delete_is_refused.sh
 '''
 
 [tasks."legal:test"]
@@ -440,6 +441,17 @@ set -euo pipefail
 # The zone is the host of the Ingress that serves hallucinai.de's legal pages.
 zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' infrastructure/legal/legal.yaml)"
 exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.check "$1" "$2" "$zone"
+'''
+
+[tasks."legal:build"]
+description = "Build the legal pages from the frame and the sections and write infrastructure/legal/built/impressum.html"
+env = { UV_PROJECT_ENVIRONMENT = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/venv", PYTHONDONTWRITEBYTECODE = "1", PYTHONPATH = "src/legal/src" }
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# The zone is the host of the Ingress that serves hallucinai.de's legal pages.
+zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' infrastructure/legal/legal.yaml)"
+exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.build "$zone"
 '''
 
 [tasks.bootstrap]
@@ -729,8 +741,10 @@ deployments="$(kubectl --namespace "$namespace" get deployments -o name)"
 [ -z "$deployments" ] || kubectl --namespace "$namespace" scale $deployments --replicas=0
 # Foreground: the delete returns once the Jobs' pods are gone.
 kubectl --namespace "$namespace" delete job --selector "kustomize.toolkit.fluxcd.io/name=$namespace" --cascade=foreground
+# A Failed or Succeeded Pod (an evicted one stays) none of whose containers reports running holds no session; nothing
+# deletes it. A Pod marked Failed from outside, as on a lost node, can still run and is waited for.
 writers="$(kubectl --namespace "$namespace" get pods -o yaml |
-  yq '.items[] | select(.metadata.ownerReferences[]?.kind == "ReplicaSet") | "pod/" + .metadata.name')"
+  yq '.items[] | select(.metadata.ownerReferences[]?.kind == "ReplicaSet" and ((.status.phase == "Failed" or .status.phase == "Succeeded") and ([.status.containerStatuses[]?, .status.initContainerStatuses[]?] | map(select(.state.running != null)) | length == 0)) == false) | "pod/" + .metadata.name')"
 [ -z "$writers" ] || kubectl --namespace "$namespace" wait $writers --for=delete --timeout=5m
 wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; nothing loaded"
 before_load="$(fingerprint)" || fail "cannot read the database $namespace before the load; nothing loaded"
