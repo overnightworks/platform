@@ -123,13 +123,21 @@ done
 
 # A fired alert is sent on its first flush, and every later flush of a failing send follows one group_interval after the
 # one before, so the sends are bounded by the time since the alert was posted. The smarthost cannot be looked up, so the
-# send fails and shows only in the counters. alertmanager_notifications_total counts one per flush of the group and not
+# send fails and shows in the counters and the log. alertmanager_notifications_total counts one per flush of the group and not
 # one per retry, which alertmanager_notification_requests_total counts, and both are Alertmanager's own and not the
 # synthetic alert's: a firing rule of the cluster would add to them. The alert's state is read from the API by its name.
 # A resolved alert is sent only after its firing alert was, so against a smarthost that never answers the resolved mail
 # is not attempted: its proof is the PC's.
-group_wait=10
-group_interval=30
+# route_seconds <key>: the route's duration of that key in the render, in whole seconds.
+route_seconds() {
+  local duration
+  duration="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "prometheus-alertmanager") | .data["alertmanager.yml"] | from_yaml | .route.'"$1" \
+    infrastructure/prometheus/rendered.yaml)"
+  [[ $duration =~ ^[0-9]+s$ ]] || fail "the route's $1 is '$duration', not a whole number of seconds"
+  echo "${duration%s}"
+}
+group_wait="$(route_seconds group_wait)"
+group_interval="$(route_seconds group_interval)"
 sends="alertmanager_notifications_total{integration=\"email\"}"
 attempts="alertmanager_notification_requests_total{integration=\"email\"}"
 kubectl create namespace "$OTHER_NAMESPACE"
@@ -202,12 +210,14 @@ expected="$1"
 shift
 for target; do
   state="$(probe "$target")"
-  if [ "$expected" = closed ]; then
-    deadline=$(($(date +%s) + 60))
-    while [ "$state" != closed ] && [ "$(date +%s)" -lt "$deadline" ]; do sleep 3; state="$(probe "$target")"; done
-    if [ "$state" = closed ]; then
-      for _ in 1 2 3; do sleep 2; [ "$(probe "$target")" = closed ] || state=open; done
-    fi
+  deadline=$(($(date +%s) + 60))
+  while [ "$state" != "$expected" ] && [ "$(date +%s)" -lt "$deadline" ]; do sleep 3; state="$(probe "$target")"; done
+  if [ "$expected" = closed ] && [ "$state" = closed ]; then
+    for _ in 1 2 3; do
+      sleep 2
+      again="$(probe "$target")"
+      [ "$again" = closed ] || state="$again"
+    done
   fi
   echo "$target $state"
 done'
@@ -217,9 +227,8 @@ reach_targets=("$kubernetes_target" https://github.com/ "$listener_target")
 reach() {
   local labels="$1" state="$2" expected="" client_pod target
   client_pod="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
-  client_pod="$(NAME=alertmanager-labelled LABELS="$labels" ARGUMENTS="$(printf '%s\n' sh -c "$reach_script" sh "$state" \
-    "${reach_targets[@]}")" yq '.metadata.name = strenv(NAME) | .metadata.labels = (strenv(LABELS) | from_yaml) |
-    .spec.containers[0].args = (strenv(ARGUMENTS) | split("\n"))' <<<"${client_pod//@NAME@/alertmanager-labelled}")"
+  client_pod="$(NAME=alertmanager-labelled LABELS="$labels" SCRIPT="$reach_script" ARGUMENTS="$(printf '%s\n' "$state" "${reach_targets[@]}")" yq '.metadata.name = strenv(NAME) | .metadata.labels = (strenv(LABELS) | from_yaml) |
+    .spec.containers[0].args = (["sh", "-c", strenv(SCRIPT), "sh"] + (strenv(ARGUMENTS) | split("\n")))' <<<"${client_pod//@NAME@/alertmanager-labelled}")"
   printf '%s\n' "$client_pod" | kubectl -n "$PROMETHEUS_NAMESPACE" create -f - >/dev/null
   kubectl -n "$PROMETHEUS_NAMESPACE" wait pod/alertmanager-labelled --timeout=6m \
     --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' >/dev/null ||
