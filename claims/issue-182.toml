@@ -1,0 +1,8 @@
+claim_id = "d776b4c9cacf4320ab23756c33bc559c"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "22d1470b3aed713dfc35d91d874898e2dd043940"
+branch = "claude/issue-182-p9b-litellm-expire"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/litellm/expire.sql", "infrastructure/litellm/expire.yaml", "infrastructure/litellm/kustomization.yaml", "tests/litellm/expire_deletes_only_what_is_past_90_days.sh"]
+opened_commit = "566f5228f68a421132aafd6e88021288fd0246af"
+whole_reason = "One job: its statement, CronJob, cell and documents prove one expiry together."
