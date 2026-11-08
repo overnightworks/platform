@@ -4,8 +4,11 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 redis_cli() { kubectl --namespace "$SONGMAKER_NAMESPACE" exec redis-0 --container redis -- redis-cli "$@"; }
 
-remove_namespace() { kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"; }
-trap remove_namespace EXIT
+cleanup() {
+  kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod own-probe --ignore-not-found --wait --timeout=2m
+  kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
+}
+trap cleanup EXIT
 kubectl create namespace "$OTHER_NAMESPACE"
 
 applied_revision="$(kubectl --namespace flux-system get kustomization songmaker -o jsonpath='{.status.lastAppliedRevision}')"
