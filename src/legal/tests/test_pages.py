@@ -308,7 +308,10 @@ def test_a_template_with_an_unknown_field_is_refused_naming_its_file(name):
     with pytest.raises(LegalError) as refused:
         build_pages(frame, blocks)
 
-    assert str(refused.value) == f"legal: infrastructure/legal/frame/blocks/{name}.html: unknown field $unknown"
+    assert (
+        str(refused.value)
+        == f"legal: infrastructure/legal/frame/blocks/{name}.html: unknown field $unknown"
+    )
 
 
 def test_a_template_with_a_stray_dollar_sign_is_refused():
@@ -317,7 +320,9 @@ def test_a_template_with_a_stray_dollar_sign_is_refused():
     frame = Frame(FRAME.pages, templates)
     blocks = [general()]
 
-    with pytest.raises(LegalError, match=r"infrastructure/legal/frame/blocks/general.html: a \$ that starts no"):
+    with pytest.raises(
+        LegalError, match=r"infrastructure/legal/frame/blocks/general.html: a \$ that starts no"
+    ):
         build_pages(frame, blocks)
 
 
