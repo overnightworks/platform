@@ -3,6 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "6ee1edd37b84f622ca50cf48bda9be1130f4b7fe"
 branch = "claude/issue-186-p5b-alloy"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/alloy", "tests/alloy", "tests/client_pod.sh", "tests/loki/loki_keeps_lines_under_28_days.sh"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/alloy", "tests/alloy", "tests/client_pod.sh", "tests/failure.sh", "tests/loki/loki_keeps_lines_under_28_days.sh"]
 opened_commit = "f94a89bce22013dc2a5f7ed753b05cf84390a4bb"
 whole_reason = "One layer: its chart render, Flux Kustomization, vendor entry, cell and documents prove one running Alloy together, and Loki's cell must stop owning the Namespace in the same change."
