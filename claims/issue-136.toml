@@ -1,8 +1,0 @@
-claim_id = "b1a95f8cacf5445db2a470c80e2c1a18"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "f532d97e05d9c070e8597a9b2acd3644aaa0a79f"
-branch = "claude/issue-136-load-dump-outcomes"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "mise.toml", "tests/postgres"]
-opened_commit = "4ccefaa969d50818a9d565332cc6d5cda131a424"
-whole_reason = "The loader's outcome message, its suspension, their CI cell and AGENTS.md's sentence on the loader's outcomes are one behaviour."
