@@ -423,7 +423,7 @@ env = { UV_PROJECT_ENVIRONMENT = "{{ env.XDG_CACHE_HOME | default(value=env.HOME
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.build .
+exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.build
 '''
 
 [tasks.bootstrap]

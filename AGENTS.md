@@ -67,7 +67,7 @@
   <rule>`, never the text, and exits non-zero. It refuses a link or directory in place of a file, a missing
   `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
   `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
-  with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads the frame of
+  with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads, from this checkout's root, the frame of
   `infrastructure/legal/frame/`, builds the three pages with `src/legal/src/legal/pages.py`, which checks their ids and
   links, and writes only `infrastructure/legal/built/impressum.html`, the other two pages staying in memory; it needs no
   network, prints `legal:build: wrote <file>` and exits 0, or prints `legal: <file> is missing; the frame is required`

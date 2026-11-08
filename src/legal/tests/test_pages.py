@@ -329,9 +329,10 @@ def test_a_template_with_a_stray_dollar_sign_is_refused():
 def test_an_id_a_template_repeats_is_refused_naming_the_file_without_a_line():
     templates = {**FRAME.templates, "app": '<section id="$id"><h2 id="fixed">$title</h2></section>'}
     frame = Frame(FRAME.pages, templates)
+    blocks = [app("alpha"), app("zeta")]
 
     with pytest.raises(LegalError) as refused:
-        build_pages(frame, [app("alpha"), app("zeta")])
+        build_pages(frame, blocks)
 
     assert str(refused.value) == (
         'legal: legal/sections/zeta/datenschutz.html: id "fixed" is already used by '
