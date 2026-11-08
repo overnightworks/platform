@@ -373,6 +373,15 @@
   reads the master key: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
   key table's rows, those of the dashboard's UI session (which `/key/list` omits) and the rest, then `equal` or `DIFFERS`
   for the count against the rest; each step runs under a deadline and names itself when it fails.
+- `infrastructure/legal/`: the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
+  Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
+  is hal's `legal/frame/impressum.html` byte for byte, which holds no template field, and `default.conf` serves only
+  `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
+  host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
+  only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
+  fonts are not served: its references to them stay. `cluster` reads from a client Pod in `cloudflared` the page's
+  checksum against the committed file, its Content-Security-Policy against `default.conf`, and 404 without nginx's
+  headers for `/` and other paths, and a Pod in another namespace gets no answer from the Service.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
   and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at

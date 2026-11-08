@@ -1,0 +1,109 @@
+# The imprint of every app at hallucinai.de, from nginx's unprivileged image. One pod with Recreate: the page is static,
+# and a roll replaces it whole.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legal
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: legal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: legal
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          image: docker.io/nginxinc/nginx-unprivileged:1.30.6-alpine-slim@sha256:5d8bb9437d74a600ec5dbf90c035451c724dc33eac8d3a71078f6f8612c345f6
+          # The image's entrypoint script edits the configuration it finds, which a read-only root refuses.
+          command: [nginx, -g, daemon off;]
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /impressum
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: configuration
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: pages
+              mountPath: /srv/pages
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: configuration
+          configMap:
+            name: legal-nginx
+        - name: pages
+          configMap:
+            name: legal-pages
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: legal
+spec:
+  selector:
+    app.kubernetes.io/name: legal
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Cloudflare terminates TLS, so the route is plain HTTP on Traefik's web port. It names the host and the one path, so
+# Traefik itself answers every other path with its 404, and no tunnel line sends the host here yet.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: legal
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: hallucinai.de
+      http:
+        paths:
+          - path: /impressum
+            pathType: Exact
+            backend:
+              service:
+                name: legal
+                port:
+                  number: 8080
+---
+# Only Traefik's pods reach nginx; the kubelet's probe comes from the node, which a NetworkPolicy never blocks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: http-from-traefik-only
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - port: http
+          protocol: TCP
