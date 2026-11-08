@@ -60,8 +60,8 @@ groups:
     subGroups:
       # Exactly this path is the speech service's right; it has no subgroup.
       - name: speech-service
-      # Exactly this path is the AI right. keycloak:move-group moves the members of the group it
-      # replaces, which this file no longer declares, so an apply never brings that group back.
+      # Exactly this path is the AI right. keycloak:move-group moves the members of
+      # /services/agent-service/api here; no realm file declares that group, so no apply creates it.
       - name: litellm
         subGroups:
           # Not a right: its members' LiteLLM rows sit on the admin budget, which has no limit.
@@ -194,7 +194,7 @@ clients:
     frontchannelLogout: false
   # songmaker signs people in with the authorization code and PKCE, and has no service account. A
   # sign-out in Keycloak calls songmaker's back-channel logout, a call keycloak-egress.yaml lets no
-  # app receive yet. songmaker ignores the session id and ends every session of the person, so the
+  # app receive. songmaker ignores the session id and ends every session of the person, so the
   # call does not require one. The device grant is named as off, so the import's
   # merge cannot keep an earlier on.
   - clientId: songmaker
@@ -294,7 +294,7 @@ clients:
     optionalClientScopes:
       - speech-service-audience
   # skat signs people in like hopin and holds a refresh token per session the same way. It has no
-  # back-channel logout yet, so a sign-out in Keycloak ends a Skat session only at its lifetime.
+  # back-channel logout, so a sign-out in Keycloak ends a Skat session only at its lifetime.
   # Skat calls neither the speech service nor an AI service, so it has no service account and no
   # optional scope.
   - clientId: skat
