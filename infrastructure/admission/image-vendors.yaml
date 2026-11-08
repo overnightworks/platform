@@ -38,6 +38,8 @@ data:
   keycloak: quay.io/keycloak/keycloak
   # infrastructure/keycloak/config-cli.yaml; https://github.com/adorsys/keycloak-config-cli#docker
   keycloak-config-cli: docker.io/adorsys/keycloak-config-cli
+  # infrastructure/grafana/rendered.yaml; https://hub.docker.com/r/grafana/grafana
+  grafana: docker.io/grafana/grafana
   # infrastructure/gatus/gatus.yaml; https://github.com/TwiN/gatus#docker
   gatus: ghcr.io/twin/gatus
   # apps/songmaker/redis.yaml; https://hub.docker.com/_/redis

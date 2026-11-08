@@ -40,6 +40,11 @@ endpoints:
     interval: 60s
     conditions:
       - "[STATUS] == 200"
+  - name: grafana
+    url: http://grafana.grafana.svc:80/api/health
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
   - name: litellm
     url: http://litellm-front.litellm.svc:4000/v1/models
     interval: 60s
