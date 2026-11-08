@@ -21,6 +21,7 @@ configMapGenerator:
     behavior: merge
     literals:
       - key-tables=LiteLLM_VerificationToken
+      - backup-repository=http://rest-server.backup.svc.cluster.local:8000/litellm/
   - name: litellm
     files:
       - config.yaml=litellm-config.yaml
@@ -41,6 +42,8 @@ configMapGenerator:
     files:
       - traefik.yml=egress-traefik.yml
       - allowed.yml=egress-allowed.yml
+components:
+  - ../postgres/backup
 # LiteLLM's hostAliases send the provider names to agent-egress's one fixed address.
 replacements:
   - source:
@@ -66,3 +69,13 @@ replacements:
           name: litellm-expire
         fieldPaths:
           - spec.jobTemplate.spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: postgres
+      fieldPath: data.backup-repository
+    targets:
+      - select:
+          kind: Schedule
+          name: postgres
+        fieldPaths:
+          - spec.backend.rest.url

@@ -1,0 +1,140 @@
+# The platform's one backup target: a rest-server with one private repository per namespace, each reachable only with
+# that namespace's user from the Secret rest-users. A PVC is bound to its namespace and restricted forbids hostPath, so
+# this is the one place k8up's Job pods can send to.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rest-server-data
+  annotations:
+    # A pruned or deleted layer keeps the repositories: they are the backups.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rest-server
+spec:
+  replicas: 1
+  # The claim is ReadWriteOnce.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rest-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rest-server
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # One user per file of rest-users, its name the namespace and its content the password, bcrypt-hashed into a
+        # memory-backed file the server reads. The passwords pass through stdin, never an argument.
+        - name: htpasswd
+          image: docker.io/restic/rest-server:0.14.0@sha256:d2aff06f47eb38637dff580c3e6bce4af98f386c396a25d32eb6727ec96214a5
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              umask 077
+              # htpasswd writes a temporary file first, and the root filesystem is read-only.
+              export TMPDIR=/htpasswd
+              : >/htpasswd/users
+              for user_file in /rest-users/*; do
+                htpasswd -B -i /htpasswd/users "${user_file##*/}" <"$user_file"
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: htpasswd
+              mountPath: /htpasswd
+            - name: rest-users
+              mountPath: /rest-users
+              readOnly: true
+      containers:
+        - name: rest-server
+          image: docker.io/restic/rest-server:0.14.0@sha256:d2aff06f47eb38637dff580c3e6bce4af98f386c396a25d32eb6727ec96214a5
+          # Not the image's entrypoint: it would write into its htpasswd path and takes no argument for private repos.
+          command: [rest-server]
+          args: [--path, /data, --htpasswd-file, /htpasswd/users, --private-repos]
+          ports:
+            - name: rest
+              containerPort: 8000
+          readinessProbe:
+            tcpSocket:
+              port: rest
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: htpasswd
+              mountPath: /htpasswd
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rest-server-data
+        - name: htpasswd
+          emptyDir:
+            medium: Memory
+        - name: rest-users
+          secret:
+            secretName: rest-users
+            # Root owns the files and no fsGroup is set, so uid 1000 reads them through the other-read bit alone.
+            defaultMode: 0444
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rest-server
+spec:
+  selector:
+    app.kubernetes.io/name: rest-server
+  ports:
+    - name: rest
+      port: 8000
+      targetPort: rest
+---
+# Only the namespaces that hold a repository reach it; a user can read only its own repository (--private-repos).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rest-server
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rest-server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [keycloak, litellm]
+      ports:
+        - port: rest
+          protocol: TCP
