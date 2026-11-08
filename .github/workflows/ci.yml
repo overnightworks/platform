@@ -309,6 +309,18 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/keycloak/realm_route_and_policies.sh
 
+      - name: P2 cells
+        if: matrix.part == 'core'
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+          # The agent client whose tokens the cells mint, and the allowlist of its service account's groups.
+          AGENT_CLIENT: agent-mozart
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /agent-owners
+        run: |
+          tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
+          tests/keycloak/agent_client_tokens_and_groups.sh
+
       - name: P7c cells
         if: matrix.part == 'core'
         env:

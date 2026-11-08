@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=../failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=../client_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 namespace="$KEYCLOAK_NAMESPACE"
@@ -13,15 +11,11 @@ kubectl -n "$namespace" wait job/config-cli --for=condition=Complete --timeout=1
 echo "the Kustomization $namespace applied the candidate; Keycloak is Available and config-cli's Job completed" \
   "after $(kubectl -n "$namespace" get job/config-cli -o jsonpath='{.status.failed}') failed attempts"
 
-keycloak="$(kubectl -n "$namespace" get deployment keycloak -o json)"
-keycloak_env() { NAME="$1" yq -p json '.spec.template.spec.containers[0].env[] | select(.name == strenv(NAME))' <<<"$keycloak"; }
+# shellcheck source=admin_api.sh
+source "$(dirname "${BASH_SOURCE[0]}")/admin_api.sh"
 public_url="$(keycloak_env KC_HOSTNAME | yq '.value')"
-realm="$(yq '.realm' "$REALM_FILE")"
 public_issuer="$public_url/realms/$realm"
 public_host="${public_url#https://}"
-read -r secret_name secret_key < <(keycloak_env KC_BOOTSTRAP_ADMIN_CLIENT_SECRET |
-  yq '.valueFrom.secretKeyRef | .name + " " + .key')
-read -r admin_client < <(keycloak_env KC_BOOTSTRAP_ADMIN_CLIENT_ID | yq '.value')
 # Keycloak keeps the forwarded headers of exactly the senders whose headers Traefik's web entry point keeps.
 keycloak_trusted="$(keycloak_env KC_PROXY_TRUSTED_ADDRESSES | yq '.value')"
 traefik_trusted="$(kubectl -n traefik get deployment traefik -o json | yq \
@@ -29,31 +23,6 @@ traefik_trusted="$(kubectl -n traefik get deployment traefik -o json | yq \
 [ -n "$keycloak_trusted" ] && [ "$(tr , '\n' <<<"$keycloak_trusted" | sort)" = "$(tr , '\n' <<<"$traefik_trusted" | sort)" ] ||
   fail "Keycloak trusts the forwarded headers of '$keycloak_trusted', Traefik's web those of '$traefik_trusted'"
 echo "Keycloak and Traefik's web trust the forwarded headers of the same senders: $keycloak_trusted"
-admin_secret="$(kubectl -n "$namespace" get secret "$secret_name" -o go-template="{{index .data \"$secret_key\" | base64decode}}")"
-echo "::add-mask::$admin_secret"
-
-# The runner reaches Keycloak through a port-forward, which no NetworkPolicy sees; the Pods below meet the policies.
-forward_log="$RUNNER_TEMP/keycloak-forward.log"
-timeout 20m kubectl -n "$namespace" port-forward --address 127.0.0.1 service/keycloak :8080 >"$forward_log" 2>&1 &
-forward_pid=$!
-trap 'kill "$forward_pid" 2>/dev/null || true' EXIT
-timeout 30 bash -c 'until grep -q "^Forwarding from 127.0.0.1:" "$0"; do sleep 1; done' "$forward_log" ||
-  fail "the port-forward to Keycloak did not start: $(<"$forward_log")"
-local_url="http://127.0.0.1:$(sed -n 's/^Forwarding from 127.0.0.1:\([0-9]*\) .*/\1/p' "$forward_log" | head -n 1)"
-admin_token() {
-  curl --silent --show-error --fail --data grant_type=client_credentials --data-urlencode "client_id=$admin_client" \
-    --data-urlencode "client_secret=$admin_secret" "$local_url/realms/master/protocol/openid-connect/token" |
-    jq --raw-output .access_token
-}
-# admin <method> <path> [<JSON body>]: one admin REST call with a fresh token; prints the answer's body.
-admin() {
-  local token body=()
-  token="$(admin_token)"
-  [ "$#" -lt 3 ] || body=(--data "$3")
-  curl --silent --show-error --fail --request "$1" --header "Authorization: Bearer $token" \
-    --header 'Content-Type: application/json' "${body[@]}" "$local_url/admin/realms/$2"
-}
-
 # B1: the realm as the files declare it, on the public issuer, with its declared groups and without the retired one.
 issuer="$(curl --silent --show-error --fail "$local_url/realms/$realm/.well-known/openid-configuration" | jq --raw-output .issuer)"
 [ "$issuer" = "$public_issuer" ] || fail "discovery names the issuer '$issuer', not $public_issuer"
@@ -66,8 +35,8 @@ while IFS= read -r group; do
   live_path="$(admin GET "$realm/group-by-path$group" | jq --raw-output .path)" || live_path=""
   [ "$live_path" = "$group" ] || fail "the realm $realm holds no group $group, which $REALM_FILE declares"
 done <<<"$declared_groups"
-retired_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  --header "Authorization: Bearer $(admin_token)" "$local_url/admin/realms/$realm/group-by-path$RETIRED_GROUP")"
+retired_status="$(bearer_curl "$(admin_token)" --silent --output /dev/null --write-out '%{http_code}' \
+  "$local_url/admin/realms/$realm/group-by-path$RETIRED_GROUP")"
 [ "$retired_status" = 404 ] || fail "an empty database's realm $realm answers $retired_status for $RETIRED_GROUP, not 404"
 echo "the realm $realm holds the $(grep -c . <<<"$declared_groups") groups $REALM_FILE declares, and an empty database" \
   "none at $RETIRED_GROUP"
@@ -100,9 +69,7 @@ realm_state() {
 }
 fingerprint() { realm_state | sha256sum; }
 before="$(fingerprint)" || fail "the realms master and $realm cannot be read"
-kubectl -n "$namespace" delete job config-cli --wait --timeout=2m
-flux reconcile kustomization "$namespace" --timeout=10m
-kubectl -n "$namespace" wait job/config-cli --for=condition=Complete --timeout=10m
+rerun_config_cli
 second_failures="$(kubectl -n "$namespace" get job/config-cli -o jsonpath='{.status.failed}')"
 [ -z "$second_failures" ] || fail "config-cli's second run failed $second_failures times before it completed"
 after="$(fingerprint)" || fail "the realms master and $realm cannot be read after config-cli's second run"
@@ -161,7 +128,7 @@ remove_target() {
   [ -z "$left" ] || fail "$caller_namespace still holds the throwaway $left"
   echo "$caller_namespace holds none of the throwaway ${target_objects[*]}"
 }
-trap 'kill "$forward_pid" 2>/dev/null || true; remove_target' EXIT
+trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"; remove_target' EXIT
 caller_labels="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.metadata.labels' "$CALLER_MANIFEST")"
 caller_port="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.spec.containers[0].ports[0]' "$CALLER_MANIFEST")"
 jq --null-input --arg name "$target_name" --arg image "$PROBE_IMAGE" --argjson labels "$caller_labels" \
@@ -215,11 +182,11 @@ done
 echo "Keycloak's container reaches $postgres_target, neither $cluster_target nor $OUTSIDE_TARGET, nor the target" \
   "$target_address in $caller_namespace, nor $caller_service"
 remove_target
-trap 'kill "$forward_pid" 2>/dev/null || true' EXIT
+trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"' EXIT
 
 # B6: a person's password grant waits for the terms; an administrator without TOTP gets no token at all.
 probe_password="$(openssl rand -hex 24)"
-echo "::add-mask::$probe_password"
+mask_secret "$probe_password"
 probe_client=b6-password-grant
 probe_user=b6-person
 admin POST "$realm/clients" "{\"clientId\": \"$probe_client\", \"publicClient\": true, \"directAccessGrantsEnabled\": true, \"standardFlowEnabled\": false}"
@@ -246,8 +213,7 @@ echo "a password grant with TERMS_AND_CONDITIONS pending is refused with 400 inv
 admin PUT "$realm/users/$probe_user_id" '{"requiredActions": []}'
 password_grant "$realm" "$probe_client" "$probe_user"
 [ "$grant_status" = 200 ] || fail "a password grant with the terms accepted answered $grant_status, not 200"
-token_issuer="$(jq --raw-output .access_token <<<"$grant_body" | cut -d . -f 2 | tr '_-' '/+' |
-  awk '{ while (length($0) % 4) $0 = $0 "="; print }' | base64 --decode | jq --raw-output .iss)"
+token_issuer="$(jwt_part 2 "$(jq --raw-output .access_token <<<"$grant_body")" | jq --raw-output .iss)"
 [ "$token_issuer" = "$public_issuer" ] || fail "the person's token names the issuer '$token_issuer', not $public_issuer"
 echo "with the terms accepted the password grant yields a token of the public issuer $token_issuer"
 admin DELETE "$realm/users/$probe_user_id"
