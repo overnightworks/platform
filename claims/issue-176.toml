@@ -1,0 +1,7 @@
+claim_id = "23972a2a0e674d4c9f51b8e4f3471aff"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "f8e650885639224a4848360806aada264312f621"
+branch = "claude/issue-176-speech-runtime-without-gpu-voice"
+scope = ["apps/speech-runtime/speech-runtime.yaml"]
+opened_commit = "d8cd31b4c7b0cb6ed161c1f1a7679a2102934c24"
