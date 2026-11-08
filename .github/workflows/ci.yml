@@ -53,6 +53,9 @@ jobs:
       - name: Check that check:secrets-expiry passes no annotated Secret and a date 31 days out and names each Secret within 30 days, past, unparseable or unlisted
         run: tests/secrets/expiry_check_names_each_breach.sh
 
+      - name: Check that the Renovate report check fails naming a missing report, a report with no dependency and each missing or skipped pin
+        run: tests/renovate/report_check_names_each_missing_pin.sh
+
   cluster:
     # GitHub appends matrix values to a literal job name, and the gate looks for the name cluster.
     name: ${{ github.job }}
