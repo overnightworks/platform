@@ -9,6 +9,12 @@ data:
   # infrastructure/traefik/rendered.yaml and infrastructure/litellm/kustomization.yaml;
   # https://hub.docker.com/_/traefik
   traefik: docker.io/library/traefik
+  # infrastructure/prometheus/rendered.yaml; https://quay.io/repository/prometheus/prometheus
+  prometheus: quay.io/prometheus/prometheus
+  # infrastructure/prometheus/rendered.yaml; https://quay.io/repository/prometheus-operator/prometheus-config-reloader
+  prometheus-config-reloader: quay.io/prometheus-operator/prometheus-config-reloader
+  # infrastructure/prometheus/rendered.yaml; https://github.com/kubernetes/kube-state-metrics#container-image
+  kube-state-metrics: registry.k8s.io/kube-state-metrics/kube-state-metrics
   # infrastructure/cloudflared/cloudflared.yaml; https://github.com/cloudflare/cloudflared#installing-cloudflared
   cloudflared: docker.io/cloudflare/cloudflared
   # .github/workflows/ci.yml, the cluster job's env CLIENT_IMAGE; https://hub.docker.com/r/curlimages/curl

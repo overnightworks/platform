@@ -50,6 +50,25 @@ spec:
     kind: GitRepository
     name: flux-system
 ---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: prometheus
+  namespace: flux-system
+spec:
+  # storage for the claim, admission for the workloads.
+  dependsOn:
+    - name: admission
+    - name: storage
+  interval: 10m0s
+  path: ./infrastructure/prometheus
+  prune: true
+  wait: true
+  timeout: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
 # After platform-secrets, which holds the Secret tunnel-token the Deployment cloudflared reads.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
