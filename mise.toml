@@ -734,6 +734,16 @@ echo "keycloak:admin: open $admin_url/admin/master/console/ in a private window;
 exec kubectl --namespace keycloak port-forward --address 127.0.0.1 service/keycloak "${BASH_REMATCH[1]}:http"
 '''
 
+[tasks."litellm:keys"]
+description = "Make LiteLLM's person budget and the app keys' limits equal to infrastructure/litellm/keys.yaml; --plan only lists the differences (exit 2 with changes)"
+quiet = true
+run = "scripts/litellm_keys.sh keys"
+
+[tasks."litellm:key"]
+description = "Register the litellm_key of Secret <app> as the key of the row <app> in infrastructure/litellm/keys.yaml"
+quiet = true
+run = "scripts/litellm_keys.sh key"
+
 [tasks."gatus:open"]
 description = "Forward Gatus's status page to this PC's loopback and print its address"
 quiet = true
