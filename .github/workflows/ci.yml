@@ -50,6 +50,9 @@ jobs:
           mise exec -- tests/keycloak/realm_secrets_are_env_references.sh
           infrastructure/keycloak/realm.yaml infrastructure/keycloak/master.yaml
 
+      - name: Check that check:secrets-expiry passes no annotated Secret and a date 31 days out and names each Secret within 30 days, past, unparseable or unlisted
+        run: tests/secrets/expiry_check_names_each_breach.sh
+
   cluster:
     # GitHub appends matrix values to a literal job name, and the gate looks for the name cluster.
     name: ${{ github.job }}
