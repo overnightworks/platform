@@ -2,6 +2,8 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+# shellcheck source=../client_pod.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 namespace="$KEYCLOAK_NAMESPACE"
 applied_revision="$(kubectl -n flux-system get kustomization "$namespace" -o jsonpath='{.status.lastAppliedRevision}')"
 [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
@@ -20,6 +22,13 @@ public_host="${public_url#https://}"
 read -r secret_name secret_key < <(keycloak_env KC_BOOTSTRAP_ADMIN_CLIENT_SECRET |
   yq '.valueFrom.secretKeyRef | .name + " " + .key')
 read -r admin_client < <(keycloak_env KC_BOOTSTRAP_ADMIN_CLIENT_ID | yq '.value')
+# Keycloak keeps the forwarded headers of exactly the senders whose headers Traefik's web entry point keeps.
+keycloak_trusted="$(keycloak_env KC_PROXY_TRUSTED_ADDRESSES | yq '.value')"
+traefik_trusted="$(kubectl -n traefik get deployment traefik -o json | yq \
+  '.spec.template.spec.containers[0].args[] | select(test("^--entryPoints[.]web[.]forwardedHeaders[.]trustedIPs=")) | sub("^[^=]*=", "")')"
+[ -n "$keycloak_trusted" ] && [ "$(tr , '\n' <<<"$keycloak_trusted" | sort)" = "$(tr , '\n' <<<"$traefik_trusted" | sort)" ] ||
+  fail "Keycloak trusts the forwarded headers of '$keycloak_trusted', Traefik's web those of '$traefik_trusted'"
+echo "Keycloak and Traefik's web trust the forwarded headers of the same senders: $keycloak_trusted"
 admin_secret="$(kubectl -n "$namespace" get secret "$secret_name" -o go-template="{{index .data \"$secret_key\" | base64decode}}")"
 echo "::add-mask::$admin_secret"
 
@@ -45,16 +54,23 @@ admin() {
     --header 'Content-Type: application/json' "${body[@]}" "$local_url/admin/realms/$2"
 }
 
-# B1: the realm as the files declare it, on the public issuer, with the AI group and without the one it replaces.
+# B1: the realm as the files declare it, on the public issuer, with its declared groups and without the retired one.
 issuer="$(curl --silent --show-error --fail "$local_url/realms/$realm/.well-known/openid-configuration" | jq --raw-output .issuer)"
 [ "$issuer" = "$public_issuer" ] || fail "discovery names the issuer '$issuer', not $public_issuer"
 echo "discovery names the issuer $issuer"
-ai_group_path="$(admin GET "$realm/group-by-path$AI_GROUP" | jq --raw-output .path)"
-[ "$ai_group_path" = "$AI_GROUP" ] || fail "the realm $realm holds no group $AI_GROUP"
-replaced_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  --header "Authorization: Bearer $(admin_token)" "$local_url/admin/realms/$realm/group-by-path$REPLACED_GROUP")"
-[ "$replaced_status" = 404 ] || fail "an empty database's realm $realm answers $replaced_status for $REPLACED_GROUP, not 404"
-echo "the realm $realm holds the group $AI_GROUP, and an empty database none at $REPLACED_GROUP"
+declared_groups="$(yq --output-format json '.groups' "$REALM_FILE" | jq --raw-output '
+  def group_paths($parent): .[] | ($parent + "/" + .name) as $path | $path, ((.subGroups // []) | group_paths($path));
+  group_paths("")')"
+[ -n "$declared_groups" ] || fail "$REALM_FILE declares no group"
+while IFS= read -r group; do
+  live_path="$(admin GET "$realm/group-by-path$group" | jq --raw-output .path)" || live_path=""
+  [ "$live_path" = "$group" ] || fail "the realm $realm holds no group $group, which $REALM_FILE declares"
+done <<<"$declared_groups"
+retired_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  --header "Authorization: Bearer $(admin_token)" "$local_url/admin/realms/$realm/group-by-path$RETIRED_GROUP")"
+[ "$retired_status" = 404 ] || fail "an empty database's realm $realm answers $retired_status for $RETIRED_GROUP, not 404"
+echo "the realm $realm holds the $(grep -c . <<<"$declared_groups") groups $REALM_FILE declares, and an empty database" \
+  "none at $RETIRED_GROUP"
 redirect_uri="$(CLIENT="$LOGIN_CLIENT" yq '.clients[] | select(.clientId == strenv(CLIENT)) | .redirectUris[0]' "$REALM_FILE")"
 login_page="$RUNNER_TEMP/keycloak-login.html"
 login_status="$(curl --silent --output "$login_page" --write-out '%{http_code}' --get \
@@ -66,46 +82,32 @@ asset_path="$(grep -o '/resources/[a-z0-9]\{5\}/[^"?]*' "$login_page" | head -n 
 [ -n "$asset_path" ] || fail "the login page names no asset under /resources/<version>/"
 echo "the login page of $LOGIN_CLIENT answers 200 and names the asset $asset_path"
 
-# A second run on the applied realms changes nothing: their exports are equal, and it needs no retry.
-fingerprint() {
-  local realm_name
-  for realm_name in master "$realm"; do
-    admin POST "$realm_name/partial-export?exportClients=true&exportGroupsAndRoles=true" | jq --sort-keys .
-  done | sha256sum
+# A second run on the applied realms changes nothing: their exports and their declared service accounts with their
+# roles and groups are equal, and it needs no retry.
+realm_state() {
+  local realm_file realm_name username user
+  for realm_file in "$MASTER_FILE" "$REALM_FILE"; do
+    realm_name="$(yq '.realm' "$realm_file")"
+    admin POST "$realm_name/partial-export?exportClients=true&exportGroupsAndRoles=true" | jq --sort-keys . || return 1
+    for username in $(yq '.users[] | select(.serviceAccountClientId) | .username' "$realm_file"); do
+      user="$(admin GET "$realm_name/users?exact=true&username=$username" | jq --sort-keys '.[0] // empty')" || return 1
+      [ -n "$user" ] || { echo "::error::the realm $realm_name holds no user $username" >&2; return 1; }
+      printf '%s\n' "$user"
+      admin GET "$realm_name/users/$(jq --raw-output .id <<<"$user")/role-mappings" | jq --sort-keys . || return 1
+      admin GET "$realm_name/users/$(jq --raw-output .id <<<"$user")/groups" | jq --sort-keys . || return 1
+    done
+  done
 }
-before="$(fingerprint)"
+fingerprint() { realm_state | sha256sum; }
+before="$(fingerprint)" || fail "the realms master and $realm cannot be read"
 kubectl -n "$namespace" delete job config-cli --wait --timeout=2m
 flux reconcile kustomization "$namespace" --timeout=10m
 kubectl -n "$namespace" wait job/config-cli --for=condition=Complete --timeout=10m
 second_failures="$(kubectl -n "$namespace" get job/config-cli -o jsonpath='{.status.failed}')"
 [ -z "$second_failures" ] || fail "config-cli's second run failed $second_failures times before it completed"
-[ "$(fingerprint)" = "$before" ] || fail "config-cli's second run changed the realms master or $realm"
+after="$(fingerprint)" || fail "the realms master and $realm cannot be read after config-cli's second run"
+[ "$after" = "$before" ] || fail "config-cli's second run changed the realms master or $realm"
 echo "config-cli's second run completed at its first attempt and changed neither master nor $realm"
-
-# The client Pods' requests, as the ingress step makes them.
-client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
-# request <namespace> <name> <host> <url> [<curl argument>...]: a client Pod in the namespace asks the URL with the
-# host and the further arguments, runs to its end and is deleted; sets status to what it printed and exit_code to
-# curl's.
-request() {
-  local request_namespace="$1" name="$2" host="$3" url="$4" client_pod
-  shift 4
-  client_pod="${client_pod_template//@NAME@/${name}}"
-  client_pod="${client_pod//@HOST@/${host}}"
-  client_pod="${client_pod//@URL@/${url}}"
-  if [ "$#" -gt 0 ]; then
-    client_pod="$(CURL_ARGUMENTS="$(printf '%s\n' "$@")" yq '.spec.containers[0].args += (strenv(CURL_ARGUMENTS) | split("\n"))' <<<"$client_pod")"
-  fi
-  printf '%s\n' "$client_pod" | kubectl -n "$request_namespace" create -f -
-  kubectl -n "$request_namespace" wait "pod/$name" --timeout=2m \
-    --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' || {
-    kubectl -n "$request_namespace" describe "pod/$name"
-    fail "the client Pod $name in $request_namespace did not run to its end"
-  }
-  exit_code="$(kubectl -n "$request_namespace" get "pod/$name" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
-  status="$(kubectl -n "$request_namespace" logs "pod/$name")"
-  kubectl -n "$request_namespace" delete pod "$name" --wait --timeout=2m
-}
 
 # B2: through Traefik, as the tunnel asks, the public paths answer and every other path of the host is 404.
 web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
@@ -127,7 +129,7 @@ expect "302 $public_issuer/account" "$public_host" / --write-out '%{http_code} %
 expect 404 "$UNROUTED_HOST" /
 expect 400 "$public_host" "/realms/$realm/a%2Fb"
 
-# B3: only Traefik and Keycloak's own namespace reach it; Keycloak reaches its Postgres, no app and no outside host.
+# B3: only Traefik and Keycloak's own namespace reach it; Keycloak reaches its Postgres and nothing else.
 keycloak_service_url="http://keycloak.$namespace.svc:$(kubectl -n "$namespace" get service keycloak -o jsonpath='{.spec.ports[0].port}')"
 request "$namespace" own-namespace-request "$public_host" "$keycloak_service_url/realms/$realm/.well-known/openid-configuration"
 [ "$status" = 200 ] || fail "Keycloak answered $status, not 200, to a Pod in $namespace"
@@ -138,16 +140,42 @@ request "$caller_namespace" caller-request "$public_host" "$keycloak_service_url
 echo "Keycloak answers a Pod in $namespace and gives one in $caller_namespace no answer (curl exit code $exit_code)"
 caller_service="$(yq 'select(.kind == "Service") | .metadata.name + "." + .metadata.namespace + ".svc:" + (.spec.ports[0].port | tostring)' "$CALLER_MANIFEST")"
 postgres_target="postgres.$namespace.svc:$(kubectl -n "$namespace" get service postgres -o jsonpath='{.spec.ports[0].port}')"
-# The image has bash but no network client, so bash's /dev/tcp opens each connection from Keycloak's own container.
+cluster_port="$(kubectl -n "${CLUSTER_SERVICE%/*}" get service "${CLUSTER_SERVICE#*/}" -o jsonpath='{.spec.ports[0].port}')"
+cluster_target="${CLUSTER_SERVICE#*/}.${CLUSTER_SERVICE%/*}.svc:$cluster_port"
+# No NetworkPolicy selects the API server behind that Service, so only keycloak-egress keeps Keycloak from it: a Pod
+# beside Keycloak without its labels gets an answer.
+request "$namespace" free-egress-request "${cluster_target%:*}" "https://$cluster_target/livez" --insecure
+[ "$status" != 000 ] || fail "a Pod in $namespace without Keycloak's labels got no answer from $cluster_target, curl exit" \
+  "code $exit_code, so the probe below proves no policy"
+echo "a Pod in $namespace without Keycloak's labels got $status from $cluster_target"
+# The image has bash but no network client, so bash's /dev/tcp opens each connection from Keycloak's own container
+# and names its outcome: open, refused, timeout, or failed for any other end, such as a name that does not resolve.
+connection_probe='message="$(timeout 5 bash -c "exec 3<>/dev/tcp/${0%:*}/${0##*:}" 2>&1)"
+  case "$?:$message" in
+    0:*) echo open ;;
+    124:*) echo timeout ;;
+    *"Connection refused"* | *"No route to host"* | *unreachable*) echo refused ;;
+    *) echo failed ;;
+  esac'
+# reach <host:port>: succeeds when Keycloak's container connects and fails when its connection is refused or times
+# out; a probe that cannot run or ends otherwise fails the cell.
 reach() {
-  kubectl -n "$namespace" exec deployment/keycloak --container keycloak -- \
-    bash -c 'timeout 5 bash -c "exec 3<>/dev/tcp/${0%:*}/${0##*:}" 2>/dev/null' "$1"
+  local outcome
+  outcome="$(kubectl -n "$namespace" exec deployment/keycloak --container keycloak -- bash -c "$connection_probe" "$1")" ||
+    fail "the connection probe could not run in Keycloak's container for $1"
+  case "$outcome" in
+    open) return 0 ;;
+    refused | timeout) echo "Keycloak's container gets $outcome from $1" && return 1 ;;
+    *) fail "the connection probe in Keycloak's container ended '$outcome' for $1, neither connected nor refused" ;;
+  esac
 }
 reach "$postgres_target" || fail "Keycloak's container does not reach its Postgres at $postgres_target"
-for target in "$caller_service" "$OUTSIDE_TARGET"; do
+# The P7a step shows a Pod without Keycloak's labels reaching the outside target.
+for target in "$cluster_target" "$OUTSIDE_TARGET" "$caller_service"; do
   if reach "$target"; then fail "Keycloak's container reaches $target"; fi
 done
-echo "Keycloak's container reaches $postgres_target, neither $caller_service nor $OUTSIDE_TARGET"
+echo "Keycloak's container reaches $postgres_target, neither $cluster_target nor $OUTSIDE_TARGET, nor $caller_service," \
+  "which hopin's own policy also refuses"
 
 # B6: a person's password grant waits for the terms; an administrator without TOTP gets no token at all.
 probe_password="$(openssl rand -hex 24)"
@@ -189,8 +217,24 @@ admin POST master/users "$(USER="$probe_admin" PASSWORD="$probe_password" jq --n
     lastName: "Admin", credentials: [{type: "password", value: env.PASSWORD, temporary: false}]}')"
 probe_admin_id="$(admin GET "master/users?exact=true&username=$probe_admin" | jq --raw-output '.[0].id')"
 admin POST "master/users/$probe_admin_id/role-mappings/realm" "[$(admin GET master/roles/admin)]"
+# Keycloak's built-in direct grant asks for TOTP only from a user who has it, so through a client bound to that flow
+# the same administrator and password get a token: the refusal after it is master's own flow, not a failed sign-in.
+built_in_flow="$(admin GET master/authentication/flows | jq --raw-output '.[] | select(.alias == "direct grant") | .id')"
+[ -n "$built_in_flow" ] || fail "the realm master holds no built-in flow 'direct grant'"
+control_client=b6-admin-control
+admin POST master/clients "$(CLIENT="$control_client" FLOW="$built_in_flow" jq --null-input \
+  '{clientId: env.CLIENT, publicClient: true, directAccessGrantsEnabled: true, standardFlowEnabled: false,
+    authenticationFlowBindingOverrides: {direct_grant: env.FLOW}}')"
+password_grant master "$control_client" "$probe_admin"
+control_status="$grant_status"
+control_token="$(jq --raw-output '.access_token // empty' <<<"$grant_body")"
 password_grant master admin-cli "$probe_admin"
 admin DELETE "master/users/$probe_admin_id"
+admin DELETE "master/clients/$(admin GET "master/clients?clientId=$control_client" | jq --raw-output '.[0].id')"
+[ "$control_status" = 200 ] && [ -n "$control_token" ] ||
+  fail "a master administrator without TOTP got $control_status and no token through the built-in direct grant, so" \
+    "the refusal proves no flow"
 [ "$grant_status" = 401 ] && [ "$(jq --raw-output '.access_token // empty' <<<"$grant_body")" = "" ] ||
   fail "a master administrator without TOTP got $grant_status from a password grant, not 401 without a token"
-echo "a master administrator without TOTP gets 401 and no token from a password grant"
+echo "a master administrator without TOTP gets a token through the built-in direct grant, and 401 without a token" \
+  "through master's own"

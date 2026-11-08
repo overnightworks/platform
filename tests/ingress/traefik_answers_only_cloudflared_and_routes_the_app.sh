@@ -2,6 +2,8 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+# shellcheck source=../client_pod.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 applied_revision="$(kubectl -n flux-system get kustomization traefik -o jsonpath='{.status.lastAppliedRevision}')"
 [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
   fail "the Kustomization traefik applied '$applied_revision', not the candidate $CANDIDATE_REVISION"
@@ -58,30 +60,6 @@ echo "web trusts the forwarded headers of $trusted_ips, which holds the nodes' p
 
 web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
 traefik_url="http://traefik.traefik.svc:${web_port}"
-client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
-# request <namespace> <name> <host> <url> [<curl argument>...]: a client Pod in the namespace asks the URL with
-# the host and the further arguments, runs to its end and is deleted; sets status to the statuses it printed
-# and exit_code to curl's.
-request() {
-  local namespace="$1" name="$2" host="$3" url="$4" client_pod
-  shift 4
-  client_pod="${client_pod_template//@NAME@/${name}}"
-  client_pod="${client_pod//@HOST@/${host}}"
-  client_pod="${client_pod//@URL@/${url}}"
-  if [ "$#" -gt 0 ]; then
-    client_pod="$(CURL_ARGUMENTS="$(printf '%s\n' "$@")" yq '.spec.containers[0].args += (strenv(CURL_ARGUMENTS) | split("\n"))' <<<"$client_pod")"
-  fi
-  printf '%s\n' "$client_pod" | kubectl -n "$namespace" create -f -
-  kubectl -n "$namespace" wait "pod/$name" --timeout=2m \
-    --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' || {
-    kubectl -n "$namespace" describe "pod/$name"
-    fail "the client Pod $name in $namespace did not run to its end"
-  }
-  exit_code="$(kubectl -n "$namespace" get "pod/$name" -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
-  status="$(kubectl -n "$namespace" logs "pod/$name")"
-  kubectl -n "$namespace" delete pod "$name" --wait --timeout=2m
-}
-
 # A refused connection (curl's 7) or no reply within the timeout (28) both leave the client without a status.
 # assert_no_answer <namespace> <target>: the last request, from a Pod in the namespace, got no answer.
 assert_no_answer() {

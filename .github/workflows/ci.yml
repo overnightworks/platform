@@ -258,15 +258,17 @@ jobs:
       - name: P7b cells
         env:
           KEYCLOAK_NAMESPACE: keycloak
-          # The realm file whose realm the cells read, and the client whose login page they open.
+          # The realm files config-cli applies, whose groups and service accounts the cells read, and the client whose
+          # login page they open.
           REALM_FILE: infrastructure/keycloak/realm.yaml
+          MASTER_FILE: infrastructure/keycloak/master.yaml
           LOGIN_CLIENT: hopin
-          # The ruled AI group and the group it replaces, which the realm no longer declares.
-          AI_GROUP: /services/litellm
-          REPLACED_GROUP: /services/agent-service/api
-          # An app's manifest whose namespace must not reach Keycloak and whose Service Keycloak must not reach, and a
-          # host outside the cluster.
+          # A group no realm file declares, which an empty database must not hold.
+          RETIRED_GROUP: /services/agent-service/api
+          # An app's manifest whose namespace must not reach Keycloak and whose Service Keycloak must not reach, a
+          # Service no ingress policy guards and a host outside the cluster, neither of which Keycloak reaches.
           CALLER_MANIFEST: apps/hopin/hopin.yaml
+          CLUSTER_SERVICE: default/kubernetes
           OUTSIDE_TARGET: github.com:443
         run: tests/keycloak/realm_route_and_policies.sh
 
