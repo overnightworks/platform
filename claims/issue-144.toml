@@ -1,8 +1,0 @@
-claim_id = "0795c3115a964c8e94289207da365976"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "cb2ff0056034b6c6f7205734a26ea7ec225e088c"
-branch = "claude/issue-144-interrupt-load-toc-heavy-dump"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "tests/postgres/interrupt_load.sh", "tests/postgres/load_dump.sh"]
-opened_commit = "79b360270b7033b403fdca5277e41dd347e1ae3b"
-whole_reason = "The script, the two test files that pin its writer and the AGENTS.md sentence naming its dumps change together."
