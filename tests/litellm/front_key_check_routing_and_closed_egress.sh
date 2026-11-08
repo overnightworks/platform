@@ -66,7 +66,9 @@ key_made="$(admin /key/generate "$(MODEL="$model" yq --null-input --output-forma
 app_key="$(yq --input-format json '.key' <<<"$key_made")"
 [ -n "$app_key" ] && [ "$app_key" != null ] || fail "the master key made no key"
 echo "::add-mask::$app_key"
-[ "$(MODEL="$model" yq --input-format json '.models == [strenv(MODEL)]' <<<"$key_made")" = true ] ||
+# yq compares scalars, not arrays, with ==.
+[ "$(MODEL="$model" yq --input-format json '(.models | length) == 1 and .models[0] == strenv(MODEL)' \
+  <<<"$key_made")" = true ] ||
   fail "the master key made a key for $(yq --input-format json --output-format json --indent 0 '.models' \
     <<<"$key_made"), not [$model]"
 echo "the master key made the person budget $budget and a key for $model"
