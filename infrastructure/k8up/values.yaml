@@ -1,0 +1,18 @@
+# The source of rendered.yaml, which mise run charts:render generates; a chart bump changes the task's pins and the
+# image tag together.
+image:
+  # The tag with its digest: the operator hands this ref to every Job pod it starts as BACKUP_IMAGE.
+  tag: v2.16.1@sha256:f59bfa37c51511d5ad67e53816fb55c62d0e6411890e59bb6b965923129f30b5
+# The image's own USER 65532 stays; restricted asks only that it is not root.
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+k8up:
+  # A Snapshot object records the job's expanded RESTIC_REPOSITORY, which for a REST backend holds the user and password
+  # in its URL: the snapshot list is read through restic instead.
+  skipSnapshotSync: true

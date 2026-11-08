@@ -1,0 +1,8 @@
+# The API server refuses a k8up operator pod that runs as root, escalates or keeps capabilities, for this chart version
+# and every later one.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8up-system
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
