@@ -90,8 +90,8 @@ if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
 else
   source_ref="$(kubectl -n flux-system get gitrepository flux-system -o go-template='{{.spec.ref}}')"
   committed_ref="$(kubectl create --dry-run=client -f clusters/pc/flux-system/gotk-sync.yaml \
-    -o go-template='{{if eq .kind "GitRepository"}}{{.spec.ref}}{{end}}')"
-  [ "$source_ref" = "$committed_ref" ] || fail "the source ref '$source_ref' is not the committed '$committed_ref'"
+    -o go-template='{{if eq .kind "GitRepository"}}map[branch:{{.spec.ref.branch}} commit:'"$CANDIDATE_REVISION"']{{end}}')"
+  [ "$source_ref" = "$committed_ref" ] || fail "the source ref '$source_ref' is not the committed branch at the candidate '$committed_ref'"
 fi
 echo "GitRepository spec.ref after the reconcile: $source_ref"
 assert_job_source
