@@ -600,7 +600,12 @@
   line of `mise.toml`, `K3S_VERSION` or the workflow's own image; `tests/renovate/` drives it in `checks`. Its gaps:
   `MISE_VERSION` and `mise.lock`'s tools are watched without the check naming them, the digests in `ci.yml`'s `env`
   stand under no manager, and `--no-hooks` in a chart's render drops a bump's new hook silently, so the lane that bumps
-  such a chart reads its hooks. Opening pull requests is not built.
+  such a chart reads its hooks. A chart's image is watched only when its `values.yaml` states `repository` (with `registry`
+  where the chart takes one), `tag` and `digest` (or the chart's `sha`) in that order, as `infrastructure/prometheus/`
+  does, so a new chart states what its defaults would give. Renovate logs `Unexpected downgrade detected: skipping` for
+  `opentofu = "1.13"` and `yq = "4"` in `mise.toml`: `mise.lock` holds the exact patch of a prefix pin, which Renovate
+  sees as newer than the prefix it would write, so a patch release inside the prefix is not listed; that is accepted,
+  since the exact patch moves only when a lane refreshes `mise.lock`. Opening pull requests is not built.
 - `.github/workflows/code-scanning.yml`: CodeQL through quality's `codeql.yml`.
 - `quality/config.toml`: the gate's mandatory jobs; a root entry outside quality's base list is declared here.
 - `sonar-project.properties`: the SonarCloud project.

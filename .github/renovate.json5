@@ -25,11 +25,11 @@
       datasourceTemplate: "docker",
     },
     {
-      // A chart's image by registry, repository, tag and digest.
+      // A chart's image by repository, with its registry where the chart takes one, tag and digest (a chart's `sha` too).
       customType: "regex",
       managerFilePatterns: ["/^infrastructure\\/.+\\/values\\.yaml$/"],
-      matchStrings: ["registry: (?<registry>\\S+)\\n\\s*repository: (?<repository>\\S+)\\n\\s*tag: (?<currentValue>\\S+)\\n(?:\\s*#.*\\n)*\\s*digest: (?<currentDigest>sha256:[a-f0-9]{64})"],
-      depNameTemplate: "{{{registry}}}/{{{repository}}}",
+      matchStrings: ["(?:registry: (?<registry>\\S+)\\n\\s*)?repository: (?<repository>\\S+)\\n\\s*tag: (?<currentValue>\\S+)\\n(?:\\s*#.*\\n)*\\s*(?:digest|sha): (?<currentDigest>sha256:[a-f0-9]{64})"],
+      depNameTemplate: "{{#if registry}}{{{registry}}}/{{/if}}{{{repository}}}",
       datasourceTemplate: "docker",
     },
     {
