@@ -119,7 +119,7 @@ jobs:
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
       # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
-      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml
+      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml
       # The Kustomization that serves the Secrets of every namespace, so that no other layer holds one of them.
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
