@@ -1,7 +1,0 @@
-claim_id = "e9333981743446478729fb8c44915b64"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "a5e207e3d6dc384fc747d8d4d8cc4eaf09182600"
-branch = "claude/issue-216-main-pins-its-commit"
-scope = ["AGENTS.md", "tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh", "tests/flux/reconcile_the_candidate_tree.sh"]
-opened_commit = "14a286911a1fe0a57f152502e65a6a5f9758ce3c"
