@@ -3,7 +3,7 @@
 # layer's key table in LiteLLM's Postgres that /key/list can list: LiteLLM v1.106.6 leaves out the rows whose team_id is
 # the dashboard's UI session id. Prints the table's rows, the rows LiteLLM does not list, the rows it lists and the
 # total it counts, then equal or DIFFERS, never a key; exits 1 when they differ or a step fails, naming the step and,
-# when one ended it, the deadline.
+# when the local deadline ended it, that deadline.
 set -euo pipefail
 usage="usage: $0 <namespace>: the operator's to run, since it reads LiteLLM's master key from the Secret litellm"
 [ "$#" = 1 ] || {
@@ -48,6 +48,7 @@ port="$(bounded "reading the Service litellm in $namespace" kubectl --namespace 
   -o jsonpath='{.spec.ports[0].port}')" ||
   fail "the Service litellm in $namespace cannot be read"
 
+: >"$scratch/forward.log"
 timeout 10m kubectl --namespace "$namespace" port-forward service/litellm ":$port" >"$scratch/forward.log" 2>&1 &
 forward=$!
 local_port=""
