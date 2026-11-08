@@ -290,6 +290,14 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
+      - name: Assert that songmaker's Postgres and Redis are Ready and non-root, closed to other namespaces, and that Redis forgets on restart
+        if: matrix.part == 'core'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          # The throwaway namespace of the Pod that must get no answer.
+          OTHER_NAMESPACE: songmaker-client
+        run: tests/songmaker/stores_are_ready_non_root_closed_and_forget.sh
+
       - name: P7b cells
         if: matrix.part == 'core'
         env:
