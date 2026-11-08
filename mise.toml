@@ -440,15 +440,21 @@ other_sessions() {
     WHERE datname = current_database() AND backend_type = 'client backend' AND pid <> pg_backend_pid()"
 }
 # pg_restore reads the archive's header and table of contents before it connects, so one whose client died can run
-# without a session yet. Fails while one runs in the container or the processes cannot be listed.
+# without a session yet. Fails while one runs in the container, the processes cannot be listed, or one that still
+# exists cannot be read; only a process that is gone is skipped.
 no_restore_runs() {
   in_postgres sh -c 'set -- /proc/[0-9]*/comm; [ -e "$1" ] || exit 1
-    for comm; do [ "$(cat "$comm" 2>/dev/null)" != pg_restore ] || exit 1; done'
+    for comm; do
+      if name="$(cat "$comm" 2>/dev/null)"; then [ "$name" != pg_restore ] || exit 1
+      elif [ -e "${comm%/comm}" ]; then exit 1; fi
+    done'
 }
-# A killed load's remote pg_restore, a backup's pg_dump: a session that could still write or read half a load.
+# A killed load's remote pg_restore, a backup's pg_dump: a session that could still write or read half a load. The
+# processes come first: a restore connects before it ends, and its backend outlives it until its commit is done, so
+# a restore the scan no longer finds has either never connected or left a session the next check counts.
 wait_alone() {
   local deadline=$((SECONDS + 120))
-  until [ "$(other_sessions)" = 0 ] && no_restore_runs; do [ "$SECONDS" -lt "$deadline" ] || return 1; sleep 2; done
+  until no_restore_runs && [ "$(other_sessions)" = 0 ]; do [ "$SECONDS" -lt "$deadline" ] || return 1; sleep 2; done
 }
 # A Ctrl-C reaches mise and this script, and mise forwards it once more, so each exit path ignores INT and runs at most
 # once, to its end.
@@ -482,16 +488,17 @@ and its writers at 0: check the data, then run mise run db:load-dump --resume $n
 # running, so the data counts as unchanged only once the database is alone, holds no relation the fingerprint leaves
 # out, and its fingerprint is the one before. A TERM before that decision leaves the outcome unknown.
 failed_load() {
+  trap 'unknown_outcome; exit 143' TERM
   trap - EXIT
   trap '' INT
-  trap 'unknown_outcome; exit 143' TERM
   local after_load
   if wait_alone && [ "$(unfingerprinted_relations)" = 0 ] && after_load="$(fingerprint)" &&
     [ "$after_load" = "$before_load" ]; then
+    # Decided: a TERM from here on must not follow this line with an unknown one.
+    trap '' TERM
     echo "db:load-dump: the data is unchanged; resuming the Kustomization $namespace" >&2
     resume_flux
   else
-    trap - TERM
     unknown_outcome
   fi
 }

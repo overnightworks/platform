@@ -23,14 +23,22 @@ case "$*" in
   *"get kustomization"*)
     [ -z "${FAKE_READ_SUSPEND_FAILS:-}" ] || { echo "fake kubectl: the server is unreachable" >&2; exit 1; }
     printf '%s' "${FAKE_SUSPENDED:-}" ;;
-  *pg_stat_activity*) echo 0 ;;
+  *pg_stat_activity*)
+    # A lingering restore's backend: seen once, then its commit is done.
+    if [ -e "$FAKE_DIR/committing" ]; then
+      rm "$FAKE_DIR/committing"
+      : >"$FAKE_DIR/committed"
+      echo 1
+    else echo 0; fi ;;
   *relkind*) echo "${FAKE_UNFINGERPRINTED:-0}" ;;
   */proc/*)
-    # FAKE_RESTORE_LINGERS: the restore's process outlives the load's status by two listings, then commits.
+    # FAKE_RESTORE_LINGERS: the restore's process outlives the load's status by two listings and ends while its
+    # backend still commits.
     [ -n "${FAKE_RESTORE_LINGERS:-}" ] && [ -e "$FAKE_DIR/restored" ] || exit 0
     echo >>"$FAKE_DIR/listings"
-    [ "$(wc -l <"$FAKE_DIR/listings")" -gt 2 ] || exit 1
-    : >"$FAKE_DIR/committed" ;;
+    listings="$(wc -l <"$FAKE_DIR/listings")"
+    [ "$listings" -gt 2 ] || exit 1
+    [ "$listings" != 3 ] || : >"$FAKE_DIR/committing" ;;
   *"get pods"*) echo "items: []" ;;
   *"get deployments"* | *"get jobs"* | *"delete job"* | *" scale "* | *"rollout status"* | *" wait "*) ;;
   *" exec "*)
@@ -204,8 +212,8 @@ cell_materialized_view_after_failed_load_is_unknown_and_stays_suspended() {
     fail "a failed load on a database with a relation pg_dump does not cover exited $status with '$output'"
 }
 
-cell_restore_that_outlives_its_status_is_awaited_before_the_fingerprint() {
-  cell=restore-that-outlives-its-status-is-awaited-before-the-fingerprint
+cell_restore_that_outlives_its_status_is_awaited_through_its_commit() {
+  cell=restore-that-outlives-its-status-is-awaited-through-its-commit
   FAKE_RESTORE_FAILS=1 FAKE_RESTORE_LINGERS=1 run_loader x "$dump"
   [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"is unknown"* ]] &&
     [[ $output != *unchanged* ]] ||
@@ -327,7 +335,7 @@ cells=(
   unreadable-database-after-failed-load-is-unknown-and-stays-suspended
   interrupt-script-names-unreadable-suspension-after-kill
   materialized-view-after-failed-load-is-unknown-and-stays-suspended
-  restore-that-outlives-its-status-is-awaited-before-the-fingerprint
+  restore-that-outlives-its-status-is-awaited-through-its-commit
   term-during-recovery-is-unknown-and-stays-suspended
 )
 failed=()
