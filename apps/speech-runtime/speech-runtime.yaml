@@ -92,7 +92,7 @@ spec:
       port: 8080
       targetPort: http
 ---
-# Only the apps that speak or hear through it reach it.
+# Only the apps that speak or hear through it, and Gatus asking /health, reach it.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -109,7 +109,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [hopin, presentator]
+                values: [hopin, presentator, gatus]
       ports:
         - protocol: TCP
           port: 8080

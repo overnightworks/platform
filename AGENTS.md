@@ -36,6 +36,11 @@
   names, by namespace, name and date, every Secret whose annotation `platform.hallucinai.de/expires-on: YYYY-MM-DD` lies
   within 30 days or in the past, and each whose value is no such date, and fails on any or when the listing fails; it
   passes with no annotated Secret.
+- `mise run disk` runs without sudo and prints what fills the disk of the home directory by size and name (named
+  directories of `$HOME`, the rest of `$HOME`, and what lies outside it, which is Docker's `/var/lib/docker` and the
+  system, since only root reads that), then Docker's own count when the daemon answers within 2 minutes, else one line
+  saying it does not answer in time; from 85 % use it first prints a `WARNING` line on stderr, and it still exits 0. A directory du cannot
+  read marks its row incomplete and prints the remainders as `?`, never as a number.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
@@ -59,6 +64,8 @@
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
   per host and hal's console answers on another port of `localhost`.
+- `mise run gatus:open` forwards `127.0.0.1` at the port of Gatus's Service to it and prints the address of the status page;
+  the page has no other way in.
 - `mise run keycloak:agent-owner [--adder] <client> <username>` runs through kcadm in Keycloak's
   container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
   `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
@@ -139,6 +146,21 @@
   Deleted logs stay deleted.
   `check-pod-logs` never reads Loki's copy of the lines, whose bound `infrastructure/loki/` sets; the `cluster` cell on
   Loki's running configuration is the only check of it.
+- The disk's bounds run in the operator's user manager, which lingers, and need no sudo: after `scripts/bootstrap_pc.sh
+  --only tools` (the units' binaries must exist first), `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`
+  writes `~/.config/user-tmpfiles.d/disk.conf` from `host/disk/` and the units `dev.mise.docuum.service`,
+  `dev.mise.uv-cache-clean-weekly.timer`, `dev.mise.user-tmpfiles-clean-daily.timer` and
+  `dev.mise.trash-prune-daily.timer` with their services, from `mise.toml`, and restarts Docuum. Docuum keeps `docker system df`'s Images line, which counts a shared layer once,
+  at 100 GB, deleting images least recently used first, never one younger than a day, one a container uses, one tagged
+  `previous`, a `-base` image or one of the vendor repositories its `--keep` flags name; its state is
+  `~/.local/share/docuum/state.yml`, and an image it has never seen counts as last used at its creation. uv's cache
+  is emptied weekly without `--force`. The tmpfiles line deletes a Codex session 30 days after the newest of its
+  timestamps. `gtrash prune --day 30`, restricted to `~/.local/share/Trash`, deletes daily each Trash entry whose
+  `.trashinfo` deletion date is older than 30 days, with that file, and leaves an entry without a `.trashinfo`, one
+  whose `.trashinfo` it cannot read and the Trash of other mounts; the unit creates the home Trash first, since gtrash
+  fails on a missing one. Claude's sessions, Docker's volumes and its build cache (hal's) are never cleaned here. Undo: declare the
+  units, the Trash's included, `state = "absent"` and apply the same parts; `~/.config/user-tmpfiles.d/disk.conf` and
+  `~/.local/share/docuum/state.yml` stay and are inert without the units.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
   runs beside it.
@@ -180,6 +202,14 @@
   stays and a `.gz` and a `.tmp` go; and it runs `check-pod-logs` against a fake `systemctl`, which passes fresh logs,
   files that vanish before their stat and a missing `/var/log/pods`, passes a clean the timer started before a
   reboot, and names a clean that never ran, last started 26 hours ago or failed, a failed listing, a `.gz` and a `.tmp`.
+  It also runs `tests/disk/`: the shipped line at a seconds-long age deletes an old Codex session with its emptied
+  directories and keeps a newer one and a Claude session of the older one's age, and `mise run disk` against a fake
+  `df` warns at 85 % and not at 84 %, and the Trash unit's gtrash, run as the unit's `mise.toml` entry names it on a
+  scratch Trash, deletes an entry trashed 31 days ago with its `.trashinfo` and keeps a directory trashed yesterday with
+  2020 files and an entry without a `.trashinfo` of any age, passing on a missing and an empty Trash. The part `postgres` of `cluster` first runs Docuum with the service's own flags
+  (read from `mise.toml`, only threshold and minimum age the cell's, every image the runner holds kept) against the
+  runner's Docker with small imported images: the least recently used unprotected one goes, and a `:previous` tag, a
+  `-base:` tag, an image a container uses and the newer one stay.
   `cluster` reconciles `clusters/pc` in k3d, with `host/k3s/config.yaml` mounted alone and read-only at
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
@@ -299,6 +329,10 @@
   refuses each key and the password empty, ending in a newline, with a space or a non-ASCII byte, and the password
   outside the URL-safe alphabet, naming only the variable, while a good set reaches the exec at core limit 0. k3d
   does not prove a provider call through an open egress.
+  The step "P9b cells" plants a backdated and a fresh row in each of the five tables through the Postgres pod and runs a
+  Job made from the CronJob: it prints one deletion in each count and leaves the fresh rows and the idle customers
+  with a budget or with spend, a second run prints zeros, and the first log holds no planted value; its Pod ran in a
+  Namespace enforcing `restricted` with its Postgres's image.
 - `clusters/pc/flux-system/`: Flux's own components and its sync to this repository. `gotk-components.yaml` is
   generated by `mise run flux:export` for the components `FLUX_COMPONENTS` in `mise.toml` lists, which hold no Helm reconciler
   (every chart is rendered into Git); it is not edited by hand, and `cluster` fails when a regeneration differs.
@@ -331,7 +365,7 @@
   through Traefik's `web`; its NetworkPolicy admits only namespace `traefik` to hopin's port, so hopin trusts the
   forwarded addresses of the pod network in `HOPIN_TRUSTED_PROXIES` only behind that policy.
 - `apps/speech-runtime/`: speech-runtime's Deployment, Service, caller table (a ConfigMap) and NetworkPolicy, which
-  admits port 8080 only from the namespaces `hopin` and `presentator`. One pod runs on the CPU with a read-only root
+  admits port 8080 only from the namespaces `hopin`, `presentator` and `gatus`. One pod runs on the CPU with a read-only root
   and a memory-backed `/tmp`, its image the full app ref of a release that changes only in a pull request, together
   with the caller table's keys the image knows, and pulled through the Secret `ghcr-pull` from
   `platform-secrets`. It has no Secret of its own and no route; it is ready when both models are.
@@ -385,11 +419,18 @@
   not start unless each key and the password is one non-empty printable line and the password URL-safe; it starts
   with core dumps off, admits only the front and sends only to cluster DNS, its Postgres and agent-egress, which its
   `hostAliases` name for the provider hosts at the fixed ClusterIP of agent-egress's Service, in k3s's default
-  service CIDR. The front, a Traefik on port 4000, admits only the namespaces `hopin`, `presentator` and `songmaker`
+  service CIDR. The front, a Traefik on port 4000, admits only the namespaces `hopin`, `presentator`, `songmaker` and `gatus`
   and passes only `POST /v1/chat/completions`, `POST /v1/images/generations` and `GET /v1/models` without a query
   string. agent-egress, a Traefik on 443 that admits only LiteLLM, passes TLS
   only for the SNIs of `egress-allowed.yml` and sends only to cluster DNS, so nothing the copy of hal's data holds
-  leaves the cluster. `mise exec -- tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>` is the operator's, since it
+  leaves the cluster. The CronJob `litellm-expire` runs at 04:00 with `Forbid`, `backoffLimit` 0 and deletes in one statement,
+  `expire.sql` (a ConfigMap), the daily person, tool and label rows dated more than 90 days before the database's UTC
+  day, the tool rows last used before the moment 90 days before now, or created before it when never used, and the customer rows without a budget, without spend and without a
+  daily row inside the period; the period is no setting, as the privacy text states it. Its `psql` is the image of the
+  layer's Postgres, which a replacement copies, and it prints the five counts by name, never a row; a first `select 1`,
+  tried up to 30 times a second apart inside the Pod since a fresh Pod can be refused until the NetworkPolicy controller admits
+  its address, shows psql's stderr, so a failed connection names itself in the log, while the statement's stderr is discarded because
+  psql quotes row values. `mise exec -- tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>` is the operator's, since it
   reads the master key: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
   key table's rows, those of the dashboard's UI session (which `/key/list` omits) and the rest, then `equal` or `DIFFERS`
   for the count against the rest; each step runs under a deadline and names itself when it fails.
@@ -422,8 +463,8 @@
   `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A chart or image bump
   changes the task's chart digest, `image.digest` and `versionOverride` together and regenerates, by hand in a pull
   request, and the `images:` entry of `infrastructure/litellm/kustomization.yaml`, the image of the Deployments
-  `litellm-front` and `agent-egress`, with them. Its NetworkPolicy admits only pods of namespace `cloudflared`, and
-  only to the `web` port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied,
+  `litellm-front` and `agent-egress`, with them. Its NetworkPolicy admits only pods of namespaces `cloudflared` and `gatus`,
+  and only to the `web` port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied,
   while the node's probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
   `host/k3s/config.yaml` sets no `cluster-cidr` (`cluster` checks it against the nodes' pod CIDRs), and carries hal's
   entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character refused with 400 by
@@ -437,11 +478,11 @@
   `loki.image.digest` together and regenerates, by hand in a pull request. `limits_config.retention_period` of 28 days
   with the compactor's retention on is the one rule for Loki's copy of every line, which the privacy texts promise gone
   before 30 days; the compactor runs at start, so a PC that was off deletes shortly after its next start. The claim
-  is on the Retain class and carries the prune annotation. Its NetworkPolicy admits only the namespaces `alloy` and
-  `grafana`, and only to port 3100. In k3d a client Pod in namespace `alloy`, which the layer `alloy` owns and the cell
-  leaves, pushes a line and reads it back by LogQL; the configuration at `/config` has the retention on at most 28 days
-  with a `delete_request_store`; a Pod in a throwaway namespace gets no answer; the claim is Bound on a Retain volume
-  with prune disabled; the throwaway namespace is gone on every exit.
+  is on the Retain class and carries the prune annotation. Its NetworkPolicy admits only the namespaces `alloy`, `grafana`
+  and `gatus`, and only to port 3100. In k3d a client Pod in a throwaway namespace `alloy` pushes a line and reads it
+  back by LogQL; the configuration at `/config` has the retention on at most 28 days with a `delete_request_store`; a
+  Pod in another namespace gets no answer; the claim is Bound on a Retain volume with prune disabled; the throwaway
+  namespaces are gone on every exit.
 - `infrastructure/alloy/`: Alloy, one pod with the image `docker.io/grafana/alloy` at a digest, in a Namespace that
   enforces Pod Security `restricted`; a plain manifest, since the chart's ClusterRole grants `secrets`, `configmaps` and
   `nodes` and no value narrows it. `config.alloy` is `discovery.kubernetes` into `loki.source.kubernetes`, which reads
@@ -476,10 +517,24 @@
   path make `DeploymentUnavailable` and `KustomizationNotReady` pending, a Pod in the throwaway namespace `grafana`
   gets 200 and one in another namespace no answer, the claim is Bound on a Retain volume with prune disabled, and the
   throwaway objects are gone on every exit.
+- `infrastructure/gatus/`: Gatus, the status page, in a Namespace that enforces Pod Security `restricted`: one pod with
+  `Recreate`, storage `memory` (a restart forgets the history; nothing is backed up) and metrics off. Its configuration
+  is a generated ConfigMap whose name carries its content's hash, so a change rolls the pod. Every 60 seconds it asks
+  hopin's `/health` and Keycloak's discovery of the realm `hallucinai` through Traefik's `web` with each app's Host
+  header, speech-runtime's `/health`, skat's `/health`, Loki's `/ready` and Prometheus's `/-/ready` directly at each
+  Service, and LiteLLM's front for `GET /v1/models` without a key, which must answer 401 since Gatus holds no key. The
+  NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus and the front admit the namespace `gatus` on the port
+  its request uses; hopin and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
+  Service and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
+  headers from; it sends only the requests of its configuration. In k3d, through a port-forward, every endpoint of the
+  configuration is healthy, speech-runtime at scale 0 turns unhealthy and, restored and Ready, healthy again, and a Pod
+  in another namespace gets no answer from Gatus.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's
   host step proves those two on the PC.
+- `host/disk/`: the tmpfiles line the daily user clean reads, copied to `~/.config/user-tmpfiles.d/disk.conf` by the
+  `[dotfiles]` entry of `mise.toml`; the units are declared there, as mise writes systemd user units from the table.
 - `mise.toml`: the tools, the k3s version and its installer's sha256, the PC's bootstrap parts (the k3s config file,
   the pod-log parts with `pod-logs-clean.timer` as a running, enabled service, which each unit file notifies,
   and the ufw rule `k3s-cni`, with `k3s-pods` and `k3s-services` declared absent, which deletes them from a host whose mise

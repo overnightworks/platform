@@ -1,0 +1,12 @@
+# Gatus's one configuration is a generated ConfigMap whose name carries its content's hash, so a change rolls the pod,
+# which reads the file once, at start.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gatus
+resources:
+  - namespace.yaml
+  - gatus.yaml
+configMapGenerator:
+  - name: gatus
+    files:
+      - config.yaml=gatus-config.yaml

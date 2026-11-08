@@ -1,0 +1,77 @@
+# LiteLLM's pseudonymous usage rows, deleted 90 days after their day, as the privacy text promises. The statement is
+# expire.sql, which the kustomization turns into a ConfigMap; psql comes from the image of this layer's own Postgres,
+# which the kustomization copies here. A first `select 1`, tried up to 30 times, connects with psql's stderr visible, so a failed
+# connection names its host, user and reason in the log. Only the five counts are printed by the statement, by name and never a
+# row: psql quotes row values in its errors, so the statement's stderr is discarded, and a failure still fails the Job.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: litellm-expire
+spec:
+  schedule: "0 4 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: litellm-expire
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            # The alpine image's postgres user.
+            runAsUser: 70
+            runAsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: expire
+              # Replaced with the StatefulSet postgres's image.
+              image: postgres
+              # A fresh Pod can be refused until the NetworkPolicy controller admits its address, so the
+              # connection is tried up to 30 times, a second apart, inside this Pod.
+              command:
+                - sh
+                - -c
+                - |
+                  tries=0
+                  until psql --no-psqlrc --tuples-only --command 'select 1' >/dev/null; do
+                    tries=$((tries + 1))
+                    [ "$tries" -lt 30 ] || exit 1
+                    sleep 1
+                  done
+                  exec psql --no-psqlrc --no-align --expanded --set ON_ERROR_STOP=1 --file /etc/expire/expire.sql 2>/dev/null
+              env:
+                - name: PGHOST
+                  value: postgres
+                - name: PGUSER
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: PGDATABASE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres
+                      key: password
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: statement
+                  mountPath: /etc/expire
+                  readOnly: true
+          volumes:
+            - name: statement
+              configMap:
+                name: litellm-expire
