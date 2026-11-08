@@ -1,0 +1,8 @@
+claim_id = "ccc6547f52154e48ba9d569c44a14db0"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "563143a376d768708a5de26b9c61702c38839c57"
+branch = "claude/issue-199-p8a-gpu-on-the-node"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "docs/app.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/nvidia", "tests/flux", "tests/nvidia"]
+opened_commit = "9061362874ddc624c9eac34a2b39175d67ec21c4"
+whole_reason = "One layer: its class, plugin, Flux Kustomization, vendor entry, cells and documents prove one offered card together."
