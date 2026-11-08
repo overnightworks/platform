@@ -320,8 +320,9 @@
   string. agent-egress, a Traefik on 443 that admits only LiteLLM, passes TLS
   only for the SNIs of `egress-allowed.yml` and sends only to cluster DNS, so nothing the copy of hal's data holds
   leaves the cluster. `tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>` is the operator's, since it
-  reads the master key: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts, the
-  rows of the key table and `equal` or `DIFFERS`.
+  reads the master key: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
+  key table's rows, those of the dashboard's UI session (which `/key/list` omits) and the rest, then `equal` or `DIFFERS`
+  for the count against the rest; each step runs under a deadline and names itself when it fails.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
   and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at
