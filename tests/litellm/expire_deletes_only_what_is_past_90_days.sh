@@ -59,6 +59,12 @@ ORDER BY 1
 EOSQL
 }
 count_line='^(person_days|tool_days|tag_days|tools|people)\|'
+# Every value the cell plants (names, ids, key, creator) starts with the marker; the Job's log may hold none.
+assert_log_holds_no_planted_value() {
+  if grep -qF "$marker" <<<"$1"; then
+    fail "the Job's log holds a value the cell planted"
+  fi
+}
 # run_expire <job name>: a Job made from the CronJob; sets log to the statement's counts and failed_tries to the rest.
 run_expire() {
   kubectl --namespace "$namespace" create job "$1" --from=cronjob/litellm-expire
@@ -81,6 +87,7 @@ run_expire() {
   # A retried Job leaves failed Pods beside the one that completed.
   full_log="$(kubectl --namespace "$namespace" logs "$(kubectl --namespace "$namespace" get pods --selector "job-name=$1" \
     --field-selector status.phase=Succeeded --output name)")"
+  assert_log_holds_no_planted_value "$full_log"
   # The lines that are no count are psql's failed connection tries.
   log="$(grep -E "$count_line" <<<"$full_log" || true)"
   failed_tries="$(grep -vE "$count_line" <<<"$full_log" || true)"
