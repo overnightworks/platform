@@ -145,9 +145,47 @@ cluster_target="${CLUSTER_SERVICE#*/}.${CLUSTER_SERVICE%/*}.svc:$cluster_port"
 # No NetworkPolicy selects the API server behind that Service, so only keycloak-egress keeps Keycloak from it: a Pod
 # beside Keycloak without its labels gets an answer.
 request "$namespace" free-egress-request "${cluster_target%:*}" "https://$cluster_target/livez" --insecure
-[ "$status" != 000 ] || fail "a Pod in $namespace without Keycloak's labels got no answer from $cluster_target, curl exit" \
-  "code $exit_code, so the probe below proves no policy"
+[ "$status" != 000 ] || fail "a Pod in $namespace without Keycloak's labels got no answer from $cluster_target, curl exit \
+code $exit_code, so the probe below proves no policy"
 echo "a Pod in $namespace without Keycloak's labels got $status from $cluster_target"
+# hopin's own policy refuses every sender but Traefik, so only a throwaway target in hopin's namespace, with hopin's
+# labels and port and a throwaway policy admitting Keycloak's namespace to it alone, leaves keycloak-egress as the one
+# thing that can keep Keycloak from that namespace. It never turns ready, so hopin's Service never routes to it.
+target_name="keycloak-egress-target"
+target_objects=("pod/$target_name" "networkpolicy/$target_name")
+remove_target() {
+  local left
+  kubectl -n "$caller_namespace" delete "${target_objects[@]}" --ignore-not-found --wait --timeout=2m
+  left="$(kubectl -n "$caller_namespace" get "${target_objects[@]}" --ignore-not-found --output name)" ||
+    fail "$caller_namespace cannot be read for the throwaway ${target_objects[*]}"
+  [ -z "$left" ] || fail "$caller_namespace still holds the throwaway $left"
+  echo "$caller_namespace holds none of the throwaway ${target_objects[*]}"
+}
+trap 'kill "$forward_pid" 2>/dev/null || true; remove_target' EXIT
+caller_labels="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.metadata.labels' "$CALLER_MANIFEST")"
+caller_port="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.spec.containers[0].ports[0]' "$CALLER_MANIFEST")"
+jq --null-input --arg name "$target_name" --arg image "$PROBE_IMAGE" --argjson labels "$caller_labels" \
+  --argjson port "$caller_port" '{apiVersion: "v1", kind: "Pod",
+    metadata: {name: $name, labels: ($labels + {"app.kubernetes.io/component": $name})},
+    spec: {restartPolicy: "Never", automountServiceAccountToken: false, enableServiceLinks: false,
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: "RuntimeDefault"}},
+      containers: [{name: "target", image: $image, ports: [$port],
+        command: ["httpd", "-f", "-p", ($port.containerPort | tostring), "-h", "/tmp"],
+        readinessProbe: {exec: {command: ["false"]}},
+        securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: ["ALL"]}}}]}}' |
+  kubectl -n "$caller_namespace" create -f -
+jq --null-input --arg name "$target_name" --arg from "$namespace" --argjson port "$caller_port" '{
+    apiVersion: "networking.k8s.io/v1", kind: "NetworkPolicy", metadata: {name: $name},
+    spec: {podSelector: {matchLabels: {"app.kubernetes.io/component": $name}}, policyTypes: ["Ingress"],
+      ingress: [{from: [{namespaceSelector: {matchLabels: {"kubernetes.io/metadata.name": $from}}}],
+        ports: [{port: $port.name, protocol: "TCP"}]}]}}' |
+  kubectl -n "$caller_namespace" create -f -
+kubectl -n "$caller_namespace" wait "pod/$target_name" --timeout=2m --for=jsonpath='{.status.containerStatuses[0].started}'=true
+target_address="$(kubectl -n "$caller_namespace" get "pod/$target_name" -o jsonpath='{.status.podIP}'):$(jq .containerPort <<<"$caller_port")"
+request "$namespace" target-request "${target_address%:*}" "http://$target_address/"
+[ "$status" != 000 ] || fail "a Pod in $namespace without Keycloak's labels got no answer from the throwaway target \
+$target_address in $caller_namespace, curl exit code $exit_code, so the probe below proves no policy"
+echo "a Pod in $namespace without Keycloak's labels got $status from the throwaway target $target_address in $caller_namespace"
 # The image has bash but no network client, so bash's /dev/tcp opens each connection from Keycloak's own container
 # and names its outcome: open, refused, timeout, or failed for any other end, such as a name that does not resolve.
 connection_probe='message="$(timeout 5 bash -c "exec 3<>/dev/tcp/${0%:*}/${0##*:}" 2>&1)"
@@ -171,11 +209,13 @@ reach() {
 }
 reach "$postgres_target" || fail "Keycloak's container does not reach its Postgres at $postgres_target"
 # The P7a step shows a Pod without Keycloak's labels reaching the outside target.
-for target in "$cluster_target" "$OUTSIDE_TARGET" "$caller_service"; do
+for target in "$cluster_target" "$OUTSIDE_TARGET" "$target_address" "$caller_service"; do
   if reach "$target"; then fail "Keycloak's container reaches $target"; fi
 done
-echo "Keycloak's container reaches $postgres_target, neither $cluster_target nor $OUTSIDE_TARGET, nor $caller_service," \
-  "which hopin's own policy also refuses"
+echo "Keycloak's container reaches $postgres_target, neither $cluster_target nor $OUTSIDE_TARGET, nor the target" \
+  "$target_address in $caller_namespace, nor $caller_service"
+remove_target
+trap 'kill "$forward_pid" 2>/dev/null || true' EXIT
 
 # B6: a person's password grant waits for the terms; an administrator without TOTP gets no token at all.
 probe_password="$(openssl rand -hex 24)"

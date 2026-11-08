@@ -225,9 +225,11 @@
   `cloudflared` gets through Traefik 200 for discovery and a `/resources/<version>/` asset, 404 for
   `/resources/master/…`, `/admin/` and `/realms/master/`, 302 from `/` to the account page, 404 for `/` on another
   host and 400 for an encoded slash; that a Pod in Keycloak's namespace reaches it and one in `hopin` gets no answer;
-  that a Pod in Keycloak's namespace without its labels gets an answer from the Service `kubernetes`, while Keycloak's
-  container reaches its Postgres but neither that Service nor github.com nor hopin's Service, which hopin's own
-  policy also refuses, a probe that cannot run or ends otherwise failing the step; and that a password grant is
+  that a Pod in Keycloak's namespace without its labels gets an answer from the Service `kubernetes` and from a
+  throwaway target in `hopin` with hopin's labels and port, which a throwaway policy admits Keycloak's namespace to
+  and which never turns ready, while Keycloak's container reaches its Postgres but neither that Service nor github.com
+  nor the target nor hopin's Service, a probe that cannot run or ends otherwise failing the step, and both throwaway
+  objects are gone on every exit; and that a password grant is
   refused while `TERMS_AND_CONDITIONS` is pending and yields a token of the public issuer once cleared, while a
   master administrator without TOTP gets a token through Keycloak's built-in direct grant and 401 through master's
   own.
