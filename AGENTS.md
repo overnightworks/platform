@@ -36,6 +36,11 @@
   names, by namespace, name and date, every Secret whose annotation `platform.hallucinai.de/expires-on: YYYY-MM-DD` lies
   within 30 days or in the past, and each whose value is no such date, and fails on any or when the listing fails; it
   passes with no annotated Secret.
+- `mise run disk` runs without sudo and prints what fills the disk of the home directory by size and name (named
+  directories of `$HOME`, the rest of `$HOME`, and what lies outside it, which is Docker's `/var/lib/docker` and the
+  system, since only root reads that), then Docker's own count when the daemon answers within 2 minutes, else one line
+  saying it does not answer in time; from 85 % use it first prints a `WARNING` line on stderr, and it still exits 0. A directory du cannot
+  read marks its row incomplete and prints the remainders as `?`, never as a number.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
@@ -139,6 +144,21 @@
   Deleted logs stay deleted.
   `check-pod-logs` never reads Loki's copy of the lines, whose bound `infrastructure/loki/` sets; the `cluster` cell on
   Loki's running configuration is the only check of it.
+- The disk's bounds run in the operator's user manager, which lingers, and need no sudo: after `scripts/bootstrap_pc.sh
+  --only tools` (the units' binaries must exist first), `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`
+  writes `~/.config/user-tmpfiles.d/disk.conf` from `host/disk/` and the units `dev.mise.docuum.service`,
+  `dev.mise.uv-cache-clean-weekly.timer`, `dev.mise.user-tmpfiles-clean-daily.timer` and
+  `dev.mise.trash-prune-daily.timer` with their services, from `mise.toml`, and restarts Docuum. Docuum keeps `docker system df`'s Images line, which counts a shared layer once,
+  at 100 GB, deleting images least recently used first, never one younger than a day, one a container uses, one tagged
+  `previous`, a `-base` image or one of the vendor repositories its `--keep` flags name; its state is
+  `~/.local/share/docuum/state.yml`, and an image it has never seen counts as last used at its creation. uv's cache
+  is emptied weekly without `--force`. The tmpfiles line deletes a Codex session 30 days after the newest of its
+  timestamps. `gtrash prune --day 30`, restricted to `~/.local/share/Trash`, deletes daily each Trash entry whose
+  `.trashinfo` deletion date is older than 30 days, with that file, and leaves an entry without a `.trashinfo`, one
+  whose `.trashinfo` it cannot read and the Trash of other mounts; the unit creates the home Trash first, since gtrash
+  fails on a missing one. Claude's sessions, Docker's volumes and its build cache (hal's) are never cleaned here. Undo: declare the
+  units, the Trash's included, `state = "absent"` and apply the same parts; `~/.config/user-tmpfiles.d/disk.conf` and
+  `~/.local/share/docuum/state.yml` stay and are inert without the units.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
   runs beside it.
@@ -180,6 +200,14 @@
   stays and a `.gz` and a `.tmp` go; and it runs `check-pod-logs` against a fake `systemctl`, which passes fresh logs,
   files that vanish before their stat and a missing `/var/log/pods`, passes a clean the timer started before a
   reboot, and names a clean that never ran, last started 26 hours ago or failed, a failed listing, a `.gz` and a `.tmp`.
+  It also runs `tests/disk/`: the shipped line at a seconds-long age deletes an old Codex session with its emptied
+  directories and keeps a newer one and a Claude session of the older one's age, and `mise run disk` against a fake
+  `df` warns at 85 % and not at 84 %, and the Trash unit's gtrash, run as the unit's `mise.toml` entry names it on a
+  scratch Trash, deletes an entry trashed 31 days ago with its `.trashinfo` and keeps a directory trashed yesterday with
+  2020 files and an entry without a `.trashinfo` of any age, passing on a missing and an empty Trash. The part `postgres` of `cluster` first runs Docuum with the service's own flags
+  (read from `mise.toml`, only threshold and minimum age the cell's, every image the runner holds kept) against the
+  runner's Docker with small imported images: the least recently used unprotected one goes, and a `:previous` tag, a
+  `-base:` tag, an image a container uses and the newer one stay.
   `cluster` reconciles `clusters/pc` in k3d, with `host/k3s/config.yaml` mounted alone and read-only at
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
@@ -471,6 +499,8 @@
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's
   host step proves those two on the PC.
+- `host/disk/`: the tmpfiles line the daily user clean reads, copied to `~/.config/user-tmpfiles.d/disk.conf` by the
+  `[dotfiles]` entry of `mise.toml`; the units are declared there, as mise writes systemd user units from the table.
 - `mise.toml`: the tools, the k3s version and its installer's sha256, the PC's bootstrap parts (the k3s config file,
   the pod-log parts with `pod-logs-clean.timer` as a running, enabled service, which each unit file notifies,
   and the ufw rule `k3s-cni`, with `k3s-pods` and `k3s-services` declared absent, which deletes them from a host whose mise
