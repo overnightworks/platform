@@ -230,8 +230,9 @@
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
   each PC-only source swapped for one the job serves; a new PC-only source joins that list; `tunnel` given its own
   `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token; `nvidia` given its
-  own, which only give the device plugin's DaemonSet a node selector no k3d node carries, as k3d holds no card) and, on
-  a pull request, the pull request's ref. It first fails when the committed root, `tunnel` or `nvidia` carries
+  own, which only give the device plugin's DaemonSet a node selector no k3d node carries, as k3d holds no card) and the
+  `flux-system` source's ref, in the object applied and in Flux's build: a pull request's ref on a pull request, `main` at the
+  run's own commit on a push, so a landing during the run moves nothing. It first fails when the committed root, `tunnel` or `nvidia` carries
   `spec.patches`, which the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
   Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's and skat's files as dummies
   and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
