@@ -1,8 +1,16 @@
-# The layer litellm plus two writers, which the cluster job points the Kustomization litellm at while it drives
-# db:load-dump, so the loader stops and restores writers Flux really applies. The image is a placeholder the job
-# replaces through the Kustomization's spec.images.
+# The Postgres base in namespace litellm with no app, plus two writers, which the cluster job points the Kustomization
+# litellm at while it drives db:load-dump: Flux prunes LiteLLM, its front and its egress, so the loader proofs run on a
+# database only they write, and the loader stops and restores writers Flux really applies. key-tables is scenario data;
+# the proofs read it from the live ConfigMap. The image is a placeholder the job replaces through the Kustomization's
+# spec.images.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+namespace: litellm
 resources:
-  - ../../../infrastructure/litellm
+  - ../../../infrastructure/postgres
   - writers.yaml
+configMapGenerator:
+  - name: postgres
+    behavior: merge
+    literals:
+      - key-tables=proof_keys
