@@ -15,6 +15,7 @@ opentofu = "1.13"
 yq = "4"
 docuum = "0"
 "aqua:umlx5h/gtrash" = "0"
+"aqua:astral-sh/uv" = "0"
 
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.
@@ -374,6 +375,29 @@ tofu fmt -check -recursive
 tofu init -backend=false -lockfile=readonly -input=false
 tofu validate
 tofu test
+'''
+
+[tasks."legal:test"]
+description = "Run the legal project's tests with branch coverage at 100 % and write src/legal/coverage.xml"
+env = { UV_PROJECT_ENVIRONMENT = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/venv", PYTHONDONTWRITEBYTECODE = "1", COVERAGE_RCFILE = "src/legal/pyproject.toml", COVERAGE_FILE = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/coverage" }
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+uv run --project src/legal --locked coverage run -m pytest -c src/legal/pyproject.toml -p no:cacheprovider -q
+uv run --project src/legal --locked coverage report
+uv run --project src/legal --locked coverage xml -o src/legal/coverage.xml
+'''
+
+[tasks."legal:check"]
+description = "Check an app's legal files with the section validator: legal:check <key> <dir>, whose legal/ holds datenschutz.html and optionally nutzungsbedingungen.html"
+env = { UV_PROJECT_ENVIRONMENT = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/venv", PYTHONDONTWRITEBYTECODE = "1", PYTHONPATH = "src/legal/src" }
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" = 2 ] || { echo "legal:check: usage: mise run legal:check <key> <dir>" >&2; exit 2; }
+# The zone is the host of the Ingress that serves hallucinai.de's legal pages.
+zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' infrastructure/legal/legal.yaml)"
+exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.check "$1" "$2" "$zone"
 '''
 
 [tasks.bootstrap]
