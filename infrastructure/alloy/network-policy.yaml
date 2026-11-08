@@ -1,0 +1,11 @@
+# Nothing calls Alloy's HTTP port, so no pod reaches it. The kubelet's probes come from the node, which a
+# NetworkPolicy never blocks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress
+  namespace: alloy
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
