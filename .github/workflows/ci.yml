@@ -341,6 +341,17 @@ jobs:
           OTHER_NAMESPACE: loki-client
         run: tests/loki/loki_keeps_lines_under_28_days.sh
 
+      - name: Assert that Gatus shows every endpoint healthy, shows a stopped service unhealthy and healthy again, and answers no Pod
+        if: matrix.part == 'core'
+        env:
+          # The service the cell stops and restores, by its Namespace, Deployment and Gatus endpoint, and a namespace for
+          # the Pod that must get no answer.
+          STOPPED_NAMESPACE: speech-runtime
+          STOPPED_DEPLOYMENT: speech-runtime
+          STOPPED_ENDPOINT: speech-runtime
+          OTHER_NAMESPACE: gatus-client
+        run: tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: tests/flux/print_flux_state.sh

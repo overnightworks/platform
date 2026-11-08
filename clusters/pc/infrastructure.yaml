@@ -145,3 +145,21 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+---
+# admission for the workload.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gatus
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+  interval: 10m0s
+  path: ./infrastructure/gatus
+  prune: true
+  wait: true
+  timeout: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system

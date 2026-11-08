@@ -1,0 +1,42 @@
+# One endpoint per service, each asked every 60 seconds with a fixed request. The apps behind Traefik are asked through
+# its web port with their own Host header, the way the tunnel asks; the others directly at their Service. Gatus holds no
+# key, so the LiteLLM front is healthy when it and LiteLLM answer a call without one with 401.
+storage:
+  type: memory
+web:
+  port: 8080
+endpoints:
+  - name: hopin
+    url: http://traefik.traefik.svc:80/health
+    headers:
+      Host: hopin.hallucinai.de
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+  - name: keycloak
+    url: http://traefik.traefik.svc:80/realms/hallucinai/.well-known/openid-configuration
+    headers:
+      Host: auth.hallucinai.de
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+  - name: speech-runtime
+    url: http://speech-runtime.speech-runtime.svc:8080/health
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+  - name: skat
+    url: http://skat.skat.svc:8080/health
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+  - name: loki
+    url: http://loki.loki.svc:3100/ready
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+  - name: litellm
+    url: http://litellm-front.litellm.svc:4000/v1/models
+    interval: 60s
+    conditions:
+      - "[STATUS] == 401"

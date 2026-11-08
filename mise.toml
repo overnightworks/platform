@@ -605,6 +605,18 @@ echo "keycloak:admin: open $admin_url/admin/master/console/ in a private window;
 exec kubectl --namespace keycloak port-forward --address 127.0.0.1 service/keycloak "${BASH_REMATCH[1]}:http"
 '''
 
+[tasks."gatus:open"]
+description = "Forward Gatus's status page to this PC's loopback and print its address"
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+port="$(kubectl --namespace gatus get service gatus -o jsonpath='{.spec.ports[0].port}')"
+echo "gatus:open: open http://127.0.0.1:$port/; Ctrl-C ends the forward"
+exec kubectl --namespace gatus port-forward --address 127.0.0.1 service/gatus "$port:$port"
+'''
+
 # kcadm runs in Keycloak's own container and signs in as config-cli with the secret that container holds, so no
 # secret reaches this shell; every line is a name, a count or an outcome.
 [tasks."keycloak:move-group"]
