@@ -9,6 +9,8 @@
 # A key's value and the master key travel from kubectl's stdout through shell variables to curl's stdin, never into an
 # argument, a URL, a file or a child's environment, and are never printed. A failure names the step and the HTTP
 # status, never a reply body.
+# Tracing would print every decoded value, so it ends before any is read, without a line of its own.
+{ set +x; } 2>/dev/null
 set -euo pipefail
 # [!-~] must mean printable ASCII.
 export LC_ALL=C
@@ -30,7 +32,7 @@ fail() {
 bounded() {
   local step="$1" status=0
   shift
-  timeout "$deadline" "$@" || status=$?
+  timeout "$deadline" "$@" 2>/dev/null || status=$?
   [ "$status" != 124 ] || fail "$step did not end within $deadline, the local deadline"
   [ "$status" = 0 ] || fail "$step failed"
 }
@@ -38,7 +40,7 @@ bounded() {
 in_cluster() {
   local step="$1"
   shift
-  bounded "$step" kubectl "$@" 2>/dev/null
+  bounded "$step" kubectl "$@"
 }
 # json <yq expression>...: yq over the last reply.
 json() { printf '%s' "$reply" | yq --input-format json "$@"; }
@@ -49,8 +51,13 @@ trap '[ -z "$forward" ] || kill "$forward" 2>/dev/null || true; rm -rf "$scratch
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# decode <base64>: the decoded text, through a pipe so that no file holds it.
-decode() { printf '%s' "$1" | base64 --decode; }
+# decode <base64>: sets decoded to the exact bytes, through a pipe so that no file holds them; the sentinel keeps the
+# command substitution from stripping a trailing newline, which validation must see.
+decoded=""
+decode() {
+  decoded="$(printf '%s' "$1" | base64 --decode && printf x)" || return 1
+  decoded="${decoded%x}"
+}
 # quote_inner <text>: the text as the inside of a double-quoted curl config value or JSON string; the callers hold only
 # printable ASCII.
 quote_inner() {
@@ -87,7 +94,8 @@ connect() {
   local secret_data port
   secret_data="$(in_cluster "reading the Secret litellm" --namespace "$namespace" get secret litellm \
     -o jsonpath='{.data.master_key}')"
-  master_key="$(decode "$secret_data")" || fail "the Secret litellm gives no readable master_key"
+  decode "$secret_data" || fail "the Secret litellm gives no readable master_key"
+  master_key="$decoded"
   [ -n "$master_key" ] || fail "the Secret litellm holds an empty master_key"
   port="$(in_cluster "reading the Service litellm" --namespace "$namespace" get service litellm \
     -o jsonpath='{.spec.ports[0].port}')"
@@ -103,12 +111,45 @@ connect() {
   [ -n "$local_port" ] || fail "kubectl port-forward to the Service litellm did not start within 30 seconds"
 }
 
-# read_table: sets table, the ConfigMap litellm-keys' table, and the settings every row shares from their one owners:
+# applied_revision: the Git revision Flux applied to the layer.
+applied_revision() {
+  in_cluster "reading the Kustomization litellm" --namespace flux-system get kustomization litellm \
+    -o jsonpath='{.status.lastAppliedRevision}'
+}
+# is_number <yq tag>: whether the tag names a number.
+is_number() { [ "$1" = '!!int' ] || [ "$1" = '!!float' ]; }
+# check_table: refuses a table whose person budget or any row's budget or parallel limit is no number, whose apps are no
+# map of rows or whose names are no namespace names, naming the row; sets app_names, the rows' names in order.
+check_table() {
+  local rows name row_tag budget_tag parallel_tag
+  app_names=()
+  budget_tag="$(yq '.person_budget | tag' <<<"$table")" || fail "the table is no YAML"
+  is_number "$budget_tag" || fail "the table's person_budget is no number"
+  rows="$(yq '.apps | select(tag == "!!map") | to_entries | sort_by(.key) | .[] | .key + " " + (.value | tag) + " " +
+    ((.value | select(tag == "!!map") | .budget | tag) // "none") + " " +
+    ((.value | select(tag == "!!map") | .parallel | tag) // "none")' <<<"$table")" || fail "the table is no YAML"
+  [ -n "$rows" ] || fail "the table's apps are no map with a row"
+  while read -r name row_tag budget_tag parallel_tag; do
+    [[ $name =~ ^[a-z0-9-]+$ ]] || fail "the table names the app '$name', which is no namespace name"
+    [ "$row_tag" = '!!map' ] || fail "the table's row $name is no map"
+    is_number "$budget_tag" || fail "the table's row $name has no number budget"
+    [ "$parallel_tag" = '!!int' ] || fail "the table's row $name has no whole number parallel"
+    app_names+=("$name")
+  done <<<"$rows"
+}
+
+# read_table: sets table, the ConfigMap litellm-keys' table, checked, with the Git revision Flux applied to it, which is
+# refused when absent or changed while the table was read, and the settings every row shares from their one owners:
 # period, budget_id (litellm-config.yaml), routes (front-route.yml) and models (as LiteLLM lists them).
 read_table() {
-  local config_map config
+  local config_map config revision
+  revision="$(applied_revision)"
+  [ -n "$revision" ] || fail "the Kustomization litellm has applied no revision"
   table="$(in_cluster "reading the ConfigMap litellm-keys" --namespace "$namespace" get configmap litellm-keys \
     -o jsonpath='{.data.keys\.yaml}')"
+  [ "$(applied_revision)" = "$revision" ] || fail "the Kustomization litellm applied another revision while the table was read"
+  echo "litellm:$command_name: table of revision $revision"
+  check_table
   period="$(yq '.period' <<<"$table")"
   [[ $period =~ ^[0-9]+[a-z]+$ ]] || fail "the table's period '$period' is not a LiteLLM duration"
   config_map="$(in_cluster "reading the Deployment litellm" --namespace "$namespace" get deployment litellm \
@@ -127,12 +168,12 @@ read_table() {
   [ "$models" != "[]" ] || fail "LiteLLM lists no model"
 }
 
-# desired_key <app>: the key fields the table row and the shared settings make, as JSON.
+# desired_key <app>: the key fields the table row and the shared settings make, as JSON; the table is checked.
 desired_key() {
   APP="$1" PERIOD="$period" ROUTES="$routes" MODELS="$models" yq --output-format json --indent 0 '
     .apps[strenv(APP)] as $row | {"max_budget": $row.budget, "budget_duration": strenv(PERIOD),
     "max_parallel_requests": $row.parallel, "models": (strenv(MODELS) | from_json),
-    "allowed_routes": (strenv(ROUTES) | from_json)}' <<<"$table" 2>/dev/null || fail "the table has no valid row for $1"
+    "allowed_routes": (strenv(ROUTES) | from_json)}' <<<"$table"
 }
 # flat <JSON object>: one "field value" line per field, a list sorted and joined and a number as a number, so that two
 # objects compare by their lines.
@@ -159,13 +200,17 @@ differences() {
   done <<<"$flat_desired"
   change_fields="{$change_fields}"
 }
-# found_keys <app>: sets reply to LiteLLM's /key/list for the alias and key_count to the keys that hold it exactly.
+# found_keys <app>: sets key_count to the keys that hold the alias exactly and found_row to the first of them as JSON, or
+# null.
 found_keys() {
+  local holders
   ask "listing the keys of $1" "/key/list?key_alias=$1&return_full_object=true&size=100"
-  key_count="$(json '[.keys[] | select(.key_alias == "'"$1"'")] | length')"
+  holders="$(json --output-format json --indent 0 '[.keys[] | select(.key_alias == "'"$1"'")]')"
+  key_count="$(yq --input-format json 'length' <<<"$holders")"
+  found_row="$(yq --input-format json --output-format json --indent 0 '.[0]' <<<"$holders")"
 }
-# key_hash <app>: the stored hash of the one key under the alias, from the last found_keys.
-key_hash() { json '[.keys[] | select(.key_alias == "'"$1"'")] | .[0].token'; }
+# key_hash: the stored hash of the key found_keys found.
+key_hash() { yq --input-format json '.token' <<<"$found_row"; }
 
 # Each change is one write: its kind, its subject and its body. The change in change_fields and change_text is added
 # after differences, and its lines are printed and counted.
@@ -176,7 +221,7 @@ add_change() {
   [ "$change_fields" != "{}" ] || return 0
   case "$kind" in
     budget-new | budget-update) body="{\"budget_id\":\"$subject\",${change_fields#\{}" ;;
-    key-update) body="{\"key\":\"$(key_hash "$subject")\",${change_fields#\{}" ;;
+    key-update) body="{\"key\":\"$(key_hash)\",${change_fields#\{}" ;;
   esac
   change_kinds+=("$kind")
   change_subjects+=("$subject")
@@ -188,7 +233,7 @@ add_change() {
 }
 
 keys_command() {
-  local plan=false app desired found kind path index revision missing=0 made="" not_made=""
+  local plan=false app desired found kind path index not_made_index missing=0 made="" not_made=""
   case "$*" in
     "") ;;
     --plan) plan=true ;;
@@ -196,9 +241,6 @@ keys_command() {
   esac
   connect
   read_table
-  revision="$(in_cluster "reading the Kustomization litellm" --namespace flux-system get kustomization litellm \
-    -o jsonpath='{.status.lastAppliedRevision}')"
-  echo "litellm:keys: table of revision ${revision:-unknown}"
 
   # The person budget, then each app in name order.
   desired="$(PERIOD="$period" yq --output-format json --indent 0 '{"max_budget": .person_budget,
@@ -208,8 +250,7 @@ keys_command() {
   differences "$desired" "$found"
   if [ "$found" = null ]; then kind=budget-new; else kind=budget-update; fi
   add_change "$kind" "$budget_id"
-  while IFS= read -r app; do
-    [[ $app =~ ^[a-z0-9-]+$ ]] || fail "the table names the app '$app', which is no namespace name"
+  for app in "${app_names[@]}"; do
     found_keys "$app"
     if [ "$key_count" != 1 ]; then
       if [ "$key_count" = 0 ]; then
@@ -220,10 +261,10 @@ keys_command() {
       missing=$((missing + 1))
       continue
     fi
-    found="$(json --output-format json --indent 0 '[.keys[] | select(.key_alias == "'"$app"'")] | .[0]')"
-    differences "$(desired_key "$app")" "$found"
+    desired="$(desired_key "$app")"
+    differences "$desired" "$found_row"
     add_change key-update "$app"
-  done < <(yq '.apps | keys | sort | .[]' <<<"$table")
+  done
 
   if [ "$plan" = true ]; then
     echo "litellm:keys: $change_lines changes planned, nothing written"
@@ -238,10 +279,12 @@ keys_command() {
       key-update) path=/key/update ;;
     esac
     if ! request "writing ${change_kinds[$index]%%-*} ${change_subjects[$index]}" "$path" "${change_bodies[$index]}" discard; then
-      for ((not_made_index = index; not_made_index < ${#change_kinds[@]}; not_made_index++)); do
+      # The write may have reached LiteLLM before its answer was lost, so it is neither made nor not made.
+      for ((not_made_index = index + 1; not_made_index < ${#change_kinds[@]}; not_made_index++)); do
         not_made+=" ${change_kinds[$not_made_index]%%-*}:${change_subjects[$not_made_index]}"
       done
-      echo "litellm:keys: $failure; made:${made:- none}; not made:$not_made" >&2
+      echo "litellm:keys: $failure; made:${made:- none}; failed: ${change_kinds[$index]%%-*}:${change_subjects[$index]};" \
+        "not made:${not_made:- none}" >&2
       exit 1
     fi
     made+=" ${change_kinds[$index]%%-*}:${change_subjects[$index]}"
@@ -251,16 +294,19 @@ keys_command() {
 }
 
 key_command() {
-  local app="${1-}" secret_data value value_hash desired body
+  local app="${1-}" secret_data value value_hash desired body table_app has_row=false
   [ "$#" = 1 ] || fail "usage: scripts/litellm_keys.sh key <app>"
-  [[ $app =~ ^[a-z0-9-]+$ ]] || fail "'$app' is no app name"
   connect
   read_table
-  [ "$(APP="$app" yq '.apps | has(strenv(APP))' <<<"$table")" = true ] || fail "$app has no row in the table"
+  for table_app in "${app_names[@]}"; do
+    [ "$table_app" != "$app" ] || has_row=true
+  done
+  [ "$has_row" = true ] || fail "$app has no row in the table"
   secret_data="$(in_cluster "reading the Secret $app" --namespace "$app" get secret "$app" \
     -o jsonpath='{.data.litellm_key}')"
   [ -n "$secret_data" ] || fail "the Secret $app has no litellm_key"
-  value="$(decode "$secret_data")" || fail "the litellm_key of $app is no base64"
+  decode "$secret_data" || fail "the litellm_key of $app is no base64"
+  value="$decoded"
   [[ $value == "$key_prefix"* && $value =~ ^[!-~]+$ ]] ||
     fail "the litellm_key of $app is not one printable line starting with $key_prefix"
   [ "${#value}" -ge "$key_minimum_length" ] || fail "the litellm_key of $app is shorter than $key_minimum_length characters"
