@@ -13,6 +13,9 @@ securityContext:
   capabilities:
     drop: [ALL]
 k8up:
+  # Only a Pod with a backup command is backed up, never a volume: an app says what is saved, and no claim is, since a
+  # claim carries no annotation.
+  skipWithoutAnnotation: true
   # A Snapshot object records the job's expanded RESTIC_REPOSITORY, which for a REST backend holds the user and password
   # in its URL: the snapshot list is read through restic instead.
   skipSnapshotSync: true

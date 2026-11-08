@@ -1,0 +1,49 @@
+# The static configuration of litellm-front (front.yaml): a three-route HTTP proxy between the apps and LiteLLM, so
+# nothing else LiteLLM registers is reachable. One entrypoint on :4000 with the hardening of hal's edge entrypoint:
+# alias headers deleted, paths sanitized and every encoded path character refused. The api, ping and metrics blocks
+# stay absent. The three routes stand in front-route.yml. The front reads no secret file; app keys pass through its
+# memory only. Its access log writes one JSON line per request to standard output with an allowlist of fields: no
+# header and no path, whose query a request could fill; the router names the route.
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+log:
+  level: INFO
+
+accessLog:
+  format: json
+  fields:
+    defaultMode: drop
+    names:
+      StartUTC: keep
+      ClientHost: keep
+      RequestMethod: keep
+      RouterName: keep
+      ServiceName: keep
+      DownstreamStatus: keep
+      OriginStatus: keep
+      Duration: keep
+      OriginDuration: keep
+    headers:
+      defaultMode: drop
+
+entryPoints:
+  api:
+    address: ":4000"
+    http:
+      aliasHeadersStrategy: delete
+      sanitizePath: true
+      encodedCharacters:
+        allowEncodedSlash: false
+        allowEncodedBackSlash: false
+        allowEncodedNullCharacter: false
+        allowEncodedSemicolon: false
+        allowEncodedPercent: false
+        allowEncodedQuestionMark: false
+        allowEncodedHash: false
+
+providers:
+  file:
+    directory: /litellm-front/dynamic
+    watch: true

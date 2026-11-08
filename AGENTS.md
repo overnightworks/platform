@@ -34,6 +34,10 @@
   fails when it cannot list the directory. It reads the clean's last start (the later of the service's and the timer's
   last trigger, which a reboot keeps) and result, whoever started it, so a failed or never-run clean keeps failing the
   check until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
+- `mise run check:secrets-expiry` runs on the PC through k3s's own kubeconfig, without sudo, and reads only metadata: it
+  names, by namespace, name and date, every Secret whose annotation `platform.hallucinai.de/expires-on: YYYY-MM-DD` lies
+  within 30 days or in the past, and each whose value is no such date, and fails on any or when the listing fails; it
+  passes with no annotated Secret.
 - `mise run backup:fetch <namespace> <file>` writes the latest dump of the namespace's k8up repository to a new file at
   0600, through a Pod built from the restore test's init container, the file it refuses to overwrite; `db:load-dump
   <namespace> <file>` then restores it. It prints only names and sizes, since a dump holds keys and hashes.
@@ -141,6 +145,9 @@
   `quality` job that calls quality's `gate.yml`.
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
+  `cluster` runs in two parts, each on its own k3d cluster and both listed as `cluster`: `postgres` holds the "P7a
+  cells" and `core` every other cell and the checks that need no cluster, the setup through the reconcile's assertion
+  runs in both, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
   `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
@@ -217,11 +224,13 @@
   named like it, holds the base's objects of the namespace, that no other Kustomization holds one but platform-secrets'
   Secrets, and that it depends on `admission`, `platform-secrets` and `storage`; deletes the Kustomization `litellm`, whose
   inventory goes while the claim, its volume and the Namespace stay, and the root re-creates it with the row written
-  before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two synthetic dumps it
-  makes, one of data and one whose table of contents is most of the file, with the Kustomization `litellm` pointed at
-  `tests/postgres/writers` for a Deployment and a Job that Flux applies, stops and restores, an INT that reaches the
+  before; points the Kustomization `litellm` at `tests/postgres/writers`, the Postgres base with a Deployment and a
+  Job that Flux applies, stops and restores, in place of LiteLLM, its front and its egress, and empties the database
+  to what a fresh claim holds; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two
+  synthetic dumps it makes, one of data and one whose table of contents is most of the file, an INT that reaches the
   loader after its restore committed and a failed load beside a materialized view, which each leave it suspended, and
-  a held foreign session, which costs one wait;
+  a held foreign session, which costs one wait; empties the database again and gives the layer its own path back,
+  which must turn Ready;
   and shows that a busybox Pod with Keycloak's labels reaches its Postgres but neither the Service `kubernetes` nor
   github.com, while one without them reaches all three. k3d does not prove the egress to hal's Docker bridges or to
   hopin, whose own policy already refuses both Pods.
@@ -242,6 +251,22 @@
   through `admin-cli` and master's own flow a master administrator with TOTP gets 200 and a token with the current
   code, which the job computes from the secret it imported, and 400 and no token without it, and one without TOTP gets
   401 and no token.
+  The step "P7c cells" first fails when LiteLLM's `hostAliases` and agent-egress's `HostSNI` names differ, or the
+  front's or agent-egress's image differs from Traefik's `values.yaml`. It makes a person budget and a key for the
+  first model, whose metadata allows a client's `mock_response`, with the master key through a port-forward to
+  LiteLLM and checks that both carry those values, then
+  from client Pods: in `hopin`, the front's three routes without a key get LiteLLM's 401, a GET on its two POST paths,
+  `POST /v1/models` and `/key/generate` with the master key the front's own 404, a query string 400 on a GET and a
+  POST, a mocked completion with the key its `mock_response` answer and a real one a 5xx; a Pod in another namespace
+  or in `litellm` gets no answer from the front, and one in `hopin` or `litellm` none from LiteLLM, while each gets
+  one from the API server; of its Postgres, agent-egress, the Service `kubernetes` and the first provider host, each
+  name resolved, a Pod with LiteLLM's labels reaches only the first two, one with agent-egress's or the front's labels
+  none, and one without labels all but agent-egress; through agent-egress a third SNI's handshake ends in the gateway
+  without a dial, while the provider's ends after the gateway logged its failed dial of a resolved provider address;
+  and LiteLLM's start, read from its Deployment and run with fake values in a client Pod's busybox sh,
+  refuses each key and the password empty, ending in a newline, with a space or a non-ASCII byte, and the password
+  outside the URL-safe alphabet, naming only the variable, while a good set reaches the exec at core limit 0. k3d
+  does not prove a provider call through an open egress.
   The step "P7d cells" (`tests/backup/`) shows, for each namespace including the backup component, that the restore test
   fails on its repository without a snapshot; a Backup yields one snapshot holding the custom-format dump alone, by a Job
   pod at a listed digest that Pod Security `restricted` admits; neither the Job's log nor a Kubernetes object holds the
@@ -297,13 +322,13 @@
   out until it has its credentials and its restore drill. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
   4 weekly and 3 monthly, a monthly `check`) of the Postgres pod's `pg_dump --format=custom` into `backup-repository`,
   the URL the including layer sets in the ConfigMap `postgres`; a PodConfig gives k8up's Job pods the fields `restricted`
-  requires; the StatefulSet's claim carries `k8up.io/backup: "false"` as its own object, since the claim template is
-  immutable; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month and fails
+  requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month and fails
   without a snapshot or on an empty first key table. The Secret `restic` from `platform-secrets` holds the namespace's
   `username`, `password` and `repository-password`.
 - `infrastructure/k8up/`: the k8up operator in `k8up-system`, `rendered.yaml` and `crds.yaml` generated by
   `mise run charts:render`, not edited by hand; `cluster` fails when a regeneration differs. `skipSnapshotSync` keeps
-  k8up from writing Snapshot objects, which would record the REST repository URL with its password.
+  k8up from writing Snapshot objects, which would record the REST repository URL with its password, and
+  `skipWithoutAnnotation` makes a backup hold only what a Pod's `k8up.io/backupcommand` streams, never a volume.
 - `infrastructure/backup/`: the platform's one `rest-server` with `--private-repos`, in namespace `backup`: one user and
   repository per namespace, its htpasswd built by an initContainer from the Secret `rest-users` (one file per user,
   named like the namespace, from `platform-secrets`), its claim retained and never pruned. Its NetworkPolicy admits only
@@ -317,6 +342,21 @@
   `KC_HOSTNAME_ADMIN` in `keycloak.yaml` is the one owner of the admin front end, which `kustomization.yaml` copies
   to the Job. The Secret `keycloak` from `platform-secrets` holds config-cli's secret and each app client's. The
   realm sets theme `hallucinai`, which Keycloak replaces with its own until an image carries it.
+- `infrastructure/litellm/`: LiteLLM, its front `litellm-front` and its egress `agent-egress`, hal's three
+  configurations as ConfigMaps whose names carry their content's hash, so a change rolls the pod that reads it at
+  start. LiteLLM, one pod with `Recreate` at uid 1000 with a read-only root, reads its master and provider keys from
+  the Secret `litellm` and builds `DATABASE_URL` from the Secret `postgres`, both from `platform-secrets`, and does
+  not start unless each key and the password is one non-empty printable line and the password URL-safe; it starts
+  with core dumps off, admits only the front and sends only to cluster DNS, its Postgres and agent-egress, which its
+  `hostAliases` name for the provider hosts at the fixed ClusterIP of agent-egress's Service, in k3s's default
+  service CIDR. The front, a Traefik on port 4000, admits only the namespaces `hopin`, `presentator` and `songmaker`
+  and passes only `POST /v1/chat/completions`, `POST /v1/images/generations` and `GET /v1/models` without a query
+  string. agent-egress, a Traefik on 443 that admits only LiteLLM, passes TLS
+  only for the SNIs of `egress-allowed.yml` and sends only to cluster DNS, so nothing the copy of hal's data holds
+  leaves the cluster. `mise exec -- tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>` is the operator's, since it
+  reads the master key: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
+  key table's rows, those of the dashboard's UI session (which `/key/list` omits) and the rest, then `equal` or `DIFFERS`
+  for the count against the rest; each step runs under a deadline and names itself when it fails.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
   and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at
@@ -336,9 +376,10 @@
   enforces Pod Security `restricted`. `values.yaml` is its hand-written source; `rendered.yaml` is generated by
   `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A chart or image bump
   changes the task's chart digest, `image.digest` and `versionOverride` together and regenerates, by hand in a pull
-  request. Its NetworkPolicy admits only pods of namespace `cloudflared`, and only to the `web`
-  port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied, while the node's
-  probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
+  request, and the `images:` entry of `infrastructure/litellm/kustomization.yaml`, the image of the Deployments
+  `litellm-front` and `agent-egress`, with them. Its NetworkPolicy admits only pods of namespace `cloudflared`, and
+  only to the `web` port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied,
+  while the node's probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
   `host/k3s/config.yaml` sets no `cluster-cidr` (`cluster` checks it against the nodes' pod CIDRs), and carries hal's
   entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character refused with 400 by
   each route, so an unrouted host still gets 404. Its file provider holds hal's routers `auth` and `auth-root`

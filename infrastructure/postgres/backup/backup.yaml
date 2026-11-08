@@ -50,22 +50,6 @@ spec:
             capabilities:
               drop: [ALL]
 ---
-# The StatefulSet's claim, declared here because the annotation cannot reach it through the immutable claim template: a
-# backup holds only the dump its pod streams, never the database files. Same spec as the template, and like it never pruned.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: data-postgres-0
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-    k8up.io/backup: "false"
-spec:
-  accessModes: [ReadWriteOnce]
-  storageClassName: local-path
-  resources:
-    requests:
-      storage: 1Gi
----
 # The latest snapshot's dump into an emptyDir, then a restore into a throwaway server inside this pod; the dump never
 # leaves it and the running Postgres is not touched. backup:fetch runs the same init container.
 apiVersion: batch/v1

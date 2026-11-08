@@ -332,7 +332,7 @@ spec:
             - name: BACKUP_ENABLE_LEADER_ELECTION
               value: "true"
             - name: BACKUP_SKIP_WITHOUT_ANNOTATION
-              value: "false"
+              value: "true"
             - name: BACKUP_GLOBAL_SKIP_SNAPSHOT_SYNC
               value: "true"
             - name: BACKUP_REPOSITORY_SECRET_NAME

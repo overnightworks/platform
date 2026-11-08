@@ -1,0 +1,114 @@
+# agent-egress, the SNI-allowlisting TLS passthrough between LiteLLM and its two providers (egress-allowed.yml). A
+# NetworkPolicy cannot filter by host name, so this Traefik keeps the provider keys from reaching any other host. It
+# sends only to cluster DNS, so nothing the copy of hal's data holds leaves the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-egress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-egress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent-egress
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+        # The entrypoint listens on 443 as uid 65534; Pod Security restricted admits this sysctl.
+        sysctls:
+          - name: net.ipv4.ip_unprivileged_port_start
+            value: "0"
+      containers:
+        - name: traefik
+          image: docker.io/library/traefik
+          ports:
+            - name: litellm
+              containerPort: 443
+          readinessProbe:
+            tcpSocket:
+              port: litellm
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: static
+              mountPath: /etc/traefik
+              readOnly: true
+            - name: allowed
+              mountPath: /egress/dynamic
+              readOnly: true
+      volumes:
+        - name: static
+          configMap:
+            name: agent-egress
+            items:
+              - key: traefik.yml
+                path: traefik.yml
+        - name: allowed
+          configMap:
+            name: agent-egress
+            items:
+              - key: allowed.yml
+                path: allowed.yml
+---
+# A fixed address, since LiteLLM's hostAliases take an IP, not a DNS name: in k3s's service CIDR 10.43.0.0/16
+# (host/k3s/config.yaml sets no service-cidr), in its lower range, which the API server allocates on its own only once
+# the upper range is full.
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-egress
+spec:
+  clusterIP: 10.43.0.40
+  selector:
+    app.kubernetes.io/name: agent-egress
+  ports:
+    - name: litellm
+      port: 443
+      targetPort: litellm
+---
+# Only LiteLLM reaches agent-egress, which sends only to cluster DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: agent-egress
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - port: 443
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
