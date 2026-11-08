@@ -1,0 +1,8 @@
+claim_id = "122d98c349584a2cb43badeae25a3868"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "ae74daa92a9e3bb4010c76aca252f6c7e20fe83b"
+branch = "claude/issue-220-p9a-3a-legal-build"
+scope = ["AGENTS.md", "infrastructure/legal/frame", "mise.toml", "src/legal/src/legal/build.py", "src/legal/src/legal/pages.py", "src/legal/tests/test_build.py", "src/legal/tests/test_pages.py", "tests/generated/generated_files_match_regeneration.sh"]
+opened_commit = "82fd96fdb40e4bea6e12376b1125f7cbca0c3690"
+whole_reason = "The assembler, its frame, its task and its regeneration check are one end-to-end proof: the Impressum rebuilt byte for byte."
