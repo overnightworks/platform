@@ -51,6 +51,12 @@ jobs:
           infrastructure/keycloak/realm.yaml infrastructure/keycloak/master.yaml
 
   cluster:
+    # GitHub appends matrix values to a literal job name, and the gate looks for the name cluster.
+    name: ${{ github.job }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [core, postgres]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -128,6 +134,7 @@ jobs:
 
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
       - name: Compare the generated files with a fresh regeneration
+        if: matrix.part == 'core'
         run: tests/generated/generated_files_match_regeneration.sh
 
       - name: Create the k3d cluster with its registry
@@ -152,24 +159,31 @@ jobs:
 
       # flux install writes a binding subject for every controller, omitted ones included.
       - name: Assert that no binding names the removed helm-controller
+        if: matrix.part == 'core'
         run: tests/flux/no_binding_names_helm_controller.sh
 
       - name: Check that secrets:github-host-keys passes only GitHub's own keys under github.com
+        if: matrix.part == 'core'
         run: tests/secrets/github_host_keys_pass_only_githubs_own.sh
 
       - name: Check that secrets:new-key refuses a key directory not at 700, a present drill file and a regular file in the key path, and accepts a symlinked 700 key directory
+        if: matrix.part == 'core'
         run: tests/secrets/new_key_refuses_unsafe_key_paths.sh
 
       - name: Check that bootstrap:secrets prints only its own lines and no key block for a source that turns Ready within the minute
+        if: matrix.part == 'core'
         run: tests/secrets/bootstrap_secrets.sh
 
       - name: Check that db:load-dump and interrupt_load.sh end as they owe where a command fails, a signal arrives or a table is empty
+        if: matrix.part == 'core'
         run: tests/postgres/load_dump.sh
 
       - name: Assert that k3s runs with host/k3s/config.yaml
+        if: matrix.part == 'core'
         run: tests/k3s/k3s_runs_with_the_host_config.sh
 
       - name: Assert that the kubelet keeps the configured log files, reopens a deleted pod log and never compresses one
+        if: matrix.part == 'core'
         run: tests/pod-logs/kubelet_keeps_reopens_and_never_compresses_logs.sh
 
       - name: Encrypt a dummy Secret and the app's Secrets to a throwaway age key
@@ -200,6 +214,7 @@ jobs:
         run: tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh
 
       - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's pods and routes the app, and that speech-runtime answers only its callers' pods
+        if: matrix.part == 'core'
         env:
           # A client Pod's namespace that is neither Traefik's nor the tunnel's nor speech-runtime's callers', and the
           # host its Ingress routes.
@@ -221,14 +236,17 @@ jobs:
         run: tests/ingress/traefik_answers_only_cloudflared_and_routes_the_app.sh
 
       - name: Assert that each app runs at its full app ref after platform-secrets, pulled through its pull Secret
+        if: matrix.part == 'core'
         run: tests/workloads/apps_run_at_their_full_ref.sh
 
       - name: Assert that every Deployment outside the system namespaces runs the digests it names
+        if: matrix.part == 'core'
         env:
           POLICY_FILE: infrastructure/admission/image-policy.yaml
         run: tests/workloads/deployments_run_the_digests_they_name.sh
 
       - name: Assert that every workload layer depends on admission and was applied after it
+        if: matrix.part == 'core'
         env:
           ROOT_LAYER: flux-system/flux-system
           ADMISSION_LAYER: flux-system/admission
@@ -236,6 +254,7 @@ jobs:
         run: tests/workloads/layers_depend_on_admission.sh
 
       - name: Probe the image policies by server-side dry-run
+        if: matrix.part == 'core'
         env:
           # The policy covers this namespace like every other one; the step deletes it after the probes.
           PROBE_NAMESPACE: admission-probe
@@ -246,12 +265,15 @@ jobs:
         run: tests/admission/image_policies_by_dry_run.sh
 
       - name: Assert that namespaces and tunnel applied the candidate and cloudflared runs at 0 replicas
+        if: matrix.part == 'core'
         run: tests/cloudflared/tunnel_applied_at_zero_replicas.sh
 
       - name: Assert cloudflared's ingress from Pods built from its Deployment's template
+        if: matrix.part == 'core'
         run: tests/cloudflared/ingress_from_pods_built_from_its_template.sh
 
       - name: P7a cells
+        if: matrix.part == 'postgres'
         env:
           # The layer whose Kustomization the prune proof deletes and whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
@@ -266,6 +288,7 @@ jobs:
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
       - name: P7b cells
+        if: matrix.part == 'core'
         env:
           KEYCLOAK_NAMESPACE: keycloak
           # The realm files config-cli applies, whose groups and service accounts the cells read, and the client whose
