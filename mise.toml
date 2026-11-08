@@ -14,6 +14,7 @@ sops = "3"
 opentofu = "1.13"
 yq = "4"
 docuum = "0"
+"aqua:umlx5h/gtrash" = "0"
 
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.
@@ -72,7 +73,8 @@ state = "running"
 enabled = true
 
 # The disk's bounds run in the operator's own user manager, with no sudo: Docuum keeps Docker's images within 100 GB, a
-# weekly clean empties uv's cache and a daily tmpfiles clean deletes Codex sessions after 30 days. mise writes each unit
+# weekly clean empties uv's cache, a daily tmpfiles clean deletes Codex sessions after 30 days and a daily gtrash
+# prune deletes Trash entries whose .trashinfo date is older than 30 days. mise writes each unit
 # to ~/.config/systemd/user as dev.mise.<name>.
 [dotfiles."~/.config/user-tmpfiles.d/disk.conf"]
 source = "host/disk/user-tmpfiles.conf"
@@ -113,6 +115,23 @@ description = "Delete the user's old files the tmpfiles line names daily"
 on_calendar = "daily"
 persistent = true
 unit = "user-tmpfiles-clean"
+
+# gtrash reads each item's deletion date from its .trashinfo and leaves an entry without one. It stops with an error on
+# a Trash directory that does not exist, so the unit creates the home Trash first; an empty one is a clean no-op. --force
+# only skips the prompt a terminal would show.
+[bootstrap.linux.systemd.units.trash-prune]
+description = "Delete the home Trash's entries deleted more than 30 days ago"
+type = "oneshot"
+exec_start_pre = ["/bin/mkdir -p %h/.local/share/Trash"]
+exec_start = "~/.local/share/mise/installs/aqua-umlx5h-gtrash/0/gtrash prune --day 30 --force --trash-dir %h/.local/share/Trash"
+start = false
+wanted_by = []
+
+[bootstrap.linux.systemd.units.trash-prune-daily]
+description = "Delete the home Trash's old entries daily"
+on_calendar = "daily"
+persistent = true
+unit = "trash-prune"
 
 # The PC's ufw keeps its defaults and the operator's own rules (no exclusive, whose ufw reset would delete them).
 # The pods reach the API server and the kubelet on the host through cni0, which only pods sit on, so one rule on the

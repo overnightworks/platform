@@ -147,14 +147,17 @@
 - The disk's bounds run in the operator's user manager, which lingers, and need no sudo: after `scripts/bootstrap_pc.sh
   --only tools` (the units' binaries must exist first), `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`
   writes `~/.config/user-tmpfiles.d/disk.conf` from `host/disk/` and the units `dev.mise.docuum.service`,
-  `dev.mise.uv-cache-clean-weekly.timer` and `dev.mise.user-tmpfiles-clean-daily.timer` with their services, from
-  `mise.toml`, and restarts Docuum. Docuum keeps `docker system df`'s Images line, which counts a shared layer once,
+  `dev.mise.uv-cache-clean-weekly.timer`, `dev.mise.user-tmpfiles-clean-daily.timer` and
+  `dev.mise.trash-prune-daily.timer` with their services, from `mise.toml`, and restarts Docuum. Docuum keeps `docker system df`'s Images line, which counts a shared layer once,
   at 100 GB, deleting images least recently used first, never one younger than a day, one a container uses, one tagged
   `previous`, a `-base` image or one of the vendor repositories its `--keep` flags name; its state is
   `~/.local/share/docuum/state.yml`, and an image it has never seen counts as last used at its creation. uv's cache
   is emptied weekly without `--force`. The tmpfiles line deletes a Codex session 30 days after the newest of its
-  timestamps; Claude's sessions, Docker's volumes and its build cache (hal's) are never cleaned here. Undo: declare the
-  units `state = "absent"` and apply the same parts; `~/.config/user-tmpfiles.d/disk.conf` and
+  timestamps. `gtrash prune --day 30`, restricted to `~/.local/share/Trash`, deletes daily each Trash entry whose
+  `.trashinfo` deletion date is older than 30 days, with that file, and leaves an entry without a `.trashinfo`, one
+  whose `.trashinfo` it cannot read and the Trash of other mounts; the unit creates the home Trash first, since gtrash
+  fails on a missing one. Claude's sessions, Docker's volumes and its build cache (hal's) are never cleaned here. Undo: declare the
+  units, the Trash's included, `state = "absent"` and apply the same parts; `~/.config/user-tmpfiles.d/disk.conf` and
   `~/.local/share/docuum/state.yml` stay and are inert without the units.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
@@ -199,7 +202,9 @@
   reboot, and names a clean that never ran, last started 26 hours ago or failed, a failed listing, a `.gz` and a `.tmp`.
   It also runs `tests/disk/`: the shipped line at a seconds-long age deletes an old Codex session with its emptied
   directories and keeps a newer one and a Claude session of the older one's age, and `mise run disk` against a fake
-  `df` warns at 85 % and not at 84 %. The part `postgres` of `cluster` first runs Docuum with the service's own flags
+  `df` warns at 85 % and not at 84 %, and the Trash unit's gtrash, run as the unit's `mise.toml` entry names it on a
+  scratch Trash, deletes an entry trashed 31 days ago with its `.trashinfo` and keeps a directory trashed yesterday with
+  2020 files and an entry without a `.trashinfo` of any age, passing on a missing and an empty Trash. The part `postgres` of `cluster` first runs Docuum with the service's own flags
   (read from `mise.toml`, only threshold and minimum age the cell's, every image the runner holds kept) against the
   runner's Docker with small imported images: the least recently used unprotected one goes, and a `:previous` tag, a
   `-base:` tag, an image a container uses and the newer one stay.

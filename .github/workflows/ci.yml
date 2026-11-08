@@ -390,6 +390,9 @@ jobs:
       - name: Check that the committed tmpfiles line deletes an old Codex session and keeps a Claude session
         run: tests/disk/tmpfiles_line_deletes_old_codex_sessions_and_keeps_claude_sessions.sh
 
+      - name: Check that the Trash unit's gtrash deletes an entry trashed 31 days ago and keeps a directory trashed yesterday and an entry without a .trashinfo
+        run: tests/disk/gtrash_prune_deletes_old_trash_entries_and_keeps_the_rest.sh
+
       - name: Check that mise run disk names its table and warns at 85 % and not at 84 %
         run: tests/disk/mise_disk_warns_from_85_percent.sh
 
