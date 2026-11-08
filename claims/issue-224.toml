@@ -1,0 +1,7 @@
+claim_id = "d45bafdc95fc4a7fb646f19671bd37a3"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "11e175692c83a1c385e98407440d0a69c079fa45"
+branch = "claude/issue-224-load-dump-waits-for-writers"
+scope = ["AGENTS.md", "mise.toml", "tests/postgres/load_dump.sh"]
+opened_commit = "dc04b189d95739fa518f7d4b42f81b2a5902014a"
