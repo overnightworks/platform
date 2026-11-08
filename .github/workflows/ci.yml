@@ -66,6 +66,9 @@ jobs:
       - name: Check that legal:check passes hopin's legal files at the tag it runs, names file and line of a broken one and quotes no text
         run: mise exec -- tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh
 
+      - name: Check that the Renovate report check fails naming a missing report, a report with no dependency and each missing or skipped pin
+        run: tests/renovate/report_check_names_each_missing_pin.sh
+
   cluster:
     # GitHub appends matrix values to a literal job name, and the gate looks for the name cluster.
     name: ${{ github.job }}
