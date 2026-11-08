@@ -4,8 +4,29 @@ namespace: keycloak
 resources:
   - ../postgres
   - keycloak-egress.yaml
+  - keycloak.yaml
+  - config-cli.yaml
 configMapGenerator:
   - name: postgres
     behavior: merge
     literals:
       - key-tables=realm user_entity credential user_group_membership
+  # The realm files keycloak-config-cli applies; a changed file changes the name, so Flux recreates the Job.
+  - name: keycloak-realms
+    files:
+      - master.yaml
+      - realm.yaml
+replacements:
+  # Keycloak and config-cli share the admin front end; keycloak.yaml owns it.
+  - source:
+      kind: Deployment
+      name: keycloak
+      fieldPath: spec.template.spec.containers.[name=keycloak].env.[name=KC_HOSTNAME_ADMIN].value
+    targets:
+      - select:
+          kind: Job
+          name: config-cli
+        fieldPaths:
+          - spec.template.spec.containers.[name=config-cli].env.[name=KC_HOSTNAME_ADMIN].value
+        options:
+          create: true

@@ -15,6 +15,47 @@ metadata:
   annotations:
 automountServiceAccountToken: false
 ---
+# Source: traefik/templates/provider-file-cm.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-file-provider
+  namespace: traefik
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: traefik-traefik
+    app.kubernetes.io/version: "v3.7.17"
+    helm.sh/chart: traefik-42.3.1
+    app.kubernetes.io/managed-by: Helm
+data:
+  config.yml: |-
+    http:
+      middlewares:
+        auth-root-to-account:
+          redirectRegex:
+            permanent: false
+            regex: ^.*$
+            replacement: https://auth.hallucinai.de/realms/hallucinai/account
+      routers:
+        auth:
+          entryPoints:
+          - web
+          rule: Host(`auth.hallucinai.de`) && (PathPrefix(`/realms/hallucinai/`) || PathPrefix(`/resources/hallucinai/`)
+            || PathRegexp(`^/resources/[a-z0-9]{5}/`))
+          service: auth
+        auth-root:
+          entryPoints:
+          - web
+          middlewares:
+          - auth-root-to-account
+          rule: Host(`auth.hallucinai.de`) && Path(`/`)
+          service: noop@internal
+      services:
+        auth:
+          loadBalancer:
+            servers:
+            - url: http://keycloak.keycloak.svc:8080
+---
 # Source: traefik/templates/rbac/clusterrole.yaml
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
@@ -182,6 +223,8 @@ spec:
         - --providers.kubernetesingress
         - --providers.kubernetesingress.allowEmptyServices=true
         - --providers.kubernetesingress.ingressendpoint.publishedservice=traefik/traefik
+        - --providers.file.directory=/etc/traefik/dynamic
+        - --providers.file.watch=true
         - --entryPoints.web.http.encodedCharacters.allowEncodedBackSlash=false
         - --entryPoints.web.http.encodedCharacters.allowEncodedHash=false
         - --entryPoints.web.http.encodedCharacters.allowEncodedNullCharacter=false
@@ -254,6 +297,8 @@ spec:
           name: data
         - mountPath: /tmp
           name: tmp
+        - mountPath: /etc/traefik/dynamic
+          name: traefik-extra-config
       hostNetwork: false
       securityContext:
         runAsGroup: 65532
@@ -268,6 +313,9 @@ spec:
         name: data
       - emptyDir: {}
         name: tmp
+      - configMap:
+          name: traefik-file-provider
+        name: traefik-extra-config
 ---
 # Source: traefik/templates/ingressclass.yaml
 apiVersion: networking.k8s.io/v1

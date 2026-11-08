@@ -15,6 +15,38 @@ providers:
   # Routes are Kubernetes Ingresses; the rendered tree carries no Traefik CRDs.
   kubernetesCRD:
     enabled: false
+  # Keycloak's routes are hal's routers auth and auth-root, moved verbatim: a path rule and a redirect an Ingress
+  # cannot express. The tunnel reaches only the hallucinai realm, its localization and the static resources under
+  # Keycloak's five-character resources version; any wider /resources/ prefix admits /resources/master/..., the
+  # master realm's localization texts. The bare address leads to the account page, and every other path stays 404.
+  file:
+    enabled: true
+    content:
+      http:
+        routers:
+          auth:
+            entryPoints: [web]
+            service: auth
+            rule: >-
+              Host(`auth.hallucinai.de`) && (PathPrefix(`/realms/hallucinai/`)
+              || PathPrefix(`/resources/hallucinai/`) || PathRegexp(`^/resources/[a-z0-9]{5}/`))
+          auth-root:
+            entryPoints: [web]
+            # noop@internal: a request the redirect regex does not match must never reach Keycloak.
+            service: noop@internal
+            rule: Host(`auth.hallucinai.de`) && Path(`/`)
+            middlewares: [auth-root-to-account]
+        middlewares:
+          auth-root-to-account:
+            redirectRegex:
+              regex: ^.*$
+              replacement: https://auth.hallucinai.de/realms/hallucinai/account
+              permanent: false
+        services:
+          auth:
+            loadBalancer:
+              servers:
+                - url: http://keycloak.keycloak.svc:8080
 ports:
   # Only web is on the Service: traffic reaches Traefik over plain HTTP from inside the cluster.
   web:
