@@ -66,7 +66,8 @@
   unless config-cli's Job completed within its `backoffLimit`, no client or user carries Keycloak's
   `is_temporary_admin`, the realm's key ids equal those of the public issuer, and the rows of `user_entity`,
   `credential` and `user_group_membership` equal the dump's by count and the sha256 of their sorted lines. It prints
-  names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`.
+  names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`. Each database
+  step runs under a statement and lock timeout and a 2-minute deadline, whose end fails it naming the step.
 - `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
   pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else

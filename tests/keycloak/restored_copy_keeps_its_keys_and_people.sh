@@ -12,8 +12,22 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 dump="${1:?usage: $0 <dump>}"
 [ -r "$dump" ] && [ ! -d "$dump" ] || fail "no readable dump file $dump"
 namespace=keycloak
-in_postgres() { kubectl --namespace "$namespace" exec postgres-0 --container postgres -- "$@"; }
-dump_into_postgres() { kubectl --namespace "$namespace" exec --stdin postgres-0 --container postgres -- "$@" <"$dump"; }
+# Postgres ends a statement past 60 s and a lock wait past 10 s, as a lock the operator's session holds could otherwise
+# hold this check forever; pg_dump resets both for its session, so its table locks wait at most --lock-wait-timeout.
+# The deadline ends the kubectl exec around each, which a stalled connection could otherwise keep open.
+deadline=2m
+in_postgres() {
+  timeout "$deadline" kubectl --namespace "$namespace" exec postgres-0 --container postgres -- \
+    env PGOPTIONS='-c statement_timeout=60s -c lock_timeout=10s' "$@"
+}
+dump_into_postgres() {
+  timeout "$deadline" kubectl --namespace "$namespace" exec --stdin postgres-0 --container postgres -- "$@" <"$dump"
+}
+# step_failed <status> <step>: fails naming the step, and the deadline when it ended the step.
+step_failed() {
+  [ "$1" != 124 ] || fail "$2 did not end within $deadline"
+  fail "$2 failed"
+}
 outcome=0
 
 job="$(kubectl --namespace "$namespace" get job config-cli -o json)" || fail "the Job config-cli cannot be read"
@@ -28,7 +42,7 @@ echo "config-cli's Job completed after $failed failed attempts, within its backo
 temporary="$(in_postgres psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT
   (SELECT count(*) FROM client_attributes WHERE name = 'is_temporary_admin') +
   (SELECT count(*) FROM user_attribute WHERE name = 'is_temporary_admin')" 2>/dev/null)" ||
-  fail "the database $namespace cannot be read"
+  step_failed "$?" "counting the temporary administrators in the database $namespace"
 if [ "$temporary" = 0 ]; then echo "no client and no user is a temporary administrator"
 else echo "$temporary clients and users are temporary administrators: DIFFERS"; outcome=1; fi
 
@@ -56,9 +70,9 @@ echo "key ids of $realm: copy ${copy_kids//$'\n'/ }, $public_url ${public_kids//
 # loader's own digest, inside the container; stderr stays there too.
 for table in user_entity credential user_group_membership; do
   dumped="$(dump_into_postgres sh -c 'set -o pipefail; pg_restore --data-only --table="$1" --file=- 2>/dev/null |
-    sh /etc/postgres-checks/table-digests.sh' sh "$table")" || fail "the dump's $table cannot be read"
-  loaded="$(in_postgres sh -c 'set -o pipefail; pg_dump --data-only --table="$1" 2>/dev/null |
-    sh /etc/postgres-checks/table-digests.sh' sh "$table")" || fail "the database's $table cannot be read"
+    sh /etc/postgres-checks/table-digests.sh' sh "$table")" || step_failed "$?" "reading the dump's $table"
+  loaded="$(in_postgres sh -c 'set -o pipefail; pg_dump --data-only --lock-wait-timeout=10s --table="$1" 2>/dev/null |
+    sh /etc/postgres-checks/table-digests.sh' sh "$table")" || step_failed "$?" "reading the database's $table"
   verdict=equal
   [ "$dumped" = "$loaded" ] || { verdict=DIFFERS; outcome=1; }
   loaded_rows="${loaded##* }" dumped_rows="${dumped##* }"
