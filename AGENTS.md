@@ -50,8 +50,8 @@
   that recovery, writers included. `tests/postgres/load_dump.sh` drives the task and that script against fake commands
   for the outcomes the cluster cannot arrange: a failed `flux resume`, an unreadable suspension (also after a kill), a
   signal during the comparison, a table only the database holds, a database it cannot read before or after the load,
-  a materialized view, a `pg_restore` that outlives its status while its backend commits and a TERM during the check
-  after a failed restore.
+  a materialized view, a `pg_restore` that outlives its status while its backend commits, a TERM during the check
+  after a failed restore, and an INT after the commit, whose outcome reaches the operator and not the load log.
 - `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
   pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else

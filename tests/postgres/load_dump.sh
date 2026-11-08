@@ -69,6 +69,11 @@ case "$*" in
   *)
     cat >/dev/null
     : >"$FAKE_DIR/restored"
+    if [ -n "${FAKE_RESTORE_INTERRUPTED:-}" ]; then
+      # Committed, then a Ctrl-C reaches the task's shell, the fake kubectl's parent, before the status does.
+      : >"$FAKE_DIR/committed"
+      kill -INT "$(ps -o ppid= -p "$PPID")"
+    fi
     [ -z "${FAKE_RESTORE_FAILS:-}" ] ;;
 esac
 FAKE
@@ -220,6 +225,14 @@ cell_restore_that_outlives_its_status_is_awaited_through_its_commit() {
     fail "a failed load whose restore committed after its status exited $status with '$output'"
 }
 
+cell_interrupt_after_commit_reports_unknown_to_the_operator_not_the_log() {
+  cell=interrupt-after-commit-reports-unknown-to-the-operator-not-the-log
+  FAKE_RESTORE_INTERRUPTED=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"is unknown"* ]] &&
+    [[ $output == *"--resume x"* ]] && ! grep -q -e unknown -e --resume "$dump.load.log" ||
+    fail "an INT after the commit exited $status with '$output' after flux $flux_calls"
+}
+
 cell_term_during_recovery_is_unknown_and_stays_suspended() {
   cell=term-during-recovery-is-unknown-and-stays-suspended
   export FAKE_DIR="$work_directory/state-$cell"
@@ -337,6 +350,7 @@ cells=(
   materialized-view-after-failed-load-is-unknown-and-stays-suspended
   restore-that-outlives-its-status-is-awaited-through-its-commit
   term-during-recovery-is-unknown-and-stays-suspended
+  interrupt-after-commit-reports-unknown-to-the-operator-not-the-log
 )
 failed=()
 for name in "${cells[@]}"; do
