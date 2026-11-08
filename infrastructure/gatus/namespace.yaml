@@ -1,0 +1,7 @@
+# The API server refuses every Gatus pod that runs as root, escalates, keeps capabilities or mounts a host path.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatus
+  labels:
+    pod-security.kubernetes.io/enforce: restricted

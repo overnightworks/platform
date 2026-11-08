@@ -138,6 +138,10 @@ jobs:
           scripts/bootstrap_pc.sh --only tools
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Check that Docuum with the service's arguments deletes the least recently used unprotected image and keeps the rest
+        if: matrix.part == 'postgres'
+        run: tests/disk/docuum_deletes_the_least_recently_used_unprotected_image.sh
+
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
       - name: Compare the generated files with a fresh regeneration
         if: matrix.part == 'core'
@@ -223,7 +227,7 @@ jobs:
       - name: Assert that Flux reconciled the candidate commit and decrypted the dummy
         run: tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh
 
-      - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's pods and routes the app, and that speech-runtime answers only its callers' pods
+      - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's and Gatus's pods and routes the app, and that speech-runtime answers only its callers' pods
         if: matrix.part == 'core'
         env:
           # A client Pod's namespace that is neither Traefik's nor the tunnel's nor speech-runtime's callers', and the
@@ -347,6 +351,12 @@ jobs:
           THIRD_SNI: third.invalid
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
+      - name: P9b cells
+        if: matrix.part == 'core'
+        env:
+          LITELLM_NAMESPACE: litellm
+        run: tests/litellm/expire_deletes_only_what_is_past_90_days.sh
+
       - name: Assert that /impressum reaches a Pod beside cloudflared through Traefik with the committed bytes and header and everything else gets 404
         if: matrix.part == 'core'
         env:
@@ -364,6 +374,17 @@ jobs:
           WRITER_NAMESPACE: alloy
           OTHER_NAMESPACE: loki-client
         run: tests/loki/loki_keeps_lines_under_28_days.sh
+
+      - name: Assert that Gatus shows every endpoint healthy, shows a stopped service unhealthy and healthy again, and answers no Pod
+        if: matrix.part == 'core'
+        env:
+          # The service the cell stops and restores, by its Namespace, Deployment and Gatus endpoint, and a namespace for
+          # the Pod that must get no answer.
+          STOPPED_NAMESPACE: speech-runtime
+          STOPPED_DEPLOYMENT: speech-runtime
+          STOPPED_ENDPOINT: speech-runtime
+          OTHER_NAMESPACE: gatus-client
+        run: tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh
 
       - name: Assert that Alloy ships a pod's line to Loki with three labels, holds one ClusterRole with exactly two rules and answers nobody
         if: matrix.part == 'core'
@@ -427,6 +448,15 @@ jobs:
 
       - name: Check that check-pod-logs passes fresh logs and names each breach it can see without a month's wait
         run: tests/pod-logs/check_pod_logs_names_each_breach.sh
+
+      - name: Check that the committed tmpfiles line deletes an old Codex session and keeps a Claude session
+        run: tests/disk/tmpfiles_line_deletes_old_codex_sessions_and_keeps_claude_sessions.sh
+
+      - name: Check that the Trash unit's gtrash deletes an entry trashed 31 days ago and keeps a directory trashed yesterday and an entry without a .trashinfo
+        run: tests/disk/gtrash_prune_deletes_old_trash_entries_and_keeps_the_rest.sh
+
+      - name: Check that mise run disk names its table and warns at 85 % and not at 84 %
+        run: tests/disk/mise_disk_warns_from_85_percent.sh
 
   opentofu:
     runs-on: ubuntu-latest
