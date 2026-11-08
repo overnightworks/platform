@@ -27,6 +27,19 @@ jobs:
       - name: Validate the Dependabot configuration against its schema
         run: uvx --no-build check-jsonschema@0.39.0 --builtin-schema vendor.dependabot .github/dependabot.yml
 
+      - name: Check that every directory under apps/ has its Kustomization over it, and every one of those a directory
+        # pipefail: a find or yq that fails after printing its names must fail the step, not pass the comparison.
+        shell: bash
+        run: |
+          directories="$(find apps -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)"
+          kustomizations="$(yq --no-doc 'select(.kind == "Kustomization" and .spec.path == "./apps/" + .metadata.name) | .metadata.name' clusters/pc/apps.yaml | sort)"
+          every="$(yq --no-doc 'select(.kind == "Kustomization") | .metadata.name' clusters/pc/apps.yaml | sort)"
+          [ "$directories" = "$kustomizations" ] && [ "$every" = "$kustomizations" ] || {
+            echo "::error::apps/ holds [$(echo $directories)], clusters/pc/apps.yaml holds Kustomizations [$(echo $every)] of which [$(echo $kustomizations)] name their own directory"
+            exit 1
+          }
+          echo "each directory under apps/ has its Kustomization: $(echo $directories)"
+
   cluster:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -908,19 +921,20 @@ jobs:
 
       - name: Assert that each app runs at its full app ref after platform-secrets, pulled through its pull Secret
         env:
-          APP_LAYER: flux-system/apps
           SECRETS_LAYER: flux-system/platform-secrets
         run: |
           fail() { echo "::error::$1"; exit 1; }
           layer() { kubectl --namespace "${1%/*}" get kustomization "${1#*/}" -o jsonpath="$2"; }
-          applied_revision="$(layer "$APP_LAYER" '{.status.lastAppliedRevision}')"
-          [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
-            fail "the Kustomization $APP_LAYER applied '$applied_revision', not the candidate $CANDIDATE_REVISION"
-          [[ " $(layer "$APP_LAYER" '{.spec.dependsOn[*].name}') " == *" ${SECRETS_LAYER#*/} "* ]] ||
-            fail "the Kustomization $APP_LAYER does not depend on $SECRETS_LAYER"
-          echo "the Kustomization $APP_LAYER applied the candidate and depends on $SECRETS_LAYER"
 
           for manifest in $APP_MANIFESTS; do
+            app_layer="flux-system/$(basename "$(dirname "$manifest")")"
+            applied_revision="$(layer "$app_layer" '{.status.lastAppliedRevision}')"
+            [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
+              fail "the Kustomization $app_layer applied '$applied_revision', not the candidate $CANDIDATE_REVISION"
+            [[ " $(layer "$app_layer" '{.spec.dependsOn[*].name}') " == *" ${SECRETS_LAYER#*/} "* ]] ||
+              fail "the Kustomization $app_layer does not depend on $SECRETS_LAYER"
+            echo "the Kustomization $app_layer applied the candidate and depends on $SECRETS_LAYER"
+
             deployment="$(yq 'select(.kind == "Deployment") | .metadata.namespace + "/" + .metadata.name' "$manifest")"
             namespace="${deployment%/*}" name="${deployment#*/}"
             markers="$(kubectl get namespace "$namespace" \

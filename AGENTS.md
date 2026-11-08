@@ -104,8 +104,9 @@
 
 ## Layout
 
-- `.github/workflows/ci.yml`: the `checks` job, the `cluster` job, the `bootstrap` job, the `opentofu` job, the `images`
-  job and the `quality` job that calls quality's `gate.yml`.
+- `.github/workflows/ci.yml`: the `checks` job, which fails when a directory under `apps/` has no Kustomization of its
+  name over it in `clusters/pc/apps.yaml` or such a Kustomization has no directory, the `cluster` job, the `bootstrap`
+  job, the `opentofu` job, the `images` job and the `quality` job that calls quality's `gate.yml`.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
   `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
@@ -159,11 +160,11 @@
   forwarded address but not for the next from another; that Pod gets no answer from Traefik's probe port, it and one in
   another namespace none from hopin's Service, and every Traefik pod's address lies in a CIDR of hopin's
   `HOPIN_TRUSTED_PROXIES`. A Kustomization that never becomes Ready fails the job naming its reason, with each unready
-  pod's waiting state and last log lines. Every app's Deployment, applied by `apps` after its Secrets, is Available
-  with one Ready pod and `Recreate` at a full app ref in a Namespace that enforces `restricted` (the step prints the
-  kubelet's pull report and the runner's free disk); a client Pod in `hopin` gets 200 from speech-runtime's `/health`
-  and one in another namespace gets no answer; and every running container of a Deployment outside kube-system and
-  flux-system, Traefik's included, carries that Deployment's digest, a Deployment scaled to 0 aside. Every
+  pod's waiting state and last log lines. Every app's Deployment, applied by its own Kustomization after its Secrets, is
+  Available with one Ready pod and `Recreate` at a full app ref in a Namespace that enforces `restricted` (the step
+  prints the kubelet's pull report and the runner's free disk); a client Pod in `hopin` gets 200 from speech-runtime's
+  `/health` and one in another namespace gets no answer; and every running container of a Deployment outside kube-system
+  and flux-system, Traefik's included, carries that Deployment's digest, a Deployment scaled to 0 aside. Every
   Kustomization but the root and `admission` whose inventory holds a workload kind or a HelmRelease depends on
   `admission` and created its workloads after `admission`'s objects, the root's workloads are the Deployments of
   `gotk-components.yaml`, and `namespaces` holds only Namespaces Flux never prunes: the job fails naming one without
@@ -196,8 +197,8 @@
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
   `keycloak` and `litellm` also on `platform-secrets` and `storage`.
-- `clusters/pc/apps.yaml`: the Kustomization `apps` over `apps/`, with `wait: true` and a `timeout`, depending on
-  `platform-secrets` and `admission`.
+- `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
+  `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`.
 - `apps/hopin/`: hopin's Deployment and Service, one pod with `Recreate`, its image the full app ref of a release
   that changes only in a pull request, pulled through the Secret `ghcr-pull` and started from the
   Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`. Its Ingress routes `hopin.hallucinai.de`
