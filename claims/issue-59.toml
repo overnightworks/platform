@@ -1,0 +1,7 @@
+claim_id = "179fedc6658a417e91aac6c561004b25"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "63f0884bc88f586ac95ef02437a6c7f517c6ec0d"
+branch = "claude/issue-59-drop-merge-method"
+scope = [".aco/board.toml"]
+opened_commit = "a25233b1bee837615a938ebf8844cf08ff613e2d"
