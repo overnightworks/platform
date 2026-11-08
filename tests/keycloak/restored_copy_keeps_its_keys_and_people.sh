@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # restored_copy_keeps_its_keys_and_people.sh <dump>: on the PC, after db:load-dump keycloak <dump> converged, shows
 # that config-cli's Job completed within its retries, that Keycloak created no temporary administrator, that the
-# realm's key ids equal those of the public issuer, and that config-cli left the users, credentials and group
-# memberships as the dump holds them. A dump holds keys and hashes, so it prints names, counts, key ids and outcomes,
-# never a row and never a message of pg_restore or psql. Reads through the PC's k3s kubeconfig unless KUBECONFIG is set;
-# runs with the locked tools: mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump>.
+# realm's key ids equal those of the public issuer, and that config-cli left the users, their attributes, credentials
+# and group memberships as the dump holds them; the first apply on a dump older than an agent client adds only that
+# client's service account and memberships. A dump holds keys and hashes, so it prints names, counts, key ids and
+# outcomes, never a row and never a message of pg_restore or psql. Reads through the PC's k3s kubeconfig unless
+# KUBECONFIG is set; runs with the locked tools: mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump>.
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 # shellcheck source=../failure.sh
@@ -56,7 +57,8 @@ else echo "$temporary clients and users are temporary administrators: DIFFERS"; 
 # The key ids of the copy, through a loopback forward, against those the public issuer serves.
 keycloak="$(kubectl --namespace "$namespace" get deployment keycloak -o json)" || fail "the Deployment keycloak cannot be read"
 public_url="$(yq -p json '.spec.template.spec.containers[0].env[] | select(.name == "KC_HOSTNAME") | .value' <<<"$keycloak")"
-realm="$(yq '.realm' "$(dirname "${BASH_SOURCE[0]}")/../../infrastructure/keycloak/realm.yaml")"
+realm_file="$(dirname "${BASH_SOURCE[0]}")/../../infrastructure/keycloak/realm.yaml"
+realm="$(yq '.realm' "$realm_file")"
 forward_log="$(mktemp)"
 timeout 5m kubectl --namespace "$namespace" port-forward --address 127.0.0.1 service/keycloak :http >"$forward_log" 2>&1 &
 forward_pid=$!
@@ -73,19 +75,49 @@ verdict=equal
 [ -n "$copy_kids" ] && [ "$copy_kids" = "$public_kids" ] || { verdict=DIFFERS; outcome=1; }
 echo "key ids of $realm: copy ${copy_kids//$'\n'/ }, $public_url ${public_kids//$'\n'/ }, $verdict"
 
+# The awk program below, passed as an argument so no quoting of a container script reaches it. It reads a COPY stream:
+# with print_column it prints that column of every row, else it prints the stream without the rows whose column value
+# is in added.
+rows_by_column='BEGIN { count = split(added, ids, " "); for (i = 1; i <= count; i++) skip[ids[i]] = 1 }
+  /^COPY / { field = 0; header = $0; sub(/^[^(]*[(]/, "", header); sub(/[)].*/, "", header)
+    columns = split(header, names, /, */); for (i = 1; i <= columns; i++) if (names[i] == column) field = i
+    copying = 1; if (!print_column) print; next }
+  copying && /^\\[.]$/ { copying = 0; if (!print_column) print; next }
+  copying && field { split($0, cells, "\t"); if (print_column) { print cells[field]; next } if (cells[field] in skip) next }
+  { if (!print_column) print }'
+# The service accounts a realm-file client gained since the dump: user ids that stay in this script; a person or any
+# other added row shows up as a difference in the digests below, which skip only these users' rows.
+declared_clients="$(yq "[.clients[].clientId] | map(\"'\" + . + \"'\") | join(\",\")" "$realm_file")"
+live_service_accounts="$(in_postgres psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT u.id
+  FROM user_entity u JOIN client c ON c.id = u.service_account_client_link JOIN realm r ON r.id = c.realm_id
+  WHERE r.name = '$realm' AND c.client_id IN ($declared_clients)" 2>/dev/null | LC_ALL=C sort)" ||
+  step_failed "$?" "reading the service accounts of the declared clients"
+dumped_user_ids="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail
+  bounded "$2" pg_restore --data-only --table=user_entity --file=- 2>/dev/null |
+    awk -v column=id -v print_column=1 "$1" | LC_ALL=C sort' sh "$rows_by_column" "$remote_deadline")" ||
+  step_failed "$?" "reading the dump's user ids"
+added_service_accounts="$(comm -13 <(printf '%s\n' "$dumped_user_ids") <(printf '%s\n' "$live_service_accounts") | tr '\n' ' ')"
+added_service_accounts="${added_service_accounts%% }"
 # Each table's rows from the dump and from the database through the ConfigMap postgres's table-digests.sh, the
-# loader's own digest, inside the container; stderr stays there too.
-for table in user_entity credential user_group_membership; do
+# loader's own digest, inside the container; stderr stays there too. The database's rows of an added service account
+# are dropped before the digest, by the column that names the user, so every other row still has to match.
+for table_and_column in user_entity:id credential: user_group_membership:user_id user_attribute:user_id; do
+  table="${table_and_column%%:*}" column="${table_and_column#*:}"
   dumped="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail
     bounded "$2" pg_restore --data-only --table="$1" --file=- 2>/dev/null | sh /etc/postgres-checks/table-digests.sh' \
     sh "$table" "$remote_deadline")" || step_failed "$?" "reading the dump's $table"
   loaded="$(in_postgres sh -c "$remote_bound"'; set -o pipefail
     bounded "$2" pg_dump --data-only --lock-wait-timeout=10s --table="$1" 2>/dev/null |
-      sh /etc/postgres-checks/table-digests.sh' sh "$table" "$remote_deadline")" || step_failed "$?" "reading the database's $table"
+      awk -v column="$3" -v added="$4" "$5" | sh /etc/postgres-checks/table-digests.sh' \
+    sh "$table" "$remote_deadline" "$column" "$added_service_accounts" "$rows_by_column")" ||
+    step_failed "$?" "reading the database's $table"
   verdict=equal
   [ "$dumped" = "$loaded" ] || { verdict=DIFFERS; outcome=1; }
   loaded_rows="${loaded##* }" dumped_rows="${dumped##* }"
-  echo "$table: ${loaded_rows:-0} rows in the database, ${dumped_rows:-0} in the dump, $verdict"
+  echo "$table: ${loaded_rows:-0} rows in the database beyond added service accounts, ${dumped_rows:-0} in the dump, $verdict"
 done
+added_count=0
+[ -z "$added_service_accounts" ] || added_count="$(wc -w <<<"$added_service_accounts")"
+echo "$added_count service accounts of declared clients were added since the dump, with their memberships"
 [ "$outcome" = 0 ] || fail "the restored copy differs from the dump or from the public issuer"
 echo "the restored copy kept its key ids, its people and their memberships through config-cli"

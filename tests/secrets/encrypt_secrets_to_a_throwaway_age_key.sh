@@ -40,11 +40,15 @@ echo "::add-mask::$auth"
 for manifest in $APP_MANIFESTS; do
   deployment="$(yq 'select(.kind == "Deployment")' "$manifest")"
   app_namespace="$(yq '.metadata.namespace' <<<"$deployment")"
-  app_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$deployment")"
+  app_secret="$(yq '.spec.template.spec.volumes[] | select(.name == "secrets") | .secret.secretName' <<<"$deployment")"
   pull_secret="$(yq '.spec.template.spec.imagePullSecrets[].name' <<<"$deployment")"
   if [ -n "$app_secret" ]; then
     app_files="$(secret_files "$app_secret" "$app_namespace")"
-    for key in oidc_client_secret session_secret turn_key_id turn_api_token; do
+    case "$app_namespace" in
+      skat) app_keys="oidc_client_secret session_secret" ;;
+      *) app_keys="oidc_client_secret session_secret turn_key_id turn_api_token" ;;
+    esac
+    for key in $app_keys; do
       value="$(openssl rand -hex 32)"
       echo "::add-mask::$value"
       printf '%s' "$value" > "$app_files/$key"

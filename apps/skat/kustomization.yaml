@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: skat
 resources:
   - ../../infrastructure/postgres
+  - skat.yaml
 configMapGenerator:
   - name: postgres
     behavior: merge
