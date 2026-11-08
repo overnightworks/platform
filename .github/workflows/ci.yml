@@ -96,7 +96,9 @@ jobs:
       UNROUTED_HOST: unrouted.invalid
       # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
       APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml
-      # The Postgres base the layers keycloak and litellm include.
+      # The Kustomization that serves the Secrets of every namespace, so that no other layer holds one of them.
+      SECRETS_LAYER: flux-system/platform-secrets
+      # The Postgres base the layers under infrastructure/ and apps/ include.
       POSTGRES_BASE: infrastructure/postgres
     steps:
       - name: Check out
@@ -449,9 +451,12 @@ jobs:
           password_file="$(yq '.spec.template.spec.containers[0].env[] | select(.name == "POSTGRES_PASSWORD_FILE") | .value' \
             <<<"$postgres_statefulset")"
           postgres_namespaces=()
-          for layer in infrastructure/*/kustomization.yaml; do
-            [ "$(BASE="../${POSTGRES_BASE##*/}" yq '[.resources[] | select(. == strenv(BASE))] | length' "$layer")" = 1 ] ||
-              continue
+          for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
+            includes=0
+            while IFS= read -r resource; do
+              [ "$(realpath --canonicalize-missing "${layer%/*}/$resource")" != "$(realpath "$POSTGRES_BASE")" ] || includes=1
+            done < <(yq '.resources[]' "$layer")
+            [ "$includes" = 1 ] || continue
             postgres_namespace="$(yq '.namespace' "$layer")"
             value="$(openssl rand -hex 32)"
             echo "::add-mask::$value"
@@ -459,7 +464,7 @@ jobs:
             plain_secret "$postgres_secret" "$postgres_namespace" Opaque
             postgres_namespaces+=("$postgres_namespace")
           done
-          [ "${#postgres_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ includes $POSTGRES_BASE"
+          [ "${#postgres_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $POSTGRES_BASE"
 
           # The recipient is the key's public half, so sops encrypts without reading any private key.
           recipient="$(age-keygen -y "$key_file")"
@@ -920,8 +925,6 @@ jobs:
           echo "the app answered $status to a sign-in start from $SECOND_CLIENT_ADDRESS"
 
       - name: Assert that each app runs at its full app ref after platform-secrets, pulled through its pull Secret
-        env:
-          SECRETS_LAYER: flux-system/platform-secrets
         run: |
           fail() { echo "::error::$1"; exit 1; }
           layer() { kubectl --namespace "${1%/*}" get kustomization "${1#*/}" -o jsonpath="$2"; }
@@ -1405,6 +1408,9 @@ jobs:
         env:
           # The layer whose Kustomization the prune proof deletes and whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
+          # What a Postgres namespace's Kustomization waits for: admission for its workload, platform-secrets for its
+          # password, storage for its claim.
+          POSTGRES_LAYER_DEPENDENCIES: admission platform-secrets storage
           # Keycloak's namespace, whose egress policy the probe Pods meet, a Service every other Pod reaches and a host
           # outside the cluster.
           EGRESS_NAMESPACE: keycloak
@@ -1445,6 +1451,34 @@ jobs:
             kubectl --namespace "$namespace" exec postgres-0 --container postgres -- \
               pg_isready --username="$namespace" --dbname="$namespace"
             echo "Postgres in $namespace is Ready as uid $uid on $claim, bound to $volume at $path; pg_isready passes as $namespace"
+          done
+
+          # A1b: each Postgres namespace's Kustomization, named like it as db:load-dump assumes, holds the base's objects of the
+          # namespace and depends on every layer in POSTGRES_LAYER_DEPENDENCIES; no other Kustomization holds an object of
+          # the namespace but the Secrets platform-secrets serves.
+          inventory_ids() { kubectl --namespace flux-system get kustomization "$1" \
+            -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}'; }
+          all_kustomizations="$(kubectl --namespace flux-system get kustomizations -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+          [ -n "$all_kustomizations" ] || fail "flux-system holds no Kustomization"
+          for namespace in $POSTGRES_NAMESPACES; do
+            held="$(inventory_ids "$namespace")"
+            while IFS= read -r id; do
+              grep -qxF "$id" <<<"$held" || fail "the Kustomization $namespace does not hold $id of $POSTGRES_BASE"
+            done < <(NAMESPACE="$namespace" yq --no-doc \
+              'strenv(NAMESPACE) + "_" + .metadata.name + "_" + ((.apiVersion | select(contains("/")) | sub("/.*", "")) // "") + "_" + .kind' \
+              "$POSTGRES_BASE/postgres.yaml")
+            while IFS= read -r other; do
+              [ "$other" != "$namespace" ] || continue
+              other_ids="$(inventory_ids "$other")"
+              foreign="$(grep "^${namespace}_" <<<"$other_ids" || true)"
+              [ "$other" != "${SECRETS_LAYER#*/}" ] || foreign="$(grep -v '__Secret$' <<<"$foreign" || true)"
+              [ -z "$foreign" ] || fail "the Kustomization $other holds ${foreign//$'\n'/ } of namespace $namespace, which $namespace owns"
+            done <<<"$all_kustomizations"
+            dependencies="$(kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.spec.dependsOn[*].name}')"
+            for dependency in $POSTGRES_LAYER_DEPENDENCIES; do
+              [[ " $dependencies " == *" $dependency "* ]] || fail "the Kustomization $namespace does not depend on $dependency"
+            done
+            echo "the Kustomization $namespace holds the objects of $POSTGRES_BASE, alone but for Secrets, and depends on $POSTGRES_LAYER_DEPENDENCIES"
           done
 
           # A2: a deleted Kustomization takes its inventory with it and leaves the claim, its volume and the Namespace.

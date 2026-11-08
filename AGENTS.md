@@ -185,7 +185,9 @@
   route for a host an Ingress routes; on a host a line restricts by path, `/` gets `http_status:404`. k3d does not
   prove the edge connection, the token mount or `/ready`. The step "P7a cells" then asserts the one default class
   retains, each Postgres is Ready as its image's postgres user on a bound claim of it with the prune annotation at
-  `<namespace>/<claim>`, and `pg_isready` passes as the namespace's user; deletes the Kustomization `litellm`, whose
+  `<namespace>/<claim>`, and `pg_isready` passes as the namespace's user; shows that each Postgres namespace's Kustomization,
+  named like it, holds the base's objects of the namespace, that no other Kustomization holds one but platform-secrets'
+  Secrets, and that it depends on `admission`, `platform-secrets` and `storage`; deletes the Kustomization `litellm`, whose
   inventory goes while the claim, its volume and the Namespace stay, and the root re-creates it with the row written
   before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two synthetic dumps it
   makes, one of data and one whose table of contents is most of the file, with the Kustomization `litellm` pointed at
@@ -202,12 +204,15 @@
   failing layer reports itself; a regeneration that adds, renames or removes a controller changes those
   `healthChecks` with it, and `cluster` fails when they differ from the root's inventory.
 - `clusters/pc/infrastructure.yaml`: one Flux Kustomization per directory under `infrastructure/`, each with
-  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak` and `litellm` include. `namespaces`, then
+  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include. `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
   `keycloak` and `litellm` also on `platform-secrets` and `storage`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
-  `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`.
+  `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` also on
+  `storage`.
+- `apps/skat/`: skat's Postgres from the base `infrastructure/postgres`, in namespace `skat` with `key-tables` `tables
+  chairs receipts`; the Namespace is in `infrastructure/namespaces/`, not here.
 - `apps/hopin/`: hopin's Deployment and Service, one pod with `Recreate`, its image the full app ref of a release
   that changes only in a pull request, pulled through the Secret `ghcr-pull` and started from the
   Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`. Its Ingress routes `hopin.hallucinai.de`
@@ -233,7 +238,7 @@
   `A-Z a-z 0-9 - _`, as LiteLLM takes it unescaped in a URL), its claim on the Retain class carrying the prune
   annotation, so neither a prune nor the StatefulSet's deletion takes it; a Service on 5432 that only its own namespace
   reaches; and the ConfigMap `postgres` with `check-key-tables.sh`, the one key-table check, and the including layer's
-  `key-tables`. `infrastructure/keycloak/` and `infrastructure/litellm/` include it; keycloak's NetworkPolicy
+  `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/` and `apps/skat/` include it; keycloak's NetworkPolicy
   `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create

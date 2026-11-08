@@ -25,6 +25,8 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
   is an entry in the platform's namespaces layer (`infrastructure/namespaces/namespaces.yaml`, prune disabled), added in
   a pull request.
 - Secrets from `platform-secrets` (SOPS with age), mounted as files. An app with no Secret of its own has none.
+- Its own Postgres in its Namespace, from the base `infrastructure/postgres` that `apps/<app>/kustomization.yaml`
+  includes, so the app's one Kustomization owns it and `db:load-dump` can suspend it with the app.
 - Its private image, pulled through the Secret `ghcr-pull`. The ref moves in a pull request.
 - Provenance: platform's `images` job checks a bumped ref's tag, attestation and signer. Admission on the PC checks the
   ref's form only.
