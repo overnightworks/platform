@@ -253,6 +253,16 @@ jobs:
           PROBE_IMAGE: docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
+      - name: P7c cells
+        env:
+          # LiteLLM's namespace, an app namespace its front admits, a namespace it does not, and an SNI no router of
+          # agent-egress allows.
+          LITELLM_NAMESPACE: litellm
+          APP_NAMESPACE: hopin
+          OTHER_NAMESPACE: litellm-client
+          THIRD_SNI: third.invalid
+        run: tests/litellm/front_key_check_routing_and_closed_egress.sh
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: tests/flux/print_flux_state.sh
