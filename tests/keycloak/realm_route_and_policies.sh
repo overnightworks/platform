@@ -287,10 +287,11 @@ offset = digest[-1] & 0x0F
 digits = int(os.environ["TOTP_DIGITS"])
 print(str((struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 10**digits).zfill(digits))'
 }
-# grant_outcome: the status, the OAuth error and whether a token came, never the token.
+# grant_outcome: the status, the OAuth error and whether a token came, never the token. Keycloak's deny-access step
+# answers without JSON, which holds no token either.
 grant_outcome() {
   echo "$grant_status $(jq --raw-output '(.error // "no-error") + " " + (if .access_token then "token" else "no-token" end)' \
-    <<<"$grant_body" 2>/dev/null || echo "an answer that is no JSON")"
+    <<<"$grant_body" 2>/dev/null || echo "no-json no-token")"
 }
 password_grant master admin-cli "$totp_admin" --data-urlencode "totp=$(totp_code)"
 with_code="$(grant_outcome)"
