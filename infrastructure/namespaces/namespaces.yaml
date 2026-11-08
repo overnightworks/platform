@@ -70,3 +70,12 @@ metadata:
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: songmaker
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
