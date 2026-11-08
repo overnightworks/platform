@@ -2,7 +2,7 @@
 
 ## Commands
 
-- `quality hygiene .` runs the repository rules of quality at the release `.github/workflows/ci.yml` pins and must print `hygiene: clean`. Install it as
+- `quality check` runs the repository rules of quality at the release `.github/workflows/ci.yml` pins and must exit 0 and print a `✓ clean · <n> areas` line. Install it as
   quality's README says, at that release.
 - `scripts/bootstrap_pc.sh --only tools` installs the mise its header pins, checks its sha256 and installs the
   tools `mise.lock` holds; a tool without a lock entry is an error. A fresh machine first needs `git`, `curl` and
