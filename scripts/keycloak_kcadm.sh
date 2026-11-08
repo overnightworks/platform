@@ -22,10 +22,13 @@ sign_in_kcadm() {
       --server http://localhost:8080 --realm master --client "$KC_BOOTSTRAP_ADMIN_CLIENT_ID"' "$config_file" >/dev/null ||
     fail "Keycloak cannot be signed in to"
 }
-# kcadm_stderr: where kcadm's diagnostics go. They can quote a request URL that holds a person's id, so a task that never
-# prints one sets /dev/null.
-kcadm_stderr=/dev/stderr
-kcadm() { keycloak_exec --stdin deployment/keycloak --container keycloak -- "$kcadm_path" "$@" --config "$config_file" 2>"$kcadm_stderr"; }
+# kcadm_diagnostics_fd: the descriptor kcadm's diagnostics go to, a descriptor and not a path since opening /dev/stderr
+# truncates the file the caller's stderr is and fails on a socket. They can quote a request URL that holds a person's id,
+# so a task that never prints one opens /dev/null on a descriptor and sets that. kcadm_update_output_fd is the same for
+# the output of a membership write, which holds nothing the task prints.
+kcadm_diagnostics_fd=2
+kcadm_update_output_fd=1
+kcadm() { keycloak_exec --stdin deployment/keycloak --container keycloak -- "$kcadm_path" "$@" --config "$config_file" 2>&"$kcadm_diagnostics_fd"; }
 # find_person <username>: sets person_id. Keycloak's search leaves out service accounts, and a value in quotes matches a
 # username, email or name exactly, so only the entries whose username is the requested one, which Keycloak stores in
 # lowercase, are the person. Another user's email or name can match too and a page holds at most 100, so every page is
@@ -56,5 +59,6 @@ ensure_member() {
   ! grep -qxF "$group_id" <<<"$member_of" || return 0
   attempted+=("$username in $1")
   kcadm update "users/$person_id/groups/$group_id" --target-realm "$realm" --set "realm=$realm" \
-    --set "userId=$person_id" --set "groupId=$group_id" --no-merge || fail "$username could not join $1"
+    --set "userId=$person_id" --set "groupId=$group_id" --no-merge \
+    >&"$kcadm_update_output_fd" || fail "$username could not join $1"
 }

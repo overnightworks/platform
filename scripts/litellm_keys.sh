@@ -27,7 +27,7 @@ deadline=2m
 key_prefix=sk-
 key_minimum_length=16
 
-kcadm_stderr=/dev/null
+exec {kcadm_diagnostics_fd}>/dev/null {kcadm_update_output_fd}>/dev/null
 command_name="" task_name=litellm:admin realm="" username="" reported=false
 # The admin command's writes, each recorded before it is sent, since an answer lost on the way leaves it unknown.
 attempted=()
@@ -428,7 +428,7 @@ admin_command() {
   kcadm get "group-by-path$admin_group" --target-realm "$realm" --fields id --format csv --noquotes >/dev/null ||
     fail "$realm holds no $admin_group or Keycloak cannot be read"
 
-  # Everything is read before the first write, and each step is written and read back in this order, so a customer without a limit never stands without the marker.
+  # The state this preflight enumerates is read before the first write, and each step is written and read back in this order, so a customer without a limit never stands without the marker.
   read_customer
   make_admin_budget
   ensure_member "$admin_group"
