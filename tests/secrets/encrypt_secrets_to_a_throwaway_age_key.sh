@@ -83,11 +83,49 @@ for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
 done
 [ "${#postgres_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $POSTGRES_BASE"
 
+# Each namespace whose layer includes the backup component gets its restic Secret, under the names the component's
+# Schedule reads: a rest user, its rest password and its repository password, each in the URL-safe alphabet; the Secret
+# rest-users holds every user's password as a file named after the user.
+schedule="$(yq 'select(.kind == "Schedule")' "$POSTGRES_BACKUP_COMPONENT/backup.yaml")"
+restic_secret="$(yq '.spec.backend.repoPasswordSecretRef.name' <<<"$schedule")"
+user_key="$(yq '.spec.backend.rest.userSecretRef.key' <<<"$schedule")"
+password_key="$(yq '.spec.backend.rest.passwordSecretReg.key' <<<"$schedule")"
+repository_password_key="$(yq '.spec.backend.repoPasswordSecretRef.key' <<<"$schedule")"
+rest_namespace="$(yq '.namespace' "${REST_SERVER_MANIFEST%/*}/kustomization.yaml")"
+rest_users_secret="$(yq 'select(.kind == "Deployment") | .spec.template.spec.volumes[] | select(.secret) | .secret.secretName' \
+  "$REST_SERVER_MANIFEST")"
+rest_users_files="$(secret_files "$rest_users_secret" "$rest_namespace")"
+backup_namespaces=()
+for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
+  includes=0
+  while IFS= read -r component; do
+    [ "$(realpath --canonicalize-missing "${layer%/*}/$component")" != "$(realpath "$POSTGRES_BACKUP_COMPONENT")" ] || includes=1
+  done < <(yq '.components // [] | .[]' "$layer")
+  [ "$includes" = 1 ] || continue
+  backup_namespace="$(yq '.namespace' "$layer")"
+  backup_namespaces+=("$backup_namespace")
+  restic_files="$(secret_files "$restic_secret" "$backup_namespace")"
+  # rest-server's --private-repos admits a user only to the path that starts with its name, and the repository's path
+  # is the namespace, so the user equals the namespace.
+  rest_user="$backup_namespace"
+  printf '%s' "$rest_user" > "$restic_files/$user_key"
+  for key in "$password_key" "$repository_password_key"; do
+    value="$(openssl rand -hex 32)"
+    echo "::add-mask::$value"
+    printf '%s' "$value" > "$restic_files/$key"
+  done
+  cp "$restic_files/$password_key" "$rest_users_files/$rest_user"
+  plain_secret "$restic_secret" "$backup_namespace" Opaque
+done
+[ "${#backup_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $POSTGRES_BACKUP_COMPONENT"
+plain_secret "$rest_users_secret" "$rest_namespace" Opaque
+
 # Each Secret a container of a layer in SECRET_KEY_LAYERS reads by key, beside the Postgres base's, gets a dummy per
 # key, in the URL-safe alphabet.
 key_secrets=()
 while read -r secret_namespace secret_name secret_key; do
   [ "$secret_name" != "$postgres_secret" ] || continue
+  [ "$secret_name" != "$restic_secret" ] || continue
   value="$(openssl rand -hex 32)"
   echo "::add-mask::$value"
   printf '%s' "$value" > "$(secret_files "$secret_name" "$secret_namespace")/$secret_key"
@@ -105,8 +143,9 @@ for plain_file in "${plain_files[@]}"; do
   encrypted_file="$artifact_dir/${plain_file##*/}"
   sops --encrypt --age "$recipient" --encrypted-regex '^(data|stringData)$' "$plain_file" > "$encrypted_file"
 
-  # Flux applies a value left outside the encrypted fields as it is, which would fake the proof or leak it.
-  encrypted="$(<"$encrypted_file")"
+  # Flux applies a value left outside the encrypted fields as it is, which would fake the proof or leak it. A Secret's
+  # own name and namespace stay in plain text and may equal a value, so they are the only fields left out.
+  encrypted="$(yq 'del(.metadata.name, .metadata.namespace)' "$encrypted_file")"
   while IFS= read -r value; do
     [[ $encrypted != *"$value"* && $encrypted != *"$(base64 --decode <<<"$value")"* ]] ||
       fail "$encrypted_file holds a value in plain text"
@@ -124,4 +163,5 @@ done
   echo "DUMMY_FILE=$dummy_file"
   echo "SECRETS_ARTIFACT_DIR=$artifact_dir"
   echo "POSTGRES_NAMESPACES=${postgres_namespaces[*]}"
+  echo "BACKUP_NAMESPACES=${backup_namespaces[*]}"
 } >> "$GITHUB_ENV"

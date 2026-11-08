@@ -137,6 +137,9 @@ jobs:
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
       POSTGRES_BASE: infrastructure/postgres
+      # The component a Postgres layer includes to be backed up, and the rest-server it backs up to.
+      POSTGRES_BACKUP_COMPONENT: infrastructure/postgres/backup
+      REST_SERVER_MANIFEST: infrastructure/backup/rest-server.yaml
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -372,6 +375,16 @@ jobs:
           THIRD_SNI: third.invalid
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
+      - name: P7d cells
+        if: matrix.part == 'core'
+        env:
+          # The Kustomization and Namespace of the rest-server, a namespace with no repository, which gets no answer, and a
+          # Keycloak table its realm leaves empty.
+          BACKUP_LAYER: backup
+          OUTSIDE_NAMESPACE: hopin
+          EMPTY_KEY_TABLE: broker_link
+          VENDOR_LIST: infrastructure/admission/image-vendors.yaml
+        run: tests/backup/backup_restores_and_keeps_repositories_apart.sh
       - name: P9b cells
         if: matrix.part == 'core'
         env:
