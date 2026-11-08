@@ -1,0 +1,8 @@
+claim_id = "fb080d471c21475ba3e51da4a95f104c"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "6f10bdf87c1b13048e5f0d340e7f9708df1308b9"
+branch = "claude/issue-191-p8b-songmaker-stores"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/songmaker", "clusters/pc/apps.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/namespaces/namespaces.yaml", "tests/songmaker"]
+opened_commit = "d1ee7580194818de408ef6f039449d1c375ef998"
+whole_reason = "One namespace: its stores, Flux Kustomization, vendor entry, cell and documents prove an empty songmaker together."
