@@ -1,7 +1,0 @@
-claim_id = "0f820a6e1c8841e0ab79d742a21784a3"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "68b0a107b25bfd5d2c987257b53e3ffa94761e2a"
-branch = "claude/issue-142-namespace-skat"
-scope = ["infrastructure/namespaces/namespaces.yaml"]
-opened_commit = "633278fa4d9445f4ccef08f9c034c04aca142db4"
