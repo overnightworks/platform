@@ -13,6 +13,7 @@ kubectl = "1.37"
 sops = "3"
 opentofu = "1.13"
 yq = "4"
+docuum = "0"
 
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.
@@ -69,6 +70,49 @@ notify = ["pod-logs-clean.timer"]
 [bootstrap.services."pod-logs-clean.timer"]
 state = "running"
 enabled = true
+
+# The disk's bounds run in the operator's own user manager, with no sudo: Docuum keeps Docker's images within 100 GB, a
+# weekly clean empties uv's cache and a daily tmpfiles clean deletes Codex sessions after 30 days. mise writes each unit
+# to ~/.config/systemd/user as dev.mise.<name>.
+[dotfiles."~/.config/user-tmpfiles.d/disk.conf"]
+source = "host/disk/user-tmpfiles.conf"
+mode = "copy"
+
+# Docuum measures the Images line of `docker system df`, which counts a shared layer once, so the threshold is 100 GB
+# of real space. --keep matches `repository:tag`: tags `previous` and the `-base` images, every ghcr.io and quay.io
+# image, Traefik, and the Docker Hub repositories the Compose files name. `$$` is systemd's `$`, and no backslash is
+# used, which systemd would read as an escape.
+[bootstrap.linux.systemd.units.docuum]
+description = "Delete Docker images least recently used first above 100 GB"
+exec_start = "~/.local/share/mise/installs/docuum/0/docuum --threshold '100 GB' --min-age 1d --keep=':previous$$' --keep='-base:' --keep='^ghcr[.]io/' --keep='^quay[.]io/' --keep='^traefik' --keep='^(adorsys|grafana|nginxinc|prom|smallstep|wollomatic)/' --keep='^(postgres|python|redis):'"
+restart = "on-failure"
+restart_sec = "1min"
+
+[bootstrap.linux.systemd.units.uv-cache-clean]
+description = "Empty uv's cache"
+type = "oneshot"
+exec_start = "~/.local/bin/uv cache clean"
+start = false
+wanted_by = []
+
+[bootstrap.linux.systemd.units.uv-cache-clean-weekly]
+description = "Empty uv's cache weekly"
+on_calendar = "weekly"
+persistent = true
+unit = "uv-cache-clean"
+
+[bootstrap.linux.systemd.units.user-tmpfiles-clean]
+description = "Delete the user's old files the tmpfiles line names"
+type = "oneshot"
+exec_start = "/usr/bin/systemd-tmpfiles --user --clean %h/.config/user-tmpfiles.d/disk.conf"
+start = false
+wanted_by = []
+
+[bootstrap.linux.systemd.units.user-tmpfiles-clean-daily]
+description = "Delete the user's old files the tmpfiles line names daily"
+on_calendar = "daily"
+persistent = true
+unit = "user-tmpfiles-clean"
 
 # The PC's ufw keeps its defaults and the operator's own rules (no exclusive, whose ufw reset would delete them).
 # The pods reach the API server and the kubelet on the host through cni0, which only pods sit on, so one rule on the
@@ -231,6 +275,37 @@ run = "sudo /usr/local/sbin/check-pod-logs"
 description = "Check that no Secret on the PC carries an expires-on annotation within 30 days or past"
 env = { KUBECONFIG = "/etc/rancher/k3s/k3s.yaml" }
 run = "scripts/check_secrets_expiry.sh"
+
+[tasks.disk]
+description = "Show what fills the disk of the home directory and warn from 85 % use"
+# Only root reads /var/lib/docker, so what lies outside $HOME is df's used space less $HOME, and Docker's own count is
+# printed beside it when the daemon answers. Only sizes and names are printed.
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+warn_percent=85
+read -r used total percent < <(df -B1 --output=used,size,pcent "$HOME" | awk 'NR == 2 { sub("%", "", $3); print $1, $2, $3 }')
+size_of() { du -sxB1 "$1" 2>/dev/null | cut -f1 || true; }
+home_size="$(size_of "$HOME")"
+rows="" named=0
+for path in "$HOME/.claude" "$HOME/.codex/sessions" "$HOME/.cache/uv" "$HOME/.local/share/Trash" \
+  "$HOME/.local/share/mise" "$HOME/git"; do
+  [ -e "$path" ] || continue
+  size="$(size_of "$path")"
+  named=$((named + size))
+  rows+="$size ${path/#"$HOME"/\~}"$'\n'
+done
+rows+="$((home_size - named)) the rest of ~"$'\n'"$((used - home_size)) outside ~ (Docker, system)"$'\n'
+echo "disk of ~: $(numfmt --to=iec "$used") of $(numfmt --to=iec "$total") used, $percent %"
+sort -rn <<<"$rows" | awk 'NF { size = $1; $1 = ""; print size, substr($0, 2) }' | numfmt --field=1 --to=iec --padding=7
+if command -v docker >/dev/null && docker_sizes="$(docker system df 2>/dev/null)"; then
+  echo "Docker's own count:"
+  sed 's/^/  /' <<<"$docker_sizes"
+fi
+if [ "$percent" -ge "$warn_percent" ]; then
+  echo "WARNING: the disk of ~ is $percent % full, from $warn_percent % it needs room" >&2
+fi
+'''
 
 [tasks."github:test"]
 description = "Check the GitHub settings root: format, init against the committed lock, validate and the mocked tests"

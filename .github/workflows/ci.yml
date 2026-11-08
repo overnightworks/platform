@@ -135,6 +135,10 @@ jobs:
           scripts/bootstrap_pc.sh --only tools
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Check that Docuum with the service's arguments deletes the least recently used unprotected image and keeps the rest
+        if: matrix.part == 'postgres'
+        run: tests/disk/docuum_deletes_the_least_recently_used_unprotected_image.sh
+
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
       - name: Compare the generated files with a fresh regeneration
         if: matrix.part == 'core'
@@ -382,6 +386,12 @@ jobs:
 
       - name: Check that check-pod-logs passes fresh logs and names each breach it can see without a month's wait
         run: tests/pod-logs/check_pod_logs_names_each_breach.sh
+
+      - name: Check that the committed tmpfiles line deletes an old Codex session and keeps a Claude session
+        run: tests/disk/tmpfiles_line_deletes_old_codex_sessions_and_keeps_claude_sessions.sh
+
+      - name: Check that mise run disk names its table and warns at 85 % and not at 84 %
+        run: tests/disk/mise_disk_warns_from_85_percent.sh
 
   opentofu:
     runs-on: ubuntu-latest
