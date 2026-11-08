@@ -1,0 +1,8 @@
+claim_id = "d92c1dd3678c47b687443179cb48c876"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "d47e7e094db797815378b0e73826807455d7ed25"
+branch = "claude/issue-227-p9a3b-sections-and-stand"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/legal", "mise.toml", "src/legal", "tests/legal"]
+opened_commit = "2b91fec8c52e683d007178b368c1f6d45b0f71c4"
+whole_reason = "One move: the sections, the parser that reads them, the build that needs them and the declared Stand are one proof of equality with hal."
