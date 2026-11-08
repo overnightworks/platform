@@ -679,3 +679,129 @@ if [ "${usage_delete_old:-false}" = true ]; then
   say "$old_group deleted"
 fi
 '''
+
+# Sets the person-linked facts of an agent's service account, which no realm file holds: kcadm runs in Keycloak's own
+# container signed in as config-cli, so no secret reaches this shell.
+[tasks."keycloak:agent-owner"]
+description = "Set an agent's agent_owner to a person and add that person to /agent-owners, with --adder also to /agent-adders"
+usage = '''
+flag "--adder" help="Also add the person to /agent-adders"
+arg "<client>" help="A service-account client of realm.yaml with agent-identity among its default scopes"
+arg "<username>" help="A person, which no service account is"
+'''
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+client="${usage_client?}" username="${usage_username?}" realm_file=infrastructure/keycloak/realm.yaml
+owners_group=/agent-owners adders_group=/agent-adders
+realm="$(yq '.realm' "$realm_file")"
+say() { echo "keycloak:agent-owner: $1"; }
+# A refusal before the first write ends in "nothing changed"; after one it names what was written or may have been.
+attempted=()
+fail() {
+  if [ -z "${attempted[*]:-}" ]; then echo "keycloak:agent-owner: $1; nothing changed" >&2
+  else echo "keycloak:agent-owner: $1; written or possibly written: ${attempted[*]}; run again to complete it" >&2; fi
+  exit 1
+}
+# kcadm signs in once as config-cli with the secret in Keycloak's environment variable KC_CLI_CLIENT_SECRET, never in an
+# argument list that another host user could read, and keeps its token in a private file of the container that goes at
+# the end, on every exit.
+kcadm_path=/opt/keycloak/bin/kcadm.sh
+config_file="/tmp/kcadm-$(</proc/sys/kernel/random/uuid).config"
+keycloak_exec() { kubectl --namespace keycloak exec "$@"; }
+remove_config() {
+  keycloak_exec deployment/keycloak --container keycloak -- rm -f -- "$config_file" ||
+    echo "keycloak:agent-owner: could not remove $config_file in Keycloak's container" >&2
+}
+trap remove_config EXIT
+trap 'exit 143' TERM INT
+keycloak_exec deployment/keycloak --container keycloak -- bash -c 'umask 077 && : >"$0" &&
+  KC_CLI_CLIENT_SECRET="$KC_BOOTSTRAP_ADMIN_CLIENT_SECRET" exec '"$kcadm_path"' config credentials --config "$0" \
+    --server http://localhost:8080 --realm master --client "$KC_BOOTSTRAP_ADMIN_CLIENT_ID"' "$config_file" >/dev/null ||
+  fail "Keycloak cannot be signed in to"
+kcadm() { keycloak_exec --stdin deployment/keycloak --container keycloak -- "$kcadm_path" "$@" --config "$config_file"; }
+unreadable="Keycloak cannot be read"
+
+CLIENT="$client" yq --exit-status '.clients[] | select(.clientId == strenv(CLIENT) and .serviceAccountsEnabled == true
+  and (.defaultClientScopes // [] | contains(["agent-identity"])))' "$realm_file" >/dev/null 2>&1 ||
+  fail "$client is no service-account client of realm.yaml with agent-identity among its default scopes"
+client_id="$(kcadm get clients --target-realm "$realm" --query "clientId=$client" --fields id --format csv --noquotes)" ||
+  fail "$unreadable"
+[ -n "$client_id" ] || fail "$realm holds no client $client"
+# Keycloak's search leaves out service accounts, and a value in quotes matches a username, email or name exactly, so
+# only the entries whose username is the requested one, which Keycloak stores in lowercase, are the person. Another
+# user's email or name can match too and a page holds at most 100, so every page is read until a short one.
+wanted_username="${username,,}" person_ids="" offset=0
+while :; do
+  page="$(kcadm get users --target-realm "$realm" --query "search=\"$username\"" --offset "$offset" --limit 100)" ||
+    fail "$unreadable"
+  matched="$(WANTED="$wanted_username" yq -p json -r '.[] | select(.username == strenv(WANTED)) | .id' <<<"$page")" ||
+    fail "$unreadable"
+  [ -z "$matched" ] || person_ids+="$matched"$'\n'
+  [ "$(yq -p json 'length' <<<"$page")" -ge 100 ] || break
+  offset=$((offset + 100))
+done
+person_count="$(grep -c . <<<"$person_ids" || true)"
+[ "$person_count" -gt 0 ] || fail "no person named $username in $realm"
+[ "$person_count" = 1 ] || fail "Keycloak returned $person_count users named $username"
+person_id="${person_ids%$'\n'}"
+account_id="$(kcadm get "clients/$client_id/service-account-user" --target-realm "$realm" --fields id --format csv --noquotes)" ||
+  fail "$unreadable"
+account="$(kcadm get "users/$account_id" --target-realm "$realm")" || fail "$unreadable"
+owner="$(yq -p json '.attributes.agent_owner // [] | join(",")' <<<"$account")"
+[ -z "$owner" ] || [ "$owner" = "$person_id" ] || fail "$client's agent_owner names someone else"
+
+changed=false
+if [ -z "$owner" ]; then
+  attempted+=("agent_owner of $client")
+  # The whole representation goes back, so what this run does not set stays as it is.
+  USER_ID="$person_id" yq -p json -o json '.attributes.agent_owner = [strenv(USER_ID)]' <<<"$account" |
+    kcadm update "users/$account_id" --target-realm "$realm" --file - --no-merge ||
+    fail "$client's agent_owner could not be written"
+  changed=true
+fi
+# ensure_member <group path>: adds the person unless already a member.
+ensure_member() {
+  local group_id member_of
+  group_id="$(kcadm get "group-by-path$1" --target-realm "$realm" --fields id --format csv --noquotes)" ||
+    fail "$realm holds no $1 or Keycloak cannot be read"
+  member_of="$(kcadm get "users/$person_id/groups" --target-realm "$realm" --fields id --format csv --noquotes)" ||
+    fail "$unreadable"
+  ! grep -qxF "$group_id" <<<"$member_of" || return 0
+  attempted+=("$username in $1")
+  kcadm update "users/$person_id/groups/$group_id" --target-realm "$realm" --set "realm=$realm" \
+    --set "userId=$person_id" --set "groupId=$group_id" --no-merge || fail "$username could not join $1"
+  changed=true
+}
+groups=("$owners_group")
+[ "${usage_adder:-false}" != true ] || groups+=("$adders_group")
+for group in "${groups[@]}"; do ensure_member "$group"; done
+
+read_back="$(kcadm get "users/$account_id" --target-realm "$realm")" || fail "$unreadable"
+[ "$(yq -p json '.attributes.agent_owner // [] | join(",")' <<<"$read_back")" = "$person_id" ] ||
+  fail "$client's agent_owner did not read back as $username"
+person_groups="$(kcadm get "users/$person_id/groups" --target-realm "$realm" --fields path --format csv --noquotes)" ||
+  fail "$unreadable"
+for group in "${groups[@]}"; do
+  grep -qxF "$group" <<<"$person_groups" || fail "$username did not read back in $group"
+done
+# member_count <group path>: its members over every page.
+member_count() {
+  local group_id offset=0 page total=0 page_count
+  group_id="$(kcadm get "group-by-path$1" --target-realm "$realm" --fields id --format csv --noquotes)" || return 1
+  while page="$(kcadm get "groups/$group_id/members" --target-realm "$realm" --fields id --format csv --noquotes \
+    --offset "$offset" --limit 100)"; do
+    if [ -z "$page" ]; then echo "$total"; return 0; fi
+    page_count="$(grep -c . <<<"$page")"
+    total=$((total + page_count))
+    offset=$((offset + 100))
+  done
+  return 1
+}
+owners_count="$(member_count "$owners_group")" || fail "$unreadable"
+adders_count="$(member_count "$adders_group")" || fail "$unreadable"
+say "$client's agent_owner is $username; $username is in ${groups[*]}; $owners_group has $owners_count members, $adders_group $adders_count"
+[ "$changed" = true ] || say "nothing changed"
+'''
