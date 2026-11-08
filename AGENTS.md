@@ -340,8 +340,8 @@
   A Namespace removed from Git stays in the cluster; it leaves only after its Secrets left `platform-secrets`, by a
   deletion on the PC.
 - `infrastructure/nvidia/`: the node's one card as `nvidia.com/gpu: 1`: the Namespace `nvidia`, the RuntimeClass `nvidia`
-  with handler `nvidia` and NVIDIA's device plugin as a DaemonSet with that class, from the static manifest of release
-  v0.20.1 with the Namespace and class added, its image the vendor `nvidia-device-plugin` at a digest. The Namespace has
+  with handler `nvidia` and NVIDIA's device plugin as a DaemonSet with that class, from NVIDIA's static manifest with
+  the Namespace and class added, its image the vendor `nvidia-device-plugin` at a digest. The Namespace has
   no Pod Security label, as the plugin mounts the hostPath `/var/lib/kubelet/device-plugins`; nothing else runs in it,
   and the plugin drops every capability. There is no time-slicing or sharing configuration, since the card belongs to
   songmaker's music. `host/k3s/config.yaml` keeps `runtimes` disabled: k3s adds containerd's `nvidia` runtime only when

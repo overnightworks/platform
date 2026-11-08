@@ -4,12 +4,17 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=gpu_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/gpu_pod.sh"
+# Only a Namespace this run created is deleted; one that exists already makes the create fail and stays.
+created_namespace=false
 remove_objects() {
   local cell_status=$?
-  delete_object delete namespace --ignore-not-found --wait --timeout=2m "$RESTRICTED_NAMESPACE"
+  if $created_namespace; then
+    delete_object delete namespace --wait --timeout=2m "$RESTRICTED_NAMESPACE"
+  fi
   end_deletions "$cell_status"
 }
 trap remove_objects EXIT
+class="$(runtime_class_field .metadata.name)"
 
 applied_revision="$(kubectl -n flux-system get kustomization nvidia -o jsonpath='{.status.lastAppliedRevision}')"
 [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
@@ -20,9 +25,10 @@ desired="$(kubectl -n "$NVIDIA_NAMESPACE" get daemonset nvidia-device-plugin-dae
 [ "$desired" = 0 ] || fail "the device plugin's DaemonSet wants $desired pods in k3d, which has no card, not 0"
 echo "the Kustomization nvidia is Ready at the candidate and its DaemonSet wants $desired pods"
 
-[ "$(kubectl get runtimeclass nvidia -o jsonpath='{.handler}')" = nvidia ] ||
-  fail "the RuntimeClass nvidia does not have the handler nvidia"
-echo "the RuntimeClass nvidia has the handler nvidia"
+handler="$(runtime_class_field .handler)"
+[ "$(kubectl get runtimeclass "$class" -o jsonpath='{.handler}')" = "$handler" ] ||
+  fail "the live RuntimeClass $class does not have the committed handler $handler"
+echo "the RuntimeClass $class has the committed handler $handler"
 
 # The Namespace is the one without a Pod Security label, and the plugin is its only workload.
 labels="$(kubectl get namespace "$NVIDIA_NAMESPACE" -o jsonpath='{.metadata.labels}')"
@@ -37,12 +43,16 @@ echo "the Namespace $NVIDIA_NAMESPACE has no Pod Security label and holds only t
 image="$(kubectl -n "$NVIDIA_NAMESPACE" get daemonset nvidia-device-plugin-daemonset \
   -o jsonpath='{.spec.template.spec.containers[0].image}')"
 kubectl create namespace "$RESTRICTED_NAMESPACE"
+created_namespace=true
 kubectl label namespace "$RESTRICTED_NAMESPACE" pod-security.kubernetes.io/enforce=restricted
 kubectl -n "$RESTRICTED_NAMESPACE" wait serviceaccount/default --for=create --timeout=1m
-gpu_pod restricted-gpu "$image" | kubectl -n "$RESTRICTED_NAMESPACE" create --dry-run=server -f -
+gpu_pod restricted-gpu "$image" "$class" | kubectl -n "$RESTRICTED_NAMESPACE" create --dry-run=server -f -
 echo "a restricted Pod with the class, uid 1000 and nvidia.com/gpu 1 passes server-side dry-run in $RESTRICTED_NAMESPACE"
-if gpu_pod root-gpu "$image" | yq '.spec.securityContext.runAsUser = 0 | .spec.securityContext.runAsNonRoot = false' |
-  kubectl -n "$RESTRICTED_NAMESPACE" create --dry-run=server -f - 2>/dev/null; then
+root_pod="$(gpu_pod root-gpu "$image" "$class" |
+  yq '.spec.securityContext.runAsUser = 0 | .spec.securityContext.runAsNonRoot = false')"
+if output="$(kubectl -n "$RESTRICTED_NAMESPACE" create --dry-run=server -f - <<<"$root_pod" 2>&1)"; then
   fail "a Pod at uid 0 passes dry-run in $RESTRICTED_NAMESPACE, so the dry-run judges nothing"
 fi
-echo "a Pod at uid 0 is refused there"
+[[ $output == *'violates PodSecurity "restricted'* ]] ||
+  fail "the dry-run of a Pod at uid 0 failed without a Pod Security refusal: $output"
+echo "a Pod at uid 0 is refused there by Pod Security"

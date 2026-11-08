@@ -2,7 +2,7 @@
 # release v0.20.1 (https://github.com/NVIDIA/k8s-device-plugin/blob/v0.20.1/deployments/static/nvidia-device-plugin.yml)
 # in a Namespace of its own with the RuntimeClass added. There is no time-slicing or sharing configuration, so the card
 # is one unit that a single Pod holds. The class maps to containerd's nvidia runtime, which k3s registers only when it
-# starts with the NVIDIA container toolkit present; host/k3s/config.yaml leaves runtimes untouched.
+# starts with the NVIDIA container toolkit present; host/k3s/config.yaml keeps runtimes disabled.
 # The Namespace carries no Pod Security label, as the plugin mounts a hostPath; nothing else runs in it.
 apiVersion: v1
 kind: Namespace
