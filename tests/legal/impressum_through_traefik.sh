@@ -16,7 +16,7 @@ echo "the Kustomization legal applied the candidate, and the Deployment legal is
 # answer <name> <path>: a Pod in the tunnel's namespace asks Traefik's web port for the path with the host; sets body
 # (its bytes, trailing newlines kept), code, header to the content-security-policy header and cache_control to the
 # cache-control header. curl appends the trailer, which a shell variable keeps behind the body's last newline.
-trailer_mark='@@trailer@@'
+trailer_mark='::trailer::'
 answer() {
   request_body "$TUNNEL_NAMESPACE" "$1" "$LEGAL_HOST" "$traefik_url$2" \
     --write-out "${trailer_mark}%{http_code}${trailer_mark}%header{content-security-policy}${trailer_mark}%header{cache-control}"
