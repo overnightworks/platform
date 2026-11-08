@@ -368,10 +368,21 @@
   with the compactor's retention on is the one rule for Loki's copy of every line, which the privacy texts promise gone
   before 30 days; the compactor runs at start, so a PC that was off deletes shortly after its next start. The claim
   is on the Retain class and carries the prune annotation. Its NetworkPolicy admits only the namespaces `alloy` and
-  `grafana`, and only to port 3100. In k3d a client Pod in a throwaway namespace `alloy` pushes a line and reads it
-  back by LogQL; the configuration at `/config` has the retention on at most 28 days with a `delete_request_store`; a
-  Pod in another namespace gets no answer; the claim is Bound on a Retain volume with prune disabled; the throwaway
-  namespaces are gone on every exit.
+  `grafana`, and only to port 3100. In k3d a client Pod in namespace `alloy`, which the layer `alloy` owns and the cell
+  leaves, pushes a line and reads it back by LogQL; the configuration at `/config` has the retention on at most 28 days
+  with a `delete_request_store`; a Pod in a throwaway namespace gets no answer; the claim is Bound on a Retain volume
+  with prune disabled; the throwaway namespace is gone on every exit.
+- `infrastructure/alloy/`: Alloy, one pod with the image `docker.io/grafana/alloy` at a digest, in a Namespace that
+  enforces Pod Security `restricted`; a plain manifest, since the chart's ClusterRole grants `secrets`, `configmaps` and
+  `nodes` and no value narrows it. `config.alloy` is `discovery.kubernetes` into `loki.source.kubernetes`, which reads
+  every pod's log through the API server, into `loki.write` to Loki's Service, each stream labelled namespace, pod and
+  container; the ConfigMap generated from it carries its content's hash in its name, so a change rolls the pod. Its
+  ClusterRole grants only `get`, `list` and `watch` on `pods`, `pods/log` and `namespaces`; its NetworkPolicy admits
+  nobody to its port; its egress is open. The image moves by hand, in a pull request. In k3d a Pod in namespace `hopin`
+  logs a nonce that a LogQL query returns within 60 seconds with exactly those labels (Loki adds `service_name` itself);
+  the Namespace enforces `restricted` and no Alloy pod mounts a host path; the render and the cluster each hold one
+  ClusterRole of Alloy's with exactly that rule and no other binding of its ServiceAccount; a Pod in a throwaway
+  namespace gets no answer from its port; the throwaway objects are gone on every exit.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's

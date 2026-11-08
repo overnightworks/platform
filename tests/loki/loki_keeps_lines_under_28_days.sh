@@ -8,11 +8,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 retention_bound_seconds=$((28 * 24 * 3600))
 loki_address="http://loki.${LOKI_NAMESPACE}.svc:3100"
 
-# The namespace of the one sender Loki's policy admits and one it does not, which the cell creates and always removes.
-remove_namespaces() { kubectl delete namespace --ignore-not-found --wait --timeout=2m "$WRITER_NAMESPACE" "$OTHER_NAMESPACE"; }
-trap remove_namespaces EXIT
-kubectl create namespace "$WRITER_NAMESPACE"
+# The namespace of the one sender Loki's policy admits is the layer alloy's, which stays; the one it does not admit is
+# a throwaway the cell creates and always removes.
+remove_namespace() { kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"; }
+trap remove_namespace EXIT
 kubectl create namespace "$OTHER_NAMESPACE"
+kubectl wait --for=jsonpath='{.status.phase}'=Active --timeout=5m "namespace/$WRITER_NAMESPACE"
 
 applied_revision="$(kubectl -n flux-system get kustomization loki -o jsonpath='{.status.lastAppliedRevision}')"
 [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
