@@ -3,6 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "11e175692c83a1c385e98407440d0a69c079fa45"
 branch = "claude/issue-123-p7d-skat-backup"
-scope = ["AGENTS.md", "apps/skat/kustomization.yaml", "clusters/pc/apps.yaml", "infrastructure/backup/rest-server.yaml"]
+scope = ["AGENTS.md", "apps/skat/kustomization.yaml", "clusters/pc/apps.yaml", "docs/app.md", "infrastructure/backup/rest-server.yaml", "infrastructure/postgres/backup/kustomization.yaml"]
 opened_commit = "990e2fc27419031112581d687ee132b4f8d99ca4"
 whole_reason = "One namespace joins the backup: its layer, its dependency, its admission to the server and the sentence that says so prove nothing apart."
