@@ -1,0 +1,8 @@
+claim_id = "138c45cd81974612bf394a31595e959b"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "f532d97e05d9c070e8597a9b2acd3644aaa0a79f"
+branch = "claude/issue-150-skat-postgres"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/skat/kustomization.yaml", "clusters/pc/apps.yaml", "clusters/pc/infrastructure.yaml", "docs/app.md", "infrastructure/postgres/kustomization.yaml"]
+opened_commit = "4d864a1c38f17a1295542e8c8cd93844d5dc85c4"
+whole_reason = "The Kustomization skat, its Postgres include, the CI Secret loop that serves it and the documents naming the base's includers are one slice."
