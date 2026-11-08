@@ -417,6 +417,7 @@ tofu fmt -check -recursive
 tofu init -backend=false -lockfile=readonly -input=false
 tofu validate
 tofu test
+../../../tests/github/plan_with_a_delete_is_refused.sh
 '''
 
 [tasks."legal:test"]
@@ -440,6 +441,15 @@ set -euo pipefail
 # The zone is the host of the Ingress that serves hallucinai.de's legal pages.
 zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' infrastructure/legal/legal.yaml)"
 exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.check "$1" "$2" "$zone"
+'''
+
+[tasks."legal:build"]
+description = "Build the legal pages from the frame and write infrastructure/legal/built/impressum.html"
+env = { UV_PROJECT_ENVIRONMENT = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/venv", PYTHONDONTWRITEBYTECODE = "1", PYTHONPATH = "src/legal/src" }
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.build
 '''
 
 [tasks.bootstrap]
@@ -852,6 +862,16 @@ admin_url="$(kubectl --namespace keycloak get deployment keycloak \
 echo "keycloak:admin: open $admin_url/admin/master/console/ in a private window; Ctrl-C ends the forward"
 exec kubectl --namespace keycloak port-forward --address 127.0.0.1 service/keycloak "${BASH_REMATCH[1]}:http"
 '''
+
+[tasks."litellm:keys"]
+description = "Make LiteLLM's person budget and the app keys' limits equal to infrastructure/litellm/keys.yaml; --plan only lists the differences (exit 2 with changes)"
+quiet = true
+run = "scripts/litellm_keys.sh keys"
+
+[tasks."litellm:key"]
+description = "Register the litellm_key of Secret <app> as the key of the row <app> in infrastructure/litellm/keys.yaml"
+quiet = true
+run = "scripts/litellm_keys.sh key"
 
 [tasks."gatus:open"]
 description = "Forward Gatus's status page to this PC's loopback and print its address"
