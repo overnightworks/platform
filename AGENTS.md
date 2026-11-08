@@ -192,11 +192,13 @@
   named like it, holds the base's objects of the namespace, that no other Kustomization holds one but platform-secrets'
   Secrets, and that it depends on `admission`, `platform-secrets` and `storage`; deletes the Kustomization `litellm`, whose
   inventory goes while the claim, its volume and the Namespace stay, and the root re-creates it with the row written
-  before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two synthetic dumps it
-  makes, one of data and one whose table of contents is most of the file, with the Kustomization `litellm` pointed at
-  `tests/postgres/writers` for a Deployment and a Job that Flux applies, stops and restores, an INT that reaches the
+  before; points the Kustomization `litellm` at `tests/postgres/writers`, the Postgres base with a Deployment and a
+  Job that Flux applies, stops and restores, in place of LiteLLM, its front and its egress, and empties the database
+  to what a fresh claim holds; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two
+  synthetic dumps it makes, one of data and one whose table of contents is most of the file, an INT that reaches the
   loader after its restore committed and a failed load beside a materialized view, which each leave it suspended, and
-  a held foreign session, which costs one wait;
+  a held foreign session, which costs one wait; empties the database again and gives the layer its own path back,
+  which must turn Ready;
   and shows that a busybox Pod with Keycloak's labels reaches its Postgres but neither the Service `kubernetes` nor
   github.com, while one without them reaches all three. k3d does not prove the egress to hal's Docker bridges or to
   hopin, whose own policy already refuses both Pods.
