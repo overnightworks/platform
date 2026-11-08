@@ -1,0 +1,7 @@
+claim_id = "ba4bf7dae3424bd882bc37771c5d507b"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "b6bbf9ee856c09ba2f0727aae85829fbaa176ff6"
+branch = "claude/issue-157-interrupt-probe-once"
+scope = ["tests/postgres/interrupt_load.sh"]
+opened_commit = "15211555c7a393d777af42116374c3aa2f57ebf9"
