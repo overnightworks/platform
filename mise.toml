@@ -72,6 +72,23 @@ notify = ["pod-logs-clean.timer"]
 state = "running"
 enabled = true
 
+# The inotify limits k3s and hal share. systemd-sysctl reads every sysctl.d file in name order, a later one winning, so
+# 90- lands after localsearch's 30- value for the watches. systemd-sysctl.service is a static
+# oneshot unit that reads /etc/sysctl.d at start, so a restart after a change applies the values without a reboot;
+# `enabled = false` because mise cannot enable a static unit and reports it unknown, and the unit runs at every boot
+# anyway. Undoing the file leaves the kernel's current values until the next reboot.
+[bootstrap.files."/etc/sysctl.d/90-inotify.conf"]
+source = "host/sysctl/inotify.conf"
+owner = "root"
+group = "root"
+mode = "0644"
+notify = ["systemd-sysctl"]
+
+[bootstrap.services.systemd-sysctl]
+state = "running"
+enabled = false
+on_change = "restart"
+
 # The disk's bounds run in the operator's own user manager, with no sudo: Docuum keeps Docker's images within 100 GB, a
 # weekly clean empties uv's cache, a daily tmpfiles clean deletes Codex sessions after 30 days and a daily gtrash
 # prune deletes Trash entries whose .trashinfo date is older than 30 days. mise writes each unit
