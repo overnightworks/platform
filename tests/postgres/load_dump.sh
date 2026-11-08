@@ -159,7 +159,7 @@ cell_interrupt_during_verification_stays_suspended() {
 
 cell_interrupt_script_reaps() {
   cell=interrupt-script-reaps
-  # A loader that refuses at once leaves nobody reading the FIFO; the writer's half of the dump exceeds the FIFO's buffer.
+  # A loader that refuses at once leaves nobody reading the FIFO; the dump the writer feeds exceeds the FIFO's buffer.
   printf '%s\n' '#!/usr/bin/env bash' 'case "$1" in run) echo refused >&2; exit 1 ;; *) echo 0 ;; esac' \
     >"$work_directory/mise"
   chmod +x "$work_directory/mise"
@@ -168,8 +168,8 @@ cell_interrupt_script_reaps() {
   reaper_status=0
   PATH="$work_directory:$PATH" tests/postgres/interrupt_load.sh x "$big_dump" INT >/dev/null 2>&1 || reaper_status=$?
   [ "$reaper_status" != 0 ] || fail "interrupt_load.sh passed with a loader that refused at once"
-  if pgrep -f "^head -c 5000000 $big_dump" >/dev/null; then
-    pkill -KILL -f "^head -c 5000000 $big_dump"
+  if pgrep -f "^head -c [0-9]+ $big_dump" >/dev/null; then
+    pkill -KILL -f "^head -c [0-9]+ $big_dump"
     fail "interrupt_load.sh left its writer running after the loader refused"
   fi
 }

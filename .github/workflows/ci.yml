@@ -1510,6 +1510,22 @@ jobs:
           SQL
           kubectl --namespace "$layer" exec postgres-0 --container postgres -- pg_dump --format=custom --dbname=synthetic \
             > "$dump"
+          # A second dump of the same tables with almost no rows and many empty ones, so its table of contents fills most
+          # of the file and pg_restore is still reading it at half.
+          toc_dump="$dump_dir/toc-heavy.dump"
+          kubectl --namespace "$layer" exec --stdin postgres-0 --container postgres -- psql --no-psqlrc --quiet \
+            --set=ON_ERROR_STOP=1 --dbname=synthetic <<'SQL'
+          DELETE FROM spend_logs;
+          DO $$
+          BEGIN
+            FOR i IN 1..500 LOOP
+              EXECUTE format('CREATE TABLE toc_%s (a integer, b text, c text, d text, e text, f text, g text, h numeric)', i);
+            END LOOP;
+          END
+          $$;
+          SQL
+          kubectl --namespace "$layer" exec postgres-0 --container postgres -- pg_dump --format=custom --dbname=synthetic \
+            > "$toc_dump"
           sql "$layer" 'DROP DATABASE synthetic'
           output="$dump_dir/output"
           loaded() {
@@ -1557,10 +1573,19 @@ jobs:
           flux resume kustomization "$layer" --wait
           echo "the load refused a suspension it did not make and named --resume"
 
-          for signal in INT KILL; do
-            tests/postgres/interrupt_load.sh "$layer" "$dump" "$signal" > "$output" 2>&1 || { cat "$output"; fail "interrupt_load.sh $signal failed"; }
-            cat "$output"
-            ! grep -q "$marker" "$output" || fail "interrupt_load.sh $signal printed a row"
+          # pg_restore cannot list the first half of the toc-heavy dump, so its table of contents is the larger half.
+          list_dump() { kubectl --namespace "$layer" exec --stdin postgres-0 --container postgres -- pg_restore --list > /dev/null; }
+          list_dump 2> /dev/null < <(head -c "$(($(stat -c %s "$toc_dump") / 2))" "$toc_dump") &&
+            fail "pg_restore listed the first half of the toc-heavy dump"
+          list_dump < "$toc_dump" || fail "pg_restore cannot list the toc-heavy dump"
+
+          for interrupted_dump in "$dump" "$toc_dump"; do
+            for signal in INT KILL; do
+              tests/postgres/interrupt_load.sh "$layer" "$interrupted_dump" "$signal" > "$output" 2>&1 ||
+                { cat "$output"; fail "interrupt_load.sh $signal failed on ${interrupted_dump##*/}"; }
+              cat "$output"
+              ! grep -q "$marker" "$output" || fail "interrupt_load.sh $signal printed a row"
+            done
           done
 
           # The layer's own path again: the root, resumed, would revert the path, and Flux prunes the writers.
