@@ -97,16 +97,38 @@ kubectl --namespace "$layer" wait pod/postgres-0 --for=condition=Ready --timeout
 echo "the root re-created the Kustomization $layer, and its new Postgres pod reads the row written before"
 sql "$layer" 'DROP TABLE prune_proof'
 
-# The writers: a Deployment and a Job Flux applies from tests/postgres/writers on top of the layer, in place of
+# empty_database: the database as a fresh claim holds it, its public schema dropped with every table and view in it
+# and re-created as PostgreSQL creates it; fails when a relation outside the system schemas remains.
+empty_database() {
+  sql "$layer" 'DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION pg_database_owner;
+    GRANT USAGE ON SCHEMA public TO PUBLIC' > /dev/null
+  [ "$(sql "$layer" "SELECT count(*) FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace
+    WHERE nspname NOT IN ('pg_catalog', 'information_schema') AND nspname NOT LIKE 'pg_toast%'")" = 0 ] ||
+    fail "the database of $layer still holds a relation after its public schema was re-created"
+  echo "the database of $layer holds no relation, as on a fresh claim"
+}
+
+# The writers: the Postgres base and a Deployment and a Job Flux applies from tests/postgres/writers, in place of
 # the layer's own path and with the probe image, so the loader and the interrupts stop and restore real
-# Flux-managed writers. The root would revert the path, so it stays suspended until the proofs are done.
+# Flux-managed writers on a database no app writes. The root would revert the path, so it stays suspended until the
+# proofs are done.
 layer_path="$(kubectl --namespace flux-system get kustomization "$layer" -o jsonpath='{.spec.path}')"
+mapfile -t app_pods < <(kubectl --namespace "$layer" get pods -o name | grep -vx 'pod/postgres-0' || true)
 flux suspend kustomization flux-system
 kubectl --namespace flux-system patch kustomization "$layer" --type merge --patch "$(
   NAME="${PROBE_IMAGE%%:*}" DIGEST="${PROBE_IMAGE#*@}" yq --null-input --output-format json '
     {"spec": {"path": "./tests/postgres/writers",
       "images": [{"name": "busybox", "newName": strenv(NAME), "digest": strenv(DIGEST)}]}}')"
 flux reconcile kustomization "$layer" --timeout=5m
+# Flux pruned the layer's apps; their pods' sessions end with them.
+[ "${#app_pods[@]}" = 0 ] || kubectl --namespace "$layer" wait "${app_pods[@]}" --for=delete --timeout=3m
+empty_database
+# The check reads key-tables from the ConfigMap's volume, which the kubelet refreshes only after a while.
+key_tables="$(kubectl --namespace "$layer" get configmap postgres -o jsonpath='{.data.key-tables}')"
+mounted_key_tables() { kubectl --namespace "$layer" exec postgres-0 --container postgres -- \
+  cat /etc/postgres-checks/key-tables; }
+for _ in $(seq 120); do [ "$(mounted_key_tables)" = "$key_tables" ] && break; sleep 1; done
+[ "$(mounted_key_tables)" = "$key_tables" ] || fail "Postgres in $layer does not see the writers' key-tables within 2 minutes"
 job_uid=""
 git_replicas="$(yq 'select(.kind == "Deployment") | .spec.replicas' tests/postgres/writers/writers.yaml)"
 # writers_ran: the Deployment runs at its replicas from Git and the Job is a new one, Complete.
@@ -128,7 +150,6 @@ dump_dir="$RUNNER_TEMP/dumps"
 mkdir -m 0700 "$dump_dir"
 dump="$dump_dir/synthetic.dump"
 marker="synthetic-row-$(openssl rand -hex 4)"
-key_tables="$(kubectl --namespace "$layer" get configmap postgres -o jsonpath='{.data.key-tables}')"
 key_table="${key_tables%% *}"
 sql "$layer" 'CREATE DATABASE synthetic'
 kubectl --namespace "$layer" exec --stdin postgres-0 --container postgres -- psql --no-psqlrc --quiet \
@@ -280,13 +301,16 @@ for interrupted_dump in "$dump" "$toc_dump"; do
   done
 done
 
-# The layer's own path again: the root, resumed, would revert the path, and Flux prunes the writers.
+# The layer's own path again, on an emptied database, so its apps start as on a fresh claim: the root, resumed, would
+# revert the path, and Flux prunes the writers.
+empty_database
 kubectl --namespace flux-system patch kustomization "$layer" --type merge \
   --patch "{\"spec\": {\"path\": \"$layer_path\", \"images\": null}}"
 flux resume kustomization flux-system --wait
 flux reconcile kustomization "$layer" --timeout=5m
+kubectl --namespace flux-system wait kustomization "$layer" --for=condition=Ready --timeout=5m
 kubectl --namespace "$layer" wait deployment/writer job/writer-job --for=delete --timeout=2m
-echo "the layer $layer is its own again and Flux pruned the writers"
+echo "the layer $layer is its own again and Ready on an emptied database, and Flux pruned the writers"
 
 # Keycloak's egress: a Pod with Keycloak's labels reaches DNS and its Postgres only; one without them is free.
 keycloak_labels="$(kubectl --namespace "$EGRESS_NAMESPACE" get networkpolicy keycloak-egress \

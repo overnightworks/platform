@@ -195,7 +195,7 @@ jobs:
           PULL_USER: ${{ github.actor }}
           PULL_TOKEN: ${{ github.token }}
           # The layers whose containers read Secrets by key, each of which gets a dummy per key.
-          SECRET_KEY_LAYERS: infrastructure/keycloak
+          SECRET_KEY_LAYERS: infrastructure/keycloak infrastructure/litellm
         run: tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh
 
       - name: Push the encrypted Secrets and serve them as the job's platform-secrets source
@@ -308,6 +308,17 @@ jobs:
           CLUSTER_SERVICE: default/kubernetes
           OUTSIDE_TARGET: github.com:443
         run: tests/keycloak/realm_route_and_policies.sh
+
+      - name: P7c cells
+        if: matrix.part == 'core'
+        env:
+          # LiteLLM's namespace, an app namespace its front admits, a namespace it does not, and an SNI no router of
+          # agent-egress allows.
+          LITELLM_NAMESPACE: litellm
+          APP_NAMESPACE: hopin
+          OTHER_NAMESPACE: litellm-client
+          THIRD_SNI: third.invalid
+        run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
