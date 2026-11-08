@@ -83,7 +83,9 @@ planned_deletions="$(run_tofu show -json "${plan_file}" |
   fail "the plan could not be read"
 if [ -n "${planned_deletions}" ]; then
   echo "apply_github_settings: the plan deletes or replaces these objects; nothing was applied:" >&2
-  echo "${planned_deletions}" | sed 's/^/  /' >&2
+  while IFS= read -r address; do
+    echo "  ${address}" >&2
+  done <<<"${planned_deletions}"
   fail "a deliberate removal is a removed block with lifecycle { destroy = false }"
 fi
 
