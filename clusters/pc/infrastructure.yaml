@@ -199,6 +199,25 @@ spec:
     kind: GitRepository
     name: flux-system
 ---
+# The node's one GPU through the RuntimeClass nvidia and NVIDIA's device plugin. No other layer depends on it, so a card
+# that is not offered stops only this layer.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nvidia
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+  interval: 10m0s
+  path: ./infrastructure/nvidia
+  prune: true
+  wait: true
+  timeout: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
 # After admission, which judges the workload's image.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

@@ -220,9 +220,10 @@
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
   each PC-only source swapped for one the job serves; a new PC-only source joins that list; `tunnel` given its own
-  `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token) and, on a pull
-  request, the pull request's ref. It first fails when the committed root or `tunnel` carries `spec.patches`, which
-  the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
+  `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token; `nvidia` given its
+  own, which only give the device plugin's DaemonSet a node selector no k3d node carries, as k3d holds no card) and, on
+  a pull request, the pull request's ref. It first fails when the committed root, `tunnel` or `nvidia` carries
+  `spec.patches`, which the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
   Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's and skat's files as dummies
   and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
   printed, each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password,
@@ -280,6 +281,11 @@
   The step "songmaker's stores" asserts that Postgres and Redis of namespace `songmaker` are Ready as the image's own
   non-root user, that a Pod there reaches both and one in a throwaway namespace neither, and that a key written to
   Redis is gone once its pod is deleted and Ready again.
+  The nvidia step asserts that the Kustomization `nvidia` is Ready at the candidate with its DaemonSet wanting
+  0 pods, that the RuntimeClass `nvidia` has the handler `nvidia`, that Namespace `nvidia` has no Pod Security label and
+  holds only that DaemonSet, and that a Pod with the class, uid 1000 and `nvidia.com/gpu: 1` passes server-side dry-run
+  in a throwaway Namespace enforcing `restricted` while one at uid 0 does not. k3d does not prove the card, the runtime
+  handler or the plugin's start.
   The step "P7b cells" then waits for config-cli's Job on the empty database and asserts that Keycloak's
   `KC_PROXY_TRUSTED_ADDRESSES` equals the `trustedIPs` of Traefik's `web`, discovery names Keycloak's `KC_HOSTNAME`
   as the realm's issuer, every group `realm.yaml` declares exists and `/services/agent-service/api` does not, and
@@ -343,7 +349,8 @@
   `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include. `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
-  `keycloak` and `litellm` also on `platform-secrets` and `storage`, and `loki` and `prometheus` on `storage`.
+  `keycloak` and `litellm` also on `platform-secrets` and `storage`, and `loki` and `prometheus` on `storage`. No layer
+  depends on `nvidia`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` and `songmaker` also
   on `storage`.
@@ -372,6 +379,19 @@
   `kustomize.toolkit.fluxcd.io/prune: disabled`, so neither a prune nor a revert deletes one with its Secrets.
   A Namespace removed from Git stays in the cluster; it leaves only after its Secrets left `platform-secrets`, by a
   deletion on the PC.
+- `infrastructure/nvidia/`: the node's one card as `nvidia.com/gpu: 1`: the Namespace `nvidia`, the RuntimeClass `nvidia`
+  with handler `nvidia` and NVIDIA's device plugin as a DaemonSet with that class, from NVIDIA's static manifest with
+  the Namespace and class added, its image the vendor `nvidia-device-plugin` at a digest. The Namespace has
+  no Pod Security label, as the plugin mounts the hostPath `/var/lib/kubelet/device-plugins`; nothing else runs in it,
+  and the plugin drops every capability. There is no time-slicing or sharing configuration, since the card belongs to
+  songmaker's music. `host/k3s/config.yaml` keeps `runtimes` disabled: k3s adds containerd's `nvidia` runtime only when
+  it starts with the NVIDIA container toolkit present, and if the plugin's Pod events name a missing runtime handler the
+  operator runs `sudo systemctl restart k3s` once, which does not touch Docker. `mise exec --
+  tests/nvidia/restricted_pod_lists_the_card.sh` runs on the PC through k3s's own kubeconfig, without sudo: it fails
+  unless the node offers `nvidia.com/gpu` 1 and a Pod in a throwaway Namespace enforcing `restricted`, at uid 1000 with the
+  class and the limit, lists exactly one card; it prints counts and names, and every throwaway object is gone on every
+  exit. A Pod naming the class without the limit might reach the card; the first workload that requests it decides on
+  an admission rule.
 - `infrastructure/storage/`: local-path-provisioner from upstream's manifest, vendored verbatim under a header naming
   its URL and sha256, and patched to one default class with `reclaimPolicy: Retain` and the path
   `/opt/local-path-provisioner/<namespace>/<claim>`, and to the provisioner and its busybox helper at digests; admission
