@@ -1,0 +1,8 @@
+claim_id = "aa756d9df2ff49cba1a6da32f3f66f7d"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "3150b73b93cae04588b6809437244cf27698202d"
+branch = "claude/issue-137-ci-cells-as-scripts"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "tests"]
+opened_commit = "541d0b56575fa52992806275c24fd98424290ce4"
+whole_reason = "Moving the cells out of the workflow is one change, with AGENTS.md's sentences on where each cell lives; a half leaves two places that hold the same job's cells."
