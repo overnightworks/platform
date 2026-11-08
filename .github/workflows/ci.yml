@@ -96,6 +96,8 @@ jobs:
       UNROUTED_HOST: unrouted.invalid
       # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
       APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml
+      # The Kustomization that serves the Secrets of every namespace, so that no other layer holds one of them.
+      SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
       POSTGRES_BASE: infrastructure/postgres
     steps:
@@ -923,8 +925,6 @@ jobs:
           echo "the app answered $status to a sign-in start from $SECOND_CLIENT_ADDRESS"
 
       - name: Assert that each app runs at its full app ref after platform-secrets, pulled through its pull Secret
-        env:
-          SECRETS_LAYER: flux-system/platform-secrets
         run: |
           fail() { echo "::error::$1"; exit 1; }
           layer() { kubectl --namespace "${1%/*}" get kustomization "${1#*/}" -o jsonpath="$2"; }
@@ -1459,6 +1459,7 @@ jobs:
           inventory_ids() { kubectl --namespace flux-system get kustomization "$1" \
             -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}'; }
           all_kustomizations="$(kubectl --namespace flux-system get kustomizations -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+          [ -n "$all_kustomizations" ] || fail "flux-system holds no Kustomization"
           for namespace in $POSTGRES_NAMESPACES; do
             held="$(inventory_ids "$namespace")"
             while IFS= read -r id; do
@@ -1468,7 +1469,9 @@ jobs:
               "$POSTGRES_BASE/postgres.yaml")
             while IFS= read -r other; do
               [ "$other" != "$namespace" ] || continue
-              foreign="$(inventory_ids "$other" | grep "^${namespace}_" | grep -v '__Secret$' || true)"
+              other_ids="$(inventory_ids "$other")"
+              foreign="$(grep "^${namespace}_" <<<"$other_ids" || true)"
+              [ "$other" != "${SECRETS_LAYER#*/}" ] || foreign="$(grep -v '__Secret$' <<<"$foreign" || true)"
               [ -z "$foreign" ] || fail "the Kustomization $other holds ${foreign//$'\n'/ } of namespace $namespace, which $namespace owns"
             done <<<"$all_kustomizations"
             dependencies="$(kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.spec.dependsOn[*].name}')"
