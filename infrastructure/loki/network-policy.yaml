@@ -1,0 +1,22 @@
+# Loki holds a copy of every line it is given: only the namespaces alloy (writes) and grafana (reads), labels the API
+# server sets and no other namespace can carry, may open its HTTP port. Every other sender and port is denied; the
+# kubelet's probes come from the node, which a NetworkPolicy never blocks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: http-from-alloy-and-grafana-only
+  namespace: loki
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [alloy, grafana]
+      ports:
+        - port: 3100
+          protocol: TCP

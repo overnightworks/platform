@@ -36,6 +36,15 @@ until_true() {
 kubectl -n "$PROMETHEUS_NAMESPACE" wait deployment --all --for=condition=Available --timeout=5m
 echo "every Deployment of namespace $PROMETHEUS_NAMESPACE is Available"
 
+# Prometheus' ServiceAccount may read the kubelet's metrics and may not reach nodes/proxy, whose get opens the kubelet's
+# exec through a WebSocket upgrade.
+service_account="system:serviceaccount:$PROMETHEUS_NAMESPACE:prometheus-server"
+kubectl auth can-i get nodes/metrics --as "$service_account" >/dev/null || fail "$service_account may not get nodes/metrics"
+if kubectl auth can-i get nodes/proxy --as "$service_account" >/dev/null; then
+  fail "$service_account may get nodes/proxy"
+fi
+echo "$service_account may get nodes/metrics and not nodes/proxy"
+
 # Every target the rendered configuration names is up, and none is down.
 jobs="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "prometheus-server") | .data["prometheus.yml"] | from_yaml | .scrape_configs[].job_name' \
   infrastructure/prometheus/rendered.yaml)"

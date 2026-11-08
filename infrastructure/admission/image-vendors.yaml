@@ -15,6 +15,8 @@ data:
   prometheus-config-reloader: quay.io/prometheus-operator/prometheus-config-reloader
   # infrastructure/prometheus/rendered.yaml; https://github.com/kubernetes/kube-state-metrics#container-image
   kube-state-metrics: registry.k8s.io/kube-state-metrics/kube-state-metrics
+  # infrastructure/loki/rendered.yaml; https://hub.docker.com/r/grafana/loki
+  loki: docker.io/grafana/loki
   # infrastructure/cloudflared/cloudflared.yaml; https://github.com/cloudflare/cloudflared#installing-cloudflared
   cloudflared: docker.io/cloudflare/cloudflared
   # .github/workflows/ci.yml, the cluster job's env CLIENT_IMAGE; https://hub.docker.com/r/curlimages/curl

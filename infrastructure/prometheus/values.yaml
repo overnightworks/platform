@@ -59,31 +59,9 @@ serverFiles:
   prometheus.yml:
     rule_files:
       - /etc/rules/rules.yml
-# The kubelet's and cAdvisor's paths through the API server's proxy need nodes/proxy, which the chart's ClusterRole lacks.
-extraManifests:
-  - |
-    apiVersion: rbac.authorization.k8s.io/v1
-    kind: ClusterRole
-    metadata:
-      name: prometheus-node-proxy
-    rules:
-      - apiGroups: [""]
-        resources: [nodes/proxy]
-        verbs: [get]
-  - |
-    apiVersion: rbac.authorization.k8s.io/v1
-    kind: ClusterRoleBinding
-    metadata:
-      name: prometheus-node-proxy
-    roleRef:
-      apiGroup: rbac.authorization.k8s.io
-      kind: ClusterRole
-      name: prometheus-node-proxy
-    subjects:
-      - kind: ServiceAccount
-        name: prometheus-server
-        namespace: prometheus
-# The kubelet and cAdvisor are scraped through the API server's proxy, so no pod reaches a node's port 10250.
+# The kubelet and cAdvisor are scraped at each node's port 10250 with the chart's `get` on nodes/metrics, the one kubelet
+# right. The kubelet's serving certificate is signed by the CA the ServiceAccount's ca.crt holds and names the node's IP,
+# so verification is on, which the chart's default turns off; a node's address is its InternalIP at that port, which the role gives.
 scrapeConfigs:
   kubernetes-api-servers:
     enabled: false
@@ -105,24 +83,12 @@ scrapeConfigs:
     relabel_configs:
       - action: labelmap
         regex: __meta_kubernetes_node_label_(.+)
-      - target_label: __address__
-        replacement: kubernetes.default.svc:443
-      - source_labels: [__meta_kubernetes_node_name]
-        target_label: __metrics_path__
-        replacement: /api/v1/nodes/$1/proxy/metrics
   kubernetes-nodes-cadvisor:
     tls_config:
       insecure_skip_verify: false
     relabel_configs:
       - action: labelmap
         regex: __meta_kubernetes_node_label_(.+)
-      - target_label: __address__
-        replacement: kubernetes.default.svc:443
-      - source_labels: [__meta_kubernetes_node_name]
-        target_label: __metrics_path__
-        replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
-      - source_labels: [__metrics_path__]
-        target_label: metrics_path
   kube-state-metrics:
     static_configs:
       - targets: [prometheus-kube-state-metrics.prometheus.svc:8080]
