@@ -1,8 +1,0 @@
-claim_id = "497452dd3a794cbdbce3c559bb41fc81"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "22d1470b3aed713dfc35d91d874898e2dd043940"
-branch = "claude/issue-183-p5c-prometheus"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/namespaces", "infrastructure/prometheus", "mise.toml", "tests/client_pod.sh", "tests/prometheus"]
-opened_commit = "650da84caf15e110d336f00dc90af5f07da58e68"
-whole_reason = "One layer: its chart render, Flux Kustomization, vendor entries, rules, cell and documents prove one running Prometheus together."
