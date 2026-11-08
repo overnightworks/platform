@@ -1,8 +1,0 @@
-claim_id = "4af6bf5edb7e48d2963fc2124820435d"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "36f7366d085455289aa2ac70077efc01c10d6f4b"
-branch = "claude/issue-145-one-kustomization-per-app"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/apps.yaml", "docs/app.md"]
-opened_commit = "a55b8871a0a29c8f70c3cd9047bbc47e76c442ef"
-whole_reason = "The Kustomizations, the CI check that pins them and the two documents naming apps are one ownership change."
