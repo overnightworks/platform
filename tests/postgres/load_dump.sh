@@ -331,6 +331,60 @@ FAKE
     fail "interrupt_load.sh exited $killed_status with '$killed_output' for a suspension it could not read after KILL"
 }
 
+# A sleep of one second, the script's polling interval, shortened so a 300-probe timeout takes seconds.
+fake_polling_sleep() {
+  cat >"$1/sleep" <<'FAKE'
+#!/usr/bin/env bash
+[ "$1" != 1 ] || exec "$FAKE_REAL_SLEEP" 0.01
+exec "$FAKE_REAL_SLEEP" "$@"
+FAKE
+  chmod +x "$1/sleep"
+}
+
+cell_interrupt_script_sends_its_signal_when_probes_disagree() {
+  cell=interrupt-script-sends-its-signal-when-probes-disagree
+  # A session inside its transaction waits for its client between two statements: successive probes answer 1 and 0.
+  mkdir "$work_directory/alternating"
+  cat >"$work_directory/alternating/mise" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  run*) umask 077; : >"$4.load.log"; sleep 60 ;;
+  *psql*)
+    echo x >>"$FAKE_PROBES"
+    echo $(($(wc -l <"$FAKE_PROBES") % 2)) ;;
+  *"get deployments"*) echo "writer=0" ;;
+  *"get kustomization"*) exit 1 ;;
+esac
+FAKE
+  chmod +x "$work_directory/alternating/mise"
+  alternating_output="$(FAKE_PROBES="$work_directory/probes" PATH="$work_directory/alternating:$PATH" \
+    tests/postgres/interrupt_load.sh x "$dump" KILL 2>&1)" && alternating_status=0 || alternating_status=$?
+  [ "$alternating_status" != 0 ] && [[ $alternating_output == *"pg_restore blocks inside its transaction; sending KILL"* ]] ||
+    fail "interrupt_load.sh exited $alternating_status with '$alternating_output' for probes that disagree"
+}
+
+cell_interrupt_script_prints_what_the_restore_did_on_timeout() {
+  cell=interrupt-script-prints-what-the-restore-did-on-timeout
+  # A loader that never blocks; a query or a row would show as the marker the fake prints for either.
+  mkdir "$work_directory/never"
+  cat >"$work_directory/never/mise" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  run*) sleep 60 ;;
+  *query*) echo "ROW-MARKER" ;;
+  *psql*) echo 0 ;;
+esac
+FAKE
+  chmod +x "$work_directory/never/mise"
+  fake_polling_sleep "$work_directory/never"
+  never_output="$(FAKE_REAL_SLEEP="$(command -v sleep)" PATH="$work_directory/never:$PATH" \
+    tests/postgres/interrupt_load.sh x "$dump" INT 2>&1)" && never_status=0 || never_status=$?
+  [ "$never_status" != 0 ] && [[ $never_output == *"within 300 seconds"* ]] && [[ $never_output == *"writer finished:"* ]] &&
+    [[ $never_output == *"database sessions"* ]] && [[ $never_output == *"container processes"* ]] &&
+    [[ $never_output == *"loader processes"* ]] && [[ $never_output != *ROW-MARKER* ]] ||
+    fail "interrupt_load.sh exited $never_status with '$never_output' for a restore that never blocked"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 cells=(
   failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
@@ -347,6 +401,8 @@ cells=(
   unreadable-database-before-load-loads-nothing-and-resumes
   unreadable-database-after-failed-load-is-unknown-and-stays-suspended
   interrupt-script-names-unreadable-suspension-after-kill
+  interrupt-script-sends-its-signal-when-probes-disagree
+  interrupt-script-prints-what-the-restore-did-on-timeout
   materialized-view-after-failed-load-is-unknown-and-stays-suspended
   restore-that-outlives-its-status-is-awaited-through-its-commit
   term-during-recovery-is-unknown-and-stays-suspended
