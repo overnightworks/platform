@@ -332,7 +332,7 @@
   only for the SNIs of `egress-allowed.yml` and sends only to cluster DNS, so nothing the copy of hal's data holds
   leaves the cluster. The CronJob `litellm-expire` runs at 04:00 with `Forbid` and deletes in one statement,
   `expire.sql` (a ConfigMap), the daily person, tool and label rows dated more than 90 days before the database's UTC
-  day, the tool rows last used before that moment and the customer rows without a budget, without spend and without a
+  day, the tool rows last used before the moment 90 days before now, or created before it when never used, and the customer rows without a budget, without spend and without a
   daily row inside the period; the period is no setting, as the privacy text states it. Its `psql` is the image of the
   layer's Postgres, which a replacement copies, and it prints the five counts by name, never a row, with stderr
   discarded because psql quotes row values. `mise exec -- tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>` is the operator's, since it

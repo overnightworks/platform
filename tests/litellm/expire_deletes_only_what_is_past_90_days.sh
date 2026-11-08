@@ -33,18 +33,18 @@ INSERT INTO "LiteLLM_BudgetTable" (budget_id, created_by, updated_by) VALUES ('$
 INSERT INTO "LiteLLM_EndUserTable" (user_id, budget_id, spend) VALUES
   ('$marker-backdated', NULL, 0), ('$marker-fresh', NULL, 0),
   ('$marker-budgeted', '$marker-budget', 0), ('$marker-spent', NULL, 5);
-INSERT INTO "LiteLLM_DailyEndUserSpend" (end_user_id, date, api_key, updated_at) VALUES
-  ('$marker-backdated', to_char(now() AT TIME ZONE 'UTC' - interval '$backdated days', 'YYYY-MM-DD'), '$marker', now()),
-  ('$marker-fresh', to_char(now() AT TIME ZONE 'UTC' - interval '$fresh days', 'YYYY-MM-DD'), '$marker', now());
+INSERT INTO "LiteLLM_DailyEndUserSpend" (id, end_user_id, date, api_key, updated_at) VALUES
+  ('$marker-backdated', '$marker-backdated', to_char(now() AT TIME ZONE 'UTC' - interval '$backdated days', 'YYYY-MM-DD'), '$marker', now()),
+  ('$marker-fresh', '$marker-fresh', to_char(now() AT TIME ZONE 'UTC' - interval '$fresh days', 'YYYY-MM-DD'), '$marker', now());
 INSERT INTO "LiteLLM_DailyToolSpend" (date, tool_name, updated_at) VALUES
   (to_char(now() AT TIME ZONE 'UTC' - interval '$backdated days', 'YYYY-MM-DD'), '$marker-backdated', now()),
   (to_char(now() AT TIME ZONE 'UTC' - interval '$fresh days', 'YYYY-MM-DD'), '$marker-fresh', now());
-INSERT INTO "LiteLLM_DailyTagSpend" (tag, date, api_key, updated_at) VALUES
-  ('$marker-backdated', to_char(now() AT TIME ZONE 'UTC' - interval '$backdated days', 'YYYY-MM-DD'), '$marker', now()),
-  ('$marker-fresh', to_char(now() AT TIME ZONE 'UTC' - interval '$fresh days', 'YYYY-MM-DD'), '$marker', now());
+INSERT INTO "LiteLLM_DailyTagSpend" (id, tag, date, api_key, updated_at) VALUES
+  ('$marker-backdated', '$marker-backdated', to_char(now() AT TIME ZONE 'UTC' - interval '$backdated days', 'YYYY-MM-DD'), '$marker', now()),
+  ('$marker-fresh', '$marker-fresh', to_char(now() AT TIME ZONE 'UTC' - interval '$fresh days', 'YYYY-MM-DD'), '$marker', now());
 INSERT INTO "LiteLLM_ToolTable" (tool_id, tool_name, last_used_at, created_at, updated_at) VALUES
-  ('$marker-backdated', '$marker-backdated', now() AT TIME ZONE 'UTC' - interval '$backdated days', now() AT TIME ZONE 'UTC' - interval '$backdated days', now()),
-  ('$marker-fresh', '$marker-fresh', now() AT TIME ZONE 'UTC' - interval '$fresh days', now() AT TIME ZONE 'UTC' - interval '$fresh days', now());
+  ('$marker-backdated', '$marker-backdated', NULL, now() AT TIME ZONE 'UTC' - interval '$backdated days', now()),
+  ('$marker-fresh', '$marker-fresh', now() AT TIME ZONE 'UTC' - interval '$fresh days', now() AT TIME ZONE 'UTC' - interval '$backdated days', now());
 EOSQL
 
 # remaining: what of the planted rows is left, one line per table and name.
@@ -74,7 +74,6 @@ counts() { printf 'person_days|%s\ntool_days|%s\ntag_days|%s\ntools|%s\npeople|%
 run_expire "$marker-first"
 [ "$log" = "$(counts 1 1 1 1 1)" ] || fail "the first run printed [${log//$'\n'/ }], not one deletion in each of the five counts"
 echo "the first run deleted one row of each table: ${log//$'\n'/ }"
-case "$log" in *"$marker"*) fail "the first run's log holds a planted value" ;; esac
 expected="$(printf '%s\n' "person_days $marker-fresh" "tool_days $marker-fresh" "tag_days $marker-fresh" "tools $marker-fresh" \
   "people $marker-budgeted" "people $marker-fresh" "people $marker-spent" | LC_ALL=C sort)"
 [ "$(remaining | LC_ALL=C sort)" = "$expected" ] ||
