@@ -28,6 +28,8 @@ jobs:
         run: uvx --no-build check-jsonschema@0.39.0 --builtin-schema vendor.dependabot .github/dependabot.yml
 
       - name: Check that every directory under apps/ has its Kustomization over it, and every one of those a directory
+        # pipefail: a find or yq that fails after printing its names must fail the step, not pass the comparison.
+        shell: bash
         run: |
           directories="$(find apps -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)"
           kustomizations="$(yq --no-doc 'select(.kind == "Kustomization" and .spec.path == "./apps/" + .metadata.name) | .metadata.name' clusters/pc/apps.yaml | sort)"

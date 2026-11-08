@@ -160,11 +160,11 @@
   forwarded address but not for the next from another; that Pod gets no answer from Traefik's probe port, it and one in
   another namespace none from hopin's Service, and every Traefik pod's address lies in a CIDR of hopin's
   `HOPIN_TRUSTED_PROXIES`. A Kustomization that never becomes Ready fails the job naming its reason, with each unready
-  pod's waiting state and last log lines. Every app's Deployment, applied by its own Kustomization after its
-  Secrets, is Available with one Ready pod and `Recreate` at a full app ref in a Namespace that enforces `restricted` (the step prints the
-  kubelet's pull report and the runner's free disk); a client Pod in `hopin` gets 200 from speech-runtime's `/health`
-  and one in another namespace gets no answer; and every running container of a Deployment outside kube-system and
-  flux-system, Traefik's included, carries that Deployment's digest, a Deployment scaled to 0 aside. Every
+  pod's waiting state and last log lines. Every app's Deployment, applied by its own Kustomization after its Secrets, is
+  Available with one Ready pod and `Recreate` at a full app ref in a Namespace that enforces `restricted` (the step
+  prints the kubelet's pull report and the runner's free disk); a client Pod in `hopin` gets 200 from speech-runtime's
+  `/health` and one in another namespace gets no answer; and every running container of a Deployment outside kube-system
+  and flux-system, Traefik's included, carries that Deployment's digest, a Deployment scaled to 0 aside. Every
   Kustomization but the root and `admission` whose inventory holds a workload kind or a HelmRelease depends on
   `admission` and created its workloads after `admission`'s objects, the root's workloads are the Deployments of
   `gotk-components.yaml`, and `namespaces` holds only Namespaces Flux never prunes: the job fails naming one without
