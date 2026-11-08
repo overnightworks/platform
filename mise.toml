@@ -417,6 +417,7 @@ tofu fmt -check -recursive
 tofu init -backend=false -lockfile=readonly -input=false
 tofu validate
 tofu test
+../../../tests/github/plan_with_a_delete_is_refused.sh
 '''
 
 [tasks."legal:test"]
