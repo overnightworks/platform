@@ -52,7 +52,7 @@ jobs:
 
   cluster:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
@@ -282,6 +282,15 @@ jobs:
           CLUSTER_SERVICE: default/kubernetes
           OUTSIDE_TARGET: github.com:443
         run: tests/keycloak/realm_route_and_policies.sh
+
+      - name: P2 cells
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+          # The agent client whose tokens the cells mint, and the allowlist of its service account's groups.
+          AGENT_CLIENT: agent-mozart
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /agent-owners
+        run: tests/keycloak/agent_client_tokens_and_groups.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
