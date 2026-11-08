@@ -81,8 +81,7 @@ done
 
 # Each namespace whose layer includes the backup component gets its restic Secret, under the names the component's
 # Schedule reads: a rest user, its rest password and its repository password, each in the URL-safe alphabet; the Secret
-# rest-users holds every user's password as a file named after the user. The user is the namespace plus a random
-# suffix, because the bare namespace stands in the Secret's own metadata and would fail the plain-text check below.
+# rest-users holds every user's password as a file named after the user.
 schedule="$(yq 'select(.kind == "Schedule")' "$POSTGRES_BACKUP_COMPONENT/backup.yaml")"
 restic_secret="$(yq '.spec.backend.repoPasswordSecretRef.name' <<<"$schedule")"
 user_key="$(yq '.spec.backend.rest.userSecretRef.key' <<<"$schedule")"
@@ -102,7 +101,9 @@ for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
   backup_namespace="$(yq '.namespace' "$layer")"
   backup_namespaces+=("$backup_namespace")
   restic_files="$(secret_files "$restic_secret" "$backup_namespace")"
-  rest_user="$backup_namespace-$(openssl rand -hex 4)"
+  # rest-server's --private-repos admits a user only to the path that starts with its name, and the repository's path
+  # is the namespace, so the user equals the namespace.
+  rest_user="$backup_namespace"
   printf '%s' "$rest_user" > "$restic_files/$user_key"
   for key in "$password_key" "$repository_password_key"; do
     value="$(openssl rand -hex 32)"
@@ -138,8 +139,9 @@ for plain_file in "${plain_files[@]}"; do
   encrypted_file="$artifact_dir/${plain_file##*/}"
   sops --encrypt --age "$recipient" --encrypted-regex '^(data|stringData)$' "$plain_file" > "$encrypted_file"
 
-  # Flux applies a value left outside the encrypted fields as it is, which would fake the proof or leak it.
-  encrypted="$(<"$encrypted_file")"
+  # Flux applies a value left outside the encrypted fields as it is, which would fake the proof or leak it. A Secret's
+  # own name and namespace stay in plain text and may equal a value, so they are the only fields left out.
+  encrypted="$(yq 'del(.metadata.name, .metadata.namespace)' "$encrypted_file")"
   while IFS= read -r value; do
     [[ $encrypted != *"$value"* && $encrypted != *"$(base64 --decode <<<"$value")"* ]] ||
       fail "$encrypted_file holds a value in plain text"

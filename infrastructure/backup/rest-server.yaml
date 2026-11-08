@@ -51,6 +51,8 @@ spec:
             - |
               set -eu
               umask 077
+              # htpasswd writes a temporary file first, and the root filesystem is read-only.
+              export TMPDIR=/htpasswd
               : >/htpasswd/users
               for user_file in /rest-users/*; do
                 htpasswd -B -i /htpasswd/users "${user_file##*/}" <"$user_file"
@@ -100,6 +102,8 @@ spec:
         - name: rest-users
           secret:
             secretName: rest-users
+            # Root owns the files and no fsGroup is set, so uid 1000 reads them through the other-read bit alone.
+            defaultMode: 0444
 ---
 apiVersion: v1
 kind: Service
