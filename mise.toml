@@ -226,6 +226,11 @@ description = "Check that no pod log on the PC is past its 30-day bound and that
 # The installed check, the one the clean runs; /var/log/pods is root's alone.
 run = "sudo /usr/local/sbin/check-pod-logs"
 
+[tasks."check:secrets-expiry"]
+description = "Check that no Secret on the PC carries an expires-on annotation within 30 days or past"
+env = { KUBECONFIG = "/etc/rancher/k3s/k3s.yaml" }
+run = "scripts/check_secrets_expiry.sh"
+
 [tasks."github:test"]
 description = "Check the GitHub settings root: format, init against the committed lock, validate and the mocked tests"
 dir = "src/opentofu/github"
