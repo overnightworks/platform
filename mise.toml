@@ -413,8 +413,8 @@ applied_revision="$(read_object Kustomization "$source_name" '{.status.lastAppli
 echo "bootstrap:secrets: Kustomization $source_name Ready at $applied_revision"
 '''
 
-# The platform's restore command, which the operator runs, because a dump holds keys and hashes: every line it prints
-# is a name, a count or an outcome, never a row.
+# The platform's restore command. A dump holds keys and hashes, so every line it prints is a name, a count or an
+# outcome, never a row.
 [tasks."db:load-dump"]
 description = "Load a custom-format dump into a namespace's Postgres with its writers stopped, verify it, then resume Flux"
 usage = '''

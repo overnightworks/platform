@@ -24,7 +24,7 @@
   its one copy in the operator's password manager.
 - `scripts/apply_github_settings.sh` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
   login, on any commit and without writing state (exit 0 no change, 2 changes, 1 failure). `--apply` applies that
-  run's own plan, only from a clean `origin/main`, and is run only by the operator or on his word.
+  run's own plan, only from a clean `origin/main`.
 - `mise run github:test` checks that root: format, init against the committed lock, validate and the mocked tests.
 - `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
   which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
@@ -32,7 +32,7 @@
   fails when it cannot list the directory. It reads the clean's last start (the later of the service's and the timer's
   last trigger, which a reboot keeps) and result, whoever started it, so a failed or never-run clean keeps failing the
   check until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
-- `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command, which the operator runs:
+- `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
   at 0600, verifies each table `key-tables` names (all tables and their sorted rows' sha256 with `--compare`) and only
@@ -40,7 +40,7 @@
   the data unchanged and resumes once, a differing one, or one that ends before the comparison did, stays suspended with
   its writers at 0. After a hard kill, `mise run db:load-dump --resume <namespace>` resumes once no other session holds
   the database, stops at once when the Kustomization does not exist, and verifies nothing. It prints names, counts and
-  outcomes, never a row.
+  outcomes, never a row, since a dump holds keys and hashes.
   `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>` interrupts a load inside its transaction and asserts
   that recovery, writers included. `tests/postgres/load_dump.sh` drives the task and that script against fake commands
   for the outcomes the cluster cannot arrange: a failed `flux resume`, an unreadable suspension, a signal during the
@@ -199,14 +199,14 @@
 - `clusters/pc/apps.yaml`: the Kustomization `apps` over `apps/`, with `wait: true` and a `timeout`, depending on
   `platform-secrets` and `admission`.
 - `apps/hopin/`: hopin's Deployment and Service, one pod with `Recreate`, its image the full app ref of a release
-  that changes only in a pull request the operator merges, pulled through the Secret `ghcr-pull` and started from the
+  that changes only in a pull request, pulled through the Secret `ghcr-pull` and started from the
   Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`. Its Ingress routes `hopin.hallucinai.de`
   through Traefik's `web`; its NetworkPolicy admits only namespace `traefik` to hopin's port, so hopin trusts the
   forwarded addresses of the pod network in `HOPIN_TRUSTED_PROXIES` only behind that policy.
 - `apps/speech-runtime/`: speech-runtime's Deployment, Service, caller table (a ConfigMap) and NetworkPolicy, which
   admits port 8080 only from the namespaces `hopin` and `presentator`. One pod runs on the CPU with a read-only root
-  and a memory-backed `/tmp`, its image the full app ref of a release that changes only in a pull request the operator
-  merges, together with the caller table's keys the image knows, and pulled through the Secret `ghcr-pull` from
+  and a memory-backed `/tmp`, its image the full app ref of a release that changes only in a pull request, together
+  with the caller table's keys the image knows, and pulled through the Secret `ghcr-pull` from
   `platform-secrets`. It has no Secret of its own and no route; it is ready when both models are.
 - `infrastructure/namespaces/`: the Namespaces that receive Secrets from `platform-secrets`, each carrying
   `kustomize.toolkit.fluxcd.io/prune: disabled`, so neither a prune nor a revert deletes one with its Secrets.
@@ -236,7 +236,7 @@
 - `infrastructure/cloudflared/`: the platform's own tunnel `platform`. The ConfigMap holds its lines, one per host to
   Traefik's Service and a final `http_status:404`; the Deployment `cloudflared` reads the tunnel and its credential
   only from the token file of the Secret `tunnel-token`, which `platform-secrets` applies, so no tunnel id, credential
-  or Cloudflare API token is in this tree. Its image moves by hand, in a pull request the operator merges. cloudflared
+  or Cloudflare API token is in this tree. Its image moves by hand, in a pull request. cloudflared
   reads its lines once, at start, so the Deployment's template carries `checksum/config`, the sha256 of the ConfigMap's
   `config.yaml`; a changed line changes the template and rolls the pod, and `cluster` fails with the right hash when
   the two differ.
@@ -244,7 +244,7 @@
   enforces Pod Security `restricted`. `values.yaml` is its hand-written source; `rendered.yaml` is generated by
   `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A chart or image bump
   changes the task's chart digest, `image.digest` and `versionOverride` together and regenerates, by hand in a pull
-  request the operator merges. Its NetworkPolicy admits only pods of namespace `cloudflared`, and only to the `web`
+  request. Its NetworkPolicy admits only pods of namespace `cloudflared`, and only to the `web`
   port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied, while the node's
   probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
   `host/k3s/config.yaml` sets no `cluster-cidr` (`cluster` checks it against the nodes' pod CIDRs), and carries hal's
@@ -272,8 +272,7 @@
 - A GitHub setting `src/opentofu/github` holds changes only through that root and the command, never by hand.
 - `infrastructure/admission/image-vendors.yaml` is the one vendor list, which `images` and the admission layer read;
   platform's head owns it. An entry changes only when a vendor is added or removed, with its first or last ref, in a
-  pull request the operator merges; its review checks the vendor's page and that the repository is no app of ours.
-- The tunnel's lines, the ConfigMap in `infrastructure/cloudflared/cloudflared.yaml`, change only in a pull request
-  the operator merges.
+  pull request; its review checks the vendor's page and that the repository is no app of ours.
+- The tunnel's lines, the ConfigMap in `infrastructure/cloudflared/cloudflared.yaml`, change only in a pull request.
 - quality owns the gate, its workflows and its docs; the jobs and pins here follow its README and `docs/`.
 - overnightworks/platform#1 holds the plan.
