@@ -5,7 +5,7 @@
 # total it counts, then equal or DIFFERS, never a key; exits 1 when they differ or a step fails, naming the step and,
 # when the local deadline ended it, that deadline.
 set -euo pipefail
-usage="usage: $0 <namespace>: the operator's to run, since it reads LiteLLM's master key from the Secret litellm"
+usage="usage: $0 <namespace>: reads LiteLLM's master key from the Secret litellm"
 [ "$#" = 1 ] || {
   echo "$usage" >&2
   exit 2

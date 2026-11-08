@@ -1,0 +1,16 @@
+# The budgets and limits LiteLLM holds for the apps' keys and the person budget, applied by `mise run litellm:keys`
+# (`--plan` lists the differences first); `mise run litellm:key <app>` registers an app's key from its Secret. One
+# row per app, named like the app's namespace and Secret. The person budget's id is `max_end_user_budget_id` of
+# litellm-config.yaml, the routes are those of front-route.yml and the models those LiteLLM lists. Amounts are dollars.
+period: 1mo
+person_budget: 2
+apps:
+  hopin:
+    budget: 10
+    parallel: 5
+  presentator:
+    budget: 10
+    parallel: 5
+  songmaker:
+    budget: 10
+    parallel: 5
