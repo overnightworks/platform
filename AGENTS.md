@@ -61,6 +61,12 @@
   after a failed dump, adds every member of `/services/agent-service/api` to `/services/litellm` through kcadm in
   Keycloak's container, signed in as config-cli, verifies the old members are a subset and prints the two groups'
   member counts; only `--delete-old` deletes the old group. `db:load-dump keycloak <file>` rolls it back.
+- `mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump>` runs on the PC after
+  `db:load-dump keycloak <dump>` converged, through k3s's own kubeconfig, without sudo or a fetched secret: it fails
+  unless config-cli's Job completed within its `backoffLimit`, no client or user carries Keycloak's
+  `is_temporary_admin`, the realm's key ids equal those of the public issuer, and the rows of `user_entity`,
+  `credential` and `user_group_membership` equal the dump's by count and the sha256 of their sorted lines. It prints
+  names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`.
 - `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
   pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else
