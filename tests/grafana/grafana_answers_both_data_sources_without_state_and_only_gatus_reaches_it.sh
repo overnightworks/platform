@@ -74,15 +74,17 @@ until_true 300 "LogQL over namespace $LOKI_NAMESPACE returns a stream through $l
   data_source_answers "$loki_uid" loki "{namespace=\"$LOKI_NAMESPACE\"}" '{"queryType": "range", "maxLines": 5}'
 echo "LogQL over namespace $LOKI_NAMESPACE returns a stream through the data source $loki_uid"
 
-# A delete request the anonymous page's own data source proxy forwards to Loki is refused and removes nothing, so the
-# page that reads the lines cannot queue their deletion.
-delete_status="$(curl --silent --max-time 20 --output /dev/null --write-out '%{http_code}' --request POST \
+# Grafana refuses a POST the Loki plugin does not route, so the page that reads the lines cannot forward a delete
+# request to Loki; a Grafana that forwards it gets Loki's answer instead and fails this check.
+delete_refusal='{"message":"non allow-listed POSTs not allowed on proxied loki datasource"}'
+delete_reply="$(curl --silent --max-time 20 --write-out '\n%{http_code}' --request POST \
   --get --data-urlencode "query={namespace=\"$LOKI_NAMESPACE\"}" --data-urlencode "start=$(($(date +%s) - 3600))" \
   "$address/api/datasources/proxy/uid/$loki_uid/loki/api/v1/delete")"
-case "$delete_status" in 4??|5??) ;; *) fail "a delete request through the proxy to Loki got '$delete_status', not a refusal" ;; esac
-data_source_answers "$loki_uid" loki "{namespace=\"$LOKI_NAMESPACE\"}" '{"queryType": "range", "maxLines": 5}' ||
-  fail "the lines of namespace $LOKI_NAMESPACE are gone after a delete request through the proxy"
-echo "a delete request through the proxy to Loki is refused with $delete_status and the lines of namespace $LOKI_NAMESPACE remain"
+delete_status="${delete_reply##*$'\n'}" delete_body="${delete_reply%$'\n'*}"
+delete_body="${delete_body%$'\n'}"
+[ "$delete_status" = 403 ] && [ "$delete_body" = "$delete_refusal" ] ||
+  fail "a delete request through the proxy to Loki got status '$delete_status' and body '$delete_body', not Grafana's 403 refusal"
+echo "Grafana refuses a delete request through the proxy to Loki with 403"
 
 # The anonymous role runs Explore and may not change a data source.
 permissions="$(curl --silent --max-time 10 "$address/api/access-control/user/permissions")"

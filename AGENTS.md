@@ -561,7 +561,7 @@
   `loki.image.digest` together and regenerates, in a pull request started from the Dependency Dashboard that `renovate`
   keeps. `limits_config.retention_period` of 28 days
   with the compactor's retention on is the one rule for Loki's copy of every line, which the privacy texts promise gone
-  before 30 days, and `deletion_mode: disabled` turns Loki's delete API off, which Grafana's anonymous page would reach; the compactor runs at start, so a PC that was off deletes shortly after its next start. The claim
+  before 30 days; the compactor runs at start, so a PC that was off deletes shortly after its next start. The claim
   is on the Retain class and carries the prune annotation. Its NetworkPolicy admits only the namespaces `alloy`, `grafana`
   and `gatus`, and only to port 3100. In k3d a client Pod in a throwaway namespace `alloy` pushes a line and reads it
   back by LogQL; the configuration at `/config` has the retention on at most 28 days with a `delete_request_store`; a
@@ -629,7 +629,8 @@
   Loki's 3100 and Prometheus's 9090. In k3d, through the address `mise run grafana:open` prints, `/api/health` answers
   200, both data sources report OK and answer a PromQL `up` and a LogQL query over Loki's namespace without any
   credential, which may explore and may not write a data source, and a delete request posted through its proxy to Loki
-  is refused and removes no line (Prometheus keeps its lifecycle endpoints, which its reloader needs, so the page can still make it quit or reload, a restart); the pod holds no claim and only `emptyDir`, ConfigMap and projected volumes; the layer renders no Role,
+  is refused by Grafana with its own 403 (Loki's delete API stays on, so a later Grafana that forwards the POST turns the cell red). Gaps of the page's reach, accepted since the forward's port is random, on loopback and open only while the forward runs:
+  Prometheus keeps its lifecycle endpoints, which its reloader needs, so the page can still make it quit or reload, a restart; a GET on Loki's `/ingester/shutdown` through the page stops new lines being stored until the pod is restarted, and no stored line is lost; the pod holds no claim and only `emptyDir`, ConfigMap and projected volumes; the layer renders no Role,
   ClusterRole or hook; a Pod in `gatus` gets 200 for `/api/health` and one in another namespace no answer; a Pod in
   Grafana's namespace reaches Loki and Prometheus and neither the Service `kubernetes` nor github.com.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
