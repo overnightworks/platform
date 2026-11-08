@@ -34,16 +34,12 @@ admin_token() {
     --data-urlencode "client_secret@$admin_secret_file" "$local_url/realms/master/protocol/openid-connect/token" |
     jq --raw-output .access_token
 }
-# bearer_curl <token> <curl argument>...: curl with the token's header read from a private file, so the token never
-# stands in a command line.
+# bearer_curl <token> <curl argument>...: curl with the token's header read from a process substitution, so the token
+# stands in no command line and no file.
 bearer_curl() {
-  local header_file status=0
-  header_file="$(mktemp "$RUNNER_TEMP/bearer-header.XXXXXX")"
-  printf 'Authorization: Bearer %s\n' "$1" >"$header_file"
+  local token="$1"
   shift
-  curl --header "@$header_file" "$@" || status=$?
-  rm -f -- "$header_file"
-  return "$status"
+  curl --header @<(printf 'Authorization: Bearer %s\n' "$token") "$@"
 }
 # admin <method> <path> [<JSON body or @file>]: one admin REST call with a fresh token; prints the answer's body.
 admin() {

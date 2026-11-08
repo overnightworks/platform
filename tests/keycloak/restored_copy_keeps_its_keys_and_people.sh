@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # restored_copy_keeps_its_keys_and_people.sh <dump>: on the PC, after db:load-dump keycloak <dump> converged, shows
 # that config-cli's Job completed within its retries, that Keycloak created no temporary administrator, that the
-# realm's key ids equal those of the public issuer, and that config-cli left the users, credentials and group
-# memberships as the dump holds them; the first apply on a dump older than an agent client adds only that client's
-# service account and memberships. A dump holds keys and hashes, so it prints names, counts, key ids and outcomes,
-# never a row and never a message of pg_restore or psql. Reads through the PC's k3s kubeconfig unless KUBECONFIG is set;
-# runs with the locked tools: mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump>.
+# realm's key ids equal those of the public issuer, and that config-cli left the users, their attributes, credentials
+# and group memberships as the dump holds them; the first apply on a dump older than an agent client adds only that
+# client's service account and memberships. A dump holds keys and hashes, so it prints names, counts, key ids and
+# outcomes, never a row and never a message of pg_restore or psql. Reads through the PC's k3s kubeconfig unless
+# KUBECONFIG is set; runs with the locked tools: mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump>.
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 # shellcheck source=../failure.sh

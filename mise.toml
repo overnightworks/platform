@@ -680,7 +680,7 @@ fi
 '''
 
 # Sets the person-linked facts of an agent's service account, which no realm file holds: kcadm runs in Keycloak's own
-# container signed in as config-cli, as in keycloak:move-group, so no secret reaches this shell.
+# container signed in as config-cli, so no secret reaches this shell.
 [tasks."keycloak:agent-owner"]
 description = "Set an agent's agent_owner to a person and add that person to /agent-owners, with --adder also to /agent-adders"
 usage = '''
@@ -704,11 +704,23 @@ fail() {
   else echo "keycloak:agent-owner: $1; written or possibly written: ${attempted[*]}; run again to complete it" >&2; fi
   exit 1
 }
-kcadm() {
-  kubectl --namespace keycloak exec --stdin deployment/keycloak --container keycloak -- bash -c \
-    'exec /opt/keycloak/bin/kcadm.sh "$@" --no-config --server http://localhost:8080 --realm master \
-      --client "$KC_BOOTSTRAP_ADMIN_CLIENT_ID" --secret "$KC_BOOTSTRAP_ADMIN_CLIENT_SECRET"' kcadm "$@"
+# kcadm signs in once as config-cli with the secret in Keycloak's environment variable KC_CLI_CLIENT_SECRET, never in an
+# argument list that another host user could read, and keeps its token in a private file of the container that goes at
+# the end, on every exit.
+kcadm_path=/opt/keycloak/bin/kcadm.sh
+config_file="/tmp/kcadm-$(</proc/sys/kernel/random/uuid).config"
+keycloak_exec() { kubectl --namespace keycloak exec "$@"; }
+remove_config() {
+  keycloak_exec deployment/keycloak --container keycloak -- rm -f -- "$config_file" ||
+    echo "keycloak:agent-owner: could not remove $config_file in Keycloak's container" >&2
 }
+trap remove_config EXIT
+trap 'exit 143' TERM INT
+keycloak_exec deployment/keycloak --container keycloak -- bash -c 'umask 077 && : >"$0" &&
+  KC_CLI_CLIENT_SECRET="$KC_BOOTSTRAP_ADMIN_CLIENT_SECRET" exec '"$kcadm_path"' config credentials --config "$0" \
+    --server http://localhost:8080 --realm master --client "$KC_BOOTSTRAP_ADMIN_CLIENT_ID"' "$config_file" >/dev/null ||
+  fail "Keycloak cannot be signed in to"
+kcadm() { keycloak_exec --stdin deployment/keycloak --container keycloak -- "$kcadm_path" "$@" --config "$config_file"; }
 unreadable="Keycloak cannot be read"
 
 CLIENT="$client" yq --exit-status '.clients[] | select(.clientId == strenv(CLIENT) and .serviceAccountsEnabled == true
@@ -718,17 +730,21 @@ client_id="$(kcadm get clients --target-realm "$realm" --query "clientId=$client
   fail "$unreadable"
 [ -n "$client_id" ] || fail "$realm holds no client $client"
 users="$(kcadm get users --target-realm "$realm" --query "username=$username" --query exact=true)" || fail "$unreadable"
-# A service account is the service-account user of a client; a person may carry any username.
-client_ids="$(kcadm get clients --target-realm "$realm" --fields id,serviceAccountsEnabled | yq -p json -r \
-  '.[] | select(.serviceAccountsEnabled == true) | .id')" || fail "$unreadable"
-service_account_ids=""
-for service_client_id in $client_ids; do
-  service_account_ids+="$(kcadm get "clients/$service_client_id/service-account-user" --target-realm "$realm" \
-    --fields id --format csv --noquotes)"$'\n' || fail "$unreadable"
-done
 [ "$(yq -p json 'length' <<<"$users")" = 1 ] || fail "$username is not exactly one user of $realm"
 person_id="$(yq -p json '.[0].id' <<<"$users")"
-! grep -qxF "$person_id" <<<"$service_account_ids" || fail "$username is a service account, not a person"
+# A service account is the service-account user of a client; a person may carry any username. No read of a user tells
+# the two apart, and reading a client's service-account-user creates a missing one, so only the client the name points
+# to is read. A service account renamed by hand passes as a person.
+if [[ "$username" == service-account-* ]]; then
+  named_client_id="$(kcadm get clients --target-realm "$realm" --query "clientId=${username#service-account-}" \
+    --fields id,serviceAccountsEnabled | yq -p json -r '.[] | select(.serviceAccountsEnabled == true) | .id')" ||
+    fail "$unreadable"
+  if [ -n "$named_client_id" ]; then
+    named_account_id="$(kcadm get "clients/$named_client_id/service-account-user" --target-realm "$realm" --fields id \
+      --format csv --noquotes)" || fail "$unreadable"
+    [ "$named_account_id" != "$person_id" ] || fail "$username is a service account, not a person"
+  fi
+fi
 account_id="$(kcadm get "clients/$client_id/service-account-user" --target-realm "$realm" --fields id --format csv --noquotes)" ||
   fail "$unreadable"
 account="$(kcadm get "users/$account_id" --target-realm "$realm")" || fail "$unreadable"

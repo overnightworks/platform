@@ -17,18 +17,21 @@ stand_in=service-account-p2-stand-in
 other_owner=p2-other-owner
 person_control=p2-person-control
 password_client=p2-password-grant
+undeclared_client=p2-undeclared
 extra_group=p2-extra-group
 scratch="$(mktemp -d "$RUNNER_TEMP/p2-cells.XXXXXX")"
 password_file="$scratch/password"
 client_secret_file="$scratch/client-secret"
 remove_throwaways() {
-  local username id
+  local username id throwaway_client
   for username in "$stand_in" "$other_owner" "$person_control"; do
     id="$(admin GET "$realm/users?exact=true&username=$username" | jq --raw-output '.[0].id // empty')" || id=""
     [ -z "$id" ] || admin DELETE "$realm/users/$id" || echo "::warning::the throwaway user $username was not deleted"
   done
-  id="$(admin GET "$realm/clients?clientId=$password_client" | jq --raw-output '.[0].id // empty')" || id=""
-  [ -z "$id" ] || admin DELETE "$realm/clients/$id" || echo "::warning::the throwaway client $password_client was not deleted"
+  for throwaway_client in "$password_client" "$undeclared_client"; do
+    id="$(admin GET "$realm/clients?clientId=$throwaway_client" | jq --raw-output '.[0].id // empty')" || id=""
+    [ -z "$id" ] || admin DELETE "$realm/clients/$id" || echo "::warning::the throwaway client $throwaway_client was not deleted"
+  done
   [ -z "${account_id:-}" ] || {
     admin GET "$realm/users/$account_id" | jq 'del(.attributes.agent_owner)' >"$scratch/body" &&
       admin PUT "$realm/users/$account_id" "@$scratch/body" >/dev/null
@@ -94,6 +97,12 @@ create_person "$person_control" '{"agent_owner": ["admin-set"]}'
 admin POST "$realm/clients" "$(jq --null-input --arg id "$password_client" '{clientId: $id, publicClient: true,
   directAccessGrantsEnabled: true, standardFlowEnabled: false,
   defaultClientScopes: ["basic", "profile", "email", "roles", "groups"], optionalClientScopes: []}')" >/dev/null
+# A confidential client with a service account and agent-identity, which only the declaration check can refuse.
+admin POST "$realm/clients" "$(jq --null-input --arg id "$undeclared_client" '{clientId: $id, publicClient: false,
+  serviceAccountsEnabled: true, standardFlowEnabled: false, directAccessGrantsEnabled: false,
+  defaultClientScopes: ["basic", "agent-identity"], optionalClientScopes: []}')" >/dev/null
+undeclared_uuid="$(admin GET "$realm/clients?clientId=$undeclared_client" | jq --raw-output '.[0].id')"
+undeclared_account_before="$(admin GET "$realm/clients/$undeclared_uuid/service-account-user" | jq --sort-keys .)"
 stand_in_id="$(person_id "$stand_in")"
 
 # The command through its real entry point.
@@ -114,8 +123,10 @@ refused "a service account as owner" ""
 other_client="$(yq '[.clients[] | select(.serviceAccountsEnabled == true and ((.defaultClientScopes // []) | contains(["agent-identity"]) | not))][0].clientId' "$REALM_FILE")"
 owner_command "$other_client" "$stand_in"
 refused "the service-account client $other_client without agent-identity" ""
-owner_command "$password_client" "$stand_in"
-refused "the client $password_client, which exists in Keycloak but realm.yaml does not declare" ""
+owner_command "$undeclared_client" "$stand_in"
+refused "the service-account client $undeclared_client, which exists in Keycloak with agent-identity but realm.yaml does not declare" ""
+[ "$(admin GET "$realm/clients/$undeclared_uuid/service-account-user" | jq --sort-keys .)" = "$undeclared_account_before" ] ||
+  fail "the refused undeclared client's service account changed"
 
 owner_command "$client" "$stand_in"
 [ "$command_status" = 0 ] || fail "keycloak:agent-owner failed for $stand_in"
@@ -154,10 +165,14 @@ person_token() {
 }
 access_token() { jq --raw-output .access_token <<<"$token_body"; }
 
-# The scope claim lists the requested optional scope and each default scope whose definition puts it into the claim.
-expected_scope="$(admin GET "$realm/client-scopes" | jq --raw-output --argjson wanted "$(jq '.defaultClientScopes + ["mcp-hopin"]' <<<"$client_entry")" \
-  '[.[] | select(.name as $name | $wanted | index($name)) | select(.attributes["include.in.token.scope"] == "true") | .name]
-    | sort | join(" ")')"
+# expected_scope <extra scope>...: the scope claim lists the requested optional scopes and each default scope whose
+# definition puts it into the claim.
+expected_scope() {
+  admin GET "$realm/client-scopes" | jq --raw-output --argjson defaults "$(jq .defaultClientScopes <<<"$client_entry")" \
+    '($defaults + $ARGS.positional) as $wanted
+      | [.[] | select(.name as $name | $wanted | index($name)) | select(.attributes["include.in.token.scope"] == "true") | .name]
+      | sort | join(" ")' --args "$@"
+}
 
 # R1, R3: the token's rights are exactly the file's list, its audience exactly hopin's /mcp, its life the realm's.
 agent_token --data scope=mcp-hopin
@@ -173,8 +188,8 @@ claim() { jq --raw-output "$1" <<<"$claims"; }
 [ "$(claim 'if (.aud | type) == "string" then .aud else "not one string" end')" = "$hopin_audience" ] ||
   fail "the token's aud is '$(claim '.aud | tojson')', not exactly $hopin_audience"
 [ "$(claim '.exp - .iat')" = "$lifespan" ] || fail "the token lives $(claim '.exp - .iat') s, not the realm's $lifespan s"
-[ "$(claim '.scope | split(" ") | sort | join(" ")')" = "$expected_scope" ] ||
-  fail "the token's scope is '$(claim .scope)', not the scopes of the client's defaults and mcp-hopin that go into a token: $expected_scope"
+[ "$(claim '.scope | split(" ") | sort | join(" ")')" = "$(expected_scope mcp-hopin)" ] ||
+  fail "the token's scope is '$(claim .scope)', not the scopes of the client's defaults and mcp-hopin that go into a token: $(expected_scope mcp-hopin)"
 [ "$(claim .azp)" = "$client" ] || fail "the token's azp is not $client"
 [ "$(claim .agent_name)" = "$agent_name" ] || fail "the token's agent_name is not $agent_name"
 [ "$(claim .agent_owner)" = "$stand_in_id" ] || fail "the token's agent_owner is not the stand-in's id"
@@ -199,10 +214,12 @@ echo "R1, R3: groups '${file_groups//$'\n'/ }', aud exactly $hopin_audience, no 
 
 agent_token
 [ "$token_status" = 200 ] || fail "the client-credentials grant without scope answered $token_status"
-[ "$(jwt_part 2 "$(access_token)" | jq --arg audience "$hopin_audience" \
-  '(.aud // []) | (if type == "string" then [.] else . end) | index($audience) == null')" = true ] ||
-  fail "a token without scope=mcp-hopin carries hopin's audience"
-echo "R3: without scope=mcp-hopin the token has no hopin audience"
+no_scope_claims="$(jwt_part 2 "$(access_token)")"
+[ "$(jq --compact-output '(.aud // []) | if type == "string" then [.] else . end' <<<"$no_scope_claims")" = '[]' ] ||
+  fail "a token without scope=mcp-hopin carries the audience $(jq --compact-output '.aud' <<<"$no_scope_claims")"
+[ "$(jq --raw-output '.scope | split(" ") | sort | join(" ")' <<<"$no_scope_claims")" = "$(expected_scope)" ] ||
+  fail "a token without scope=mcp-hopin carries the scope '$(jq --raw-output .scope <<<"$no_scope_claims")', not '$(expected_scope)'"
+echo "R3: without scope=mcp-hopin the token has no audience and exactly the default scopes that go into a token"
 
 # R2: the agent's own token is refused at both APIs; a person meets the profile's read-only rule.
 # The account path serves its web console unless a request asks for JSON.
