@@ -64,10 +64,18 @@ run_expire() {
   kubectl --namespace "$namespace" label job "$1" "$marker=job"
   kubectl --namespace "$namespace" wait "job/$1" --for=condition=complete --timeout=3m || {
     kubectl --namespace "$namespace" describe "job/$1"
+    kubectl --namespace "$namespace" get pods --selector "job-name=$1" \
+      -o jsonpath='{range .items[*].status.containerStatuses[*]}{.state.terminated.exitCode} {.state.terminated.reason}{"\n"}{end}' || true
     kubectl --namespace "$namespace" logs "job/$1" || true
+    # The shipped Job discards psql's stderr because an error can quote a row; here the statement runs once more
+    # against the cell's own dummy rows so the cause is printed.
+    echo "the statement run again in the Postgres container:"
+    sql <"$(dirname "${BASH_SOURCE[0]}")/../../infrastructure/litellm/expire.sql" 2>&1 || true
     fail "the Job $1 did not complete"
   }
-  log="$(kubectl --namespace "$namespace" logs "job/$1")"
+  # A retried Job leaves failed Pods beside the one that completed.
+  log="$(kubectl --namespace "$namespace" logs "$(kubectl --namespace "$namespace" get pods --selector "job-name=$1" \
+    --field-selector status.phase=Succeeded --output name)")"
 }
 counts() { printf 'person_days|%s\ntool_days|%s\ntag_days|%s\ntools|%s\npeople|%s' "$@"; }
 

@@ -11,7 +11,9 @@ spec:
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
-      backoffLimit: 0
+      # The statement is one transaction, so a rerun is safe; a Pod can start before the network policies admit it to
+      # Postgres.
+      backoffLimit: 3
       activeDeadlineSeconds: 3600
       template:
         metadata:
