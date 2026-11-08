@@ -2,6 +2,7 @@
 set -eo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+export PATH="$HOME/.local/bin:$PATH"
 unit=.bootstrap.linux.systemd.units.trash-prune
 exec_start="$(mise exec -- yq -p toml -oy "$unit.exec_start" mise.toml)"
 exec_start_pre="$(mise exec -- yq -p toml -oy "$unit.exec_start_pre[0]" mise.toml)"

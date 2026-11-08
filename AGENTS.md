@@ -39,7 +39,7 @@
 - `mise run disk` runs without sudo and prints what fills the disk of the home directory by size and name (named
   directories of `$HOME`, the rest of `$HOME`, and what lies outside it, which is Docker's `/var/lib/docker` and the
   system, since only root reads that), then Docker's own count when the daemon answers within 2 minutes, else one line
-  saying it did not; from 85 % use it first prints a `WARNING` line on stderr, and it still exits 0. A directory du cannot
+  saying it does not answer in time; from 85 % use it first prints a `WARNING` line on stderr, and it still exits 0. A directory du cannot
   read marks its row incomplete and prints the remainders as `?`, never as a number.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
