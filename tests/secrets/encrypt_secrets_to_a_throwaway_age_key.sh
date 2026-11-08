@@ -80,8 +80,9 @@ done
 [ "${#postgres_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $POSTGRES_BASE"
 
 # Each namespace whose layer includes the backup component gets its restic Secret, under the names the component's
-# Schedule reads: the namespace as the rest user, its rest password and its repository password, each in the URL-safe
-# alphabet; the Secret rest-users holds every user's password as a file named after the user.
+# Schedule reads: a rest user, its rest password and its repository password, each in the URL-safe alphabet; the Secret
+# rest-users holds every user's password as a file named after the user. The user is the namespace plus a random
+# suffix, because the bare namespace stands in the Secret's own metadata and would fail the plain-text check below.
 schedule="$(yq 'select(.kind == "Schedule")' "$POSTGRES_BACKUP_COMPONENT/backup.yaml")"
 restic_secret="$(yq '.spec.backend.repoPasswordSecretRef.name' <<<"$schedule")"
 user_key="$(yq '.spec.backend.rest.userSecretRef.key' <<<"$schedule")"
@@ -101,13 +102,14 @@ for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
   backup_namespace="$(yq '.namespace' "$layer")"
   backup_namespaces+=("$backup_namespace")
   restic_files="$(secret_files "$restic_secret" "$backup_namespace")"
-  printf '%s' "$backup_namespace" > "$restic_files/$user_key"
+  rest_user="$backup_namespace-$(openssl rand -hex 4)"
+  printf '%s' "$rest_user" > "$restic_files/$user_key"
   for key in "$password_key" "$repository_password_key"; do
     value="$(openssl rand -hex 32)"
     echo "::add-mask::$value"
     printf '%s' "$value" > "$restic_files/$key"
   done
-  cp "$restic_files/$password_key" "$rest_users_files/$backup_namespace"
+  cp "$restic_files/$password_key" "$rest_users_files/$rest_user"
   plain_secret "$restic_secret" "$backup_namespace" Opaque
 done
 [ "${#backup_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $POSTGRES_BACKUP_COMPONENT"
