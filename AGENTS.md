@@ -274,9 +274,10 @@
   database and user the namespace's name, its password the Secret `postgres` from `platform-secrets` (only
   `A-Z a-z 0-9 - _`, as LiteLLM takes it unescaped in a URL), its claim on the Retain class carrying the prune
   annotation, so neither a prune nor the StatefulSet's deletion takes it; a Service on 5432 that only its own namespace
-  reaches; and the ConfigMap `postgres` with `check-key-tables.sh`, the one key-table check, and the including layer's
-  `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/` and `apps/skat/` include it; keycloak's NetworkPolicy
-  `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
+  reaches; and the ConfigMap `postgres` with `check-key-tables.sh`, the one key-table check, `table-digests.sh`, the one
+  digest of a table's sorted rows, which `db:load-dump --compare` and B4's check run inside the container, and the
+  including layer's `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/` and `apps/skat/` include it;
+  keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
 - `infrastructure/keycloak/`: Keycloak, one pod with `Recreate`, on its Postgres, its routes Traefik's file provider and
   its admin console only `keycloak:admin`; its NetworkPolicy `keycloak-ingress` admits only namespace `traefik` and
   its own. `realm.yaml` and `master.yaml` are hal's realms and the Job `config-cli` applies them with every managed

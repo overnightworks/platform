@@ -133,8 +133,8 @@ spec:
         - port: postgres
           protocol: TCP
 ---
-# The one key-table check, which db:load-dump runs through kubectl exec. Each including layer merges in key-tables, the
-# tables it counts, as SQL names without quotes.
+# The one key-table check and the one table digest, which db:load-dump runs through kubectl exec, so no row leaves the
+# container. Each including layer merges in key-tables, the tables it counts, as SQL names without quotes.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -164,3 +164,16 @@ data:
       echo "$table: $rows rows, ${lines:-0} COPY lines in the dump, $verdict"
     done
     exit "$status"
+  table-digests.sh: |
+    #!/bin/sh
+    # table-digests.sh: for a dump as SQL on stdin, every table's data lines, sorted, as "<sha256> - <table> <rows>" per
+    # table, an empty one included, so two dumps hold the same rows exactly when their lines are equal. Each line is the
+    # table, a tab, then "R" and a row or "E" for the table's end, which only an empty table keeps beside no row.
+    set -euo pipefail
+    awk 'table == "" && /^COPY / { table = $2; rows = 0; next }
+      table != "" && /^\\[.]$/ { if (rows == 0) print table "\tE"; table = ""; next }
+      table != "" { rows++; print table "\tR" $0 }' | LC_ALL=C sort | awk -F "\t" '
+      function finish() { if (table != "") { close("sha256sum"); print table, rows; fflush() } }
+      $1 != table { finish(); table = $1; rows = 0; printf "" | "sha256sum" }
+      substr($0, length($1) + 2, 1) == "R" { rows++; print substr($0, length($1) + 3) | "sha256sum" }
+      END { finish() }' | paste -d " " - -

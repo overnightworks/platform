@@ -52,27 +52,17 @@ verdict=equal
 [ -n "$copy_kids" ] && [ "$copy_kids" = "$public_kids" ] || { verdict=DIFFERS; outcome=1; }
 echo "key ids of $realm: copy ${copy_kids//$'\n'/ }, $public_url ${public_kids//$'\n'/ }, $verdict"
 
-# Each table's rows, sorted, as "<sha256> <rows>": from the dump its COPY data lines, from the database the same
-# text format through COPY TO STDOUT. The table is the script's first argument; stderr stays in the container.
-read -r -d '' rows_digest <<'EOF' || true
-LC_ALL=C sort | awk 'BEGIN { printf "" | "sha256sum" } { print | "sha256sum"; rows++ }
-  END { close("sha256sum"); print rows + 0 }' | awk 'NR == 1 { digest = $1 } NR == 2 { print digest, $1 }'
-EOF
-read -r -d '' dumped_rows <<'EOF' || true
-set -o pipefail
-pg_restore --data-only --table="$1" --file=- 2>/dev/null |
-  awk '/^COPY / { copying = 1; next } copying && /^\\[.]$/ { copying = 0; next } copying' |
-EOF
-read -r -d '' database_rows <<'EOF' || true
-set -o pipefail
-psql --no-psqlrc --set=ON_ERROR_STOP=1 --command="COPY public.\"$1\" TO STDOUT" 2>/dev/null |
-EOF
+# Each table's rows from the dump and from the database through the ConfigMap postgres's table-digests.sh, the
+# loader's own digest, inside the container; stderr stays there too.
 for table in user_entity credential user_group_membership; do
-  dumped="$(dump_into_postgres sh -c "$dumped_rows $rows_digest" sh "$table")" || fail "the dump's $table cannot be read"
-  loaded="$(in_postgres sh -c "$database_rows $rows_digest" sh "$table")" || fail "the database's $table cannot be read"
+  dumped="$(dump_into_postgres sh -c 'set -o pipefail; pg_restore --data-only --table="$1" --file=- 2>/dev/null |
+    sh /etc/postgres-checks/table-digests.sh' sh "$table")" || fail "the dump's $table cannot be read"
+  loaded="$(in_postgres sh -c 'set -o pipefail; pg_dump --data-only --table="$1" 2>/dev/null |
+    sh /etc/postgres-checks/table-digests.sh' sh "$table")" || fail "the database's $table cannot be read"
   verdict=equal
   [ "$dumped" = "$loaded" ] || { verdict=DIFFERS; outcome=1; }
-  echo "$table: ${loaded##* } rows in the database, ${dumped##* } in the dump, $verdict"
+  loaded_rows="${loaded##* }" dumped_rows="${dumped##* }"
+  echo "$table: ${loaded_rows:-0} rows in the database, ${dumped_rows:-0} in the dump, $verdict"
 done
 [ "$outcome" = 0 ] || fail "the restored copy differs from the dump or from the public issuer"
 echo "the restored copy kept its key ids, its people and their memberships through config-cli"

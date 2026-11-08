@@ -553,21 +553,12 @@ its writers at 0: check the data, then run mise run db:load-dump --resume $names
 }
 trap unverified EXIT
 
-# Every table's data lines in a dump (stdin as SQL), sorted, as "<sha256> - <table> <rows>" per table, an empty one
-# included. Each line is the table, a tab, then "R" and a row or "E" for the table's end, which only an empty table
-# keeps beside no row.
-table_digests='awk '\''table == "" && /^COPY / { table = $2; rows = 0; next }
-  table != "" && /^\\[.]$/ { if (rows == 0) print table "\tE"; table = ""; next }
-  table != "" { rows++; print table "\tR" $0 }'\'' | LC_ALL=C sort | awk -F "\t" '\''
-  function finish() { if (table != "") { close("sha256sum"); print table, rows; fflush() } }
-  $1 != table { finish(); table = $1; rows = 0; printf "" | "sha256sum" }
-  substr($0, length($1) + 2, 1) == "R" { rows++; print substr($0, length($1) + 3) | "sha256sum" }
-  END { finish() }'\'' | paste -d " " - -'
 verified=true
 dump_into_postgres sh /etc/postgres-checks/check-key-tables.sh || verified=false
 if [ "${usage_compare:-false}" = true ]; then
-  dumped="$(dump_into_postgres sh -c "set -o pipefail; pg_restore --data-only --file=- | $table_digests")" &&
-    loaded="$(in_postgres sh -c "set -o pipefail; pg_dump --data-only | $table_digests")" &&
+  dumped="$(dump_into_postgres sh -c \
+    "set -o pipefail; pg_restore --data-only --file=- | sh /etc/postgres-checks/table-digests.sh")" &&
+    loaded="$(in_postgres sh -c "set -o pipefail; pg_dump --data-only | sh /etc/postgres-checks/table-digests.sh")" &&
     awk 'NF != 4 { next } FILENAME == ARGV[1] { dumped[$3] = $1; dumped_rows[$3] = $4; next }
       { loaded[$3] = $1; loaded_rows[$3] = $4 }
       END { for (table in dumped) tables[table]; for (table in loaded) tables[table]
