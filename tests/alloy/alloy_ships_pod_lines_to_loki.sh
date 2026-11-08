@@ -14,9 +14,11 @@ writer_pod=alloy-nonce-writer
 
 # Every deletion is attempted, whichever fails; namespace alloy stays, as the layer owns it.
 remove_objects() {
-  kubectl -n "$SOURCE_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m "$writer_pod" || true
-  kubectl -n "$ALLOY_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m query || true
-  kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
+  local cell_status=$?
+  delete_object -n "$SOURCE_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m "$writer_pod"
+  delete_object -n "$ALLOY_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m query
+  delete_object delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
+  end_deletions "$cell_status"
 }
 trap remove_objects EXIT
 kubectl create namespace "$OTHER_NAMESPACE"
@@ -34,7 +36,7 @@ host_paths="$(kubectl -n "$ALLOY_NAMESPACE" get pods -o jsonpath='{.items[*].spe
 [ -z "$host_paths" ] || fail "an Alloy pod mounts the host paths $host_paths"
 echo "namespace $ALLOY_NAMESPACE enforces restricted and no Alloy pod mounts a host path"
 
-# The layer's tree and the cluster each hold one ClusterRole of Alloy's with exactly the rule, and no binding of its
+# The layer's tree and the cluster each hold one ClusterRole of Alloy's with exactly its two rules, and no binding of its
 # ServiceAccount, cluster-wide or in a namespace, reaches another role.
 rules_of() { yq -o=json -I=0 '.rules | map(.resources |= sort | .verbs |= sort)'; }
 rendered_roles="$(kubectl kustomize infrastructure/alloy | yq --no-doc 'select(.kind == "ClusterRole") | .metadata.name')"
@@ -43,13 +45,14 @@ rendered_rules="$(kubectl kustomize infrastructure/alloy | yq --no-doc 'select(.
 [ "$rendered_rules" = "$expected_rules" ] || fail "the rendered ClusterRole alloy holds $rendered_rules, not $expected_rules"
 bound_roles="$({
   kubectl get clusterrolebindings -o yaml
+  echo '---'
   kubectl get rolebindings --all-namespaces -o yaml
-} | yq --no-doc '.items[] | select(.subjects[]? | (.kind == "ServiceAccount" and .name == "alloy" and .namespace == "'"$ALLOY_NAMESPACE"'"))
+} | yq '.items[] | select(.subjects[]? | (.kind == "ServiceAccount" and .name == "alloy" and .namespace == "'"$ALLOY_NAMESPACE"'"))
   | .roleRef.kind + "/" + .roleRef.name' | sort -u)"
 [ "$bound_roles" = ClusterRole/alloy ] || fail "Alloy's ServiceAccount is bound to '$bound_roles', not ClusterRole/alloy alone"
 cluster_rules="$(kubectl get clusterrole alloy -o yaml | rules_of)"
 [ "$cluster_rules" = "$expected_rules" ] || fail "the cluster's ClusterRole alloy holds $cluster_rules, not $expected_rules"
-echo "the layer holds one ClusterRole alloy, in the render and in the cluster, with exactly the rule, and nothing else binds Alloy"
+echo "the layer holds one ClusterRole alloy, in the render and in the cluster, with exactly its two rules, and nothing else binds Alloy"
 
 # Nothing is admitted to Alloy's port.
 alloy_address="$(kubectl -n "$ALLOY_NAMESPACE" get pod -l app.kubernetes.io/name=alloy -o jsonpath='{.items[0].status.podIP}')"

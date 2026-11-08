@@ -341,7 +341,7 @@ jobs:
           OTHER_NAMESPACE: loki-client
         run: tests/loki/loki_keeps_lines_under_28_days.sh
 
-      - name: Assert that Alloy ships a pod's line to Loki with three labels, holds exactly one ClusterRole rule and answers nobody
+      - name: Assert that Alloy ships a pod's line to Loki with three labels, holds one ClusterRole with exactly two rules and answers nobody
         if: matrix.part == 'core'
         env:
           ALLOY_NAMESPACE: alloy

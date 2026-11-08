@@ -11,11 +11,12 @@ loki_address="http://loki.${LOKI_NAMESPACE}.svc:3100"
 # The namespace of the one sender Loki's policy admits is the layer alloy's, which stays; the one it does not admit is
 # a throwaway the cell creates and always removes. Every deletion is attempted, whichever fails.
 remove_objects() {
-  local pod
+  local cell_status=$? pod
   for pod in push read config; do
-    kubectl -n "$WRITER_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m "$pod" || true
+    delete_object -n "$WRITER_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m "$pod"
   done
-  kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
+  delete_object delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
+  end_deletions "$cell_status"
 }
 trap remove_objects EXIT
 kubectl create namespace "$OTHER_NAMESPACE"
