@@ -121,8 +121,10 @@
 ## Layout
 
 - `.github/workflows/ci.yml`: the `checks` job, which fails when a directory under `apps/` has no Kustomization of its
-  name over it in `clusters/pc/apps.yaml` or such a Kustomization has no directory, the `cluster` job, the `bootstrap`
-  job, the `opentofu` job, the `images` job and the `quality` job that calls quality's `gate.yml`.
+  name over it in `clusters/pc/apps.yaml` or such a Kustomization has no directory, and when a value of Keycloak's
+  `realm.yaml` or `master.yaml` whose key ends in secret or password is no `$(env:NAME)` reference, naming the file
+  and key path, never the value; the `cluster` job, the `bootstrap` job, the `opentofu` job, the `images` job and the
+  `quality` job that calls quality's `gate.yml`.
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2

@@ -40,6 +40,16 @@ jobs:
           }
           echo "each directory under apps/ has its Kustomization: $(echo $directories)"
 
+      - name: Install the pinned tools
+        run: |
+          scripts/bootstrap_pc.sh --only tools
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Check that every secret and password in the realm files is an env reference
+        run: >-
+          mise exec -- tests/keycloak/realm_secrets_are_env_references.sh
+          infrastructure/keycloak/realm.yaml infrastructure/keycloak/master.yaml
+
   cluster:
     runs-on: ubuntu-latest
     timeout-minutes: 30
