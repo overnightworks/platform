@@ -70,7 +70,7 @@ spec:
       port: 4000
       targetPort: api
 ---
-# Only the pods of the three apps that call the gateway reach the front; it sends only to cluster DNS and LiteLLM.
+# Only the pods of the three apps that call the gateway and of Gatus reach the front; it sends only to cluster DNS and LiteLLM.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -88,7 +88,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [hopin, presentator, songmaker]
+                values: [hopin, presentator, songmaker, gatus]
       ports:
         - port: 4000
           protocol: TCP

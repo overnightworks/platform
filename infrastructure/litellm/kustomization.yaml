@@ -9,6 +9,7 @@ resources:
   - litellm.yaml
   - front.yaml
   - egress.yaml
+  - expire.yaml
 # The front and the egress run the image of the cluster's ingress, at infrastructure/traefik/values.yaml's
 # versionOverride and image.digest, which the P7c cells compare.
 images:
@@ -28,6 +29,9 @@ configMapGenerator:
     files:
       - traefik.yml=front-traefik.yml
       - route.yml=front-route.yml
+  - name: litellm-expire
+    files:
+      - expire.sql
   - name: agent-egress
     files:
       - traefik.yml=egress-traefik.yml
@@ -48,6 +52,17 @@ replacements:
           - spec.template.spec.hostAliases.0.ip
         options:
           create: true
+  # The expiry's psql is the one of this layer's Postgres, at its digest.
+  - source:
+      kind: StatefulSet
+      name: postgres
+      fieldPath: spec.template.spec.containers.0.image
+    targets:
+      - select:
+          kind: CronJob
+          name: litellm-expire
+        fieldPaths:
+          - spec.jobTemplate.spec.template.spec.containers.0.image
   - source:
       kind: ConfigMap
       name: postgres
