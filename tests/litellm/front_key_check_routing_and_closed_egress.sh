@@ -208,8 +208,10 @@ sni_handshake() {
   start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   run_client "$namespace" litellm-sni '{"app.kubernetes.io/name": "litellm"}' --silent --show-error --output /dev/null \
     --max-time 45 "${retry[@]}" --resolve "$1:$egress_port:$egress_address" "https://$1:$egress_port/"
-  dial_error="$(kubectl --namespace "$namespace" logs deployment/agent-egress --since-time="$start" |
-    grep 'Error while dialing backend' || true)"
+  local gateway_log
+  gateway_log="$(kubectl --namespace "$namespace" logs deployment/agent-egress --since-time="$start")" ||
+    fail "the log of agent-egress cannot be read after the SNI $1"
+  dial_error="$(grep 'Error while dialing backend' <<<"$gateway_log" || true)"
 }
 sni_handshake "$THIRD_SNI"
 [ "$exit_code" = 35 ] && [ -z "$dial_error" ] ||
