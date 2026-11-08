@@ -1,8 +1,0 @@
-claim_id = "95863f8af34b43dca4112eec32ee4bde"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "6f10bdf87c1b13048e5f0d340e7f9708df1308b9"
-branch = "claude/issue-195-p9a1-impressum-through-traefik"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/legal", "tests/legal"]
-opened_commit = "c8d1a86204a0abd3f5673d38d7246fba0b34bb23"
-whole_reason = "One layer: its manifests, the one page, the Flux Kustomization, vendor entry, cell and documents prove one served page together."
