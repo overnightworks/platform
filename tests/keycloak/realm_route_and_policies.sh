@@ -228,11 +228,13 @@ admin POST "$realm/users" "$(USER="$probe_user" PASSWORD="$probe_password" jq --
     lastName: "Person", requiredActions: ["TERMS_AND_CONDITIONS"],
     credentials: [{type: "password", value: env.PASSWORD, temporary: false}]}')"
 probe_user_id="$(admin GET "$realm/users?exact=true&username=$probe_user" | jq --raw-output '.[0].id')"
-# password_grant <realm> <client> <user>: sets grant_status and grant_body.
+# password_grant <realm> <client> <user> [<curl argument>...]: sets grant_status and grant_body.
 password_grant() {
+  local realm_name="$1" client="$2" user="$3"
+  shift 3
   grant_body="$(curl --silent --show-error --write-out '\n%{http_code}' --data grant_type=password \
-    --data-urlencode "client_id=$2" --data-urlencode "username=$3" --data-urlencode "password=$probe_password" \
-    --data scope=openid "$local_url/realms/$1/protocol/openid-connect/token")"
+    --data-urlencode "client_id=$client" --data-urlencode "username=$user" --data-urlencode "password=$probe_password" \
+    --data scope=openid "$@" "$local_url/realms/$realm_name/protocol/openid-connect/token")"
   grant_status="${grant_body##*$'\n'}"
   grant_body="${grant_body%$'\n'*}"
 }
@@ -251,30 +253,50 @@ echo "with the terms accepted the password grant yields a token of the public is
 admin DELETE "$realm/users/$probe_user_id"
 admin DELETE "$realm/clients/$(admin GET "$realm/clients?clientId=$probe_client" | jq --raw-output '.[0].id')"
 
+# The positive control runs through the same client and master's own flow: an administrator with TOTP gets a token
+# with the current code and none without it, and once the TOTP is deleted none at all. The secret's bytes are the HMAC
+# key, as Keycloak reads an imported secret without an encoding, and the code follows RFC 6238 at the credential's
+# algorithm, digits and period.
 probe_admin=b6-admin
-admin POST master/users "$(USER="$probe_admin" PASSWORD="$probe_password" jq --null-input \
-  '{username: env.USER, enabled: true, email: (env.USER + "@example.invalid"), emailVerified: true, firstName: "B6",
-    lastName: "Admin", credentials: [{type: "password", value: env.PASSWORD, temporary: false}]}')"
+totp_secret="$(openssl rand -hex 20)"
+totp_period=30
+totp_digits=6
+admin POST master/partialImport "$(USER="$probe_admin" PASSWORD="$probe_password" SECRET="$totp_secret" \
+  PERIOD="$totp_period" DIGITS="$totp_digits" jq --null-input '{ifResourceExists: "FAIL", users: [{username: env.USER,
+    enabled: true, email: (env.USER + "@example.invalid"), emailVerified: true, firstName: "B6", lastName: "Admin",
+    credentials: [{type: "password", value: env.PASSWORD, temporary: false},
+      {type: "otp", userLabel: "b6", secretData: ({value: env.SECRET} | tojson),
+        credentialData: ({subType: "totp", algorithm: "HmacSHA1", digits: (env.DIGITS | tonumber),
+          period: (env.PERIOD | tonumber), counter: 0} | tojson)}]}]}')" >/dev/null
 probe_admin_id="$(admin GET "master/users?exact=true&username=$probe_admin" | jq --raw-output '.[0].id')"
 admin POST "master/users/$probe_admin_id/role-mappings/realm" "[$(admin GET master/roles/admin)]"
-# Keycloak's built-in direct grant asks for TOTP only from a user who has it, so through a client bound to that flow
-# the same administrator and password get a token: the refusal after it is master's own flow, not a failed sign-in.
-built_in_flow="$(admin GET master/authentication/flows | jq --raw-output '.[] | select(.alias == "direct grant") | .id')"
-[ -n "$built_in_flow" ] || fail "the realm master holds no built-in flow 'direct grant'"
-control_client=b6-admin-control
-admin POST master/clients "$(CLIENT="$control_client" FLOW="$built_in_flow" jq --null-input \
-  '{clientId: env.CLIENT, publicClient: true, directAccessGrantsEnabled: true, standardFlowEnabled: false,
-    authenticationFlowBindingOverrides: {direct_grant: env.FLOW}}')"
-password_grant master "$control_client" "$probe_admin"
-control_status="$grant_status"
-control_token="$(jq --raw-output '.access_token // empty' <<<"$grant_body")"
+totp_code() {
+  TOTP_SECRET="$totp_secret" TOTP_PERIOD="$totp_period" TOTP_DIGITS="$totp_digits" python3 -I -c '
+import hashlib, hmac, os, struct, time
+counter = int(time.time()) // int(os.environ["TOTP_PERIOD"])
+digest = hmac.new(os.environ["TOTP_SECRET"].encode(), struct.pack(">Q", counter), hashlib.sha1).digest()
+offset = digest[-1] & 0x0F
+digits = int(os.environ["TOTP_DIGITS"])
+print(str((struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 10**digits).zfill(digits))'
+}
+# grant_outcome: the status and whether a token came, never the token.
+grant_outcome() { echo "$grant_status $(jq --raw-output 'if .access_token then "token" else "no-token" end' <<<"$grant_body")"; }
+password_grant master admin-cli "$probe_admin" --data-urlencode "totp=$(totp_code)"
+with_code="$(grant_outcome)"
 password_grant master admin-cli "$probe_admin"
+without_code="$(grant_outcome)"
+totp_credential="$(admin GET "master/users/$probe_admin_id/credentials" | jq --raw-output '.[] | select(.type == "otp") | .id')"
+admin DELETE "master/users/$probe_admin_id/credentials/$totp_credential"
+# Two failures within a second would lock the administrator out as a brute force, so the first one is cleared.
+admin DELETE "master/attack-detection/brute-force/users/$probe_admin_id"
+password_grant master admin-cli "$probe_admin"
+without_totp="$(grant_outcome)"
 admin DELETE "master/users/$probe_admin_id"
-admin DELETE "master/clients/$(admin GET "master/clients?clientId=$control_client" | jq --raw-output '.[0].id')"
-[ "$control_status" = 200 ] && [ -n "$control_token" ] ||
-  fail "a master administrator without TOTP got $control_status and no token through the built-in direct grant, so" \
-    "the refusal proves no flow"
-[ "$grant_status" = 401 ] && [ "$(jq --raw-output '.access_token // empty' <<<"$grant_body")" = "" ] ||
-  fail "a master administrator without TOTP got $grant_status from a password grant, not 401 without a token"
-echo "a master administrator without TOTP gets a token through the built-in direct grant, and 401 without a token" \
-  "through master's own"
+[ "$with_code" = "200 token" ] ||
+  fail "a master administrator with TOTP got '$with_code' from admin-cli's password grant with the code, not 200 and a token"
+[ "$without_code" = "401 no-token" ] ||
+  fail "a master administrator with TOTP got '$without_code' from admin-cli's password grant without the code, not 401"
+[ "$without_totp" = "401 no-token" ] ||
+  fail "a master administrator without TOTP got '$without_totp' from admin-cli's password grant, not 401 without a token"
+echo "through admin-cli and master's own flow a master administrator with TOTP gets a token with the code and 401" \
+  "without it, and one without TOTP gets 401 without a token"
