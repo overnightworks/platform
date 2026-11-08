@@ -35,6 +35,11 @@ endpoints:
     interval: 60s
     conditions:
       - "[STATUS] == 200"
+  - name: prometheus
+    url: http://prometheus-server.prometheus.svc:80/-/ready
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
   - name: litellm
     url: http://litellm-front.litellm.svc:4000/v1/models
     interval: 60s

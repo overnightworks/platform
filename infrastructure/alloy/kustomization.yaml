@@ -1,0 +1,13 @@
+# The configuration is read once, at start, so the generated ConfigMap's name carries its content's hash and a change
+# rolls the pod.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: alloy
+resources:
+  - namespace.yaml
+  - network-policy.yaml
+  - alloy.yaml
+configMapGenerator:
+  - name: alloy
+    files:
+      - config.alloy

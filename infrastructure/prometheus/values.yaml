@@ -1,0 +1,157 @@
+# Prometheus' chart values; mise run charts:render renders them into rendered.yaml beside this file. A bump changes the
+# chart digest in that task and each image tag and digest here together and regenerates.
+# Alertmanager, node-exporter (host mounts, which Pod Security restricted refuses) and the pushgateway are not run.
+alertmanager:
+  enabled: false
+prometheus-node-exporter:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+configmapReload:
+  prometheus:
+    image:
+      tag: v0.95.1
+      # The tag alone can move, so each image is pinned by its index digest.
+      digest: sha256:39bdbade0c64f7c38bb6d18d6f602b14ad489bc189b709dc9266b49e6647aac1
+    # Pod Security restricted requires these, which the chart's defaults leave out.
+    containerSecurityContext: &containerSecurityContext
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+    # The rules ConfigMap is a second source of the rule files; a changed rule reloads without a restart.
+    extraConfigmapMounts:
+      - name: rules
+        mountPath: /etc/rules
+        configMap: prometheus-rules
+        readOnly: true
+    extraVolumeDirs: [/etc/rules]
+server:
+  image:
+    tag: v3.16.0
+    digest: sha256:9332054523223e2ddc18d8101799d54a4a8d823b030c53216f063a6c117773cd
+  securityContext:
+    runAsUser: 65534
+    runAsNonRoot: true
+    runAsGroup: 65534
+    fsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext: *containerSecurityContext
+  # One claim that only one pod holds at a time.
+  strategy:
+    type: Recreate
+  # The size bound keeps the TSDB inside the 8Gi claim when the 30 days would not fit.
+  retention: 30d
+  retentionSize: 7GB
+  persistentVolume:
+    size: 8Gi
+    storageClass: local-path
+    # Neither a prune nor the Deployment's deletion takes the claim, which holds every sample until retention does.
+    annotations:
+      kustomize.toolkit.fluxcd.io/prune: disabled
+  extraConfigmapMounts:
+    - name: rules
+      mountPath: /etc/rules
+      configMap: prometheus-rules
+      readOnly: true
+serverFiles:
+  prometheus.yml:
+    rule_files:
+      - /etc/rules/rules.yml
+# The kubelet and cAdvisor are scraped at each node's port 10250 with the chart's `get` on nodes/metrics, the one kubelet
+# right. The kubelet's serving certificate is signed by the CA the ServiceAccount's ca.crt holds and names the node's IP,
+# so verification is on, which the chart's default turns off; a node's address is its InternalIP at that port, which the role gives.
+scrapeConfigs:
+  kubernetes-api-servers:
+    enabled: false
+  kubernetes-service-endpoints:
+    enabled: false
+  kubernetes-service-endpoints-slow:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+  kubernetes-services:
+    enabled: false
+  kubernetes-pods:
+    enabled: false
+  kubernetes-pods-slow:
+    enabled: false
+  kubernetes-nodes:
+    tls_config:
+      insecure_skip_verify: false
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+  kubernetes-nodes-cadvisor:
+    tls_config:
+      insecure_skip_verify: false
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+  kube-state-metrics:
+    static_configs:
+      - targets: [prometheus-kube-state-metrics.prometheus.svc:8080]
+  # Flux's controllers serve their metrics on the port http-prom, which flux-system's NetworkPolicy opens to every namespace.
+  flux-controllers:
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [flux-system]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        action: keep
+        regex: http-prom
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: controller
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+kube-state-metrics:
+  image:
+    tag: v2.20.0
+    sha: sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+  # Without secrets and configmaps: a list on secrets returns their data, and no rule or dashboard reads them.
+  collectors:
+    - cronjobs
+    - daemonsets
+    - deployments
+    - jobs
+    - namespaces
+    - nodes
+    - persistentvolumeclaims
+    - persistentvolumes
+    - pods
+    - replicasets
+    - services
+    - statefulsets
+  # Flux's resources, so gotk_resource_info exists for each Kustomization.
+  rbac:
+    extraRules:
+      - apiGroups: [kustomize.toolkit.fluxcd.io]
+        resources: [kustomizations]
+        verbs: [list, watch]
+  customResourceState:
+    enabled: true
+    config:
+      kind: CustomResourceStateMetrics
+      spec:
+        resources:
+          - groupVersionKind:
+              group: kustomize.toolkit.fluxcd.io
+              version: v1
+              kind: Kustomization
+            metricNamePrefix: gotk
+            metrics:
+              - name: resource_info
+                help: The current state of a Flux resource.
+                each:
+                  type: Info
+                  info:
+                    labelsFromPath:
+                      name: [metadata, name]
+                labelsFromPath:
+                  exported_namespace: [metadata, namespace]
+                  ready: [status, conditions, "[type=Ready]", status]
+                  suspended: [spec, suspend]
+                  revision: [status, lastAppliedRevision]
+                  source_name: [spec, sourceRef, name]
