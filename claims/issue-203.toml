@@ -1,0 +1,7 @@
+claim_id = "ec8e17485bdf41bc9cded1cb44406c7d"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "69a62e369121aaf3a2c0a8afb4532fc594acf31c"
+branch = "claude/issue-203-gatus-open-free-port"
+scope = ["AGENTS.md", "mise.toml", "tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh"]
+opened_commit = "6c5b52c457c42d2d37de4e5d301b348efca0f6fe"
