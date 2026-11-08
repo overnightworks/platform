@@ -27,7 +27,17 @@ trap remove_objects EXIT
 class="$(runtime_class_field .metadata.name)"
 
 allocatable="$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}')"
-[ "$allocatable" = 1 ] || fail "the nodes offer nvidia.com/gpu '$allocatable', not exactly 1 on one node"
+if [ "$allocatable" != 1 ]; then
+  # The plugin's Pod names the same RuntimeClass, so a missing handler shows in its events, whose messages are free text
+  # that can carry a card's UUID: only each event's object and reason and the match are printed.
+  echo "the nodes offer nvidia.com/gpu '$allocatable'; the events of namespace $plugin_namespace:"
+  kubectl -n "$plugin_namespace" get events -o custom-columns=OBJECT:.involvedObject.name,REASON:.reason --no-headers
+  messages="$(kubectl -n "$plugin_namespace" get events -o jsonpath='{range .items[*]}{.message}{"\n"}{end}')"
+  if grep -Eq 'no runtime for "[^"]*" is configured' <<<"$messages"; then
+    echo "the runtime handler is missing: containerd has no runtime for the RuntimeClass's handler"
+  fi
+  fail "the nodes offer nvidia.com/gpu '$allocatable', not exactly 1 on one node"
+fi
 echo "the node offers nvidia.com/gpu 1"
 
 image="$(kubectl -n "$plugin_namespace" get daemonset nvidia-device-plugin-daemonset \
@@ -41,10 +51,6 @@ if ! kubectl -n "$proof_namespace" wait "pod/$pod" --for=jsonpath='{.status.phas
   echo "pod/$pod ended in phase $(kubectl -n "$proof_namespace" get "pod/$pod" -o jsonpath='{.status.phase}'); its events:"
   # Messages are free text that can carry a card's UUID, so only each event's object and reason are printed.
   kubectl -n "$proof_namespace" get events -o custom-columns=OBJECT:.involvedObject.name,REASON:.reason --no-headers
-  messages="$(kubectl -n "$proof_namespace" get events -o jsonpath='{range .items[*]}{.message}{"\n"}{end}')"
-  if grep -Eq 'no runtime for "[^"]*" is configured' <<<"$messages"; then
-    echo "the runtime handler is missing: containerd has no runtime for the RuntimeClass's handler"
-  fi
   fail "the restricted Pod did not run nvidia-smi -L to its end"
 fi
 logs="$(kubectl -n "$proof_namespace" logs "pod/$pod")" || fail "the log of pod/$pod could not be read"
