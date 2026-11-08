@@ -1,0 +1,189 @@
+# LiteLLM, the apps' route to the paid API: its own keys and budgets in its Postgres decide who may call. It reads the
+# provider keys and the master key from the Secret litellm and its database password from the Secret postgres, both
+# from platform-secrets, and reaches only its Postgres and, through agent-egress (egress.yaml), the providers. One pod
+# runs, as its start migrates the database.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm
+    spec:
+      automountServiceAccountToken: false
+      # The Service litellm would inject LITELLM_PORT and the like, a prefix LiteLLM reads its own settings from.
+      enableServiceLinks: false
+      # The provider names resolve to agent-egress, whose Service address kustomization.yaml copies in; they equal the
+      # HostSNI names of egress-allowed.yml.
+      hostAliases:
+        - hostnames: [api.anthropic.com, api.openai.com]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:v1.106.6@sha256:37e2dafb088a7723beb998590682957386dfc83ffea1848486f8e0e5cfac0b06
+          # The image's /bin/sh (busybox) refuses a key or password that is not exactly one non-empty printable line,
+          # and a password outside A-Z a-z 0-9 - _, which DATABASE_URL takes unescaped, naming only the variable: an
+          # empty master key would leave the proxy without auth. A core dump would hold the keys, so none is written.
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              ulimit -c 0
+              for name in ANTHROPIC_API_KEY OPENAI_API_KEY LITELLM_MASTER_KEY DATABASE_PASSWORD; do
+                eval "value=\${$name-}"
+                case "$value" in
+                  "" | *[!!-~]*)
+                    echo "litellm: $name is not exactly one printable line" >&2
+                    exit 1
+                    ;;
+                esac
+              done
+              case "$DATABASE_PASSWORD" in
+                *[!A-Za-z0-9_-]*)
+                  echo "litellm: DATABASE_PASSWORD holds a character outside A-Z a-z 0-9 - _" >&2
+                  exit 1
+                  ;;
+              esac
+              unset name value
+              exec litellm --config /etc/litellm/config.yaml --host 0.0.0.0 --port 4000
+          ports:
+            - name: http
+              containerPort: 4000
+          env:
+            - name: HOME
+              value: /tmp
+            - name: LITELLM_LOCAL_MODEL_COST_MAP
+              value: "True"
+            - name: LITELLM_TELEMETRY
+              value: "False"
+            # Prisma's version check asks checkpoint.prisma.io at every migration, which the closed egress never
+            # answers.
+            - name: CHECKPOINT_DISABLE
+              value: "1"
+            # At ERROR a line names a refusal's reason, a provider's error text included; message logging stays off.
+            - name: LITELLM_LOG
+              value: ERROR
+            - name: JSON_LOGS
+              value: "True"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm
+                  key: anthropic_key
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm
+                  key: openai_key
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm
+                  key: master_key
+            # The base's password is URL-safe (A-Z a-z 0-9 - _), so the URL takes it unescaped; the start refuses
+            # any other.
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: password
+            - name: DATABASE_URL
+              value: postgresql://litellm:$(DATABASE_PASSWORD)@postgres:5432/litellm
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: http
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/litellm
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: litellm
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+spec:
+  selector:
+    app.kubernetes.io/name: litellm
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
+---
+# Only the front reaches LiteLLM; LiteLLM sends only to cluster DNS, its Postgres and agent-egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm-front
+      ports:
+        - port: 4000
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: agent-egress
+      ports:
+        - port: 443
+          protocol: TCP

@@ -1,0 +1,18 @@
+# The static configuration of agent-egress (egress.yaml): the SNI-allowlisting TLS passthrough gateway between LiteLLM
+# and the two hosts it may reach. One TCP entrypoint, `litellm`, on port 443 of the pod, no UDP. The api, ping and
+# metrics blocks stay absent. The allowed names stand in egress-allowed.yml.
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+log:
+  level: INFO
+
+entryPoints:
+  litellm:
+    address: ":443"
+
+providers:
+  file:
+    directory: /egress/dynamic
+    watch: true
