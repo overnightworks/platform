@@ -183,7 +183,8 @@ echo "the restore test of $empty_namespace fails on an empty first key table"
 # A namespace reaches only its own repository; no credentials reach none; a namespace without one reaches the server not.
 # A fresh Pod's first connection can meet a refusal before the network policy admits its address, so the requests that
 # expect an answer retry a refused connection for a bounded time; curl retries no 401 or 403, and the request that expects
-# no answer carries no retry.
+# no answer overrides the client Pod's own retry with --retry 0, so a retryable answer followed by refusals cannot leave
+# only the final 000.
 retry=(--retry 5 --retry-connrefused --retry-delay 2 --retry-max-time 30)
 first="${BACKUP_NAMESPACES%% *}"
 second="${BACKUP_NAMESPACES##* }"
@@ -193,7 +194,7 @@ request "$first" no-credentials-own "$UNROUTED_HOST" "$rest_base/$first/config" 
 request "$first" no-credentials-foreign "$UNROUTED_HOST" "$rest_base/$second/config" "${retry[@]}"
 [ "$status" = 401 ] || fail "without credentials the server answered $status under /$second/"
 echo "without credentials the server answers 401 everywhere"
-request "$OUTSIDE_NAMESPACE" outside-namespace "$UNROUTED_HOST" "$rest_base/$first/config"
+request "$OUTSIDE_NAMESPACE" outside-namespace "$UNROUTED_HOST" "$rest_base/$first/config" --retry 0
 [ "$status" = 000 ] && [ "$exit_code" != 0 ] ||
   fail "a pod in $OUTSIDE_NAMESPACE reached the rest-server (status '$status', curl exit $exit_code)"
 echo "a pod in $OUTSIDE_NAMESPACE gets no answer, while a pod in $first was answered above"

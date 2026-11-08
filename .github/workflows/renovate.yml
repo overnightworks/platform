@@ -1,0 +1,45 @@
+name: renovate
+
+# The daily vendor-pin watch: Renovate lists on its Dependency Dashboard each pin with a newer release. The job token holds
+# neither contents: write nor workflows, so Renovate cannot create a branch, whatever .github/renovate.json5 says.
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+    env:
+      RENOVATE_IMAGE: ghcr.io/renovatebot/renovate:44.199.0@sha256:76e0fb8c982004f8f9a6dd041a777f9c8aee6b4b852da862a1217c5ec550e6d9
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Renovate runs as uid 12021, so the report directory is writable for it and its file stays readable for the check.
+      - name: Run Renovate
+        env:
+          RENOVATE_TOKEN: ${{ github.token }}
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+        run: |
+          report_directory="${RUNNER_TEMP}/renovate-report"
+          mkdir "${report_directory}"
+          chmod 0777 "${report_directory}"
+          docker run --rm \
+            --env RENOVATE_TOKEN --env RENOVATE_REPOSITORIES \
+            --env RENOVATE_PLATFORM=github --env RENOVATE_ONBOARDING=false \
+            --env RENOVATE_REPORT_TYPE=file --env RENOVATE_REPORT_PATH=/report/report.json \
+            --volume "${report_directory}:/report" \
+            "${RENOVATE_IMAGE}"
+
+      - name: Check that Renovate looked up every pin
+        run: scripts/check_renovate_report.sh "${RUNNER_TEMP}/renovate-report/report.json"

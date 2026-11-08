@@ -43,6 +43,17 @@ patches:
                       - op: replace
                         path: /spec/replicas
                         value: 0
+          # k3d has no card: the device plugin's DaemonSet applies and schedules nowhere.
+          - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: nvidia}
+            patch: |
+              - op: add
+                path: /spec/patches
+                value:
+                  - target: {group: apps, kind: DaemonSet, name: nvidia-device-plugin-daemonset}
+                    patch: |
+                      - op: add
+                        path: /spec/template/spec/nodeSelector
+                        value: {nvidia.com/gpu.present: "true"}
 YAML
 if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
   pull_request_patches="$(cat <<'YAML'

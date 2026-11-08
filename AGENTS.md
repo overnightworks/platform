@@ -67,11 +67,20 @@
   signal during the comparison, a table only the database holds, a database it cannot read before or after the load,
   a materialized view, a `pg_restore` that outlives its status while its backend commits, a TERM during the check
   after a failed restore, and an INT after the commit, whose outcome reaches the operator and not the load log.
+- `mise run legal:check <key> <dir>` checks an app's `<dir>/legal/datenschutz.html` and, if present,
+  `<dir>/legal/nutzungsbedingungen.html` with the section validator of `src/legal/` (grammar and format in
+  `docs/legal-sections.md`): it prints `legal:check: <key> valid: <pages>` and exits 0, or prints `legal: <file>: line N:
+  <rule>`, never the text, and exits non-zero. It refuses a link or directory in place of a file, a missing
+  `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
+  `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
+  with branch coverage at 100 % and writes `src/legal/coverage.xml`. Both run through `uv` (locked in `mise.toml`),
+  which fetches Python 3.14 on first use and keeps its environment under `~/.cache/platform/legal`.
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
   per host and hal's console answers on another port of `localhost`.
-- `mise run gatus:open` forwards `127.0.0.1` at the port of Gatus's Service to it and prints the address of the status page;
-  the page has no other way in.
+- `mise run gatus:open` forwards `127.0.0.1` at a free local port kubectl chooses to the port of Gatus's Service and prints
+  the address of the status page once kubectl listens, none when the forward fails, which exits non-zero; the page has no
+  other way in.
 - `mise run keycloak:agent-owner [--adder] <client> <username>` runs through kcadm in Keycloak's
   container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
   `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
@@ -152,6 +161,12 @@
   Deleted logs stay deleted.
   `check-pod-logs` never reads Loki's copy of the lines, whose bound `infrastructure/loki/` sets; the `cluster` cell on
   Loki's running configuration is the only check of it.
+- The inotify limits (`host/sysctl/inotify.conf`: 512 instances and 524288 watches per user, so root's inotify instances
+  suffice for the kubelet's log follows and for hal's containers beside k3s) go to `/etc/sysctl.d/90-inotify.conf` by
+  `scripts/bootstrap_pc.sh --only files,services`, whose file entry notifies `systemd-sysctl.service`, which the services
+  step restarts so the values apply without a reboot. It needs sudo, so it is the operator's. Undo: declare
+  the file `state = "absent"` and apply `--only files,services`; the kernel keeps the raised values until the next reboot, or
+  until `sudo sysctl -w` sets them back.
 - The disk's bounds run in the operator's user manager, which lingers, and need no sudo: after `scripts/bootstrap_pc.sh
   --only tools` (the units' binaries must exist first), `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`
   writes `~/.config/user-tmpfiles.d/disk.conf` from `host/disk/` and the units `dev.mise.docuum.service`,
@@ -220,9 +235,10 @@
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
   each PC-only source swapped for one the job serves; a new PC-only source joins that list; `tunnel` given its own
-  `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token) and, on a pull
-  request, the pull request's ref. It first fails when the committed root or `tunnel` carries `spec.patches`, which
-  the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
+  `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token; `nvidia` given its
+  own, which only give the device plugin's DaemonSet a node selector no k3d node carries, as k3d holds no card) and, on
+  a pull request, the pull request's ref. It first fails when the committed root, `tunnel` or `nvidia` carries
+  `spec.patches`, which the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
   Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's and skat's files as dummies
   and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
   printed, each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password,
@@ -281,6 +297,11 @@
   The step "songmaker's stores" asserts that Postgres and Redis of namespace `songmaker` are Ready as the image's own
   non-root user, that a Pod there reaches both and one in a throwaway namespace neither, and that a key written to
   Redis is gone once its pod is deleted and Ready again.
+  The nvidia step asserts that the Kustomization `nvidia` is Ready at the candidate with its DaemonSet wanting
+  0 pods, that the RuntimeClass `nvidia` has the handler `nvidia`, that Namespace `nvidia` has no Pod Security label and
+  holds only that DaemonSet, and that a Pod with the class, uid 1000 and `nvidia.com/gpu: 1` passes server-side dry-run
+  in a throwaway Namespace enforcing `restricted` while one at uid 0 does not. k3d does not prove the card, the runtime
+  handler or the plugin's start.
   The step "P7b cells" then waits for config-cli's Job on the empty database and asserts that Keycloak's
   `KC_PROXY_TRUSTED_ADDRESSES` equals the `trustedIPs` of Traefik's `web`, discovery names Keycloak's `KC_HOSTNAME`
   as the realm's issuer, every group `realm.yaml` declares exists and `/services/agent-service/api` does not, and
@@ -355,7 +376,7 @@
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
   `keycloak` and `litellm` also on `platform-secrets`, `storage` and `k8up`, `backup` on `platform-secrets` and `storage`,
-  and `loki` and `prometheus` on `storage`.
+  and `loki` and `prometheus` on `storage`. No layer depends on `nvidia`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` and `songmaker` also
   on `storage`.
@@ -384,6 +405,19 @@
   `kustomize.toolkit.fluxcd.io/prune: disabled`, so neither a prune nor a revert deletes one with its Secrets.
   A Namespace removed from Git stays in the cluster; it leaves only after its Secrets left `platform-secrets`, by a
   deletion on the PC.
+- `infrastructure/nvidia/`: the node's one card as `nvidia.com/gpu: 1`: the Namespace `nvidia`, the RuntimeClass `nvidia`
+  with handler `nvidia` and NVIDIA's device plugin as a DaemonSet with that class, from NVIDIA's static manifest with
+  the Namespace and class added, its image the vendor `nvidia-device-plugin` at a digest. The Namespace has
+  no Pod Security label, as the plugin mounts the hostPath `/var/lib/kubelet/device-plugins`; nothing else runs in it,
+  and the plugin drops every capability. There is no time-slicing or sharing configuration, since the card belongs to
+  songmaker's music. `host/k3s/config.yaml` keeps `runtimes` disabled: k3s adds containerd's `nvidia` runtime only when
+  it starts with the NVIDIA container toolkit present, and if the plugin's Pod events name a missing runtime handler the
+  operator runs `sudo systemctl restart k3s` once, which does not touch Docker. `mise exec --
+  tests/nvidia/restricted_pod_lists_the_card.sh` runs on the PC through k3s's own kubeconfig, without sudo: it fails
+  unless the node offers `nvidia.com/gpu` 1 and a Pod in a throwaway Namespace enforcing `restricted`, at uid 1000 with the
+  class and the limit, lists exactly one card; it prints counts and names, and every throwaway object is gone on every
+  exit. A Pod naming the class without the limit might reach the card; the first workload that requests it decides on
+  an admission rule.
 - `infrastructure/storage/`: local-path-provisioner from upstream's manifest, vendored verbatim under a header naming
   its URL and sha256, and patched to one default class with `reclaimPolicy: Retain` and the path
   `/opt/local-path-provisioner/<namespace>/<claim>`, and to the provisioner and its busybox helper at digests; admission
@@ -469,17 +503,19 @@
 - `infrastructure/cloudflared/`: the platform's own tunnel `platform`. The ConfigMap holds its lines, one per host to
   Traefik's Service and a final `http_status:404`; the Deployment `cloudflared` reads the tunnel and its credential
   only from the token file of the Secret `tunnel-token`, which `platform-secrets` applies, so no tunnel id, credential
-  or Cloudflare API token is in this tree. Its image moves by hand, in a pull request. cloudflared
+  or Cloudflare API token is in this tree. Its image moves in a pull request started from the Dependency Dashboard that
+  `renovate` keeps. cloudflared
   reads its lines once, at start, so the Deployment's template carries `checksum/config`, the sha256 of the ConfigMap's
   `config.yaml`; a changed line changes the template and rolls the pod, and `cluster` fails with the right hash when
   the two differ.
 - `infrastructure/traefik/`: Traefik, the cluster's ingress for Kubernetes Ingress objects, in a Namespace that
   enforces Pod Security `restricted`. `values.yaml` is its hand-written source; `rendered.yaml` is generated by
   `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A chart or image bump
-  changes the task's chart digest, `image.digest` and `versionOverride` together and regenerates, by hand in a pull
-  request, and the `images:` entry of `infrastructure/litellm/kustomization.yaml`, the image of the Deployments
-  `litellm-front` and `agent-egress`, with them. Its NetworkPolicy admits only pods of namespaces `cloudflared` and `gatus`,
-  and only to the `web` port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied,
+  changes the task's chart version and digest, `image.digest` and `versionOverride` together and regenerates, in a pull
+  request started from the Dependency Dashboard that `renovate` keeps, and the `images:` entry of
+  `infrastructure/litellm/kustomization.yaml`, the image of the Deployments `litellm-front` and `agent-egress`, with
+  them. Its NetworkPolicy admits only pods of namespaces `cloudflared` and `gatus`, and only to the `web` port; every
+  other sender and port, Traefik's own `traefik` and `metrics` included, is denied,
   while the node's probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
   `host/k3s/config.yaml` sets no `cluster-cidr` (`cluster` checks it against the nodes' pod CIDRs), and carries hal's
   entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character refused with 400 by
@@ -489,8 +525,9 @@
 - `infrastructure/loki/`: Loki in monolithic mode, one pod with replication factor 1 and the filesystem store, in a
   Namespace that enforces Pod Security `restricted`; gateway, canary, caches and minio are off. `values.yaml` is its
   hand-written source; `rendered.yaml` is generated by `mise run charts:render`, not edited by hand, and `cluster` fails
-  when a regeneration differs. A chart or image bump changes the task's chart digest and `loki.image.tag` and
-  `loki.image.digest` together and regenerates, by hand in a pull request. `limits_config.retention_period` of 28 days
+  when a regeneration differs. A chart or image bump changes the task's chart version and digest and `loki.image.tag` and
+  `loki.image.digest` together and regenerates, in a pull request started from the Dependency Dashboard that `renovate`
+  keeps. `limits_config.retention_period` of 28 days
   with the compactor's retention on is the one rule for Loki's copy of every line, which the privacy texts promise gone
   before 30 days; the compactor runs at start, so a PC that was off deletes shortly after its next start. The claim
   is on the Retain class and carries the prune annotation. Its NetworkPolicy admits only the namespaces `alloy`, `grafana`
@@ -506,7 +543,8 @@
   re-reads what the kubelet holds and Loki deletes a chunk by its newest line, and drops the labels `job` and
   `instance`. The ConfigMap generated from it carries its content's hash in its name, so a change rolls the pod. Its
   ClusterRole grants only `get`, `list` and `watch` on `pods` and `get` on `pods/log`; its NetworkPolicy admits
-  nobody to its port; its egress is open. The image moves by hand, in a pull request. In k3d a Pod in namespace `hopin`
+  nobody to its port; its egress is open. The image moves in a pull request started from the Dependency Dashboard that
+  `renovate` keeps. In k3d a Pod in namespace `hopin`
   logs a nonce that a LogQL query returns within 60 seconds with exactly those labels (Loki adds `service_name` itself);
   the Namespace enforces `restricted` and no Alloy pod mounts a host path; the render and the cluster each hold one
   ClusterRole of Alloy's with exactly those rules and no other binding of its ServiceAccount; a Pod in a throwaway
@@ -515,8 +553,9 @@
   `restricted`, which stands in `infrastructure/namespaces/` since a Namespace never moves between Kustomizations;
   alertmanager, node-exporter and the pushgateway are off. `values.yaml` is its hand-written source; `rendered.yaml`
   is generated by `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A
-  chart or image bump changes the task's chart digest and each image's tag and digest in `values.yaml` together and
-  regenerates, by hand in a pull request. It scrapes the kubelet and cAdvisor at each node's port 10250, verified against the
+  chart or image bump changes the task's chart version and digest and each image's tag and digest in `values.yaml`
+  together and regenerates, in a pull request started from the Dependency Dashboard that `renovate` keeps. It scrapes the
+  kubelet and cAdvisor at each node's port 10250, verified against the
   ServiceAccount's CA, which signs the kubelet's serving certificate in k3s, with the chart's `get` on `nodes/metrics`
   and never `nodes/proxy`, whose `get` reaches the kubelet's exec; and kube-state-metrics, Flux's controllers on
   `http-prom` and itself; kube-state-metrics' `customResourceState` makes `gotk_resource_info` for every Kustomization. Retention
@@ -540,8 +579,8 @@
   Service, and LiteLLM's front for `GET /v1/models` without a key, which must answer 401 since Gatus holds no key. The
   NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus and the front admit the namespace `gatus` on the port
   its request uses; hopin and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
-  Service and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
-  headers from; it sends only the requests of its configuration. In k3d, through a port-forward, every endpoint of the
+  Service at a free port and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
+  headers from; it sends only the requests of its configuration. In k3d, through the address `mise run gatus:open` prints, every endpoint of the
   configuration is healthy, speech-runtime at scale 0 turns unhealthy and, restored and Ready, healthy again, and a Pod
   in another namespace gets no answer from Gatus.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
@@ -552,6 +591,7 @@
   `[dotfiles]` entry of `mise.toml`; the units are declared there, as mise writes systemd user units from the table.
 - `mise.toml`: the tools, the k3s version and its installer's sha256, the PC's bootstrap parts (the k3s config file,
   the pod-log parts with `pod-logs-clean.timer` as a running, enabled service, which each unit file notifies,
+  the inotify limits file with `systemd-sysctl` as a running service it notifies,
   and the ufw rule `k3s-cni`, with `k3s-pods` and `k3s-services` declared absent, which deletes them from a host whose mise
   state holds them) and the tasks. `mise.lock` is generated by `mise lock`, not edited by hand, and `cluster`
   fails when a regeneration differs.
@@ -559,6 +599,31 @@
   generated by `tofu providers lock -platform=linux_amd64`; the job `opentofu` runs `mise run github:test`. The state
   lives at `${XDG_STATE_HOME:-~/.local/state}/platform/opentofu/github.tfstate` and the working files (lock, provider,
   kept plan `last.tfplan`) under `${XDG_CACHE_HOME:-~/.cache}/platform/opentofu/github/`, both outside the checkout.
+- `src/legal/`: the Python project of the legal validator, standard library only, with `uv.lock` and its own tests; there
+  is no root `pyproject.toml`, which would make `tests/` a judged tree. `src/legal/src/legal/section.py` is hal's
+  `legal_section.py` without `parse_general`; `check.py` is the program. `checks` runs `legal:test`, uploads the report
+  as artifact `coverage`, which the `quality` job passes as `coverage-artifact`, and runs
+  `tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh`, which reads hopin's public repository at the tag of
+  the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails.
+- `.github/workflows/renovate.yml`: the job `renovate`, daily and on dispatch, runs Renovate's image at a digest by one
+  `docker run`, with the job's own token (`contents: read`, `pull-requests: read`, `issues: write`: it can write no
+  branch) and `.github/renovate.json5`. The configuration holds custom regex managers over the pin forms under
+  `infrastructure/`, `mise.toml`, `scripts/bootstrap_pc.sh` and the workflow's own image, and the `mise` manager for
+  `mise.lock`'s tools; with `dependencyDashboardApproval` no branch or pull request is attempted, and the Dependency
+  Dashboard issue is the list of pins with a newer release. A bump is a lane started from that list, with a release at
+  least 7 days old unless it fixes a vulnerability; Keycloak and LiteLLM upgrades migrate data, which `cluster` does not
+  prove on empty databases, so such a lane proves itself on a restored copy. A chart's line in `charts:render` is
+  `<chart>:<version>@sha256:…`. `scripts/check_renovate_report.sh <report>` runs after the job and fails when the report
+  holds no dependency or lacks a pair of file and digest under `infrastructure/` (`rendered.yaml` excepted), a chart
+  line of `mise.toml`, `K3S_VERSION` or the workflow's own image; `tests/renovate/` drives it in `checks`. Its gaps:
+  `MISE_VERSION` and `mise.lock`'s tools are watched without the check naming them, the digests in `ci.yml`'s `env`
+  stand under no manager, and `--no-hooks` in a chart's render drops a bump's new hook silently, so the lane that bumps
+  such a chart reads its hooks. A chart's image is watched only when its `values.yaml` states `repository` (with `registry`
+  where the chart takes one), `tag` and `digest` (or the chart's `sha`) in that order, as `infrastructure/prometheus/`
+  does, so a new chart states what its defaults would give. k8up's chart and CRD file, fetched from GitHub's release URL, are watched by their version in `mise.toml`'s `k8up_chart` and `k8up_crds` lines, whose sha256 a bump replaces by hand, and its image by `repository` beside a `tag` that holds `<v>@sha256:…`. Renovate logs `Unexpected downgrade detected: skipping` for
+  `opentofu = "1.13"` and `yq = "4"` in `mise.toml`: `mise.lock` holds the exact patch of a prefix pin, which Renovate
+  sees as newer than the prefix it would write, so a patch release inside the prefix is not listed; that is accepted,
+  since the exact patch moves only when a lane refreshes `mise.lock`. Opening pull requests is not built.
 - `.github/workflows/code-scanning.yml`: CodeQL through quality's `codeql.yml`.
 - `quality/config.toml`: the gate's mandatory jobs; a root entry outside quality's base list is declared here.
 - `sonar-project.properties`: the SonarCloud project.

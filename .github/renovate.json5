@@ -1,0 +1,99 @@
+// Renovate's repository configuration for the daily vendor-pin watch (.github/workflows/renovate.yml). The run's token
+// writes no code, so nothing here may start a branch: every update waits for an approval nobody gives, and the Dependency
+// Dashboard is the list.
+{
+  enabledManagers: ["custom.regex", "mise"],
+  dependencyDashboard: true,
+  dependencyDashboardApproval: true,
+  vulnerabilityAlerts: { enabled: false },
+  ignorePaths: ["tests/**", "apps/**", "infrastructure/*/rendered.yaml"],
+  dependencyDashboardFooter:
+    "```aco\nversion = 1\nnow = \"The daily watch lists each vendor pin with a newer release; this block is static and Renovate rewrites this issue at every run.\"\nnext = \"Start a lane from a line of this list; its checkboxes are not used.\"\ndone_when = \"Every line of the list is bumped, or a reason to stay is written on its item.\"\n```",
+  customManagers: [
+    {
+      // A tag and digest in one reference: a container image, or a chart as oci://<repository>:<version>@sha256:….
+      customType: "regex",
+      managerFilePatterns: ["/^infrastructure\\/.+\\.ya?ml$/", "/^mise\\.toml$/", "/^\\.github\\/workflows\\/renovate\\.yml$/"],
+      matchStrings: ["(?<depName>(?:[a-z0-9.-]+/)+[a-z0-9._-]+):(?<currentValue>[A-Za-z0-9._+-]+)@(?<currentDigest>sha256:[a-f0-9]{64})"],
+      datasourceTemplate: "docker",
+    },
+    {
+      // Kustomize's images: entry, which Renovate's own kustomize manager skips once it holds a digest.
+      customType: "regex",
+      managerFilePatterns: ["/^infrastructure\\/.+\\/kustomization\\.yaml$/"],
+      matchStrings: ["name: (?<depName>\\S+)\\n\\s*newTag: (?<currentValue>\\S+)\\n\\s*digest: (?<currentDigest>sha256:[a-f0-9]{64})"],
+      datasourceTemplate: "docker",
+    },
+    {
+      // A chart's image by repository, with its registry where the chart takes one, tag and digest (a chart's `sha` too).
+      customType: "regex",
+      managerFilePatterns: ["/^infrastructure\\/.+\\/values\\.yaml$/"],
+      matchStrings: ["(?:registry: (?<registry>\\S+)\\n\\s*)?repository: (?<repository>\\S+)\\n\\s*tag: (?<currentValue>\\S+)\\n(?:\\s*#.*\\n)*\\s*(?:digest|sha): (?<currentDigest>sha256:[a-f0-9]{64})"],
+      depNameTemplate: "{{#if registry}}{{{registry}}}/{{/if}}{{{repository}}}",
+      datasourceTemplate: "docker",
+    },
+    {
+      // A chart's image by repository, with its registry where the chart takes one, and tag and digest in the one tag value.
+      customType: "regex",
+      managerFilePatterns: ["/^infrastructure\\/.+\\/values\\.yaml$/"],
+      matchStrings: ["(?:registry: (?<registry>\\S+)\\n\\s*)?repository: (?<repository>\\S+)\\n(?:\\s*#.*\\n)*\\s*tag: (?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"],
+      depNameTemplate: "{{#if registry}}{{{registry}}}/{{/if}}{{{repository}}}",
+      datasourceTemplate: "docker",
+    },
+    {
+      // k8up's chart, fetched from its GitHub release (the chart has no OCI or Helm repository entry the task can pin).
+      // The tag names of the repository's other releases do not match the version pattern and are dropped.
+      customType: "regex",
+      managerFilePatterns: ["/^mise\\.toml$/"],
+      matchStrings: ["k8up_chart=\"\\$k8up_release/k8up-(?<currentValue>\\d+\\.\\d+\\.\\d+)/"],
+      depNameTemplate: "k8up-io/k8up",
+      datasourceTemplate: "github-releases",
+      extractVersionTemplate: "^k8up-(?<version>.+)$",
+    },
+    {
+      // k8up's CRD file, released with the operator: the image tag's version.
+      customType: "regex",
+      managerFilePatterns: ["/^mise\\.toml$/"],
+      matchStrings: ["k8up_crds=\"\\$k8up_release/(?<currentValue>v\\d+\\.\\d+\\.\\d+)/"],
+      depNameTemplate: "k8up-io/k8up",
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+    },
+    {
+      // Traefik's image by digest, its tag in versionOverride.
+      customType: "regex",
+      managerFilePatterns: ["/^infrastructure\\/traefik\\/values\\.yaml$/"],
+      matchStrings: ["registry: (?<registry>\\S+)\\n\\s*repository: (?<repository>\\S+)\\n(?:\\s*#.*\\n)*\\s*digest: (?<currentDigest>sha256:[a-f0-9]{64})\\nversionOverride: (?<currentValue>\\S+)"],
+      depNameTemplate: "{{{registry}}}/{{{repository}}}",
+      datasourceTemplate: "docker",
+    },
+    {
+      customType: "regex",
+      managerFilePatterns: ["/^mise\\.toml$/"],
+      matchStrings: ["K3S_VERSION = \"(?<currentValue>[^\"]+)\""],
+      depNameTemplate: "k3s-io/k3s",
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)\\+k3s(?<build>\\d+)$",
+    },
+    {
+      customType: "regex",
+      managerFilePatterns: ["/^scripts\\/bootstrap_pc\\.sh$/"],
+      matchStrings: ["MISE_VERSION=\"(?<currentValue>[^\"]+)\""],
+      depNameTemplate: "jdx/mise",
+      datasourceTemplate: "github-releases",
+    },
+  ],
+  packageRules: [
+    {
+      // A Postgres major needs a data migration.
+      matchDepNames: ["docker.io/library/postgres"],
+      matchUpdateTypes: ["major"],
+      enabled: false,
+    },
+    {
+      // <config-cli version>-<Keycloak version>: the Keycloak patch is not ordered.
+      matchDepNames: ["docker.io/adorsys/keycloak-config-cli"],
+      versioning: "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<build>\\d+)\\.(?<revision>\\d+)\\.\\d+$",
+    },
+  ],
+}

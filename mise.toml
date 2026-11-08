@@ -15,6 +15,7 @@ opentofu = "1.13"
 yq = "4"
 docuum = "0"
 "aqua:umlx5h/gtrash" = "0"
+"aqua:astral-sh/uv" = "0"
 
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.
@@ -71,6 +72,23 @@ notify = ["pod-logs-clean.timer"]
 [bootstrap.services."pod-logs-clean.timer"]
 state = "running"
 enabled = true
+
+# The inotify limits k3s and hal share. systemd-sysctl reads every sysctl.d file in name order, a later one winning, so
+# 90- lands after localsearch's 30- value for the watches. systemd-sysctl.service is a static
+# oneshot unit that reads /etc/sysctl.d at start, so a restart after a change applies the values without a reboot;
+# `enabled = false` because mise cannot enable a static unit and reports it unknown, and the unit runs at every boot
+# anyway. Undoing the file leaves the kernel's current values until the next reboot.
+[bootstrap.files."/etc/sysctl.d/90-inotify.conf"]
+source = "host/sysctl/inotify.conf"
+owner = "root"
+group = "root"
+mode = "0644"
+notify = ["systemd-sysctl"]
+
+[bootstrap.services.systemd-sysctl]
+state = "running"
+enabled = false
+on_change = "restart"
 
 # The disk's bounds run in the operator's own user manager, with no sudo: Docuum keeps Docker's images within 100 GB, a
 # weekly clean empties uv's cache, a daily tmpfiles clean deletes Codex sessions after 30 days and a daily gtrash
@@ -203,11 +221,11 @@ fetch() {
   echo "$2  $3" | sha256sum --check --status || fail "$1 does not match its pinned sha256"
 }
 
-traefik_chart=oci://ghcr.io/traefik/helm/traefik@sha256:a702a4316735397ecd1c3ed5287cccf87cdbc69abb0451c0b2d371408473bc33
+traefik_chart=oci://ghcr.io/traefik/helm/traefik:42.3.1@sha256:a702a4316735397ecd1c3ed5287cccf87cdbc69abb0451c0b2d371408473bc33
 render traefik "$traefik_chart" traefik "$traefik_chart"
-prometheus_chart=oci://ghcr.io/prometheus-community/charts/prometheus@sha256:ace364ad75a797a8eedbb4d515446ce0a01df4f794060c8114c95d962b085310
+prometheus_chart=oci://ghcr.io/prometheus-community/charts/prometheus:29.45.1@sha256:ace364ad75a797a8eedbb4d515446ce0a01df4f794060c8114c95d962b085310
 render prometheus "$prometheus_chart" prometheus "$prometheus_chart"
-loki_chart=oci://ghcr.io/grafana/helm-charts/loki@sha256:6006cfff9edd0d5c70449cb89510c1c3c2142c11caacf66d6aac83fc0517f07d
+loki_chart=oci://ghcr.io/grafana/helm-charts/loki:7.5.0@sha256:6006cfff9edd0d5c70449cb89510c1c3c2142c11caacf66d6aac83fc0517f07d
 render loki "$loki_chart" loki "$loki_chart"
 
 k8up_release=https://github.com/k8up-io/k8up/releases/download
@@ -399,6 +417,29 @@ tofu fmt -check -recursive
 tofu init -backend=false -lockfile=readonly -input=false
 tofu validate
 tofu test
+'''
+
+[tasks."legal:test"]
+description = "Run the legal project's tests with branch coverage at 100 % and write src/legal/coverage.xml"
+env = { UV_PROJECT_ENVIRONMENT = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/venv", PYTHONDONTWRITEBYTECODE = "1", COVERAGE_RCFILE = "src/legal/pyproject.toml", COVERAGE_FILE = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/coverage" }
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+uv run --project src/legal --locked coverage run -m pytest -c src/legal/pyproject.toml -p no:cacheprovider -q
+uv run --project src/legal --locked coverage report
+uv run --project src/legal --locked coverage xml -o src/legal/coverage.xml
+'''
+
+[tasks."legal:check"]
+description = "Check an app's legal files with the section validator: legal:check <key> <dir>, whose legal/ holds datenschutz.html and optionally nutzungsbedingungen.html"
+env = { UV_PROJECT_ENVIRONMENT = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/venv", PYTHONDONTWRITEBYTECODE = "1", PYTHONPATH = "src/legal/src" }
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" = 2 ] || { echo "legal:check: usage: mise run legal:check <key> <dir>" >&2; exit 2; }
+# The zone is the host of the Ingress that serves hallucinai.de's legal pages.
+zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' infrastructure/legal/legal.yaml)"
+exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.check "$1" "$2" "$zone"
 '''
 
 [tasks.bootstrap]
@@ -820,8 +861,18 @@ run = '''
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 port="$(kubectl --namespace gatus get service gatus -o jsonpath='{.spec.ports[0].port}')"
-echo "gatus:open: open http://127.0.0.1:$port/; Ctrl-C ends the forward"
-exec kubectl --namespace gatus port-forward --address 127.0.0.1 service/gatus "$port:$port"
+# kubectl runs in the foreground, so Ctrl-C reaches it and ends it; the reader on its stdout prints the address once
+# kubectl says it listens, and a forward that fails prints none.
+announce() {
+  local line local_port
+  while IFS= read -r line; do
+    local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) ->.*/\1/p' <<<"$line")"
+    if [ -n "$local_port" ]; then
+      echo "gatus:open: open http://127.0.0.1:$local_port/; Ctrl-C ends the forward"
+    fi
+  done
+}
+kubectl --namespace gatus port-forward --address 127.0.0.1 service/gatus ":$port" > >(announce)
 '''
 
 # kcadm runs in Keycloak's own container and signs in as config-cli with the secret that container holds, so no

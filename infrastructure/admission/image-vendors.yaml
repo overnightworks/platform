@@ -47,3 +47,5 @@ data:
   gatus: ghcr.io/twin/gatus
   # apps/songmaker/redis.yaml; https://hub.docker.com/_/redis
   redis: docker.io/library/redis
+  # infrastructure/nvidia/nvidia.yaml; https://catalog.ngc.nvidia.com/orgs/nvidia/containers/k8s-device-plugin
+  nvidia-device-plugin: nvcr.io/nvidia/k8s-device-plugin
