@@ -3,6 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "b6bbf9ee856c09ba2f0727aae85829fbaa176ff6"
 branch = "claude/issue-159-p7c-litellm"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/litellm", "tests/litellm"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/litellm", "tests/litellm", "tests/postgres/postgres_storage_prune_load_and_egress.sh", "tests/postgres/writers", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
 opened_commit = "b19b907c489a37c30e0cc244d340f95950a78b29"
 whole_reason = "#116's P7c: the gateway without its front or egress has no honest boundary, and its cells and documents go with them."
