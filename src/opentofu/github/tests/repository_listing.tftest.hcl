@@ -17,6 +17,7 @@ run "a_listing_that_agrees_with_the_declarations_passes" {
         [
           {"name": "aco", "archived": false, "private": false, "fork": false},
           {"name": "agent-runtime", "archived": false, "private": false, "fork": false},
+          {"name": "agents", "archived": false, "private": false, "fork": false},
           {"name": "appkit", "archived": false, "private": false, "fork": false},
           {"name": "hal", "archived": false, "private": false, "fork": false},
           {"name": "hopin", "archived": false, "private": false, "fork": false},
@@ -25,6 +26,7 @@ run "a_listing_that_agrees_with_the_declarations_passes" {
           {"name": "platform-secrets", "archived": false, "private": true, "fork": false},
           {"name": "presentator", "archived": false, "private": false, "fork": false},
           {"name": "quality", "archived": false, "private": false, "fork": false},
+          {"name": "skat", "archived": false, "private": false, "fork": false},
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech-runtime", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
@@ -52,6 +54,7 @@ run "an_undeclared_listed_repository_fails" {
         [
           {"name": "aco", "archived": false, "private": false, "fork": false},
           {"name": "agent-runtime", "archived": false, "private": false, "fork": false},
+          {"name": "agents", "archived": false, "private": false, "fork": false},
           {"name": "appkit", "archived": false, "private": false, "fork": false},
           {"name": "hal", "archived": false, "private": false, "fork": false},
           {"name": "hopin", "archived": false, "private": false, "fork": false},
@@ -60,6 +63,7 @@ run "an_undeclared_listed_repository_fails" {
           {"name": "platform-secrets", "archived": false, "private": true, "fork": false},
           {"name": "presentator", "archived": false, "private": false, "fork": false},
           {"name": "quality", "archived": false, "private": false, "fork": false},
+          {"name": "skat", "archived": false, "private": false, "fork": false},
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech-runtime", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
@@ -88,6 +92,7 @@ run "a_managed_repository_missing_from_the_listing_fails" {
       body    = <<-JSON
         [
           {"name": "agent-runtime", "archived": false, "private": false, "fork": false},
+          {"name": "agents", "archived": false, "private": false, "fork": false},
           {"name": "appkit", "archived": false, "private": false, "fork": false},
           {"name": "hal", "archived": false, "private": false, "fork": false},
           {"name": "hopin", "archived": false, "private": false, "fork": false},
@@ -96,6 +101,7 @@ run "a_managed_repository_missing_from_the_listing_fails" {
           {"name": "platform-secrets", "archived": false, "private": true, "fork": false},
           {"name": "presentator", "archived": false, "private": false, "fork": false},
           {"name": "quality", "archived": false, "private": false, "fork": false},
+          {"name": "skat", "archived": false, "private": false, "fork": false},
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech-runtime", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
@@ -124,6 +130,7 @@ run "a_managed_repository_listed_as_archived_fails" {
         [
           {"name": "aco", "archived": true, "private": false, "fork": false},
           {"name": "agent-runtime", "archived": false, "private": false, "fork": false},
+          {"name": "agents", "archived": false, "private": false, "fork": false},
           {"name": "appkit", "archived": false, "private": false, "fork": false},
           {"name": "hal", "archived": false, "private": false, "fork": false},
           {"name": "hopin", "archived": false, "private": false, "fork": false},
@@ -132,6 +139,7 @@ run "a_managed_repository_listed_as_archived_fails" {
           {"name": "platform-secrets", "archived": false, "private": true, "fork": false},
           {"name": "presentator", "archived": false, "private": false, "fork": false},
           {"name": "quality", "archived": false, "private": false, "fork": false},
+          {"name": "skat", "archived": false, "private": false, "fork": false},
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech-runtime", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
@@ -160,6 +168,7 @@ run "a_managed_repository_listed_as_a_fork_fails" {
         [
           {"name": "aco", "archived": false, "private": false, "fork": true},
           {"name": "agent-runtime", "archived": false, "private": false, "fork": false},
+          {"name": "agents", "archived": false, "private": false, "fork": false},
           {"name": "appkit", "archived": false, "private": false, "fork": false},
           {"name": "hal", "archived": false, "private": false, "fork": false},
           {"name": "hopin", "archived": false, "private": false, "fork": false},
@@ -168,6 +177,7 @@ run "a_managed_repository_listed_as_a_fork_fails" {
           {"name": "platform-secrets", "archived": false, "private": true, "fork": false},
           {"name": "presentator", "archived": false, "private": false, "fork": false},
           {"name": "quality", "archived": false, "private": false, "fork": false},
+          {"name": "skat", "archived": false, "private": false, "fork": false},
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech-runtime", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
@@ -196,6 +206,7 @@ run "a_listing_with_a_next_page_cannot_be_judged" {
         [
           {"name": "aco", "archived": false, "private": false, "fork": false},
           {"name": "agent-runtime", "archived": false, "private": false, "fork": false},
+          {"name": "agents", "archived": false, "private": false, "fork": false},
           {"name": "appkit", "archived": false, "private": false, "fork": false},
           {"name": "hal", "archived": false, "private": false, "fork": false},
           {"name": "hopin", "archived": false, "private": false, "fork": false},
@@ -204,6 +215,7 @@ run "a_listing_with_a_next_page_cannot_be_judged" {
           {"name": "platform-secrets", "archived": false, "private": true, "fork": false},
           {"name": "presentator", "archived": false, "private": false, "fork": false},
           {"name": "quality", "archived": false, "private": false, "fork": false},
+          {"name": "skat", "archived": false, "private": false, "fork": false},
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech-runtime", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
