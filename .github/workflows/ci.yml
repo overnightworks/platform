@@ -314,7 +314,9 @@ jobs:
           # The agent client whose tokens the cells mint, and the allowlist of its service account's groups.
           AGENT_CLIENT: agent-mozart
           AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /agent-owners
-        run: tests/keycloak/agent_client_tokens_and_groups.sh
+        run: |
+          tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
+          tests/keycloak/agent_client_tokens_and_groups.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'

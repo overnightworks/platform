@@ -55,13 +55,15 @@
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
   per host and hal's console answers on another port of `localhost`.
-- `mise run keycloak:agent-owner [--adder] <client> <username>` is the operator's: through kcadm in Keycloak's
+- `mise run keycloak:agent-owner [--adder] <client> <username>` runs through kcadm in Keycloak's
   container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
   `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
   attributes, and adds the person to `/agent-owners`, with `--adder` also to `/agent-adders`. It refuses another
-  client, a username that is not exactly one non-service-account user and an `agent_owner` naming someone else, changing
-  nothing then, reads everything back, prints names and member counts and prints `nothing changed` on a second run.
-- `mise run keycloak:move-group [--delete-old] <file>` is the operator's, for the rename of the AI group: it creates
+  client, a username that is not exactly one user who is no client's service account and an `agent_owner` naming
+  someone else; before its first write a refusal ends in `nothing changed`, after one it names what was written or may
+  have been and says that running it again completes it. It reads everything back, prints names and member counts and
+  prints `nothing changed` on a second run.
+- `mise run keycloak:move-group [--delete-old] <file>` is for the rename of the AI group: it creates
   the new file at 0600 (and refuses one that exists), dumps `keycloak` into it with the messages of `pg_dump` and
   `pg_restore --list` in `<file>.dump.log` at 0600, whose path and line count it prints, deletes only its own file
   after a failed dump, adds every member of `/services/agent-service/api` to `/services/litellm` through kcadm in
@@ -71,8 +73,9 @@
   `db:load-dump keycloak <dump>` converged, through k3s's own kubeconfig, without sudo or a fetched secret: it fails
   unless config-cli's Job completed within its `backoffLimit`, no client or user carries Keycloak's
   `is_temporary_admin`, the realm's key ids equal those of the public issuer, and the rows of `user_entity`,
-  `credential` and `user_group_membership` equal the dump's by count and the sha256 of their sorted lines. It prints
-  names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`. Each database
+  `credential`, `user_group_membership` and `user_attribute` equal the dump's by count and the sha256 of their sorted
+  lines, except the rows of the service accounts that clients declared in `realm.yaml` gained since the dump, whose
+  count its "added" line prints. It prints names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`. Each database
   step runs under a statement and lock timeout and a 2-minute local deadline; pg_dump and pg_restore also run under
   the container's own 100-second timeout, so no database session outlives the check. Either deadline's end fails it
   naming the step and which deadline.
@@ -246,14 +249,19 @@
   through `admin-cli` and master's own flow a master administrator with TOTP gets 200 and a token with the current
   code, which the job computes from the secret it imported, and 400 and no token without it, and one without TOTP gets
   401 and no token.
-  The step "P2 cells" then drives `tests/keycloak/agent_client_tokens_and_groups.sh` for `agent-mozart`: no person is in
-  `/agent-adders` or `/agent-owners`; `keycloak:agent-owner` refuses an unknown username, another owner and the other
-  clients, and sets the owner and groups once, a second run changing nothing; a token with `scope=mcp-hopin` carries the
-  file's groups exactly, one audience, no refresh token, 300 seconds, `at+jwt`, and its claims, and one without the scope
-  no hopin audience; its own token is refused at the account and admin API, and a person gets 400 for `agent_owner` while
-  `firstName` alone gets 204 and the metadata hides it; a person's token carries both groups; and a disabled client or
-  service account gets 401, a state a config-cli re-run keeps together with the service account's groups and
-  `agent_owner` and both groups' members.
+  The step "P2 cells" then drives `tests/keycloak/agent_client_tokens_and_groups.sh` for `agent-mozart`: `/agent-adders`
+  is empty and `/agent-owners` holds the service account alone; `keycloak:agent-owner` refuses an unknown username, a
+  service account, another owner, a client the file does not declare though Keycloak holds it and the other clients,
+  takes a person whose username starts like a service account's, and sets the owner and groups once, a second run
+  changing nothing, the groups' complete member lists then equal to what is expected; the client's standard, implicit
+  and direct-access flows are off and a password grant through it is refused; a token with `scope=mcp-hopin` carries
+  the file's groups exactly, its exact scope, one audience, no refresh token, 300 seconds, `at+jwt`, and its claims, and
+  one without the scope no hopin audience; its own token is refused at the account and admin API, and a person gets 400
+  for `agent_owner` while `firstName` alone gets 204 and the metadata hides it; a person's token carries both groups;
+  and a disabled client or service account gets 401, a state a config-cli re-run keeps together with every service
+  account's groups, one extra group the console gave the agent's, `agent_owner` and both groups' members.
+  `tests/keycloak/agent_owner_names_what_a_failed_write_left.sh` runs `keycloak:agent-owner` against a fake kubectl: a
+  membership write that fails after the owner's prints what was written and no `nothing changed`.
 - `clusters/pc/flux-system/`: Flux's own components and its sync to this repository. `gotk-components.yaml` is
   generated by `mise run flux:export` for the components `FLUX_COMPONENTS` in `mise.toml` lists, which hold no Helm reconciler
   (every chart is rendered into Git); it is not edited by hand, and `cluster` fails when a regeneration differs.

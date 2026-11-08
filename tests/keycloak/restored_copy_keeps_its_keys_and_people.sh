@@ -101,7 +101,7 @@ added_service_accounts="${added_service_accounts%% }"
 # Each table's rows from the dump and from the database through the ConfigMap postgres's table-digests.sh, the
 # loader's own digest, inside the container; stderr stays there too. The database's rows of an added service account
 # are dropped before the digest, by the column that names the user, so every other row still has to match.
-for table_and_column in user_entity:id credential: user_group_membership:user_id; do
+for table_and_column in user_entity:id credential: user_group_membership:user_id user_attribute:user_id; do
   table="${table_and_column%%:*}" column="${table_and_column#*:}"
   dumped="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail
     bounded "$2" pg_restore --data-only --table="$1" --file=- 2>/dev/null | sh /etc/postgres-checks/table-digests.sh' \

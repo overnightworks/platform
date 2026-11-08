@@ -12,10 +12,12 @@ client="$AGENT_CLIENT"
 # shellcheck source=admin_api.sh
 source "$(dirname "${BASH_SOURCE[0]}")/admin_api.sh"
 
-stand_in=p2-stand-in
+# A person whose username starts like a service account's: the command must take it as the person it is.
+stand_in=service-account-p2-stand-in
 other_owner=p2-other-owner
 person_control=p2-person-control
 password_client=p2-password-grant
+extra_group=p2-extra-group
 scratch="$(mktemp -d "$RUNNER_TEMP/p2-cells.XXXXXX")"
 password_file="$scratch/password"
 client_secret_file="$scratch/client-secret"
@@ -31,7 +33,9 @@ remove_throwaways() {
     admin GET "$realm/users/$account_id" | jq 'del(.attributes.agent_owner)' >"$scratch/body" &&
       admin PUT "$realm/users/$account_id" "@$scratch/body" >/dev/null
   } || echo "::warning::agent_owner of the service account was not cleared"
-  rm -rf -- "$scratch"
+  [ -z "${extra_group_id:-}" ] || admin DELETE "$realm/groups/$extra_group_id" ||
+    echo "::warning::the throwaway group $extra_group was not deleted"
+  rm -rf -- "$scratch" "$admin_secret_file"
   kill "$forward_pid" 2>/dev/null || true
 }
 trap remove_throwaways EXIT
@@ -53,20 +57,24 @@ secret_key="$(kubectl -n "$namespace" get job/config-cli -o json | NAME="$secret
   '.spec.template.spec.containers[0].env[] | select(.name == strenv(NAME)) | .valueFrom.secretKeyRef.key')"
 kubectl -n "$namespace" get secret keycloak -o go-template="{{index .data \"$secret_key\" | base64decode}}" >"$client_secret_file"
 openssl rand -hex 24 | tr -d '\n' >"$password_file"
-echo "::add-mask::$(<"$client_secret_file")"
-echo "::add-mask::$(<"$password_file")"
+mask_secret "$(<"$client_secret_file")"
+mask_secret "$(<"$password_file")"
 
 client_uuid="$(admin GET "$realm/clients?clientId=$client" | jq --raw-output '.[0].id')"
 account_id="$(admin GET "$realm/clients/$client_uuid/service-account-user" | jq --raw-output .id)"
 person_id() { admin GET "$realm/users?exact=true&username=$1" | jq --raw-output '.[0].id'; }
 agent_owner() { admin GET "$realm/users/$account_id" | jq --raw-output '.attributes.agent_owner // [] | join(",")'; }
-# people_in <group path>: the usernames of the group's members who are no service accounts, sorted.
-people_in() {
+# members_of <group path>: the usernames of all members, sorted, space-separated.
+members_of() {
   admin GET "$realm/groups/$(admin GET "$realm/group-by-path$1" | jq --raw-output .id)/members?max=1000" |
-    jq --raw-output '.[] | select(.username | startswith("service-account-") | not) | .username' | LC_ALL=C sort
+    jq --raw-output '[.[].username] | sort | join(" ")'
 }
-[ -z "$(people_in /agent-adders)$(people_in /agent-owners)" ] || fail "a person is in /agent-adders or /agent-owners before the command"
-echo "before the command no person is in /agent-adders or /agent-owners"
+# sorted_words <word>...: the words in the order members_of prints.
+sorted_words() { printf '%s\n' "$@" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'; }
+agent_account="service-account-$client"
+[ -z "$(members_of /agent-adders)" ] || fail "/agent-adders has members before the command"
+[ "$(members_of /agent-owners)" = "$agent_account" ] || fail "/agent-owners holds more than $agent_account before the command"
+echo "before the command /agent-adders is empty and /agent-owners holds $agent_account alone"
 
 # create_person <username> <attributes as JSON>: a person with the probe password, no required action and every profile
 # field set; the body with the password goes through a file.
@@ -106,26 +114,27 @@ refused "a service account as owner" ""
 other_client="$(yq '[.clients[] | select(.serviceAccountsEnabled == true and ((.defaultClientScopes // []) | contains(["agent-identity"]) | not))][0].clientId' "$REALM_FILE")"
 owner_command "$other_client" "$stand_in"
 refused "the service-account client $other_client without agent-identity" ""
-owner_command no-such-client "$stand_in"
-refused "a client realm.yaml does not declare" ""
+owner_command "$password_client" "$stand_in"
+refused "the client $password_client, which exists in Keycloak but realm.yaml does not declare" ""
 
 owner_command "$client" "$stand_in"
 [ "$command_status" = 0 ] || fail "keycloak:agent-owner failed for $stand_in"
 [ "$(agent_owner)" = "$stand_in_id" ] || fail "agent_owner does not name $stand_in"
-[ "$(people_in /agent-owners)" = "$stand_in" ] || fail "/agent-owners does not hold exactly $stand_in"
-[ -z "$(people_in /agent-adders)" ] || fail "/agent-adders gained a person without --adder"
-echo "the command set agent_owner and /agent-owners; /agent-adders stayed empty"
+[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$stand_in")" ] ||
+  fail "/agent-owners holds '$(members_of /agent-owners)', not exactly $agent_account and $stand_in"
+[ -z "$(members_of /agent-adders)" ] || fail "/agent-adders gained a member without --adder"
+echo "the command set agent_owner and /agent-owners to $agent_account and $stand_in; /agent-adders stayed empty"
 
 owner_command "$client" "$stand_in"
 [ "$command_status" = 0 ] && grep -q 'nothing changed' <<<"$command_output" || fail "a second run did not report nothing changed"
 owner_command "$client" "$other_owner"
 refused "another owner" "$stand_in_id"
-[ "$(people_in /agent-owners)" = "$stand_in" ] || fail "the refused owner changed /agent-owners"
+[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$stand_in")" ] || fail "the refused owner changed /agent-owners"
 
 owner_command --adder "$client" "$stand_in"
 [ "$command_status" = 0 ] || fail "keycloak:agent-owner --adder failed for $stand_in"
-[ "$(people_in /agent-adders)" = "$stand_in" ] || fail "/agent-adders does not hold exactly $stand_in"
-[ "$(people_in /agent-owners)" = "$stand_in" ] || fail "--adder changed /agent-owners"
+[ "$(members_of /agent-adders)" = "$stand_in" ] || fail "/agent-adders does not hold exactly $stand_in"
+[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$stand_in")" ] || fail "--adder changed /agent-owners"
 echo "--adder added exactly $stand_in to /agent-adders; a second owner stays refused, a second run changes nothing"
 
 token_endpoint="$local_url/realms/$realm/protocol/openid-connect/token"
@@ -145,6 +154,11 @@ person_token() {
 }
 access_token() { jq --raw-output .access_token <<<"$token_body"; }
 
+# The scope claim lists the requested optional scope and each default scope whose definition puts it into the claim.
+expected_scope="$(admin GET "$realm/client-scopes" | jq --raw-output --argjson wanted "$(jq '.defaultClientScopes + ["mcp-hopin"]' <<<"$client_entry")" \
+  '[.[] | select(.name as $name | $wanted | index($name)) | select(.attributes["include.in.token.scope"] == "true") | .name]
+    | sort | join(" ")')"
+
 # R1, R3: the token's rights are exactly the file's list, its audience exactly hopin's /mcp, its life the realm's.
 agent_token --data scope=mcp-hopin
 [ "$token_status" = 200 ] || fail "the client-credentials grant with scope=mcp-hopin answered $token_status"
@@ -159,6 +173,8 @@ claim() { jq --raw-output "$1" <<<"$claims"; }
 [ "$(claim 'if (.aud | type) == "string" then .aud else "not one string" end')" = "$hopin_audience" ] ||
   fail "the token's aud is '$(claim '.aud | tojson')', not exactly $hopin_audience"
 [ "$(claim '.exp - .iat')" = "$lifespan" ] || fail "the token lives $(claim '.exp - .iat') s, not the realm's $lifespan s"
+[ "$(claim '.scope | split(" ") | sort | join(" ")')" = "$expected_scope" ] ||
+  fail "the token's scope is '$(claim .scope)', not the scopes of the client's defaults and mcp-hopin that go into a token: $expected_scope"
 [ "$(claim .azp)" = "$client" ] || fail "the token's azp is not $client"
 [ "$(claim .agent_name)" = "$agent_name" ] || fail "the token's agent_name is not $agent_name"
 [ "$(claim .agent_owner)" = "$stand_in_id" ] || fail "the token's agent_owner is not the stand-in's id"
@@ -171,6 +187,14 @@ role_mappings="$(admin GET "$realm/users/$account_id/role-mappings")"
 live_attributes="$(admin GET "$realm/clients/$client_uuid" | jq --sort-keys '.attributes | {"use.refresh.tokens", "client_credentials.use_refresh_token"}')"
 [ "$(jq --raw-output '[.[]] | unique | join(" ")' <<<"$live_attributes")" = false ] ||
   fail "the live client's refresh-token attributes are not both false"
+live_client="$(admin GET "$realm/clients/$client_uuid")"
+[ "$(jq '[.standardFlowEnabled, .implicitFlowEnabled, .directAccessGrantsEnabled] | unique == [false]' <<<"$live_client")" = true ] ||
+  fail "the live client has its standard, implicit or direct-access flow on"
+password_grant_status="$(curl --silent --output "$scratch/answer" --write-out '%{http_code}' --data grant_type=password \
+  --data-urlencode "client_id=$client" --data-urlencode "client_secret@$client_secret_file" \
+  --data-urlencode "username=$stand_in" --data-urlencode "password@$password_file" "$token_endpoint")"
+[ "$password_grant_status" = 400 ] && [ "$(jq --raw-output .error "$scratch/answer")" = unauthorized_client ] ||
+  fail "a password grant through $client answered $password_grant_status, not 400 unauthorized_client"
 echo "R1, R3: groups '${file_groups//$'\n'/ }', aud exactly $hopin_audience, no refresh token, $lifespan s, at+jwt, azp, agent_name, agent_owner, preferred_username, no role beyond the default"
 
 agent_token
@@ -182,11 +206,12 @@ echo "R3: without scope=mcp-hopin the token has no hopin audience"
 
 # R2: the agent's own token is refused at both APIs; a person meets the profile's read-only rule.
 # The account path serves its web console unless a request asks for JSON.
-http_status() { curl --silent --output "$scratch/answer" --write-out '%{http_code}' --header 'Accept: application/json' "$@"; }
+# http_status <token> <curl argument>...: the status of a JSON request that carries the token; the body goes to a file.
+http_status() { bearer_curl "$1" --silent --output "$scratch/answer" --write-out '%{http_code}' --header 'Accept: application/json' "${@:2}"; }
 attack='{"attributes": {"agent_owner": ["attacker"]}}'
-account_status="$(http_status --request POST --header "Authorization: Bearer $agent_access_token" \
+account_status="$(http_status "$agent_access_token" --request POST \
   --header 'Content-Type: application/json' --data "$attack" "$local_url/realms/$realm/account/")"
-admin_status="$(http_status --request PUT --header "Authorization: Bearer $agent_access_token" \
+admin_status="$(http_status "$agent_access_token" --request PUT \
   --header 'Content-Type: application/json' --data "$attack" "$local_url/admin/realms/$realm/users/$account_id")"
 case "$account_status:$admin_status" in 401:401 | 401:403 | 403:401 | 403:403) ;;
   *) fail "the agent's own token got $account_status at the account API and $admin_status at the admin user PUT" ;;
@@ -199,7 +224,7 @@ control_id="$(person_id "$person_control")"
 account_body() { jq --null-input --arg username "$person_control" --arg first "$1" --argjson attributes "$2" \
   '{username: $username, email: ($username + "@example.invalid"), firstName: $first, lastName: "Person", attributes: $attributes}'; }
 person_post() {
-  http_status --request POST --header "Authorization: Bearer $control_token" --header 'Content-Type: application/json' \
+  http_status "$control_token" --request POST --header 'Content-Type: application/json' \
     --data "$(account_body "$1" "$2")" "$local_url/realms/$realm/account/"
 }
 control_value() { admin GET "$realm/users/$control_id" | jq --raw-output '.attributes.agent_owner // [] | join(",")'; }
@@ -209,8 +234,9 @@ attacked="$(person_post Probe '{"agent_owner": ["attacker"]}')"
 [ "$(control_value)" = admin-set ] || fail "a refused write changed a person's agent_owner"
 renamed="$(person_post Renamed '{}')"
 [ "$renamed" = 204 ] || fail "changing only firstName answered $renamed, not 204"
+[ "$(admin GET "$realm/users/$control_id" | jq --raw-output .firstName)" = Renamed ] || fail "changing only firstName did not change it"
 [ "$(control_value)" = admin-set ] || fail "changing only firstName changed a person's agent_owner"
-metadata="$(curl --silent --show-error --fail --header 'Accept: application/json' --header "Authorization: Bearer $control_token" \
+metadata="$(bearer_curl "$control_token" --silent --show-error --fail --header 'Accept: application/json' \
   "$local_url/realms/$realm/account/?userProfileMetadata=true")"
 [ "$(jq '([.userProfileMetadata.attributes[].name] | (index("email") != null and index("agent_owner") == null))
   and (.attributes.agent_owner == null)' <<<"$metadata")" = true ] ||
@@ -242,14 +268,28 @@ agent_token --data scope=mcp-hopin
 echo "R5: a disabled service account gets 401"
 
 set_client_enabled false
-live_state() {
-  jq --null-input --sort-keys --arg owner "$(agent_owner)" --arg people_adders "$(people_in /agent-adders)" \
-    --arg people_owners "$(people_in /agent-owners)" --argjson client_enabled "$(admin GET "$realm/clients/$client_uuid" | jq .enabled)" \
-    --argjson account_enabled "$(admin GET "$realm/users/$account_id" | jq .enabled)" \
-    --argjson groups "$(admin GET "$realm/users/$account_id/groups" | jq --sort-keys '[.[].path] | sort')" \
-    '{client_enabled: $client_enabled, account_enabled: $account_enabled, owner: $owner, groups: $groups,
-      people_adders: $people_adders, people_owners: $people_owners}'
+# service_account_memberships: each service account's username and its group paths, so a re-run that touches any
+# account shows.
+service_account_memberships() {
+  local client_each account_each
+  for client_each in $(admin GET "$realm/clients" | jq --raw-output '.[] | select(.serviceAccountsEnabled == true) | .id'); do
+    account_each="$(admin GET "$realm/clients/$client_each/service-account-user" | jq --raw-output .id)"
+    jq --null-input --arg username "$(admin GET "$realm/users/$account_each" | jq --raw-output .username)" \
+      --argjson paths "$(admin GET "$realm/users/$account_each/groups" | jq '[.[].path] | sort')" '{($username): $paths}'
+  done | jq --slurp --sort-keys 'add'
 }
+live_state() {
+  jq --null-input --sort-keys --arg owner "$(agent_owner)" --arg members_adders "$(members_of /agent-adders)" \
+    --arg members_owners "$(members_of /agent-owners)" --argjson client_enabled "$(admin GET "$realm/clients/$client_uuid" | jq .enabled)" \
+    --argjson account_enabled "$(admin GET "$realm/users/$account_id" | jq .enabled)" \
+    --argjson service_accounts "$(service_account_memberships)" \
+    '{client_enabled: $client_enabled, account_enabled: $account_enabled, owner: $owner,
+      service_accounts: $service_accounts, members_adders: $members_adders, members_owners: $members_owners}'
+}
+# A group only the console holds, on the agent's service account: config-cli must leave it.
+admin POST "$realm/groups" "{\"name\": \"$extra_group\"}" >/dev/null
+extra_group_id="$(admin GET "$realm/group-by-path/$extra_group" | jq --raw-output .id)"
+admin PUT "$realm/users/$account_id/groups/$extra_group_id" >/dev/null
 state_before="$(live_state)"
 [ "$(jq '.client_enabled == false and .account_enabled == false' <<<"$state_before")" = true ] ||
   fail "the client and the service account are not both disabled before the re-run"
@@ -257,7 +297,9 @@ rerun_config_cli
 state_after="$(live_state)"
 [ "$state_after" = "$state_before" ] ||
   fail "config-cli's re-run changed the switch-off, the groups, agent_owner or the members: $state_after"
-echo "with both left disabled a config-cli re-run keeps them disabled and keeps the service account's groups, agent_owner and both groups' members"
+[ "$(admin GET "$realm/users/$account_id/groups" | jq --arg path "/$extra_group" '[.[].path] | index($path) != null')" = true ] ||
+  fail "config-cli's re-run removed the group only the console had given the service account"
+echo "with both left disabled a config-cli re-run keeps them disabled and keeps every service account's groups, an extra group of the agent's, agent_owner and both groups' members"
 set_client_enabled true
 set_account_enabled true
 agent_token --data scope=mcp-hopin

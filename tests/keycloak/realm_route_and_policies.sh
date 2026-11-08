@@ -35,8 +35,8 @@ while IFS= read -r group; do
   live_path="$(admin GET "$realm/group-by-path$group" | jq --raw-output .path)" || live_path=""
   [ "$live_path" = "$group" ] || fail "the realm $realm holds no group $group, which $REALM_FILE declares"
 done <<<"$declared_groups"
-retired_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  --header "Authorization: Bearer $(admin_token)" "$local_url/admin/realms/$realm/group-by-path$RETIRED_GROUP")"
+retired_status="$(bearer_curl "$(admin_token)" --silent --output /dev/null --write-out '%{http_code}' \
+  "$local_url/admin/realms/$realm/group-by-path$RETIRED_GROUP")"
 [ "$retired_status" = 404 ] || fail "an empty database's realm $realm answers $retired_status for $RETIRED_GROUP, not 404"
 echo "the realm $realm holds the $(grep -c . <<<"$declared_groups") groups $REALM_FILE declares, and an empty database" \
   "none at $RETIRED_GROUP"
@@ -128,7 +128,7 @@ remove_target() {
   [ -z "$left" ] || fail "$caller_namespace still holds the throwaway $left"
   echo "$caller_namespace holds none of the throwaway ${target_objects[*]}"
 }
-trap 'kill "$forward_pid" 2>/dev/null || true; remove_target' EXIT
+trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"; remove_target' EXIT
 caller_labels="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.metadata.labels' "$CALLER_MANIFEST")"
 caller_port="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.spec.containers[0].ports[0]' "$CALLER_MANIFEST")"
 jq --null-input --arg name "$target_name" --arg image "$PROBE_IMAGE" --argjson labels "$caller_labels" \
@@ -182,11 +182,11 @@ done
 echo "Keycloak's container reaches $postgres_target, neither $cluster_target nor $OUTSIDE_TARGET, nor the target" \
   "$target_address in $caller_namespace, nor $caller_service"
 remove_target
-trap 'kill "$forward_pid" 2>/dev/null || true' EXIT
+trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"' EXIT
 
 # B6: a person's password grant waits for the terms; an administrator without TOTP gets no token at all.
 probe_password="$(openssl rand -hex 24)"
-echo "::add-mask::$probe_password"
+mask_secret "$probe_password"
 probe_client=b6-password-grant
 probe_user=b6-person
 admin POST "$realm/clients" "{\"clientId\": \"$probe_client\", \"publicClient\": true, \"directAccessGrantsEnabled\": true, \"standardFlowEnabled\": false}"
