@@ -11,9 +11,12 @@
   `mise.toml`, never by hand.
 - `mise run flux:export` regenerates `clusters/pc/flux-system/gotk-components.yaml` from the locked flux2.
 - `mise run charts:render` regenerates each `infrastructure/<component>/rendered.yaml` with the locked helm from the
-  chart at the digest the task pins, the `values.yaml` beside it and `K3S_VERSION`, without CRDs and tests. It writes
-  nothing when the chart cannot be fetched or rendered or the render holds a helm hook, which it names. helm runs
-  only here, never on the PC.
+  chart the task pins (traefik and loki by digest, k8up by the sha256 of its tgz), the `values.yaml` beside it and `K3S_VERSION`,
+  without CRDs and tests, and `infrastructure/k8up/crds.yaml` from k8up's release asset at its pinned sha256. It writes
+  nothing for a chart that cannot be fetched or rendered, whose pin does not match or whose render holds a helm hook,
+  which it names; each output is replaced alone, so such a failure can follow an earlier chart's written render (k8up's
+  chart is rendered with `--no-hooks`: its one hook is a cleanup Job for Helm upgrades). helm runs only here, never on
+  the PC.
 - `mise run secrets:age-secret <key file>` creates the Secret `sops-age` in flux-system, the age key Flux decrypts
   `platform-secrets` with, from the given file; it has no default path. The PC calls it only through
   `bootstrap:secrets`, since a bare run talks to `~/.kube/config`.
@@ -39,6 +42,9 @@
   names, by namespace, name and date, every Secret whose annotation `platform.hallucinai.de/expires-on: YYYY-MM-DD` lies
   within 30 days or in the past, and each whose value is no such date, and fails on any or when the listing fails; it
   passes with no annotated Secret.
+- `mise run backup:fetch <namespace> <file>` writes the latest dump of the namespace's k8up repository to a new file at
+  0600, through a Pod built from the restore test's init container, the file it refuses to overwrite; `db:load-dump
+  <namespace> <file>` then restores it. It prints only names and sizes, since a dump holds keys and hashes.
 - `mise run disk` runs without sudo and prints what fills the disk of the home directory by size and name (named
   directories of `$HOME`, the rest of `$HOME`, and what lies outside it, which is Docker's `/var/lib/docker` and the
   system, since only root reads that), then Docker's own count when the daemon answers within 2 minutes, else one line
@@ -240,7 +246,8 @@
   Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's and skat's files as dummies
   and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
   printed, each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password,
-  and each key a container of a layer in `SECRET_KEY_LAYERS` reads from a Secret, a generated dummy.
+  and each key a container of a layer in `SECRET_KEY_LAYERS` reads from a Secret, a generated dummy; each namespace
+  whose layer includes the backup component its Secret `restic`, and the Secret `rest-users` holds their passwords.
   It also proves that `secrets:github-host-keys` passes flux's real export of a throwaway deploy key unchanged and
   refuses host keys GitHub does not list for `github.com`, and that `secrets:new-key` refuses a key directory not at
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
@@ -348,6 +355,16 @@
   refuses each key and the password empty, ending in a newline, with a space or a non-ASCII byte, and the password
   outside the URL-safe alphabet, naming only the variable, while a good set reaches the exec at core limit 0. k3d
   does not prove a provider call through an open egress.
+  The step "P7d cells" (`tests/backup/`) first asserts that the rest server has a ready endpoint, then shows, for each
+  namespace including the backup component, that the restore test (after a `restic init` that is retried up to 30 times,
+  only on a refused connection, with the refusals counted in the log)
+  fails on its repository without a snapshot, and for the first namespace on an empty first key table; a Backup yields
+  one snapshot holding the custom-format dump alone, by a Job pod at a listed digest that Pod Security `restricted`
+  admits; neither the Job's log nor a Snapshot object holds the repository's credentials; the restore test passes on
+  the snapshot; without
+  credentials the server answers 401 everywhere, a namespace's credentials reach only its own repository, and a pod in a
+  namespace without one gets no answer; deleting the Kustomization `backup` keeps the claim, its repositories list again
+  after the root re-creates it; and `backup:fetch` writes the latest dump at 0600 and refuses an existing file.
   The step "P9b cells" plants a backdated and a fresh row in each of the five tables through the Postgres pod and runs a
   Job made from the CronJob: it prints one deletion in each count and leaves the fresh rows and the idle customers
   with a budget or with spend, a second run prints zeros, and the first log holds no planted value; its Pod ran in a
@@ -359,11 +376,11 @@
   failing layer reports itself; a regeneration that adds, renames or removes a controller changes those
   `healthChecks` with it, and `cluster` fails when they differ from the root's inventory.
 - `clusters/pc/infrastructure.yaml`: one Flux Kustomization per directory under `infrastructure/`, each with
-  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include. `namespaces`, then
+  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include (its subdirectory `backup/` is a component only `keycloak` and `litellm` include). `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
-  `keycloak` and `litellm` also on `platform-secrets` and `storage`, and `loki` and `prometheus` on `storage`. No layer
-  depends on `nvidia`.
+  `keycloak` and `litellm` also on `platform-secrets`, `storage` and `k8up`, `backup` on `platform-secrets` and `storage`,
+  and `loki` and `prometheus` on `storage`. No layer depends on `nvidia`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` and `songmaker` also
   on `storage`.
@@ -419,6 +436,23 @@
   digest of a table's sorted rows, which `db:load-dump --compare` and B4's check run inside the container, and the
   including layer's `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` include it;
   keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
+- `infrastructure/postgres/backup/`: the component a Postgres layer includes to be backed up, so `apps/skat` stays
+  out until it has its credentials and its restore drill. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
+  4 weekly and 3 monthly, a monthly `check`) of the Postgres pod's `pg_dump --format=custom` into `backup-repository`,
+  the URL the including layer sets in the ConfigMap `postgres`; a PodConfig gives k8up's Job pods the fields `restricted`
+  requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month and fails
+  without a snapshot or on an empty first key table. The Secret `restic` from `platform-secrets` holds the namespace's
+  `username`, `password` and `repository-password`.
+- `infrastructure/k8up/`: the k8up operator in `k8up-system`, `rendered.yaml` and `crds.yaml` generated by
+  `mise run charts:render`, not edited by hand; `cluster` fails when a regeneration differs. `skipSnapshotSync` keeps
+  k8up from writing Snapshot objects, which would record the REST repository URL with its password, and
+  `skipWithoutAnnotation` makes a backup hold only what a Pod's `k8up.io/backupcommand` streams;
+  a claim without k8up's backup annotation is skipped.
+- `infrastructure/backup/`: the platform's one `rest-server` with `--private-repos`, in namespace `backup`: one user and
+  repository per namespace, its htpasswd built by an initContainer from the Secret `rest-users` (one file per user,
+  from `platform-secrets`); the user equals the namespace, since `--private-repos` admits a user only to the path of its
+  own name and the repository's path is the namespace; its claim retained and never pruned. Its NetworkPolicy admits only
+  the namespaces that hold a repository; a new one joins that list together with its component and `rest-users` entry.
 - `infrastructure/keycloak/`: Keycloak, one pod with `Recreate`, on its Postgres, its routes Traefik's file provider and
   its admin console only `keycloak:admin`; its NetworkPolicy `keycloak-ingress` admits only namespace `traefik` and
   its own. `realm.yaml` and `master.yaml` are hal's realms and the Job `config-cli` applies them with every managed
@@ -604,7 +638,7 @@
   stand under no manager, and `--no-hooks` in a chart's render drops a bump's new hook silently, so the lane that bumps
   such a chart reads its hooks. A chart's image is watched only when its `values.yaml` states `repository` (with `registry`
   where the chart takes one), `tag` and `digest` (or the chart's `sha`) in that order, as `infrastructure/prometheus/`
-  does, so a new chart states what its defaults would give. Renovate logs `Unexpected downgrade detected: skipping` for
+  does, so a new chart states what its defaults would give. k8up's chart and CRD file, fetched from GitHub's release URL, are watched by their version in `mise.toml`'s `k8up_chart` and `k8up_crds` lines, whose sha256 a bump replaces by hand, and its image by `repository` beside a `tag` that holds `<v>@sha256:…`. Renovate logs `Unexpected downgrade detected: skipping` for
   `opentofu = "1.13"` and `yq = "4"` in `mise.toml`: `mise.lock` holds the exact patch of a prefix pin, which Renovate
   sees as newer than the prefix it would write, so a patch release inside the prefix is not listed; that is accepted,
   since the exact patch moves only when a lane refreshes `mise.lock`. Opening pull requests is not built.
