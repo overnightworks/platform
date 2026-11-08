@@ -1,5 +1,6 @@
 # The hallucinai realm: the one login for the apps. Applied by keycloak-config-cli's Job (config-cli.yaml).
-# People and memberships are managed in the admin console, never here. The apply adds and changes
+# People and their memberships are console data, never here; a service account is no person, so its
+# roles and groups are its rights and live here. The apply adds and changes
 # and deletes no undeclared top-level object and no person (IMPORT_MANAGED_* is no-delete in config-cli.yaml);
 # a console addition inside an object declared here is reset with it. Removing or renaming a group
 # below leaves the old group and its memberships in Keycloak, and so does a subgroup the console
@@ -33,6 +34,49 @@ enabledEventTypes: [LOGIN, LOGIN_ERROR]   # no other user event type is stored
 adminEventsEnabled: true
 attributes:
   adminEventsExpiration: "31536000"   # admin events: 1 year
+  userProfileEnabled: "true"          # config-cli applies userProfile only with this attribute set
+# Keycloak's default profile and agent_owner, which only an administrator reads and writes. config-cli sends this
+# block as the realm's whole profile, so a console change to the profile is reset on the next apply.
+userProfile:
+  attributes:
+    - name: username
+      displayName: ${username}
+      permissions: {view: [admin, user], edit: [admin, user]}
+      validations:
+        length: {min: 3, max: 255}
+        username-prohibited-characters: {}
+        up-username-not-idn-homograph: {}
+    - name: email
+      displayName: ${email}
+      required: {roles: [user]}
+      permissions: {view: [admin, user], edit: [admin, user]}
+      validations:
+        email: {}
+        length: {max: 255}
+    - name: firstName
+      displayName: ${firstName}
+      required: {roles: [user]}
+      permissions: {view: [admin, user], edit: [admin, user]}
+      validations:
+        length: {max: 255}
+        person-name-prohibited-characters: {}
+    - name: lastName
+      displayName: ${lastName}
+      required: {roles: [user]}
+      permissions: {view: [admin, user], edit: [admin, user]}
+      validations:
+        length: {max: 255}
+        person-name-prohibited-characters: {}
+    # The user id of the person who owns an agent, on the agent's service account; a token's claim, set only by an
+    # administrator (keycloak:agent-owner).
+    - name: agent_owner
+      displayName: agent_owner
+      multivalued: false
+      permissions: {view: [admin], edit: [admin]}
+  groups:
+    - name: user-metadata
+      displayHeader: User metadata
+      displayDescription: Attributes, which refer to user metadata
 roles:
   realm:
     - name: speech-workload
@@ -66,6 +110,12 @@ groups:
         subGroups:
           # Not a right: its members' LiteLLM rows sit on the admin budget, which has no limit.
           - name: admin
+  # An agent, by webauth's check for this exact path; no person is ever a member.
+  - name: agents
+  # Top level, not under /agents, because a person in them is no agent. Empty here: who holds them is console data,
+  # set by keycloak:agent-owner, except that an agent's own membership in agent-owners is its right below.
+  - name: agent-adders
+  - name: agent-owners
 clientScopes:
   - name: groups
     description: The user's groups as full paths, for example /apps/songmaker
@@ -157,6 +207,26 @@ clientScopes:
           access.token.claim: "true"
           userinfo.token.claim: "false"
           introspection.token.claim: "true"
+  # The owner of an autonomous agent's service account, which webauth requires; agents only.
+  - name: agent-identity
+    description: An agent's owner, read from its service account
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "false"
+      display.on.consent.screen: "false"
+    protocolMappers:
+      - name: agent_owner
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: agent_owner
+          claim.name: agent_owner
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
 # Every new account is asked once to accept the terms of use.
 # `priority` is stated because config-cli writes 0 for a missing one. Deleting this block does not
 # switch the action off (IMPORT_MANAGED_REQUIREDACTION is no-delete in config-cli.yaml): set `enabled: false`.
@@ -167,8 +237,9 @@ requiredActions:
     enabled: true
     defaultAction: true
     priority: 20
-# Only the service accounts of the clients that call the speech service are users here, and only
-# to hold their workload role; no person is ever listed, and no group.
+# A service account is no person: its roles and groups are its rights, and they live here. No person is
+# ever listed. An agent's entry names no attributes, as config-cli would replace the whole map with them and so lose
+# agent_owner, and no enabled, so a switch-off in the console survives every apply.
 users:
   - username: service-account-presentator
     enabled: true
@@ -180,6 +251,13 @@ users:
     serviceAccountClientId: hopin
     realmRoles:
       - speech-workload
+  - username: service-account-agent-mozart
+    serviceAccountClientId: agent-mozart
+    groups:
+      - /agents
+      - /apps/hopin
+      - /apps/hopin/mcp
+      - /agent-owners
 clients:
   # Audience only: the speech service accepts tokens issued for it and never signs anyone in.
   - clientId: speech-service
@@ -352,3 +430,54 @@ clients:
       - mcp-presentator
       - mcp-hopin
       - offline_access
+  # An autonomous agent's own confidential client: client credentials only, no refresh token, the type header
+  # webauth requires, and the audience of hopin's /mcp only for the optional scope mcp-hopin. It has no roles scope, so
+  # its tokens carry no realm or client role. enabled is left out, so a switch-off in the console survives every
+  # apply.
+  - clientId: agent-mozart
+    name: agent-mozart
+    publicClient: false
+    secret: $(env:AGENT_MOZART_CLIENT_SECRET)
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    frontchannelLogout: false
+    attributes:
+      use.refresh.tokens: "false"
+      client_credentials.use_refresh_token: "false"
+      access.token.header.type.rfc9068: "true"
+    protocolMappers:
+      - name: agent_name
+        protocol: openid-connect
+        protocolMapper: oidc-hardcoded-claim-mapper
+        consentRequired: false
+        config:
+          claim.name: agent_name
+          claim.value: Mozart
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+          access.tokenResponse.claim: "false"
+      # The realm's own unique username; the name people see is agent_name.
+      - name: preferred_username
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: username
+          claim.name: preferred_username
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+    defaultClientScopes:
+      - basic
+      - groups
+      - service_account
+      - agent-identity
+    optionalClientScopes:
+      - mcp-hopin
