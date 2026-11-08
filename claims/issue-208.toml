@@ -1,0 +1,8 @@
+claim_id = "eb9759f44ece474b9410dd905880acc9"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "69a62e369121aaf3a2c0a8afb4532fc594acf31c"
+branch = "claude/issue-208-p5d-alertmanager"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/gatus/gatus-config.yaml", "infrastructure/prometheus", "tests/prometheus", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
+opened_commit = "8034e16990eb0adbdee3dd0936a7fdfe5216641e"
+whole_reason = "One path: the route, its Secret, its policy, its scrape and the Running filter prove one mail channel together, and a half without the Secret leaves the layer unready."
