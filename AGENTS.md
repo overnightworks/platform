@@ -64,8 +64,9 @@
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
   per host and hal's console answers on another port of `localhost`.
-- `mise run gatus:open` forwards `127.0.0.1` at the port of Gatus's Service to it and prints the address of the status page;
-  the page has no other way in.
+- `mise run gatus:open` forwards `127.0.0.1` at a free local port kubectl chooses to the port of Gatus's Service and prints
+  the address of the status page once kubectl listens, none when the forward fails, which exits non-zero; the page has no
+  other way in.
 - `mise run keycloak:agent-owner [--adder] <client> <username>` runs through kcadm in Keycloak's
   container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
   `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
@@ -505,8 +506,8 @@
   Service, and LiteLLM's front for `GET /v1/models` without a key, which must answer 401 since Gatus holds no key. The
   NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus and the front admit the namespace `gatus` on the port
   its request uses; hopin and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
-  Service and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
-  headers from; it sends only the requests of its configuration. In k3d, through a port-forward, every endpoint of the
+  Service at a free port and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
+  headers from; it sends only the requests of its configuration. In k3d, through the address `mise run gatus:open` prints, every endpoint of the
   configuration is healthy, speech-runtime at scale 0 turns unhealthy and, restored and Ready, healthy again, and a Pod
   in another namespace gets no answer from Gatus.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.

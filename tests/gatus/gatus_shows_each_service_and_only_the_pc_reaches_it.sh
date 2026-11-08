@@ -11,7 +11,7 @@ stopped_replicas=""
 # Flux reverts a scale only at its next interval, so the cell brings the service back itself on every exit, and the
 # steps after it find it Ready.
 cleanup() {
-  [ -z "$forward_pid" ] || kill "$forward_pid" 2>/dev/null || true
+  [ -z "$forward_pid" ] || kill -- "-$forward_pid" 2>/dev/null || true
   if [ -n "$stopped_replicas" ]; then
     kubectl -n "$STOPPED_NAMESPACE" scale "deployment/$STOPPED_DEPLOYMENT" --replicas="$stopped_replicas" || true
     kubectl -n "$STOPPED_NAMESPACE" rollout status "deployment/$STOPPED_DEPLOYMENT" --timeout=5m || true
@@ -27,15 +27,15 @@ applied_revision="$(kubectl -n flux-system get kustomization gatus -o jsonpath='
 kubectl -n gatus rollout status deployment/gatus --timeout=5m
 
 port="$(kubectl -n gatus get service gatus -o jsonpath='{.spec.ports[0].port}')"
-kubectl -n gatus port-forward service/gatus ":$port" >"$scratch/forward.log" 2>&1 &
+setsid mise run gatus:open >"$scratch/forward.log" 2>&1 &
 forward_pid=$!
 local_port=""
 for _ in $(seq 30); do
-  local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) ->.*/\1/p' "$scratch/forward.log")"
+  local_port="$(sed -n 's#^gatus:open: open http://127\.0\.0\.1:\([0-9]*\)/;.*#\1#p' "$scratch/forward.log")"
   [ -z "$local_port" ] || break
   sleep 1
 done
-[ -n "$local_port" ] || fail "the port-forward to Gatus did not start: $(cat "$scratch/forward.log")"
+[ -n "$local_port" ] || fail "gatus:open printed no address: $(cat "$scratch/forward.log")"
 statuses_url="http://127.0.0.1:$local_port/api/v1/endpoints/statuses"
 
 # wait_for <healthy|unhealthy> <name>: Gatus asks each endpoint once a minute, so a state shows within two intervals.
