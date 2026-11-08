@@ -24,6 +24,13 @@ case "$*" in
     [ -z "${FAKE_READ_SUSPEND_FAILS:-}" ] || { echo "fake kubectl: the server is unreachable" >&2; exit 1; }
     printf '%s' "${FAKE_SUSPENDED:-}" ;;
   *pg_stat_activity*) echo 0 ;;
+  *relkind*) echo "${FAKE_UNFINGERPRINTED:-0}" ;;
+  */proc/*)
+    # FAKE_RESTORE_LINGERS: the restore's process outlives the load's status by two listings, then commits.
+    [ -n "${FAKE_RESTORE_LINGERS:-}" ] && [ -e "$FAKE_DIR/restored" ] || exit 0
+    echo >>"$FAKE_DIR/listings"
+    [ "$(wc -l <"$FAKE_DIR/listings")" -gt 2 ] || exit 1
+    : >"$FAKE_DIR/committed" ;;
   *"get pods"*) echo "items: []" ;;
   *"get deployments"* | *"get jobs"* | *"delete job"* | *" scale "* | *"rollout status"* | *" wait "*) ;;
   *" exec "*)
@@ -57,12 +64,19 @@ case "$*" in
     [ -z "${FAKE_RESTORE_FAILS:-}" ] ;;
 esac
 FAKE
-# FAKE_PG_DUMP_FAILS_AT names the call, counted from 1 in each cell, that fails.
+# FAKE_PG_DUMP_FAILS_AT and FAKE_PG_DUMP_BLOCKS_AT name the call, counted from 1 in each cell, that fails or waits for
+# the file release; a committed restore adds a row.
 cat >"$fake_bin/pg_dump" <<'FAKE'
 #!/usr/bin/env bash
 echo >>"$FAKE_DIR/pg_dump-calls"
-[ "$(wc -l <"$FAKE_DIR/pg_dump-calls")" != "${FAKE_PG_DUMP_FAILS_AT:-}" ] || exit 1
+call="$(wc -l <"$FAKE_DIR/pg_dump-calls")"
+[ "$call" != "${FAKE_PG_DUMP_FAILS_AT:-}" ] || exit 1
+if [ "$call" = "${FAKE_PG_DUMP_BLOCKS_AT:-}" ]; then
+  : >"$FAKE_DIR/dumping"
+  until [ -e "$FAKE_DIR/release" ]; do sleep 0.1; done
+fi
 cat "$FAKE_LOADED_SQL"
+[ ! -e "$FAKE_DIR/committed" ] || echo committed
 FAKE
 cat >"$fake_bin/chmod" <<'FAKE'
 #!/usr/bin/env bash
@@ -182,6 +196,42 @@ cell_unreadable_database_after_failed_load_is_unknown_and_stays_suspended() {
     fail "a failed load on a database unreadable after it exited $status with '$output' after flux $flux_calls"
 }
 
+cell_materialized_view_after_failed_load_is_unknown_and_stays_suspended() {
+  cell=materialized-view-after-failed-load-is-unknown-and-stays-suspended
+  FAKE_RESTORE_FAILS=1 FAKE_UNFINGERPRINTED=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"is unknown"* ]] &&
+    [[ $output != *unchanged* ]] ||
+    fail "a failed load on a database with a relation pg_dump does not cover exited $status with '$output'"
+}
+
+cell_restore_that_outlives_its_status_is_awaited_before_the_fingerprint() {
+  cell=restore-that-outlives-its-status-is-awaited-before-the-fingerprint
+  FAKE_RESTORE_FAILS=1 FAKE_RESTORE_LINGERS=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"is unknown"* ]] &&
+    [[ $output != *unchanged* ]] ||
+    fail "a failed load whose restore committed after its status exited $status with '$output'"
+}
+
+cell_term_during_recovery_is_unknown_and_stays_suspended() {
+  cell=term-during-recovery-is-unknown-and-stays-suspended
+  export FAKE_DIR="$work_directory/state-$cell"
+  mkdir -p "$FAKE_DIR"
+  : >"$FAKE_DIR/flux.log"
+  FAKE_RESTORE_FAILS=1 FAKE_PG_DUMP_BLOCKS_AT=2 setsid mise run db:load-dump x "$dump" >"$FAKE_DIR/output" 2>&1 &
+  loader=$!
+  trap 'pkill -KILL --session "$loader" 2>/dev/null || true; wait "$loader" 2>/dev/null || true' EXIT
+  for _ in $(seq 150); do [ -e "$FAKE_DIR/dumping" ] && break; sleep 0.2; done
+  [ -e "$FAKE_DIR/dumping" ] || fail "the loader never reached the fingerprint after its failed load"
+  # Only the task's shell, mise's child, gets the TERM; the fingerprint it waits for then ends equal to the one before.
+  kill -TERM "$(pgrep --parent "$loader")"
+  : >"$FAKE_DIR/release"
+  status=0
+  wait "$loader" || status=$?
+  [ "$status" != 0 ] && ! grep -q resume "$FAKE_DIR/flux.log" && grep -q "is unknown" "$FAKE_DIR/output" &&
+    grep -q -- "--resume x" "$FAKE_DIR/output" ||
+    fail "a TERM during the recovery exited $status after flux $(tr '\n' ' ' <"$FAKE_DIR/flux.log")"
+}
+
 cell_interrupt_script_reaps() {
   cell=interrupt-script-reaps
   # A loader that refuses at once leaves nobody reading the FIFO; the dump the writer feeds exceeds the FIFO's buffer.
@@ -276,6 +326,9 @@ cells=(
   unreadable-database-before-load-loads-nothing-and-resumes
   unreadable-database-after-failed-load-is-unknown-and-stays-suspended
   interrupt-script-names-unreadable-suspension-after-kill
+  materialized-view-after-failed-load-is-unknown-and-stays-suspended
+  restore-that-outlives-its-status-is-awaited-before-the-fingerprint
+  term-during-recovery-is-unknown-and-stays-suspended
 )
 failed=()
 for name in "${cells[@]}"; do

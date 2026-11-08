@@ -36,18 +36,21 @@
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
   at 0600, verifies each table `key-tables` names (all tables and their sorted rows' sha256 with `--compare`) and only
-  then resumes Flux and waits for the namespace to converge. It refuses a suspended Kustomization. A load that fails
-  or is interrupted reports the data unchanged and resumes once no other session holds the database and the sha256 of
-  its whole `pg_dump` equals the one taken before the load; otherwise it reports the outcome unknown and, like a
-  differing load or one that ends before the comparison did, stays suspended with its writers at 0, naming `--resume`.
-  Another session that holds the database before the load costs one wait of 2 minutes and one line. After a hard
-  kill, `mise run db:load-dump --resume <namespace>` resumes once no other session holds the database, stops at once
-  when the Kustomization does not exist, and verifies nothing. It prints names, counts and
-  outcomes, never a row, since a dump holds keys and hashes.
+  then resumes Flux and waits for the namespace to converge. It refuses a suspended Kustomization. Another session
+  that holds the database before the load, a database it cannot read then, or an INT before the load costs at most one
+  wait of 2 minutes and one line, loads nothing and resumes. A restore that fails or is interrupted reports the data
+  unchanged and resumes once no session and no `pg_restore` process remains in the database's Postgres, it holds no
+  materialized view or extension table, whose rows `pg_dump` does not write, and the sha256 of its whole `pg_dump`
+  equals the one taken before the load. Otherwise, a TERM during that check included, it reports the outcome unknown
+  and, like a differing load or one that ends before the comparison did, stays suspended with its writers at 0, naming
+  `--resume`. After a hard kill, `mise run db:load-dump --resume <namespace>` resumes once no other session and no
+  `pg_restore` process holds the database, stops at once when the Kustomization does not exist, and verifies nothing.
+  It prints names, counts and outcomes, never a row, since a dump holds keys and hashes.
   `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>` interrupts a load inside its transaction and asserts
   that recovery, writers included. `tests/postgres/load_dump.sh` drives the task and that script against fake commands
   for the outcomes the cluster cannot arrange: a failed `flux resume`, an unreadable suspension (also after a kill), a
-  signal during the comparison, a table only the database holds and a database it cannot read before or after the load.
+  signal during the comparison, a table only the database holds, a database it cannot read before or after the load,
+  a materialized view, a `pg_restore` that outlives its status and a TERM during the check after a failed restore.
 - `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
   pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else
@@ -186,7 +189,8 @@
   before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two synthetic dumps it
   makes, one of data and one whose table of contents is most of the file, with the Kustomization `litellm` pointed at
   `tests/postgres/writers` for a Deployment and a Job that Flux applies, stops and restores, an INT that reaches the
-  loader after its restore committed, which leaves it suspended, and a held foreign session, which costs one wait;
+  loader after its restore committed and a failed load beside a materialized view, which each leave it suspended, and
+  a held foreign session, which costs one wait;
   and shows that a busybox Pod with Keycloak's labels reaches its Postgres but neither the Service `kubernetes` nor
   github.com, while one without them reaches all three. k3d does not prove the egress to hal's Docker bridges or to
   hopin, whose own policy already refuses both Pods.

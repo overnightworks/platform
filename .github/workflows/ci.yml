@@ -1583,6 +1583,17 @@ jobs:
           [ "$(stat -c %a "$truncated.load.log")" = 600 ] || fail "$truncated.load.log is not at 0600"
           echo "the truncated copy failed to load, the data is unchanged and the Kustomization $layer resumed"
 
+          # A materialized view's rows are not in pg_dump's output, so the same failed load cannot prove them unchanged.
+          sql "$layer" 'CREATE MATERIALIZED VIEW stored_rows AS SELECT 1 AS one'
+          if loaded "$layer" "$truncated"; then fail "the truncated load exited 0 beside a materialized view"; fi
+          grep -qF 'is unknown' "$output" && ! grep -qF unchanged "$output" ||
+            fail "a failed load beside a materialized view did not report an unknown outcome"
+          held_back || fail "the Kustomization $layer resumed beside a materialized view the fingerprint cannot cover"
+          sql "$layer" 'DROP MATERIALIZED VIEW stored_rows'
+          loaded --resume "$layer" || fail "--resume exited non-zero"
+          writers_ran
+          echo "a failed load beside a materialized view left $layer suspended with its writers at 0 until --resume"
+
           # An INT after the restore committed, before the loader saw kubectl's status. The wrapper lets the real
           # kubectl run to its end and sends the INT only after the load's exec returned 0, which pg_restore
           # --single-transaction gives only after its COMMIT; the emptied key table differs from the dump's.
