@@ -80,11 +80,11 @@ mode = "copy"
 
 # Docuum measures the Images line of `docker system df`, which counts a shared layer once, so the threshold is 100 GB
 # of real space. --keep matches `repository:tag`: tags `previous` and the `-base` images, every ghcr.io and quay.io
-# image, Traefik, and the Docker Hub repositories the Compose files name. `$$` is systemd's `$`, and no backslash is
-# used, which systemd would read as an escape.
+# image, Microsoft's registry, Traefik, and every other vendor repository the machine holds; the images of our own builds
+# stay deletable. `$$` is systemd's `$`, and no backslash is used, which systemd would read as an escape.
 [bootstrap.linux.systemd.units.docuum]
 description = "Delete Docker images least recently used first above 100 GB"
-exec_start = "~/.local/share/mise/installs/docuum/0/docuum --threshold '100 GB' --min-age 1d --keep=':previous$$' --keep='-base:' --keep='^ghcr[.]io/' --keep='^quay[.]io/' --keep='^traefik' --keep='^(adorsys|grafana|nginxinc|prom|smallstep|wollomatic)/' --keep='^(postgres|python|redis):'"
+exec_start = "~/.local/share/mise/installs/docuum/0/docuum --threshold '100 GB' --min-age 1d --keep=':previous$$' --keep='-base:' --keep='^ghcr[.]io/' --keep='^quay[.]io/' --keep='^traefik' --keep='^(adorsys|curlimages|grafana|lycheeverse|maximhq|moby|nginxinc|prom|rancher|restic|rhysd|smallstep|wollomatic)/' --keep='^mcr[.]microsoft[.]com/' --keep='^(alpine|busybox|hello-world|mongo|node|postgres|python|redis|registry|ubuntu):'"
 restart = "on-failure"
 restart_sec = "1min"
 
@@ -279,31 +279,65 @@ run = "scripts/check_secrets_expiry.sh"
 [tasks.disk]
 description = "Show what fills the disk of the home directory and warn from 85 % use"
 # Only root reads /var/lib/docker, so what lies outside $HOME is df's used space less $HOME, and Docker's own count is
-# printed beside it when the daemon answers. Only sizes and names are printed.
+# printed beside it when the daemon answers in time. The named directories go through one du, which counts a hard link
+# once across them. A directory du could not read marks its row incomplete, and a remainder that depends on it is
+# printed as unknown, never as a number. Only sizes and names are printed.
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 warn_percent=85
+docker_timeout="${DISK_DOCKER_TIMEOUT:-120}"
 read -r used total percent < <(df -B1 --output=used,size,pcent "$HOME" | awk 'NR == 2 { sub("%", "", $3); print $1, $2, $3 }')
-size_of() { du -sxB1 "$1" 2>/dev/null | cut -f1 || true; }
-home_size="$(size_of "$HOME")"
-rows="" named=0
-for path in "$HOME/.claude" "$HOME/.codex/sessions" "$HOME/.cache/uv" "$HOME/.local/share/Trash" \
-  "$HOME/.local/share/mise" "$HOME/git"; do
-  [ -e "$path" ] || continue
-  size="$(size_of "$path")"
-  named=$((named + size))
-  rows+="$size ${path/#"$HOME"/\~}"$'\n'
-done
-rows+="$((home_size - named)) the rest of ~"$'\n'"$((used - home_size)) outside ~ (Docker, system)"$'\n'
-echo "disk of ~: $(numfmt --to=iec "$used") of $(numfmt --to=iec "$total") used, $percent %"
-sort -rn <<<"$rows" | awk 'NF { size = $1; $1 = ""; print size, substr($0, 2) }' | numfmt --field=1 --to=iec --padding=7
-if command -v docker >/dev/null && docker_sizes="$(docker system df 2>/dev/null)"; then
-  echo "Docker's own count:"
-  sed 's/^/  /' <<<"$docker_sizes"
-fi
 if [ "$percent" -ge "$warn_percent" ]; then
   echo "WARNING: the disk of ~ is $percent % full, from $warn_percent % it needs room" >&2
+fi
+errors_dir="$(mktemp -d)"
+trap 'rm -rf "$errors_dir"' EXIT
+paths=()
+for path in "$HOME/.claude" "$HOME/.codex/sessions" "$HOME/.cache/uv" "$HOME/.local/share/Trash" \
+  "$HOME/.local/share/mise" "$HOME/git"; do
+  [ -e "$path" ] && paths+=("$path")
+done
+# A failed du keeps the totals it printed; its diagnostics say which directory is missing from them.
+named_failed=0 home_failed=0
+named_output=""
+[ -z "${paths[*]-}" ] || named_output="$(du -sxB1 -- "${paths[@]}" 2>"$errors_dir/named")" || named_failed=1
+home_output="$(du -sxB1 -- "$HOME" 2>"$errors_dir/home")" || home_failed=1
+home_size="$(cut -f1 <<<"$home_output")"
+rows="" unknown="" named=0 rest_known=1
+[ "$home_failed" = 0 ] || rest_known=0
+while IFS=$'\t' read -r size path; do
+  [ -n "$path" ] || continue
+  named=$((named + size))
+  note=""
+  if [ "$named_failed" = 1 ] && { [ ! -s "$errors_dir/named" ] || grep -qF -e "'$path/" -e "'$path'" "$errors_dir/named"; }; then
+    note=" (incomplete, a directory was unreadable)"
+    rest_known=0
+  fi
+  rows+="$size ${path/#"$HOME"/\~}$note"$'\n'
+done <<<"$named_output"
+echo "disk of ~: $(numfmt --to=iec "$used") of $(numfmt --to=iec "$total") used, $percent %"
+if [ "$rest_known" = 1 ]; then
+  rows+="$((home_size > named ? home_size - named : 0)) the rest of ~"$'\n'
+else
+  unknown+="the rest of ~ (unknown, a directory was unreadable)"$'\n'
+fi
+if [ "$home_failed" = 0 ]; then
+  rows+="$((used > home_size ? used - home_size : 0)) outside ~ (Docker, system)"$'\n'
+else
+  unknown+="outside ~ (Docker, system) (unknown, a directory was unreadable)"$'\n'
+fi
+sort -rn <<<"$rows" | awk 'NF { size = $1; $1 = ""; print size, substr($0, 2) }' | numfmt --field=1 --to=iec --padding=7
+sed 's/^/      ? /; /^      ? $/d' <<<"$unknown"
+if command -v docker >/dev/null; then
+  docker_status=0
+  docker_sizes="$(timeout --kill-after=5 "$docker_timeout" docker system df 2>/dev/null)" || docker_status=$?
+  if [ "$docker_status" = 0 ]; then
+    echo "Docker's own count:"
+    sed 's/^/  /' <<<"$docker_sizes"
+  elif [ "$docker_status" = 124 ] || [ "$docker_status" = 137 ]; then
+    echo "Docker did not answer within $docker_timeout s, so its own count is missing"
+  fi
 fi
 '''
 

@@ -38,8 +38,9 @@
   passes with no annotated Secret.
 - `mise run disk` runs without sudo and prints what fills the disk of the home directory by size and name (named
   directories of `$HOME`, the rest of `$HOME`, and what lies outside it, which is Docker's `/var/lib/docker` and the
-  system, since only root reads that), then Docker's own count when the daemon answers; from 85 % use it also prints a
-  `WARNING` line on stderr and still exits 0.
+  system, since only root reads that), then Docker's own count when the daemon answers within 2 minutes, else one line
+  saying it did not; from 85 % use it first prints a `WARNING` line on stderr, and it still exits 0. A directory du cannot
+  read marks its row incomplete and prints the remainders as `?`, never as a number.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
@@ -153,7 +154,8 @@
   `~/.local/share/docuum/state.yml`, and an image it has never seen counts as last used at its creation. uv's cache
   is emptied weekly without `--force`. The tmpfiles line deletes a Codex session 30 days after the newest of its
   timestamps; Claude's sessions, Docker's volumes and its build cache (hal's) are never cleaned here. Undo: declare the
-  units `state = "absent"` and apply the same parts.
+  units `state = "absent"` and apply the same parts; `~/.config/user-tmpfiles.d/disk.conf` and
+  `~/.local/share/docuum/state.yml` stay and are inert without the units.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
   runs beside it.

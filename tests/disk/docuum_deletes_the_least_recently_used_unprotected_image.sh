@@ -10,6 +10,7 @@ cleanup() {
   [ -z "$docuum_pid" ] || kill "$docuum_pid" 2>/dev/null || true
   docker rm --force disk-cell-user >/dev/null 2>&1 || true
   docker image rm --force "${cell_images[@]}" >/dev/null 2>&1 || true
+  rm -rf "$scratch"
 }
 trap cleanup EXIT
 # The arguments are the service's own, read from its ExecStart as systemd splits them; only the threshold and the
