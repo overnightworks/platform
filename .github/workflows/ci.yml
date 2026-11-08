@@ -40,6 +40,16 @@ jobs:
           }
           echo "each directory under apps/ has its Kustomization: $(echo $directories)"
 
+      - name: Install the pinned tools
+        run: |
+          scripts/bootstrap_pc.sh --only tools
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Check that every secret and password in the realm files is an env reference
+        run: >-
+          mise exec -- tests/keycloak/realm_secrets_are_env_references.sh
+          infrastructure/keycloak/realm.yaml infrastructure/keycloak/master.yaml
+
   cluster:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -66,6 +76,8 @@ jobs:
       PROOF_SECRET_NAME: decryption-proof
       # The client Pods' image: each sends its requests and is deleted after them.
       CLIENT_IMAGE: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+      # The image of the egress probe Pods and of B3's throwaway target; local-path's helper runs busybox too.
+      PROBE_IMAGE: docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
       # A client Pod that Pod Security admits as restricted, as namespace cloudflared enforces: it prints the status of
       # each request to its URL, or 000 when no answer came, with @NAME@, @IMAGE@, @HOST@ and @URL@ replaced. A 429's
       # Retry-After would hold a retry for the whole rate-limit window, so --retry-max-time drops that retry.
@@ -165,8 +177,8 @@ jobs:
           # The apps' pull Secrets hold this job's own token, which GitHub masks; each app's package grants it Read.
           PULL_USER: ${{ github.actor }}
           PULL_TOKEN: ${{ github.token }}
-          # The layers whose containers read a Secret by key, which the step serves as dummies.
-          SECRET_KEY_LAYERS: infrastructure/litellm
+          # The layers whose containers read Secrets by key, each of which gets a dummy per key.
+          SECRET_KEY_LAYERS: infrastructure/keycloak infrastructure/litellm
         run: tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh
 
       - name: Push the encrypted Secrets and serve them as the job's platform-secrets source
@@ -251,9 +263,25 @@ jobs:
           EGRESS_NAMESPACE: keycloak
           CLUSTER_SERVICE: default/kubernetes
           OUTSIDE_TARGET: github.com:443
-          # The egress probe Pods' image; local-path's helper runs busybox too.
-          PROBE_IMAGE: docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
+
+      - name: P7b cells
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          # The realm files config-cli applies, whose groups and service accounts the cells read, and the client whose
+          # login page they open.
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+          MASTER_FILE: infrastructure/keycloak/master.yaml
+          LOGIN_CLIENT: hopin
+          # A group no realm file declares, which an empty database must not hold.
+          RETIRED_GROUP: /services/agent-service/api
+          # An app's manifest whose namespace must not reach Keycloak and whose Service and namespace Keycloak must not
+          # reach, the latter through a throwaway target with the app's labels and port; a Service no ingress policy
+          # guards and a host outside the cluster, neither of which Keycloak reaches.
+          CALLER_MANIFEST: apps/hopin/hopin.yaml
+          CLUSTER_SERVICE: default/kubernetes
+          OUTSIDE_TARGET: github.com:443
+        run: tests/keycloak/realm_route_and_policies.sh
 
       - name: P7c cells
         env:

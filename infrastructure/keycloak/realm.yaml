@@ -1,0 +1,354 @@
+# The hallucinai realm: the one login for the apps. Applied by keycloak-config-cli's Job (config-cli.yaml).
+# People and memberships are managed in the admin console, never here. The apply adds and changes
+# and deletes no undeclared top-level object and no person (IMPORT_MANAGED_* is no-delete in config-cli.yaml);
+# a console addition inside an object declared here is reset with it. Removing or renaming a group
+# below leaves the old group and its memberships in Keycloak, and so does a subgroup the console
+# made under /apps or /services. What this file declares belongs to it: a console change to a
+# declared object (a flow step, a mapper, a client's scope list, a service account's client role,
+# a flow binding override) is reset on the next apply; change a declared object here.
+# Deleting anything is done in the admin console, after a backup.
+# The other app clients arrive with each app's cutover, together with its live redirect and logout URLs.
+# The public client `agents` is the one sign-in of a person's own AI agents.
+realm: hallucinai
+enabled: true
+# The pages' look lives in the theme hallucinai, so changing it is no realm change; until an image carries
+# it, Keycloak shows its own theme.
+loginTheme: hallucinai
+accountTheme: hallucinai
+# German and English, the browser decides, English when neither is asked for.
+internationalizationEnabled: true
+supportedLocales: [de, en]
+defaultLocale: en
+accessTokenLifespan: 300          # 5 minutes
+ssoSessionMaxLifespan: 2592000    # 30 days
+ssoSessionIdleTimeout: 604800     # 7 days
+bruteForceProtected: true
+# Passkeys are offered to every user and bound to the apex domain, so every app subdomain shares them.
+webAuthnPolicyRpId: hallucinai.de
+webAuthnPolicyPasswordlessRpId: hallucinai.de
+webAuthnPolicyPasswordlessPasskeysEnabled: true
+eventsEnabled: true
+eventsExpiration: 7776000         # login events: 90 days
+enabledEventTypes: [LOGIN, LOGIN_ERROR]   # no other user event type is stored
+adminEventsEnabled: true
+attributes:
+  adminEventsExpiration: "31536000"   # admin events: 1 year
+roles:
+  realm:
+    - name: speech-workload
+      description: Service-account-only marker of an app workload calling the speech service.
+groups:
+  - name: apps
+    subGroups:
+      - name: songmaker
+        subGroups:
+          - name: admin
+          # Empty at first; webauth admits an agent token only for a member.
+          - name: mcp
+      - name: presentator
+        subGroups:
+          - name: admin
+          # Empty at first; webauth admits an agent token only for a member.
+          - name: mcp
+      - name: hopin
+        subGroups:
+          # hopin's admin role, by webauth's group rule (/apps/<app>/admin means admin).
+          - name: admin
+          - name: mcp
+      - name: skat
+  - name: services
+    subGroups:
+      # Exactly this path is the speech service's right; it has no subgroup.
+      - name: speech-service
+      # Exactly this path is the AI right. keycloak:move-group moves the members of
+      # /services/agent-service/api here; no realm file declares that group, so no apply creates it.
+      - name: litellm
+        subGroups:
+          # Not a right: its members' LiteLLM rows sit on the admin budget, which has no limit.
+          - name: admin
+clientScopes:
+  - name: groups
+    description: The user's groups as full paths, for example /apps/songmaker
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "true"
+      display.on.consent.screen: "false"
+    protocolMappers:
+      - name: groups
+        protocol: openid-connect
+        protocolMapper: oidc-group-membership-mapper
+        consentRequired: false
+        config:
+          claim.name: groups
+          full.path: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+          introspection.token.claim: "true"
+  - name: speech-service-audience
+    description: Adds speech-service to the access token audience
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "false"
+      display.on.consent.screen: "false"
+    protocolMappers:
+      - name: speech-service-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          included.client.audience: speech-service
+          id.token.claim: "false"
+          access.token.claim: "true"
+          # Stated, because Keycloak would otherwise default it on create and the next apply flip it.
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+  - name: mcp-songmaker
+    description: An agent's access to songmaker's MCP front
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "true"
+      display.on.consent.screen: "true"
+      consent.screen.text: songmaker
+    protocolMappers:
+      - name: mcp-songmaker-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          included.custom.audience: https://songmaker.hallucinai.de/mcp
+          id.token.claim: "false"
+          access.token.claim: "true"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+  - name: mcp-presentator
+    description: An agent's access to presentator's MCP front
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "true"
+      display.on.consent.screen: "true"
+      consent.screen.text: presentator
+    protocolMappers:
+      - name: mcp-presentator-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          included.custom.audience: https://presentator.hallucinai.de/mcp
+          id.token.claim: "false"
+          access.token.claim: "true"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+  - name: mcp-hopin
+    description: An agent's access to hopin's MCP front
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "true"
+      display.on.consent.screen: "true"
+      consent.screen.text: hopin
+    protocolMappers:
+      - name: mcp-hopin-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          included.custom.audience: https://hopin.hallucinai.de/mcp
+          id.token.claim: "false"
+          access.token.claim: "true"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+# Every new account is asked once to accept the terms of use.
+# `priority` is stated because config-cli writes 0 for a missing one. Deleting this block does not
+# switch the action off (IMPORT_MANAGED_REQUIREDACTION is no-delete in config-cli.yaml): set `enabled: false`.
+requiredActions:
+  - alias: TERMS_AND_CONDITIONS
+    providerId: TERMS_AND_CONDITIONS
+    name: Terms and Conditions
+    enabled: true
+    defaultAction: true
+    priority: 20
+# Only the service accounts of the clients that call the speech service are users here, and only
+# to hold their workload role; no person is ever listed, and no group.
+users:
+  - username: service-account-presentator
+    enabled: true
+    serviceAccountClientId: presentator
+    realmRoles:
+      - speech-workload
+  - username: service-account-hopin
+    enabled: true
+    serviceAccountClientId: hopin
+    realmRoles:
+      - speech-workload
+clients:
+  # Audience only: the speech service accepts tokens issued for it and never signs anyone in.
+  - clientId: speech-service
+    name: speech-service
+    enabled: true
+    bearerOnly: true
+    publicClient: false
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    frontchannelLogout: false
+  # songmaker signs people in with the authorization code and PKCE, and has no service account. A
+  # sign-out in Keycloak calls songmaker's back-channel logout, a call keycloak-egress.yaml lets no
+  # app receive. songmaker ignores the session id and ends every session of the person, so the
+  # call does not require one. The device grant is named as off, so the import's
+  # merge cannot keep an earlier on.
+  - clientId: songmaker
+    name: songmaker
+    enabled: true
+    publicClient: false
+    secret: $(env:SONGMAKER_CLIENT_SECRET)
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    frontchannelLogout: false
+    baseUrl: "https://songmaker.hallucinai.de/"
+    alwaysDisplayInConsole: false
+    redirectUris:
+      - "https://songmaker.hallucinai.de/auth/callback"
+    attributes:
+      post.logout.redirect.uris: "https://songmaker.hallucinai.de/login"
+      pkce.code.challenge.method: "S256"
+      backchannel.logout.url: "http://songmaker.hallucinai.de:8080/auth/backchannel-logout"
+      backchannel.logout.session.required: "false"
+      oauth2.device.authorization.grant.enabled: "false"
+    defaultClientScopes:
+      - basic
+      - profile
+      - email
+      - roles
+      - web-origins
+      - acr
+      - groups
+    optionalClientScopes: []
+  # hopin signs people in the same way as songmaker and is logged out the same way. It holds
+  # a refresh token per session, named as on so a merge cannot keep an earlier off, and its service
+  # account is a workload of the speech service, whose audience it asks for by the optional scope
+  # speech-service-audience. It reads no email, web origin or acr, so it has none of those scopes.
+  - clientId: hopin
+    name: hopin
+    enabled: true
+    publicClient: false
+    secret: $(env:HOPIN_CLIENT_SECRET)
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    frontchannelLogout: false
+    baseUrl: "https://hopin.hallucinai.de/"
+    alwaysDisplayInConsole: false
+    redirectUris:
+      - "https://hopin.hallucinai.de/auth/callback"
+    attributes:
+      post.logout.redirect.uris: "https://hopin.hallucinai.de/login"
+      pkce.code.challenge.method: "S256"
+      backchannel.logout.url: "http://hopin.hallucinai.de:8080/auth/backchannel-logout"
+      backchannel.logout.session.required: "false"
+      use.refresh.tokens: "true"
+    defaultClientScopes:
+      - basic
+      - profile
+      - groups
+      - roles
+      - service_account
+    optionalClientScopes:
+      - speech-service-audience
+  # One client for presentator's two hosts. It is logged out like hopin, on
+  # presentator's own port. Its service account is a workload of
+  # the speech service, whose audience it asks for by the optional scope speech-service-audience.
+  # It has songmaker's default scopes and service_account.
+  - clientId: presentator
+    name: presentator
+    enabled: true
+    publicClient: false
+    secret: $(env:PRESENTATOR_CLIENT_SECRET)
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    frontchannelLogout: false
+    baseUrl: "https://presentator.hallucinai.de/"
+    alwaysDisplayInConsole: false
+    redirectUris:
+      - "https://presentator.hallucinai.de/auth/callback"
+      - "https://presentator-talk.hallucinai.de/auth/callback"
+    attributes:
+      post.logout.redirect.uris: "https://presentator.hallucinai.de/login"
+      pkce.code.challenge.method: "S256"
+      backchannel.logout.url: "http://presentator.hallucinai.de:8000/auth/backchannel-logout"
+      backchannel.logout.session.required: "false"
+    defaultClientScopes:
+      - basic
+      - profile
+      - email
+      - roles
+      - web-origins
+      - acr
+      - service_account
+      - groups
+    optionalClientScopes:
+      - speech-service-audience
+  # skat signs people in like hopin and holds a refresh token per session the same way. It has no
+  # back-channel logout, so a sign-out in Keycloak ends a Skat session only at its lifetime.
+  # Skat calls neither the speech service nor an AI service, so it has no service account and no
+  # optional scope.
+  - clientId: skat
+    name: skat
+    enabled: true
+    publicClient: false
+    secret: $(env:SKAT_CLIENT_SECRET)
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    frontchannelLogout: false
+    baseUrl: "https://skat.hallucinai.de/"
+    alwaysDisplayInConsole: false
+    redirectUris:
+      - "https://skat.hallucinai.de/auth/callback"
+    attributes:
+      post.logout.redirect.uris: "https://skat.hallucinai.de/login"
+      pkce.code.challenge.method: "S256"
+      use.refresh.tokens: "true"
+    defaultClientScopes:
+      - basic
+      - profile
+      - groups
+      - roles
+    optionalClientScopes: []
+  # The public sign-in of a person's own AI agents: the authorization code with PKCE at one fixed
+  # loopback address, no secret, no refresh token (so none is offline either), and the realm's
+  # lifespan. A token carries the audience of an app's /mcp only for the optional scope mcp-<app>;
+  # the app admits it only for a member of /apps/<app>/mcp (webauth), so this client grants no right.
+  # The type header is what webauth's token check requires.
+  - clientId: agents
+    name: agents
+    enabled: true
+    publicClient: true
+    consentRequired: true
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    frontchannelLogout: false
+    alwaysDisplayInConsole: false
+    redirectUris:
+      - "http://localhost:28471/callback"
+    webOrigins: []
+    attributes:
+      pkce.code.challenge.method: "S256"
+      use.refresh.tokens: "false"
+      access.token.header.type.rfc9068: "true"
+    defaultClientScopes:
+      - basic
+      - groups
+    optionalClientScopes:
+      - mcp-songmaker
+      - mcp-presentator
+      - mcp-hopin
+      - offline_access

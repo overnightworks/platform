@@ -22,3 +22,7 @@ data:
   postgres: docker.io/library/postgres
   # infrastructure/litellm/litellm.yaml; https://github.com/BerriAI/litellm/pkgs/container/litellm
   litellm: ghcr.io/berriai/litellm
+  # infrastructure/keycloak/keycloak.yaml; https://www.keycloak.org/server/containers
+  keycloak: quay.io/keycloak/keycloak
+  # infrastructure/keycloak/config-cli.yaml; https://github.com/adorsys/keycloak-config-cli#docker
+  keycloak-config-cli: docker.io/adorsys/keycloak-config-cli
