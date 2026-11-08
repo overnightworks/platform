@@ -32,6 +32,10 @@
   fails when it cannot list the directory. It reads the clean's last start (the later of the service's and the timer's
   last trigger, which a reboot keeps) and result, whoever started it, so a failed or never-run clean keeps failing the
   check until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
+- `mise run check:secrets-expiry` runs on the PC through k3s's own kubeconfig, without sudo, and reads only metadata: it
+  names, by namespace, name and date, every Secret whose annotation `platform.hallucinai.de/expires-on: YYYY-MM-DD` lies
+  within 30 days or in the past, and each whose value is no such date, and fails on any or when the listing fails; it
+  passes with no annotated Secret.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
