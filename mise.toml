@@ -414,7 +414,7 @@ echo "bootstrap:secrets: Kustomization $source_name Ready at $applied_revision"
 '''
 
 # The platform's restore command. A dump holds keys and hashes, so every line it prints is a name, a count or an
-# outcome, never a row, and whoever runs it reads only those lines, never the dump or its load log.
+# outcome, never a row.
 [tasks."db:load-dump"]
 description = "Load a custom-format dump into a namespace's Postgres with its writers stopped, verify it, then resume Flux"
 usage = '''

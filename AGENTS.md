@@ -40,8 +40,7 @@
   the data unchanged and resumes once, a differing one, or one that ends before the comparison did, stays suspended with
   its writers at 0. After a hard kill, `mise run db:load-dump --resume <namespace>` resumes once no other session holds
   the database, stops at once when the Kustomization does not exist, and verifies nothing. It prints names, counts and
-  outcomes, never a row, since a dump holds keys and hashes: whoever runs it reads only those lines, never the dump or
-  its load log.
+  outcomes, never a row, since a dump holds keys and hashes.
   `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>` interrupts a load inside its transaction and asserts
   that recovery, writers included. `tests/postgres/load_dump.sh` drives the task and that script against fake commands
   for the outcomes the cluster cannot arrange: a failed `flux resume`, an unreadable suspension, a signal during the
