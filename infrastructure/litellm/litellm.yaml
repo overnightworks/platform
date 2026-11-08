@@ -34,8 +34,24 @@ spec:
       containers:
         - name: litellm
           image: ghcr.io/berriai/litellm:v1.106.6@sha256:37e2dafb088a7723beb998590682957386dfc83ffea1848486f8e0e5cfac0b06
-          command: [litellm]
-          args: [--config, /etc/litellm/config.yaml, --host, 0.0.0.0, --port, "4000"]
+          # The image's /bin/sh (busybox) refuses a key from the Secret litellm that is not exactly one non-empty
+          # printable line, naming only the variable: an empty master key would leave the proxy without auth.
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              for name in ANTHROPIC_API_KEY OPENAI_API_KEY LITELLM_MASTER_KEY; do
+                eval "value=\${$name-}"
+                case "$value" in
+                  "" | *[!!-~]*)
+                    echo "litellm: $name from the Secret litellm is not exactly one printable line" >&2
+                    exit 1
+                    ;;
+                esac
+              done
+              unset name value
+              exec litellm --config /etc/litellm/config.yaml --host 0.0.0.0 --port 4000
           ports:
             - name: http
               containerPort: 4000
