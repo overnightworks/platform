@@ -1,6 +1,6 @@
 # LiteLLM, its front and its egress, beside its Postgres from the base. LiteLLM reads its file and each Traefik its
 # static file once, at start, while each Traefik watches its dynamic directory; so each ConfigMap's name carries its
-# content's hash and a change rolls the pod.
+# content's hash and a change rolls the pod. The ConfigMap litellm-keys is the exception: `mise run litellm:keys` reads it.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: litellm
@@ -21,6 +21,7 @@ configMapGenerator:
     behavior: merge
     literals:
       - key-tables=LiteLLM_VerificationToken
+      - backup-repository=http://rest-server.backup.svc.cluster.local:8000/litellm/
   - name: litellm
     files:
       - config.yaml=litellm-config.yaml
@@ -31,10 +32,18 @@ configMapGenerator:
   - name: litellm-expire
     files:
       - expire.sql
+  # No pod reads the table; the commands read it from the cluster, so its name carries no hash.
+  - name: litellm-keys
+    files:
+      - keys.yaml
+    options:
+      disableNameSuffixHash: true
   - name: agent-egress
     files:
       - traefik.yml=egress-traefik.yml
       - allowed.yml=egress-allowed.yml
+components:
+  - ../postgres/backup
 # LiteLLM's hostAliases send the provider names to agent-egress's one fixed address.
 replacements:
   - source:
@@ -60,3 +69,13 @@ replacements:
           name: litellm-expire
         fieldPaths:
           - spec.jobTemplate.spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: postgres
+      fieldPath: data.backup-repository
+    targets:
+      - select:
+          kind: Schedule
+          name: postgres
+        fieldPaths:
+          - spec.backend.rest.url

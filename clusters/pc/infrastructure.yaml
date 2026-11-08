@@ -172,6 +172,7 @@ spec:
     - name: admission
     - name: platform-secrets
     - name: storage
+    - name: k8up
   interval: 10m0s
   path: ./infrastructure/keycloak
   prune: true
@@ -191,8 +192,47 @@ spec:
     - name: admission
     - name: platform-secrets
     - name: storage
+    - name: k8up
   interval: 10m0s
   path: ./infrastructure/litellm
+  prune: true
+  wait: true
+  timeout: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+# k8up's operator and its CRDs; the layers with a k8up object depend on it, so their Schedules apply against its CRDs.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: k8up
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+  interval: 10m0s
+  path: ./infrastructure/k8up
+  prune: true
+  wait: true
+  timeout: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+# The rest-server of the backups, its Secret rest-users from platform-secrets and its claim through storage.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: backup
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+    - name: platform-secrets
+    - name: storage
+  interval: 10m0s
+  path: ./infrastructure/backup
   prune: true
   wait: true
   timeout: 5m0s

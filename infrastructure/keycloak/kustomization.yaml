@@ -6,17 +6,30 @@ resources:
   - keycloak-egress.yaml
   - keycloak.yaml
   - config-cli.yaml
+components:
+  - ../postgres/backup
 configMapGenerator:
   - name: postgres
     behavior: merge
     literals:
       - key-tables=realm user_entity credential user_group_membership
+      - backup-repository=http://rest-server.backup.svc.cluster.local:8000/keycloak/
   # The realm files keycloak-config-cli applies; a changed file changes the name, so Flux recreates the Job.
   - name: keycloak-realms
     files:
       - master.yaml
       - realm.yaml
 replacements:
+  - source:
+      kind: ConfigMap
+      name: postgres
+      fieldPath: data.backup-repository
+    targets:
+      - select:
+          kind: Schedule
+          name: postgres
+        fieldPaths:
+          - spec.backend.rest.url
   # Keycloak and config-cli share the admin front end; keycloak.yaml owns it.
   - source:
       kind: Deployment
