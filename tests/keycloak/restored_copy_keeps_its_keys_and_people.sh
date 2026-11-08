@@ -13,9 +13,15 @@ dump="${1:?usage: $0 <dump>}"
 [ -r "$dump" ] && [ ! -d "$dump" ] || fail "no readable dump file $dump"
 namespace=keycloak
 # Postgres ends a statement past 60 s and a lock wait past 10 s, as a lock the operator's session holds could otherwise
-# hold this check forever; pg_dump resets both for its session, so its table locks wait at most --lock-wait-timeout.
-# The deadline ends the kubectl exec around each, which a stalled connection could otherwise keep open.
+# hold this check forever. pg_dump resets both for its session, so the container's own timeout, below the local
+# deadline, ends pg_dump and pg_restore: the pipe into table-digests.sh closes and no process of the database's
+# session outlives the check. The local deadline ends the kubectl exec around each, which a stalled connection could
+# otherwise keep open.
 deadline=2m
+remote_deadline=100s
+remote_deadline_status=97
+# The container's busybox timeout returns 124 or 143 when it ended its command; bounded returns 97 for both.
+remote_bound='bounded() { limit=$1; shift; timeout "$limit" "$@"; status=$?; case $status in 124|143) return 97;; esac; return "$status"; }'
 in_postgres() {
   timeout "$deadline" kubectl --namespace "$namespace" exec postgres-0 --container postgres -- \
     env PGOPTIONS='-c statement_timeout=60s -c lock_timeout=10s' "$@"
@@ -25,7 +31,8 @@ dump_into_postgres() {
 }
 # step_failed <status> <step>: fails naming the step, and the deadline when it ended the step.
 step_failed() {
-  [ "$1" != 124 ] || fail "$2 did not end within $deadline"
+  [ "$1" != 124 ] || fail "$2 did not end within $deadline, the local deadline"
+  [ "$1" != "$remote_deadline_status" ] || fail "$2 did not end within $remote_deadline in the container"
   fail "$2 failed"
 }
 outcome=0
@@ -69,10 +76,12 @@ echo "key ids of $realm: copy ${copy_kids//$'\n'/ }, $public_url ${public_kids//
 # Each table's rows from the dump and from the database through the ConfigMap postgres's table-digests.sh, the
 # loader's own digest, inside the container; stderr stays there too.
 for table in user_entity credential user_group_membership; do
-  dumped="$(dump_into_postgres sh -c 'set -o pipefail; pg_restore --data-only --table="$1" --file=- 2>/dev/null |
-    sh /etc/postgres-checks/table-digests.sh' sh "$table")" || step_failed "$?" "reading the dump's $table"
-  loaded="$(in_postgres sh -c 'set -o pipefail; pg_dump --data-only --lock-wait-timeout=10s --table="$1" 2>/dev/null |
-    sh /etc/postgres-checks/table-digests.sh' sh "$table")" || step_failed "$?" "reading the database's $table"
+  dumped="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail
+    bounded "$2" pg_restore --data-only --table="$1" --file=- 2>/dev/null | sh /etc/postgres-checks/table-digests.sh' \
+    sh "$table" "$remote_deadline")" || step_failed "$?" "reading the dump's $table"
+  loaded="$(in_postgres sh -c "$remote_bound"'; set -o pipefail
+    bounded "$2" pg_dump --data-only --lock-wait-timeout=10s --table="$1" 2>/dev/null |
+      sh /etc/postgres-checks/table-digests.sh' sh "$table" "$remote_deadline")" || step_failed "$?" "reading the database's $table"
   verdict=equal
   [ "$dumped" = "$loaded" ] || { verdict=DIFFERS; outcome=1; }
   loaded_rows="${loaded##* }" dumped_rows="${dumped##* }"
