@@ -69,9 +69,10 @@ k wait serviceaccount/default --for=create --timeout=1m
 k create configmap probe --from-literal=message=config-readable
 
 # The Pod of cells 1 to 4: an exec probe, an emptyDir written and read, a ConfigMap read, and stdout in the log.
+# The ConfigMap value has no newline and the runtime logs a line only at its newline, so the worker ends it with one.
 worker_works='.spec.volumes = [{"name": "scratch", "emptyDir": {}}, {"name": "config", "configMap": {"name": "probe"}}]
   | .spec.containers[0].volumeMounts = [{"name": "scratch", "mountPath": "/scratch"}, {"name": "config", "mountPath": "/config"}]
-  | .spec.containers[0].command = ["sh", "-c", "echo scratch-readable > /scratch/f; cat /scratch/f; cat /config/message; sleep 3600"]
+  | .spec.containers[0].command = ["sh", "-c", "echo scratch-readable > /scratch/f; cat /scratch/f; cat /config/message; echo; sleep 3600"]
   | .spec.containers[0].readinessProbe = {"exec": {"command": ["true"]}, "periodSeconds": 2}'
 
 # Cell 1, 2 and 4: the isolated Pod.
