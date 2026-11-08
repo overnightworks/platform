@@ -52,6 +52,24 @@
   signal during the comparison, a table only the database holds, a database it cannot read before or after the load,
   a materialized view, a `pg_restore` that outlives its status while its backend commits, a TERM during the check
   after a failed restore, and an INT after the commit, whose outcome reaches the operator and not the load log.
+- `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
+  to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
+  per host and hal's console answers on another port of `localhost`.
+- `mise run keycloak:move-group [--delete-old] <file>` is the operator's, for the rename of the AI group: it creates
+  the new file at 0600 (and refuses one that exists), dumps `keycloak` into it with the messages of `pg_dump` and
+  `pg_restore --list` in `<file>.dump.log` at 0600, whose path and line count it prints, deletes only its own file
+  after a failed dump, adds every member of `/services/agent-service/api` to `/services/litellm` through kcadm in
+  Keycloak's container, signed in as config-cli, verifies the old members are a subset and prints the two groups'
+  member counts; only `--delete-old` deletes the old group. `db:load-dump keycloak <file>` rolls it back.
+- `mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump>` runs on the PC after
+  `db:load-dump keycloak <dump>` converged, through k3s's own kubeconfig, without sudo or a fetched secret: it fails
+  unless config-cli's Job completed within its `backoffLimit`, no client or user carries Keycloak's
+  `is_temporary_admin`, the realm's key ids equal those of the public issuer, and the rows of `user_entity`,
+  `credential` and `user_group_membership` equal the dump's by count and the sha256 of their sorted lines. It prints
+  names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`. Each database
+  step runs under a statement and lock timeout and a 2-minute local deadline; pg_dump and pg_restore also run under
+  the container's own 100-second timeout, so no database session outlives the check. Either deadline's end fails it
+  naming the step and which deadline.
 - `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
   pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else
@@ -112,8 +130,10 @@
 ## Layout
 
 - `.github/workflows/ci.yml`: the `checks` job, which fails when a directory under `apps/` has no Kustomization of its
-  name over it in `clusters/pc/apps.yaml` or such a Kustomization has no directory, the `cluster` job, the `bootstrap`
-  job, the `opentofu` job, the `images` job and the `quality` job that calls quality's `gate.yml`.
+  name over it in `clusters/pc/apps.yaml` or such a Kustomization has no directory, and when a value of Keycloak's
+  `realm.yaml` or `master.yaml` whose key ends in secret or password is no `$(env:NAME)` reference, naming the file
+  and key path, never the value; the `cluster` job, the `bootstrap` job, the `opentofu` job, the `images` job and the
+  `quality` job that calls quality's `gate.yml`.
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
@@ -150,7 +170,8 @@
   the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
   Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's files as dummies and
   each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
-  printed, and each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password.
+  printed, each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password,
+  and each key a container of a layer in `SECRET_KEY_LAYERS` reads from a Secret, a generated dummy.
   It also proves that `secrets:github-host-keys` passes flux's real export of a throwaway deploy key unchanged and
   refuses host keys GitHub does not list for `github.com`, and that `secrets:new-key` refuses a key directory not at
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
@@ -199,6 +220,23 @@
   and shows that a busybox Pod with Keycloak's labels reaches its Postgres but neither the Service `kubernetes` nor
   github.com, while one without them reaches all three. k3d does not prove the egress to hal's Docker bridges or to
   hopin, whose own policy already refuses both Pods.
+  The step "P7b cells" then waits for config-cli's Job on the empty database and asserts that Keycloak's
+  `KC_PROXY_TRUSTED_ADDRESSES` equals the `trustedIPs` of Traefik's `web`, discovery names Keycloak's `KC_HOSTNAME`
+  as the realm's issuer, every group `realm.yaml` declares exists and `/services/agent-service/api` does not, and
+  hopin's login page answers 200; that a second run of the Job completes at its first attempt and leaves the partial
+  exports of both realms and their declared service accounts with their roles and groups equal; that a Pod in
+  `cloudflared` gets through Traefik 200 for discovery and a `/resources/<version>/` asset, 404 for
+  `/resources/master/…`, `/admin/` and `/realms/master/`, 302 from `/` to the account page, 404 for `/` on another
+  host and 400 for an encoded slash; that a Pod in Keycloak's namespace reaches it and one in `hopin` gets no answer;
+  that a Pod in Keycloak's namespace without its labels gets an answer from the Service `kubernetes` and from a
+  throwaway target in `hopin` with hopin's labels and port, which a throwaway policy admits Keycloak's namespace to
+  and which never turns ready, while Keycloak's container reaches its Postgres but neither that Service nor github.com
+  nor the target nor hopin's Service, a probe that cannot run or ends otherwise failing the step, and both throwaway
+  objects are gone on every exit; and that a password grant is
+  refused while `TERMS_AND_CONDITIONS` is pending and yields a token of the public issuer once cleared, while
+  through `admin-cli` and master's own flow a master administrator with TOTP gets 200 and a token with the current
+  code, which the job computes from the secret it imported, and 400 and no token without it, and one without TOTP gets
+  401 and no token.
 - `clusters/pc/flux-system/`: Flux's own components and its sync to this repository. `gotk-components.yaml` is
   generated by `mise run flux:export` for the components `FLUX_COMPONENTS` in `mise.toml` lists, which hold no Helm reconciler
   (every chart is rendered into Git); it is not edited by hand, and `cluster` fails when a regeneration differs.
@@ -239,9 +277,19 @@
   database and user the namespace's name, its password the Secret `postgres` from `platform-secrets` (only
   `A-Z a-z 0-9 - _`, as LiteLLM takes it unescaped in a URL), its claim on the Retain class carrying the prune
   annotation, so neither a prune nor the StatefulSet's deletion takes it; a Service on 5432 that only its own namespace
-  reaches; and the ConfigMap `postgres` with `check-key-tables.sh`, the one key-table check, and the including layer's
-  `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/` and `apps/skat/` include it; keycloak's NetworkPolicy
-  `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
+  reaches; and the ConfigMap `postgres` with `check-key-tables.sh`, the one key-table check, `table-digests.sh`, the one
+  digest of a table's sorted rows, which `db:load-dump --compare` and B4's check run inside the container, and the
+  including layer's `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/` and `apps/skat/` include it;
+  keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
+- `infrastructure/keycloak/`: Keycloak, one pod with `Recreate`, on its Postgres, its routes Traefik's file provider and
+  its admin console only `keycloak:admin`; its NetworkPolicy `keycloak-ingress` admits only namespace `traefik` and
+  its own. `realm.yaml` and `master.yaml` are hal's realms and the Job `config-cli` applies them with every managed
+  type `no-delete`, so a person, a membership and an object only Keycloak holds stay; Flux recreates the Job when its
+  template or a realm file changes, and a run that changes master's front end converges by retry. On an empty
+  database Keycloak creates config-cli's client from `KC_BOOTSTRAP_ADMIN_CLIENT_ID`; a restored one keeps its own.
+  `KC_HOSTNAME_ADMIN` in `keycloak.yaml` is the one owner of the admin front end, which `kustomization.yaml` copies
+  to the Job. The Secret `keycloak` from `platform-secrets` holds config-cli's secret and each app client's. The
+  realm sets theme `hallucinai`, which Keycloak replaces with its own until an image carries it.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
   and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at
@@ -266,7 +314,9 @@
   probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
   `host/k3s/config.yaml` sets no `cluster-cidr` (`cluster` checks it against the nodes' pod CIDRs), and carries hal's
   entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character refused with 400 by
-  each route, so an unrouted host still gets 404.
+  each route, so an unrouted host still gets 404. Its file provider holds hal's routers `auth` and `auth-root`
+  verbatim: on `auth.hallucinai.de` only the realm `hallucinai`, its localization and the resources under Keycloak's
+  five-character version reach Keycloak, `/` redirects to the account page, and every other path is 404.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's

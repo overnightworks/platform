@@ -553,21 +553,12 @@ its writers at 0: check the data, then run mise run db:load-dump --resume $names
 }
 trap unverified EXIT
 
-# Every table's data lines in a dump (stdin as SQL), sorted, as "<sha256> - <table> <rows>" per table, an empty one
-# included. Each line is the table, a tab, then "R" and a row or "E" for the table's end, which only an empty table
-# keeps beside no row.
-table_digests='awk '\''table == "" && /^COPY / { table = $2; rows = 0; next }
-  table != "" && /^\\[.]$/ { if (rows == 0) print table "\tE"; table = ""; next }
-  table != "" { rows++; print table "\tR" $0 }'\'' | LC_ALL=C sort | awk -F "\t" '\''
-  function finish() { if (table != "") { close("sha256sum"); print table, rows; fflush() } }
-  $1 != table { finish(); table = $1; rows = 0; printf "" | "sha256sum" }
-  substr($0, length($1) + 2, 1) == "R" { rows++; print substr($0, length($1) + 3) | "sha256sum" }
-  END { finish() }'\'' | paste -d " " - -'
 verified=true
 dump_into_postgres sh /etc/postgres-checks/check-key-tables.sh || verified=false
 if [ "${usage_compare:-false}" = true ]; then
-  dumped="$(dump_into_postgres sh -c "set -o pipefail; pg_restore --data-only --file=- | $table_digests")" &&
-    loaded="$(in_postgres sh -c "set -o pipefail; pg_dump --data-only | $table_digests")" &&
+  dumped="$(dump_into_postgres sh -c \
+    "set -o pipefail; pg_restore --data-only --file=- | sh /etc/postgres-checks/table-digests.sh")" &&
+    loaded="$(in_postgres sh -c "set -o pipefail; pg_dump --data-only | sh /etc/postgres-checks/table-digests.sh")" &&
     awk 'NF != 4 { next } FILENAME == ARGV[1] { dumped[$3] = $1; dumped_rows[$3] = $4; next }
       { loaded[$3] = $1; loaded_rows[$3] = $4 }
       END { for (table in dumped) tables[table]; for (table in loaded) tables[table]
@@ -589,4 +580,96 @@ jobs="$(kubectl --namespace "$namespace" get jobs --selector "kustomize.toolkit.
 [ -z "$jobs" ] || kubectl --namespace "$namespace" wait $jobs --for=condition=Complete --timeout=5m
 in_postgres sh /etc/postgres-checks/check-key-tables.sh --counts-only
 say "$namespace converged"
+'''
+
+[tasks."keycloak:admin"]
+description = "Forward Keycloak's admin front end to this PC's loopback and print the line that opens its console"
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+fail() { echo "keycloak:admin: $1" >&2; exit 1; }
+admin_url="$(kubectl --namespace keycloak get deployment keycloak \
+  -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KC_HOSTNAME_ADMIN")].value}')"
+[[ $admin_url =~ ^http://localhost:([0-9]+)$ ]] ||
+  fail "KC_HOSTNAME_ADMIN reads '$admin_url', not http://localhost:<port>; nothing forwarded"
+# A browser keeps cookies per host, not per port, so a second console on localhost would share its session.
+echo "keycloak:admin: open $admin_url/admin/master/console/ in a private window; Ctrl-C ends the forward"
+exec kubectl --namespace keycloak port-forward --address 127.0.0.1 service/keycloak "${BASH_REMATCH[1]}:http"
+'''
+
+# kcadm runs in Keycloak's own container and signs in as config-cli with the secret that container holds, so no
+# secret reaches this shell; every line is a name, a count or an outcome.
+[tasks."keycloak:move-group"]
+description = "Dump keycloak to a new file, add every member of /services/agent-service/api to /services/litellm, verify"
+usage = '''
+flag "--delete-old" help="After the verified move, delete /services/agent-service/api"
+arg "<file>" help="A new file for the custom-format dump of keycloak, mode 0600, with <file>.dump.log beside it for the messages of pg_dump and pg_restore; db:load-dump keycloak <file> rolls back"
+'''
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+file="${usage_file?}" old_group=/services/agent-service/api new_group=/services/litellm
+realm="$(yq '.realm' infrastructure/keycloak/realm.yaml)"
+say() { echo "keycloak:move-group: $1"; }
+fail() { echo "keycloak:move-group: $1" >&2; exit 1; }
+kcadm() {
+  kubectl --namespace keycloak exec deployment/keycloak --container keycloak -- bash -c \
+    'exec /opt/keycloak/bin/kcadm.sh "$@" --no-config --server http://localhost:8080 --realm master \
+      --client "$KC_BOOTSTRAP_ADMIN_CLIENT_ID" --secret "$KC_BOOTSTRAP_ADMIN_CLIENT_SECRET"' kcadm "$@"
+}
+group_id() { kcadm get "group-by-path$1" --target-realm "$realm" --fields id --format csv --noquotes; }
+# members <group id>: the ids of its members, sorted; fails when a page cannot be read.
+members() {
+  local offset=0 page all=""
+  while page="$(kcadm get "groups/$1/members" --target-realm "$realm" --fields id --format csv --noquotes \
+    --offset "$offset" --limit 100)"; do
+    if [ -z "$page" ]; then
+      [ -z "$all" ] || printf '%s\n' "$all" | sort
+      return 0
+    fi
+    all+="${all:+$'\n'}$page"
+    offset=$((offset + 100))
+  done
+  return 1
+}
+count() { if [ -z "$1" ]; then echo 0; else grep -c . <<<"$1"; fi; }
+
+# noclobber makes the creation fail on any file that exists by then, so the file this run deletes is its own.
+[ ! -e "$file" ] && (set -o noclobber && : >"$file") 2>/dev/null ||
+  fail "$file exists or cannot be created; nothing written or moved"
+# Their messages can quote a row, so they go to the log beside the dump, never to the terminal.
+log="$file.dump.log"
+: >"$log" && chmod 0600 "$log"
+# A partial dump must not look like the backup this task promises, so a failed one is deleted.
+kubectl --namespace keycloak exec postgres-0 --container postgres -- pg_dump --format=custom >>"$file" 2>"$log" ||
+  { rm -f -- "$file"; fail "pg_dump failed with $(grep -c . "$log") lines in $log, so $file is deleted; nothing moved"; }
+kubectl --namespace keycloak exec --stdin postgres-0 --container postgres -- pg_restore --list >/dev/null <"$file" \
+  2>>"$log" || { rm -f -- "$file"; fail "pg_restore cannot list the dump, with $(grep -c . "$log") lines in $log, so \
+$file is deleted; nothing moved"; }
+say "keycloak dumped to $file; pg_dump's and pg_restore's messages, $(grep -c . "$log") lines, are in $log"
+
+old_id="$(group_id "$old_group")" || fail "$realm holds no $old_group or Keycloak cannot be read; nothing moved"
+new_id="$(group_id "$new_group")" || fail "$realm holds no $new_group or Keycloak cannot be read; nothing moved"
+unreadable="the members of a group cannot be read"
+old_members="$(members "$old_id")" || fail "$unreadable; nothing moved"
+new_members="$(members "$new_id")" || fail "$unreadable; nothing moved"
+for user_id in $(comm -23 <(printf '%s\n' "$old_members") <(printf '%s\n' "$new_members")); do
+  kcadm update "users/$user_id/groups/$new_id" --target-realm "$realm" --set "realm=$realm" --set "userId=$user_id" \
+    --set "groupId=$new_id" --no-merge ||
+    fail "a member of $old_group could not join $new_group; db:load-dump keycloak $file rolls back"
+done
+new_members="$(members "$new_id")" || fail "$unreadable; db:load-dump keycloak $file rolls back"
+[ -z "$(comm -23 <(printf '%s\n' "$old_members") <(printf '%s\n' "$new_members"))" ] ||
+  fail "not every member of $old_group is in $new_group; db:load-dump keycloak $file rolls back"
+say "$old_group: $(count "$old_members") members; $new_group: $(count "$new_members") members, every one of $old_group among them"
+if [ "${usage_delete_old:-false}" = true ]; then
+  kcadm delete "groups/$old_id" --target-realm "$realm" ||
+    fail "$old_group could not be deleted; its members are already in $new_group"
+  say "$old_group deleted"
+fi
 '''

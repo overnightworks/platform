@@ -1,0 +1,145 @@
+# Keycloak, the one login for the apps, on its namespace's Postgres. Traefik's file provider routes the public paths
+# to the Service (infrastructure/traefik/values.yaml); the admin console answers only through keycloak:admin.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+spec:
+  replicas: 1
+  # One pod per database: two Keycloaks would share its caches' state only through a cluster this one never forms.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        # The image's keycloak user.
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332
+          args: [start]
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL_HOST
+              value: postgres
+            - name: KC_DB_URL_DATABASE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KC_DB_USERNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: password
+            - name: KC_HOSTNAME
+              value: https://auth.hallucinai.de
+            # The one owner of the admin front end, which keycloak:admin forwards to; kustomization.yaml hands it to
+            # config-cli for master.yaml's frontendUrl.
+            - name: KC_HOSTNAME_ADMIN
+              value: http://localhost:8092
+            - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+              value: "false"
+            # TLS ends at Cloudflare; Traefik forwards plain HTTP.
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            # Traefik sends X-Forwarded-*, never Forwarded.
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            # k3s's pod CIDR, which host/k3s/config.yaml keeps: keycloak-ingress lets only Traefik's pods and this
+            # namespace's reach Keycloak, so the forwarded headers kept are Traefik's.
+            - name: KC_PROXY_TRUSTED_ADDRESSES
+              value: 10.42.0.0/16
+            # Only an empty database creates this client, as a temporary administrator with config-cli's secret, so
+            # the first apply can sign in; master.yaml then declares it, and a restored database keeps its own.
+            - name: KC_BOOTSTRAP_ADMIN_CLIENT_ID
+              value: config-cli
+            - name: KC_BOOTSTRAP_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak
+                  key: config-cli-secret
+            # /health/ready on the management port, which the Service does not expose.
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          # Each start rebuilds the server before it serves.
+          startupProbe:
+            httpGet:
+              path: /health/started
+              port: management
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            # No read-only root: start without --optimized writes the rebuilt server into the image's lib directory.
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /opt/keycloak/data/tmp
+      volumes:
+        # Keycloak keeps gzip copies of theme files in data/tmp/kc-gzip-cache and never compares them with the file,
+        # so the copies must not outlive the pod.
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+spec:
+  selector:
+    app.kubernetes.io/name: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Only Traefik's pods and this namespace's (config-cli) reach Keycloak's HTTP port; the kubelet's probes come from the
+# node, which a NetworkPolicy never blocks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+        - podSelector: {}
+      ports:
+        - port: http
+          protocol: TCP

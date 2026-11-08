@@ -19,3 +19,7 @@ data:
   busybox: docker.io/library/busybox
   # infrastructure/postgres/postgres.yaml; https://hub.docker.com/_/postgres
   postgres: docker.io/library/postgres
+  # infrastructure/keycloak/keycloak.yaml; https://www.keycloak.org/server/containers
+  keycloak: quay.io/keycloak/keycloak
+  # infrastructure/keycloak/config-cli.yaml; https://github.com/adorsys/keycloak-config-cli#docker
+  keycloak-config-cli: docker.io/adorsys/keycloak-config-cli

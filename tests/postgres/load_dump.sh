@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Drive `mise run db:load-dump` and tests/postgres/interrupt_load.sh against fake kubectl, flux, pg_restore, pg_dump and
 # mise on PATH: the outcomes the loader owes where a command fails, a signal arrives or a table is empty, none of which
-# the cluster proofs can arrange on demand. The fakes run the remote commands locally, so the task's own awk compares
-# the fake dump with the fake database.
+# the cluster proofs can arrange on demand. The fakes run the remote commands locally, with the ConfigMap postgres's
+# table-digests.sh, so the task compares the fake dump with the fake database as in the container.
 # Usage: mise exec -- tests/postgres/load_dump.sh
 set -euo pipefail
 
@@ -52,6 +52,7 @@ case "$*" in
       *)
         # The task's sh runs in the container as busybox ash, which has pipefail; the runner's sh may not.
         if [ "$1" = sh ]; then set -- bash "${@:2}"; fi
+        set -- "${@//sh \/etc\/postgres-checks\//bash $FAKE_CHECKS/}"
         "$@" ;;
     esac ;;
   *) echo "fake kubectl: unexpected $*" >&2; exit 1 ;;
@@ -97,6 +98,10 @@ cat >"$fake_bin/chmod" <<'FAKE'
 exec /bin/chmod "$@"
 FAKE
 chmod +x "$fake_bin"/*
+export FAKE_CHECKS="$work_directory/postgres-checks"
+mkdir "$FAKE_CHECKS"
+yq 'select(.kind == "ConfigMap") | .data."table-digests.sh"' "$repository_root/infrastructure/postgres/postgres.yaml" \
+  >"$FAKE_CHECKS/table-digests.sh"
 # mise puts its own kubectl and flux before PATH, so the task must not load them.
 # KUBECONFIG names no file, so a call that leaks to a real kubectl fails instead of reaching a cluster.
 export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux2 KUBECONFIG="$work_directory/no-kubeconfig"
