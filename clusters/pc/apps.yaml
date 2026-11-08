@@ -11,7 +11,8 @@ spec:
     - name: admission
   interval: 10m0s
   path: ./apps
-  prune: true
+  # Pruning stays off, so deleting this Kustomization, whose apps move to their own, keeps their objects running.
+  prune: false
   wait: true
   timeout: 10m0s
   sourceRef:
