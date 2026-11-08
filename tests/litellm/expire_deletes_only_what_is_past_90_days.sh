@@ -59,7 +59,7 @@ ORDER BY 1
 EOSQL
 }
 count_line='^(person_days|tool_days|tag_days|tools|people)\|'
-# Every value the cell plants (names, ids, key, creator) starts with the marker; the Job's log may hold none.
+# Every planted identifying string (names, ids, key, creator) starts with the marker; the Job's log may hold none.
 assert_log_holds_no_planted_value() {
   if grep -qF "$marker" <<<"$1"; then
     fail "the Job's log holds a value the cell planted"
