@@ -1,0 +1,7 @@
+claim_id = "6abf8b082f6544b483dc61aa9fc46f2a"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "f8e650885639224a4848360806aada264312f621"
+branch = "claude/issue-170-cluster-job-two-parts"
+scope = [".github/workflows/ci.yml", "AGENTS.md"]
+opened_commit = "81d9691b925e2c640aab28fe966a33609e49e064"
