@@ -344,6 +344,12 @@ jobs:
           THIRD_SNI: third.invalid
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
+      - name: P9b cells
+        if: matrix.part == 'core'
+        env:
+          LITELLM_NAMESPACE: litellm
+        run: tests/litellm/expire_deletes_only_what_is_past_90_days.sh
+
       - name: Assert that /impressum reaches a Pod beside cloudflared through Traefik with the committed bytes and header and everything else gets 404
         if: matrix.part == 'core'
         env:
