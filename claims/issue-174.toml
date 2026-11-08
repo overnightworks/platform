@@ -1,8 +1,0 @@
-claim_id = "0a06feaeea654ed1b40552fc909398ff"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "f8e650885639224a4848360806aada264312f621"
-branch = "claude/issue-174-loki-keeps-lines-under-28-days"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/loki", "mise.toml", "tests/client_pod.sh", "tests/loki"]
-opened_commit = "6bfc38bf96d618890b50631343351dcd56249f45"
-whole_reason = "One layer: its chart render, Flux Kustomization, vendor entry, cell and documents prove one running Loki together."
