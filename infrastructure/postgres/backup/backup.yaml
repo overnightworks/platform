@@ -140,7 +140,7 @@ spec:
             - name: restore-test
               # The StatefulSet's image, set by the replacement in kustomization.yaml.
               image: postgres
-              command: [sh, /etc/restore-test/restore-test.sh, /restore/dump]
+              command: [sh, /etc/restore-test/restore_test.sh, /restore/dump]
               env:
                 - name: PGUSER
                   valueFrom:

@@ -1,5 +1,5 @@
 #!/bin/sh
-# restore-test.sh <dump>: restores the dump into a throwaway server under /tmp and fails unless the namespace's first
+# restore_test.sh <dump>: restores the dump into a throwaway server under /tmp and fails unless the namespace's first
 # key table holds a row and every key table holds as many rows as the dump. It prints names and counts, never a row.
 # shellcheck disable=SC3040 # busybox ash, this image's sh, sets pipefail.
 set -euo pipefail

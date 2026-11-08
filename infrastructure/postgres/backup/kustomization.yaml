@@ -7,7 +7,7 @@ resources:
 configMapGenerator:
   - name: restore-test
     files:
-      - restore-test.sh
+      - restore_test.sh
     options:
       disableNameSuffixHash: true
 patches:
