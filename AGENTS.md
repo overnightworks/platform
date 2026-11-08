@@ -27,8 +27,11 @@
   its one copy in the operator's password manager.
 - `scripts/apply_github_settings.sh` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
   login, on any commit and without writing state (exit 0 no change, 2 changes, 1 failure). `--apply` applies that
-  run's own plan, only from a clean `origin/main`.
-- `mise run github:test` checks that root: format, init against the committed lock, validate and the mocked tests.
+  run's own plan, only from a clean `origin/main`. A plan with a `delete` action, a replacement included, fails with
+  exit 1 on both runs, names each address and applies nothing; a deliberate removal is a `removed` block with
+  `lifecycle { destroy = false }`, which plans a forget.
+- `mise run github:test` checks that root: format, init against the committed lock, validate, the mocked tests and
+  `tests/github/plan_with_a_delete_is_refused.sh`, which drives the script against a fake tofu and gh.
 - `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
   which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
   names and times only, and fails on any; it passes with no pod logs yet while `/var/log/pods` does not exist, and
@@ -76,7 +79,11 @@
   <rule>`, never the text, and exits non-zero. It refuses a link or directory in place of a file, a missing
   `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
   `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
-  with branch coverage at 100 % and writes `src/legal/coverage.xml`. Both run through `uv` (locked in `mise.toml`),
+  with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads, from this checkout's root, the frame of
+  `infrastructure/legal/frame/`, builds the three pages with `src/legal/src/legal/pages.py`, which checks their ids and
+  links, and writes only `infrastructure/legal/built/impressum.html`, the other two pages staying in memory; it needs no
+  network, prints `legal:build: wrote <file>` and exits 0, or prints `legal: <file> is missing; the frame is required`
+  (or the failed check's line) and exits non-zero, writing nothing. All three run through `uv` (locked in `mise.toml`),
   which fetches Python 3.14 on first use and keeps its environment under `~/.cache/platform/legal`.
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
@@ -253,7 +260,7 @@
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
   runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request that turns Ready within the minute
   prints no key block.
-  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock` and the renders, and fails when git
+  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock`, the renders and the imprint, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. Before the reconcile the
   kubelet's configz holds the `container-log-max-files` of `host/k3s/config.yaml`; after a writer pod's log directory
   is deleted on the node, its file is back within 30 seconds and `kubectl logs` shows newer lines; and through two
@@ -369,6 +376,20 @@
   Job made from the CronJob: it prints one deletion in each count and leaves the fresh rows and the idle customers
   with a budget or with spend, a second run prints zeros, and the first log holds no planted value; its Pod ran in a
   Namespace enforcing `restricted` with its Postgres's image.
+  The step "P9c cells", in the part `postgres`, suspends the Kustomization `litellm` and resumes it on every exit, removing
+  its keys, person budget and Secret key: `mise run litellm:keys --plan` lists the differences between the table and two
+  keys made with the master key, exits 2 and changes no row; the run sets the numbers, a second run prints 0 changes and a
+  raised budget changes that field alone and keeps `budget_reset_at`; the person budget takes the table's number; a row
+  without a key is named and ends 1 after the other rows were made equal, with the models and routes LiteLLM and the
+  front's rules name; `litellm:key hopin` makes the row from a generated value in the Secret `hopin`, a client Pod in
+  `hopin`, which reads the header line from a mounted Secret through `curl --header @file`, gets 200 from the front's `GET /v1/models` with it, a second run prints `unchanged`, and a changed
+  value, one without `sk-`, a missing key and an app outside the table are refused and change no row; no output holds a
+  value, the master key or the value's sha256. The job `checks` runs `tests/litellm/failed_write_names_what_is_done.sh`
+  against a fake kubectl and curl: a write that fails midway stops the rest, names what was made, the one that failed,
+  also when its answer was lost, and what was not made, and prints no reply body; a budget-only change sends no period;
+  a table without a number for the person budget or a row's limits, an absent revision, one that changes while the table
+  is read and a value with a newline are refused before any write; and the value reaches curl's stdin and no argument
+  or output, a run under `bash -x` included.
 - `clusters/pc/flux-system/`: Flux's own components and its sync to this repository. `gotk-components.yaml` is
   generated by `mise run flux:export` for the components `FLUX_COMPONENTS` in `mise.toml` lists, which hold no Helm reconciler
   (every chart is rendered into Git); it is not edited by hand, and `cluster` fails when a regeneration differs.
@@ -483,13 +504,29 @@
   layer's Postgres, which a replacement copies, and it prints the five counts by name, never a row; a first `select 1`,
   tried up to 30 times a second apart inside the Pod since a fresh Pod can be refused until the NetworkPolicy controller admits
   its address, shows psql's stderr, so a failed connection names itself in the log, while the statement's stderr is discarded because
-  psql quotes row values. `mise exec -- tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>` is the operator's, since it
-  reads the master key: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
+  psql quotes row values. `mise exec -- tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>`
+  reads the master key from the cluster's Secret: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
   key table's rows, those of the dashboard's UI session (which `/key/list` omits) and the rest, then `equal` or `DIFFERS`
   for the count against the rest; each step runs under a deadline and names itself when it fails.
+  `keys.yaml` is the table of the person budget and each app's budget and parallel limit; the ConfigMap `litellm-keys`
+  carries it, without a hash suffix, as no pod reads it. `mise run litellm:keys [--plan]` makes the person budget (the id
+  of `max_end_user_budget_id`) and each row's key equal to it, sending only the fields that differ, so a pure budget
+  change keeps the period's reset; it prints the revision Flux applied to the table it read, which it refuses when absent or changed during the read, one
+  line per field with old and new, and a count; it refuses a table whose person budget or a row's budget or parallel
+  limit is no number, naming the row; a row without a key is named with `run litellm:key <app>` and ends 1 after the
+  rest; a failed write stops the rest and names what was made, the failed write, whose outcome is unknown when its
+  answer was lost, and what was not made; `--plan` writes nothing and exits 0 with no change, 2 with changes, 1 on a
+  failure. `mise run litellm:key <app>` registers key `litellm_key` of Secret `<app>` in namespace `<app>` (one printable
+  line without a trailing newline, `sk-` and at least 16 characters) as the row's key, prints `unchanged` when the stored hash equals the value's,
+  and refuses another value under the alias, changing nothing; a key's new value goes to `platform-secrets` first. Both
+  run through `scripts/litellm_keys.sh` with a port-forward and the master key: a value and the master key travel from
+  kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
+  never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body. The
+  rpm and tpm limits are not in the table and stay as they are.
 - `infrastructure/legal/`: the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
-  is hal's `legal/frame/impressum.html` byte for byte, which holds no template field, and `default.conf` serves only
+  is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
+  field, and `default.conf` serves only
   `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
   host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
   only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
@@ -599,13 +636,28 @@
   and the ufw rule `k3s-cni`, with `k3s-pods` and `k3s-services` declared absent, which deletes them from a host whose mise
   state holds them) and the tasks. `mise.lock` is generated by `mise lock`, not edited by hand, and `cluster`
   fails when a regeneration differs.
-- `src/opentofu/github/`: the security and merge settings of the managed fleet repositories. `.terraform.lock.hcl` is
+- `src/opentofu/github/`: the security and merge settings of the managed fleet repositories and, in the child module
+  `organization/`, the organisation's three rulesets (`main: PR only`, `quality / verdict required`, `release tags are
+  immutable`, each with `prevent_destroy`, no bypass actor and enforcement `active`) and the schema of the property
+  `quality_gate`, every resource also `destroy = false`; `organization.tf` holds the module call and the `import` blocks
+  by id. The ruleset `quality / verdict required` reaches a repository only through `quality_gate=true`, requires the
+  check `quality / verdict` pinned to GitHub Actions (`integration_id` 15368) and is quality's contract; the property's
+  values are quality's merge command's and never declared, and the schema's `role` stays as set on GitHub. Two limits of
+  provider 6.13.0: it cannot carry `require_extra_approval_for_unattributed_changes` (true on
+  `main: PR only`, which takes effect only at a non-zero approval count), so the count stays 0 and a test holds it
+  there, and a later update of that ruleset sends the field not at all, with GitHub's answer unknown; and it returns no
+  default for a `true_false` property, so the default `false` is undeclared, a later update of the schema sends an empty
+  one, with GitHub's answer unknown, and drift detection does not see it. `tofu test` cannot plan an import, so
+  `tests/organization_rulesets.tftest.hcl` plans the module and judges its resources. `.terraform.lock.hcl` is
   generated by `tofu providers lock -platform=linux_amd64`; the job `opentofu` runs `mise run github:test`. The state
   lives at `${XDG_STATE_HOME:-~/.local/state}/platform/opentofu/github.tfstate` and the working files (lock, provider,
   kept plan `last.tfplan`) under `${XDG_CACHE_HOME:-~/.cache}/platform/opentofu/github/`, both outside the checkout.
+  An imported object's state carries no `skip_destroy` until an apply writes it, so removing a block can plan a delete;
+  the command refuses any such plan, which closes it for every object of the root.
 - `src/legal/`: the Python project of the legal validator, standard library only, with `uv.lock` and its own tests; there
   is no root `pyproject.toml`, which would make `tests/` a judged tree. `src/legal/src/legal/section.py` is hal's
-  `legal_section.py` without `parse_general`; `check.py` is the program. `checks` runs `legal:test`, uploads the report
+  `legal_section.py` without `parse_general`; `check.py` is the program of `legal:check`; `pages.py` is hal's assembler of the three pages
+  (`legal_pages.py` without its fingerprints, plans and records) and `build.py` the program of `legal:build`. `checks` runs `legal:test`, uploads the report
   as artifact `coverage`, which the `quality` job passes as `coverage-artifact`, and runs
   `tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh`, which reads hopin's public repository at the tag of
   the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails.
