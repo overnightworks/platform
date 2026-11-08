@@ -20,13 +20,12 @@ This section holds ruled sentences.
 
 An app uses only the capabilities it needs; nothing obliges it to consume one.
 
-- A host on Traefik's `web`, reached only through the platform's tunnel. A tunnel line changes in a pull request the
-  operator merges.
+- A host on Traefik's `web`, reached only through the platform's tunnel. A tunnel line changes in a pull request.
 - Its own Namespace with Pod Security `restricted`, never pruned, and a NetworkPolicy naming its senders. The Namespace
   is an entry in the platform's namespaces layer (`infrastructure/namespaces/namespaces.yaml`, prune disabled), added in
   a pull request.
 - Secrets from `platform-secrets` (SOPS with age), mounted as files. An app with no Secret of its own has none.
-- Its private image, pulled through the Secret `ghcr-pull`. The ref moves in a pull request the operator merges.
+- Its private image, pulled through the Secret `ghcr-pull`. The ref moves in a pull request.
 - Provenance: platform's `images` job checks a bumped ref's tag, attestation and signer. Admission on the PC checks the
   ref's form only.
 
@@ -36,7 +35,7 @@ Not provided: a backup of an app's state and a copy of anything off the PC. A de
 
 - **Release.** Its images come from quality's release path; their number, names and tags are that path's and the app's.
 - **Description.** Its manifests live only in platform, under `apps/<app>/`. Its image ref changes only in a pull
-  request the operator merges; a value the image validates, such as a caller table, changes in the same pull
+  request; a value the image validates, such as a caller table, changes in the same pull
   request as the ref.
 - **Pod shape.** Each pod passes Pod Security `restricted` in its namespace and admission's image policy.
 - **Readiness.** Each long-running process exposes a readiness check, an HTTP route or a command, that fails while it
