@@ -1,8 +1,0 @@
-claim_id = "2e46c70fac19473e9ecd04b0d5ae7d48"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "14e8782523d9594cdb83ed0825fd3e5f9c86addd"
-branch = "claude/issue-189-disk-stays-bounded"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "host/disk", "mise.lock", "mise.toml", "tests/disk"]
-opened_commit = "6a4d76cb9195246aa5598d1326f5dde376f76390"
-whole_reason = "The tool, its timers, its report and its cells prove one bound on the disk together."
