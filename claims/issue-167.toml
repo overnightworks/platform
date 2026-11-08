@@ -3,6 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "f8e650885639224a4848360806aada264312f621"
 branch = "claude/issue-167-p7d-k8up-backups"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "docs/app.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/backup", "infrastructure/k8up", "infrastructure/keycloak/kustomization.yaml", "infrastructure/litellm/kustomization.yaml", "infrastructure/namespaces/namespaces.yaml", "infrastructure/postgres", "mise.toml", "tests/backup", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
+scope = [".github/renovate.json5", ".github/workflows/ci.yml", "AGENTS.md", "clusters/pc/infrastructure.yaml", "docs/app.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/backup", "infrastructure/k8up", "infrastructure/keycloak/kustomization.yaml", "infrastructure/litellm/kustomization.yaml", "infrastructure/namespaces/namespaces.yaml", "infrastructure/postgres", "mise.toml", "tests/backup", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
 opened_commit = "ad850d8758a62e10ed6b3d593648487c8db34186"
 whole_reason = "#116's P7d: a backup without its restore test proves nothing, and its layers, cells and documents go with them."
