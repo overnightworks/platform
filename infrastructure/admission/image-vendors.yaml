@@ -6,7 +6,8 @@ metadata:
   name: image-vendors
   namespace: admission
 data:
-  # infrastructure/traefik/rendered.yaml; https://hub.docker.com/_/traefik
+  # infrastructure/traefik/rendered.yaml, infrastructure/litellm/front.yaml and egress.yaml;
+  # https://hub.docker.com/_/traefik
   traefik: docker.io/library/traefik
   # infrastructure/cloudflared/cloudflared.yaml; https://github.com/cloudflare/cloudflared#installing-cloudflared
   cloudflared: docker.io/cloudflare/cloudflared
@@ -19,3 +20,5 @@ data:
   busybox: docker.io/library/busybox
   # infrastructure/postgres/postgres.yaml; https://hub.docker.com/_/postgres
   postgres: docker.io/library/postgres
+  # infrastructure/litellm/litellm.yaml; https://github.com/BerriAI/litellm/pkgs/container/litellm
+  litellm: ghcr.io/berriai/litellm

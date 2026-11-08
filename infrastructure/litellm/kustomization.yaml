@@ -1,10 +1,40 @@
+# LiteLLM, its front and its egress, beside its Postgres from the base. Each Traefik and LiteLLM read their files once,
+# at start, so each ConfigMap's name carries its content's hash and a change rolls the pod.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: litellm
 resources:
   - ../postgres
+  - litellm.yaml
+  - front.yaml
+  - egress.yaml
 configMapGenerator:
   - name: postgres
     behavior: merge
     literals:
       - key-tables=LiteLLM_VerificationToken
+  - name: litellm
+    files:
+      - config.yaml=litellm-config.yaml
+  - name: litellm-front
+    files:
+      - traefik.yml=front-traefik.yml
+      - route.yml=front-route.yml
+  - name: agent-egress
+    files:
+      - traefik.yml=egress-traefik.yml
+      - allowed.yml=egress-allowed.yml
+# LiteLLM's hostAliases send the provider names to agent-egress's one fixed address.
+replacements:
+  - source:
+      kind: Service
+      name: agent-egress
+      fieldPath: spec.clusterIP
+    targets:
+      - select:
+          kind: Deployment
+          name: litellm
+        fieldPaths:
+          - spec.template.spec.hostAliases.0.ip
+        options:
+          create: true
