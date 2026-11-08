@@ -66,6 +66,9 @@ jobs:
       - name: Check that legal:check passes hopin's legal files at the tag it runs, names file and line of a broken one and quotes no text
         run: mise exec -- tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh
 
+      - name: Check that the app texts under infrastructure/legal equal their apps' files and dates at the release each names
+        run: mise exec -- tests/legal/app_texts_equal_their_release.sh
+
       - name: Check that the legal sections equal hal's legal/sections at the pinned commit
         run: tests/legal/sections_equal_hals_at_commit.sh
 

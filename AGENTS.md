@@ -80,12 +80,14 @@
   `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
   `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
   with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads, from this checkout's root, the frame of
-  `infrastructure/legal/frame/`, the sections of `infrastructure/legal/sections/` and their `stand.toml`, builds the three
-  pages with `src/legal/src/legal/pages.py`, which checks their ids and links, and writes only `infrastructure/legal/built/impressum.html`, the other two pages staying in memory; it needs no
-  network, prints `legal:build: wrote <file>` and exits 0, or prints `legal: <file> is missing; the frame is required`
+  `infrastructure/legal/frame/`, the sections of `infrastructure/legal/sections/` and their `stand.toml`, the app texts of
+  `infrastructure/legal/app-texts/` and their list `app-texts.toml`, builds the three pages with
+  `src/legal/src/legal/pages.py`, which checks their ids and links, and writes all three to `infrastructure/legal/built/`; it needs no
+  network, prints `legal:build: wrote <file>` per page and exits 0, or prints `legal: <file> is missing; the frame is required`
   (or the failed check's line, which names a directory under `sections/` that is neither `allgemein` nor one of `keycloak`,
   `litellm` or `speech-runtime`, a section with no `stand.toml` entry, an entry without a file or a section whose sha256
-  differs from its entry, printing the file's) and exits non-zero, writing nothing. It reads the `zone` as `legal:check`
+  differs from its entry, printing the file's, and the same for an app text and `app-texts.toml`, an app with no
+  `datenschutz` and an app key that is `allgemein` or a service's) and exits non-zero, writing nothing. It reads the `zone` as `legal:check`
   does. All three run through `uv` (locked in `mise.toml`),
   which fetches Python 3.14 on first use and keeps its environment under `~/.cache/platform/legal`.
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
@@ -529,10 +531,14 @@
 - `infrastructure/legal/`: the legal sections and the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
   is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
-  field. `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
+  field. `built/datenschutz.html` and `built/nutzungsbedingungen.html` are the other two pages, not mounted.
+  `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
   operator's. `stand.toml` holds one table per section path with its `date` (the Stand it prints, `D. Monat YYYY`, a
   page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand; nothing of
-  them is served yet. `default.conf` serves only
+  them is served yet. `app-texts/<key>/<page>.html` are the apps' own files byte for byte (hopin, presentator and
+  songmaker; skat joins with its go-live) and `app-texts.toml` holds per app and page their `date` and `sha256` and, for an app with no
+  image under `apps/<key>`, its release `tag`; an app with an image has its release from that image, so a `tag` beside
+  one is refused. A bump of an app's image whose release changes its legal text carries the refreshed copy in the same pull request. `default.conf` serves only
   `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
   host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
   only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
@@ -667,6 +673,9 @@
   as artifact `coverage`, which the `quality` job passes as `coverage-artifact`, and runs
   `tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh`, which reads hopin's public repository at the tag of
   the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails, and
+  `tests/legal/app_texts_equal_their_release.sh`, which fetches each listed app's public repository at its release tag
+  and fails naming the step when that fails, or when a copy's bytes, its sha256 or its date (the commit date of the file at the tag)
+  differ from the list's, a page exists on one side only or a `tag` stands beside an image, and
   `tests/legal/sections_equal_hals_at_commit.sh`, which fetches hal's public repository at the commit its variable
   `hal_commit` names and fails naming the step when that fetch fails or `diff -r` finds `infrastructure/legal/sections`
   unlike hal's `legal/sections`; the pin moves when hal changes `legal/sections` before it leaves.
