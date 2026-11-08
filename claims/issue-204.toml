@@ -1,0 +1,7 @@
+claim_id = "8035bc9669864618bf0eef2aec8ebb0e"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "69a62e369121aaf3a2c0a8afb4532fc594acf31c"
+branch = "claude/issue-204-pc-inotify-limits"
+scope = ["AGENTS.md", "host/sysctl/inotify.conf", "mise.toml"]
+opened_commit = "86400aa6294920fbbe1224260a51e118092bcce0"
