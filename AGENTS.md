@@ -204,7 +204,8 @@
   hopin, whose own policy already refuses both Pods.
   The step "P7c cells" first fails when LiteLLM's `hostAliases` and agent-egress's `HostSNI` names differ, or the
   front's or agent-egress's image differs from Traefik's `values.yaml`. It makes a person budget and a key for the
-  first model with the master key through a port-forward to LiteLLM and checks that both carry those values, then
+  first model, whose metadata allows a client's `mock_response`, with the master key through a port-forward to
+  LiteLLM and checks that both carry those values, then
   from client Pods: in `hopin`, the front's three routes without a key get LiteLLM's 401, a GET on its two POST paths,
   `POST /v1/models` and `/key/generate` with the master key the front's own 404, a query string 400 on a GET and a
   POST, a mocked completion with the key its `mock_response` answer and a real one a 5xx; a Pod in another namespace

@@ -62,7 +62,9 @@ budget_made="$(admin /budget/new \
   "$(BUDGET="$budget" yq --null-input --output-format json '{"budget_id": strenv(BUDGET)}')" |
   yq --input-format json '.budget_id')"
 [ "$budget_made" = "$budget" ] || fail "the master key made the budget $budget_made, not $budget"
-key_made="$(admin /key/generate "$(MODEL="$model" yq --null-input --output-format json '{"models": [strenv(MODEL)]}')")"
+# LiteLLM drops a request's mock_response unless the key's metadata, which only the master key sets, allows it.
+key_made="$(admin /key/generate "$(MODEL="$model" yq --null-input --output-format json \
+  '{"models": [strenv(MODEL)], "metadata": {"allow_client_mock_response": true}}')")"
 app_key="$(yq --input-format json '.key' <<<"$key_made")"
 [ -n "$app_key" ] && [ "$app_key" != null ] || fail "the master key made no key"
 echo "::add-mask::$app_key"
@@ -147,7 +149,8 @@ post "$front_url/v1/chat/completions?model=$model" "$(completion "$mock")" "${au
 echo "a query string gets 400 through the front on a GET and on a POST"
 post "$front_url/v1/chat/completions" "$(completion "$mock")" "${authorized[@]}"
 [ "$status" = 200 ] && [ "$(yq --input-format json '.choices[0].message.content' <<<"$answer")" = "$mock" ] ||
-  fail "a mocked completion with the key through the front got $status without the mocked answer"
+  fail "a mocked completion with the key through the front got $status without the mocked answer: $(yq \
+    --input-format json '.error.message // .detail // "no error message"' <<<"$answer" 2>/dev/null | head -c 600)"
 echo "a completion with the key made by the master key gets the mock_response answer through the front"
 
 # C2: outside the three app namespaces no pod reaches the front, and only the front reaches LiteLLM.
