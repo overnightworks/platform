@@ -72,8 +72,9 @@
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
   per host and hal's console answers on another port of `localhost`.
-- `mise run gatus:open` forwards `127.0.0.1` at the port of Gatus's Service to it and prints the address of the status page;
-  the page has no other way in.
+- `mise run gatus:open` forwards `127.0.0.1` at a free local port kubectl chooses to the port of Gatus's Service and prints
+  the address of the status page once kubectl listens, none when the forward fails, which exits non-zero; the page has no
+  other way in.
 - `mise run keycloak:agent-owner [--adder] <client> <username>` runs through kcadm in Keycloak's
   container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
   `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
@@ -154,6 +155,12 @@
   Deleted logs stay deleted.
   `check-pod-logs` never reads Loki's copy of the lines, whose bound `infrastructure/loki/` sets; the `cluster` cell on
   Loki's running configuration is the only check of it.
+- The inotify limits (`host/sysctl/inotify.conf`: 512 instances and 524288 watches per user, so root's inotify instances
+  suffice for the kubelet's log follows and for hal's containers beside k3s) go to `/etc/sysctl.d/90-inotify.conf` by
+  `scripts/bootstrap_pc.sh --only files,services`, whose file entry notifies `systemd-sysctl.service`, which the services
+  step restarts so the values apply without a reboot. It needs sudo, so it is the operator's. Undo: declare
+  the file `state = "absent"` and apply `--only files,services`; the kernel keeps the raised values until the next reboot, or
+  until `sudo sysctl -w` sets them back.
 - The disk's bounds run in the operator's user manager, which lingers, and need no sudo: after `scripts/bootstrap_pc.sh
   --only tools` (the units' binaries must exist first), `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`
   writes `~/.config/user-tmpfiles.d/disk.conf` from `host/disk/` and the units `dev.mise.docuum.service`,
@@ -222,9 +229,10 @@
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
   each PC-only source swapped for one the job serves; a new PC-only source joins that list; `tunnel` given its own
-  `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token) and, on a pull
-  request, the pull request's ref. It first fails when the committed root or `tunnel` carries `spec.patches`, which
-  the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
+  `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token; `nvidia` given its
+  own, which only give the device plugin's DaemonSet a node selector no k3d node carries, as k3d holds no card) and, on
+  a pull request, the pull request's ref. It first fails when the committed root, `tunnel` or `nvidia` carries
+  `spec.patches`, which the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
   Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's and skat's files as dummies
   and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
   printed, each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password,
@@ -282,6 +290,11 @@
   The step "songmaker's stores" asserts that Postgres and Redis of namespace `songmaker` are Ready as the image's own
   non-root user, that a Pod there reaches both and one in a throwaway namespace neither, and that a key written to
   Redis is gone once its pod is deleted and Ready again.
+  The nvidia step asserts that the Kustomization `nvidia` is Ready at the candidate with its DaemonSet wanting
+  0 pods, that the RuntimeClass `nvidia` has the handler `nvidia`, that Namespace `nvidia` has no Pod Security label and
+  holds only that DaemonSet, and that a Pod with the class, uid 1000 and `nvidia.com/gpu: 1` passes server-side dry-run
+  in a throwaway Namespace enforcing `restricted` while one at uid 0 does not. k3d does not prove the card, the runtime
+  handler or the plugin's start.
   The step "P7b cells" then waits for config-cli's Job on the empty database and asserts that Keycloak's
   `KC_PROXY_TRUSTED_ADDRESSES` equals the `trustedIPs` of Traefik's `web`, discovery names Keycloak's `KC_HOSTNAME`
   as the realm's issuer, every group `realm.yaml` declares exists and `/services/agent-service/api` does not, and
@@ -345,7 +358,8 @@
   `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include. `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
-  `keycloak` and `litellm` also on `platform-secrets` and `storage`, and `loki` and `prometheus` on `storage`.
+  `keycloak` and `litellm` also on `platform-secrets` and `storage`, and `loki` and `prometheus` on `storage`. No layer
+  depends on `nvidia`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` and `songmaker` also
   on `storage`.
@@ -374,6 +388,19 @@
   `kustomize.toolkit.fluxcd.io/prune: disabled`, so neither a prune nor a revert deletes one with its Secrets.
   A Namespace removed from Git stays in the cluster; it leaves only after its Secrets left `platform-secrets`, by a
   deletion on the PC.
+- `infrastructure/nvidia/`: the node's one card as `nvidia.com/gpu: 1`: the Namespace `nvidia`, the RuntimeClass `nvidia`
+  with handler `nvidia` and NVIDIA's device plugin as a DaemonSet with that class, from NVIDIA's static manifest with
+  the Namespace and class added, its image the vendor `nvidia-device-plugin` at a digest. The Namespace has
+  no Pod Security label, as the plugin mounts the hostPath `/var/lib/kubelet/device-plugins`; nothing else runs in it,
+  and the plugin drops every capability. There is no time-slicing or sharing configuration, since the card belongs to
+  songmaker's music. `host/k3s/config.yaml` keeps `runtimes` disabled: k3s adds containerd's `nvidia` runtime only when
+  it starts with the NVIDIA container toolkit present, and if the plugin's Pod events name a missing runtime handler the
+  operator runs `sudo systemctl restart k3s` once, which does not touch Docker. `mise exec --
+  tests/nvidia/restricted_pod_lists_the_card.sh` runs on the PC through k3s's own kubeconfig, without sudo: it fails
+  unless the node offers `nvidia.com/gpu` 1 and a Pod in a throwaway Namespace enforcing `restricted`, at uid 1000 with the
+  class and the limit, lists exactly one card; it prints counts and names, and every throwaway object is gone on every
+  exit. A Pod naming the class without the limit might reach the card; the first workload that requests it decides on
+  an admission rule.
 - `infrastructure/storage/`: local-path-provisioner from upstream's manifest, vendored verbatim under a header naming
   its URL and sha256, and patched to one default class with `reclaimPolicy: Retain` and the path
   `/opt/local-path-provisioner/<namespace>/<claim>`, and to the provisioner and its busybox helper at digests; admission
@@ -518,8 +545,8 @@
   Service, and LiteLLM's front for `GET /v1/models` without a key, which must answer 401 since Gatus holds no key. The
   NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus and the front admit the namespace `gatus` on the port
   its request uses; hopin and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
-  Service and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
-  headers from; it sends only the requests of its configuration. In k3d, through a port-forward, every endpoint of the
+  Service at a free port and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
+  headers from; it sends only the requests of its configuration. In k3d, through the address `mise run gatus:open` prints, every endpoint of the
   configuration is healthy, speech-runtime at scale 0 turns unhealthy and, restored and Ready, healthy again, and a Pod
   in another namespace gets no answer from Gatus.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
@@ -530,6 +557,7 @@
   `[dotfiles]` entry of `mise.toml`; the units are declared there, as mise writes systemd user units from the table.
 - `mise.toml`: the tools, the k3s version and its installer's sha256, the PC's bootstrap parts (the k3s config file,
   the pod-log parts with `pod-logs-clean.timer` as a running, enabled service, which each unit file notifies,
+  the inotify limits file with `systemd-sysctl` as a running service it notifies,
   and the ufw rule `k3s-cni`, with `k3s-pods` and `k3s-services` declared absent, which deletes them from a host whose mise
   state holds them) and the tasks. `mise.lock` is generated by `mise lock`, not edited by hand, and `cluster`
   fails when a regeneration differs.

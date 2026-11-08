@@ -322,6 +322,14 @@ jobs:
           OTHER_NAMESPACE: songmaker-client
         run: tests/songmaker/stores_are_ready_non_root_closed_and_forget.sh
 
+      - name: Assert that the layer nvidia is Ready with its DaemonSet scheduled nowhere, offers the RuntimeClass, holds only the plugin in a Namespace without a Pod Security label, and that a restricted Pod with the class passes dry-run
+        if: matrix.part == 'core'
+        env:
+          NVIDIA_NAMESPACE: nvidia
+          # The throwaway Namespace that enforces restricted, which the dry-run Pod meets.
+          RESTRICTED_NAMESPACE: nvidia-restricted
+        run: tests/nvidia/layer_offers_the_class_and_judges_a_restricted_pod.sh
+
       - name: P7b cells
         if: matrix.part == 'core'
         env:
