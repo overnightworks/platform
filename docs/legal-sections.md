@@ -57,5 +57,7 @@ host of the Ingress in `infrastructure/legal/legal.yaml`.
 
 ## The refusal line
 
-`legal: <path relative to dir>: line N: <rule>`, on stderr with exit 1, never quoting the text; it may name the
-offending tag or attribute. On success `legal:check: <key> valid: <pages>` and exit 0. The command writes nothing.
+`legal: <path relative to dir>: line N: <rule>`, on stderr with exit 1. `line N: ` is absent when the rule concerns
+the file as a whole (missing, not a regular file, outside `dir`, over the size limit); a `dir` that is no directory is
+named by its own path. The line never quotes the text; it may name the offending tag or attribute. On success
+`legal:check: <key> valid: <pages>` and exit 0. The command writes nothing.

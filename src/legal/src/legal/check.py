@@ -14,15 +14,19 @@ OPTIONAL_PAGE = "nutzungsbedingungen"
 def read_page(directory: Path, page: str, required: bool) -> tuple[str, bytes] | None:
     """The file's name relative to `directory` and its bytes; None when an optional file is absent."""
     name = f"legal/{page}.html"
+    root = directory.resolve()
+    resolved = (root / name).resolve()
+    if not resolved.is_relative_to(root):
+        raise refusal(name, None, "lies outside the directory")
     try:
-        mode = (directory / name).lstat().st_mode
+        mode = (root / name).lstat().st_mode
     except FileNotFoundError:
         if required:
             raise refusal(name, None, "is missing") from None
         return None
     if not stat.S_ISREG(mode):
         raise refusal(name, None, "is not a regular file")
-    return name, (directory / name).read_bytes()
+    return name, resolved.read_bytes()
 
 
 def check_app(key: str, directory: Path, zone: str) -> list[str]:

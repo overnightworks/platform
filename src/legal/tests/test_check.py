@@ -79,3 +79,12 @@ def test_the_first_refusal_raises_from_check_app(app):
 def test_a_wrong_number_of_arguments_prints_the_usage(capsys):
     assert main(["hopin"]) == 2
     assert "usage" in capsys.readouterr().err
+
+
+def test_a_directory_link_that_leaves_the_app_is_refused(app, tmp_path_factory, capsys):
+    outside = tmp_path_factory.mktemp("outside")
+    (outside / "datenschutz.html").write_text(SECTION)
+    (app / "legal").rename(app / "moved")
+    (app / "legal").symlink_to(outside)
+
+    assert run(app, capsys) == (1, "", "legal: legal/datenschutz.html: lies outside the directory\n")

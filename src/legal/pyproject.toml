@@ -23,6 +23,7 @@ relative_files = true
 [tool.coverage.report]
 fail_under = 100
 show_missing = true
+# `if __name__ == "__main__":` runs only when the module is the program, never under the tests, which call `main`.
 # The last line of the section validator's first-difference search is not reachable: a text that differs from its
 # canonical form differs on a line both have, and a 300 000-case mutation run never reached it; the file stays as
 # moved, so the line is excluded here.
