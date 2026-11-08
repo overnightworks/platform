@@ -13,9 +13,10 @@ SECTION = '<h2 id="hopin">HopIn</h2>\n<p>Text</p>\n'
 
 @pytest.fixture
 def app(tmp_path: Path) -> Path:
-    (tmp_path / "legal").mkdir()
-    (tmp_path / "legal" / "datenschutz.html").write_text(SECTION)
-    return tmp_path
+    directory = tmp_path / "app"
+    (directory / "legal").mkdir(parents=True)
+    (directory / "legal" / "datenschutz.html").write_text(SECTION)
+    return directory
 
 
 def run(app: Path, capsys, key: str = "hopin") -> tuple[int, str, str]:
@@ -81,8 +82,9 @@ def test_a_wrong_number_of_arguments_prints_the_usage(capsys):
     assert "usage" in capsys.readouterr().err
 
 
-def test_a_directory_link_that_leaves_the_app_is_refused(app, tmp_path_factory, capsys):
-    outside = tmp_path_factory.mktemp("outside")
+def test_a_directory_link_that_leaves_the_app_is_refused(app, tmp_path, capsys):
+    outside = tmp_path / "outside"
+    outside.mkdir()
     (outside / "datenschutz.html").write_text(SECTION)
     (app / "legal").rename(app / "moved")
     (app / "legal").symlink_to(outside)
