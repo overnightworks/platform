@@ -7,7 +7,7 @@
 # zero-length chunk (a sign byte and the int's bytes) that closes every block: pg_restore waits for it inside its
 # transaction, as an idle session or in COPY, for a dump with data.
 # A session inside its transaction also waits for its client between two statements and while a COPY streams, so a probe
-# counts only once the writer has ended and the withheld byte is the one thing pg_restore waits for; the first such
+# counts only once the writer has ended, when at most the FIFO's and kubectl's buffers remain unread; the first such
 # probe decides, and a writer that ended with a failure fails the script, since the loader then never got the dump.
 # When no probe sees the blocked state in 300 seconds, it prints what the restore was doing: the database's other
 # sessions by state and wait event, the container's process states and the loader's local processes, never a row.
