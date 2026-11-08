@@ -1,0 +1,8 @@
+claim_id = "348c5c4942994a1697d5fe05ce7827e1"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "f8e650885639224a4848360806aada264312f621"
+branch = "claude/issue-160-agent-realm-objects"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/keycloak/config-cli.yaml", "infrastructure/keycloak/realm.yaml", "mise.toml", "tests/keycloak"]
+opened_commit = "c0e42c33b6fc8feae8b66a2ae833cb2fce5ecd0f"
+whole_reason = "The realm objects, the owner command and their cells are one proof: R2 and the members clause need the objects and the command together, and the cutover applies them at once."
