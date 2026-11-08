@@ -58,7 +58,8 @@ UNION ALL SELECT 'people ' || user_id FROM "LiteLLM_EndUserTable" WHERE user_id 
 ORDER BY 1
 EOSQL
 }
-# run_expire <job name>: a Job made from the CronJob; sets log to what it printed.
+count_line='^(person_days|tool_days|tag_days|tools|people)\|'
+# run_expire <job name>: a Job made from the CronJob; sets log to the statement's counts and failed_tries to the rest.
 run_expire() {
   kubectl --namespace "$namespace" create job "$1" --from=cronjob/litellm-expire
   kubectl --namespace "$namespace" label job "$1" "$marker=job"
@@ -78,14 +79,20 @@ run_expire() {
     fail "the Job $1 did not complete"
   }
   # A retried Job leaves failed Pods beside the one that completed.
-  log="$(kubectl --namespace "$namespace" logs "$(kubectl --namespace "$namespace" get pods --selector "job-name=$1" \
+  full_log="$(kubectl --namespace "$namespace" logs "$(kubectl --namespace "$namespace" get pods --selector "job-name=$1" \
     --field-selector status.phase=Succeeded --output name)")"
+  # The lines that are no count are psql's failed connection tries.
+  log="$(grep -E "$count_line" <<<"$full_log" || true)"
+  failed_tries="$(grep -vE "$count_line" <<<"$full_log" || true)"
 }
 counts() { printf 'person_days|%s\ntool_days|%s\ntag_days|%s\ntools|%s\npeople|%s' "$@"; }
 
 run_expire "$marker-first"
 [ "$log" = "$(counts 1 1 1 1 1)" ] || fail "the first run printed [${log//$'\n'/ }], not one deletion in each of the five counts"
 echo "the first run deleted one row of each table: ${log//$'\n'/ }"
+# A fresh Pod can be refused before its address is admitted; the count is evidence, never asserted.
+echo "the first Job's log shows $(grep -c . <<<"$failed_tries" || true) lines of failed connection tries; their kinds:"
+sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/<ip>/g' <<<"$failed_tries" | grep . | sort | uniq -c || true
 expected="$(printf '%s\n' "person_days $marker-fresh" "tool_days $marker-fresh" "tag_days $marker-fresh" "tools $marker-fresh" \
   "people $marker-budgeted" "people $marker-fresh" "people $marker-spent" | LC_ALL=C sort)"
 [ "$(remaining | LC_ALL=C sort)" = "$expected" ] ||

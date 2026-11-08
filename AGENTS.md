@@ -377,8 +377,9 @@
   `expire.sql` (a ConfigMap), the daily person, tool and label rows dated more than 90 days before the database's UTC
   day, the tool rows last used before the moment 90 days before now, or created before it when never used, and the customer rows without a budget, without spend and without a
   daily row inside the period; the period is no setting, as the privacy text states it. Its `psql` is the image of the
-  layer's Postgres, which a replacement copies, and it prints the five counts by name, never a row; a first `select 1`
-  shows psql's stderr, so a failed connection names itself in the log, while the statement's stderr is discarded because
+  layer's Postgres, which a replacement copies, and it prints the five counts by name, never a row; a first `select 1`,
+  tried up to 30 times a second apart inside the Pod since a fresh Pod can be refused until the NetworkPolicy controller admits
+  its address, shows psql's stderr, so a failed connection names itself in the log, while the statement's stderr is discarded because
   psql quotes row values. `mise exec -- tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>` is the operator's, since it
   reads the master key: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
   key table's rows, those of the dashboard's UI session (which `/key/list` omits) and the rest, then `equal` or `DIFFERS`
