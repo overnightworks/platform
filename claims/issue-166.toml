@@ -1,0 +1,8 @@
+claim_id = "46711eb4f7e1454dad51cfffda4ab73d"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "f8e650885639224a4848360806aada264312f621"
+branch = "claude/issue-166-skat-runs-from-its-release"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/skat", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
+opened_commit = "7461b3197def481ad4e33b187cfc779bbafe33fe"
+whole_reason = "skat's Deployment, its CI app list and dummy Secrets and its documents prove one running app together."
