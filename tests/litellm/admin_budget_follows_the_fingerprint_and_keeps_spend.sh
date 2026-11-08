@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # In k3d: `mise run litellm:admin <username>` puts a named person's customer row, under the fingerprint agent-runtime's
 # recipe makes of the realm's public issuer and the person's id, on the admin budget with no limit and adds the person to
-# /services/litellm/admin. A name no person carries and a service account's name are refused with nothing changed and no
-# budget written; a person without a row gets one; a row on the person budget or with no budget moves to the admin budget
+# /services/litellm/admin. A name no person carries and a service account's name are refused with nothing changed, no
+# budget and no customer row written; a person without a row gets one; a row on the person budget or with no budget moves to the admin budget
 # with its spend and alias unchanged; an admin budget with a finite limit is corrected to no limit and to its monthly
 # period while another admin's row stays as it was; a second run prints unchanged; a call past the person budget is
-# refused for the ordinary person and passes for the admin; and no output holds a person's id, a fingerprint or a key.
+# refused by the person limit for the ordinary person and passes for the admin; and no output holds a person's id, a fingerprint or a key.
 set -euo pipefail
 # No value of this cell reaches a trace.
 { set +x; } 2>/dev/null
@@ -30,7 +30,7 @@ litellm() {
 }
 # attempt <command>...: a cleanup step; one that fails is named and fails the cell after the rest ran.
 attempt() {
-  "$@" || {
+  "$@" >/dev/null || {
     echo "::error::the cleanup step '$1 ${2-}' failed"
     deletion_failures=$((deletion_failures + 1))
   }
@@ -41,13 +41,13 @@ cleanup() {
   local cell_status=$? user_id
   if [ -n "$litellm_port" ]; then
     [ "${#fingerprints[@]}" = 0 ] || attempt litellm /customer/delete "$(FINGERPRINTS="${fingerprints[*]}" \
-      yq --null-input --output-format json --indent 0 '{"user_ids": (strenv(FINGERPRINTS) | split(" "))}')" >/dev/null
-    attempt litellm /key/delete '{"key_aliases": ["admin-cell"]}' >/dev/null
-    attempt litellm /budget/delete "$(ID="$admin_budget" yq --null-input --output-format json --indent 0 '{"id": strenv(ID)}')" >/dev/null
+      yq --null-input --output-format json --indent 0 '{"user_ids": (strenv(FINGERPRINTS) | split(" "))}')"
+    attempt litellm /key/delete '{"key_aliases": ["admin-cell"]}'
+    attempt litellm /budget/delete "$(ID="$admin_budget" yq --null-input --output-format json --indent 0 '{"id": strenv(ID)}')"
     [ "$person_budget_made" = false ] ||
-      attempt litellm /budget/delete "$(ID="$person_budget_id" yq --null-input --output-format json --indent 0 '{"id": strenv(ID)}')" >/dev/null
+      attempt litellm /budget/delete "$(ID="$person_budget_id" yq --null-input --output-format json --indent 0 '{"id": strenv(ID)}')"
   fi
-  for user_id in "${user_ids[@]}"; do attempt admin DELETE "users/$user_id"; done
+  for user_id in "${user_ids[@]}"; do attempt admin DELETE "$realm/users/$user_id"; done
   [ -z "$litellm_forward" ] || kill "$litellm_forward" 2>/dev/null || true
   kill "$forward_pid" 2>/dev/null || true
   rm -f -- "$admin_secret_file"
@@ -97,8 +97,8 @@ run_task() {
 # make_person <name>: a person of the realm; sets person_id and fingerprint, the fingerprint by agent-runtime's recipe in
 # Python, apart from the command.
 make_person() {
-  admin POST users "$(NAME="$1" yq --null-input --output-format json --indent 0 '{"username": strenv(NAME), "enabled": true}')"
-  person_id="$(admin GET "users?username=$1&exact=true" | jq --raw-output '.[0].id')"
+  admin POST "$realm/users" "$(NAME="$1" yq --null-input --output-format json --indent 0 '{"username": strenv(NAME), "enabled": true}')"
+  person_id="$(admin GET "$realm/users?username=$1&exact=true" | jq --raw-output '.[0].id')"
   [ -n "$person_id" ] && [ "$person_id" != null ] || fail "Keycloak made no person $1"
   user_ids+=("$person_id")
   fingerprint="$(ISS="$public_issuer" SUB="$person_id" python3 -I -c '
@@ -115,7 +115,7 @@ kept() { customer "$1" | yq --input-format json --output-format json --indent 0 
 # budget_of <fingerprint>: the budget the customer row names.
 budget_of() { customer "$1" | yq --input-format json '.budget_id'; }
 # in_group <person id>: whether Keycloak lists the admin group among the person's groups.
-in_group() { [ "$(admin GET "users/$1/groups" | jq --raw-output --arg path "$admin_group" '[.[] | select(.path == $path)] | length')" = 1 ]; }
+in_group() { [ "$(admin GET "$realm/users/$1/groups" | jq --raw-output --arg path "$admin_group" '[.[] | select(.path == $path)] | length')" = 1 ]; }
 # new_customer <fingerprint> <JSON fields>: a customer row as the loaded copy has it.
 new_customer() {
   litellm /customer/new "$(FP="$1" FIELDS="$2" yq --null-input --output-format json --indent 0 \
@@ -129,9 +129,10 @@ run_task unknown 1 no-such-person-in-the-realm
 grep -q 'nothing changed$' <<<"$output" || fail "an unknown name was not refused with nothing changed: $output"
 run_task service-account 1 service-account-agent-mozart
 grep -q 'nothing changed$' <<<"$output" || fail "a service account was not refused with nothing changed: $output"
-! litellm /budget/list | yq --input-format json '.[].budget_id' | grep -qxF "$admin_budget" ||
-  fail "a refused run wrote the budget $admin_budget"
-echo "an unknown name and a service account are refused with nothing changed and no budget written"
+budget_ids="$(litellm /budget/list | yq --input-format json '.[].budget_id')"
+! grep -qxF "$admin_budget" <<<"$budget_ids" || fail "a refused run wrote the budget $admin_budget"
+[ "$(litellm /customer/list | yq --input-format json 'length')" = 0 ] || fail "a refused run wrote a customer row"
+echo "an unknown name and a service account are refused with nothing changed, no budget and no customer row written"
 
 # A new admin: the budget has no limit and a monthly period, the row stands under the fingerprint, the person is a member.
 make_person admin-cell-new
@@ -162,14 +163,25 @@ app_key="$(litellm /key/generate "$(MODEL="$model" yq --null-input --output-form
   '{"key_alias": "admin-cell", "models": [strenv(MODEL)], "metadata": {"allow_client_mock_response": true}}')" |
   yq --input-format json '.key')"
 forbidden+=("$app_key")
-# call_status <fingerprint>: the status of a mocked completion by the person with the app key, whose reply stays unprinted.
-call_status() {
-  printf 'header = "Authorization: Bearer %s"\n' "$app_key" |
-    curl --silent --output /dev/null --write-out '%{http_code}' --max-time 30 --config - \
+# call_probe <fingerprint>: sets call_http to the status of a mocked completion by the person with the app key and
+# call_cause to person-limit when the refusal is LiteLLM's budget_exceeded error for an end user, else other. The reply
+# is read for its type and the start of its message and never printed, since the message names the end user.
+call_probe() {
+  local result body
+  result="$(printf 'header = "Authorization: Bearer %s"\n' "$app_key" |
+    curl --silent --max-time 30 --config - --write-out '\n%{http_code}' \
       --header 'Content-Type: application/json' --data "$(MODEL="$model" FP="$1" yq --null-input --output-format json --indent 0 \
       '{"model": strenv(MODEL), "messages": [{"role": "user", "content": "probe"}], "user": strenv(FP), "mock_response": "ok"}')" \
-      "http://127.0.0.1:$litellm_port/v1/chat/completions"
+      "http://127.0.0.1:$litellm_port/v1/chat/completions")"
+  call_http="${result##*$'\n'}"
+  body="${result%$'\n'*}"
+  call_cause="$(jq --raw-output 'if .error.type == "budget_exceeded" and (.error.message | startswith("ExceededBudget: End User=")) then "person-limit" else "other" end' <<<"$body" 2>/dev/null)" ||
+    call_cause=other
 }
+# refused_by_person_limit <fingerprint>: whether a call is refused and the refusal comes from the person limit.
+refused_by_person_limit() { call_probe "$1"; [ "$call_http" != 200 ] && [ "$call_cause" = person-limit ]; }
+# admitted <fingerprint>: whether a call passes.
+admitted() { call_probe "$1"; [ "$call_http" = 200 ]; }
 make_person admin-cell-moved
 moved_fingerprint="$fingerprint"
 new_customer "$moved_fingerprint" "{\"budget_id\": \"$person_budget_id\", \"spend\": 5, \"alias\": \"kept\"}"
@@ -179,8 +191,10 @@ new_customer "$unlinked_fingerprint" '{"spend": 5, "alias": "kept"}'
 make_person admin-cell-ordinary
 ordinary_fingerprint="$fingerprint"
 new_customer "$ordinary_fingerprint" "{\"budget_id\": \"$person_budget_id\", \"spend\": 5}"
-[ "$(call_status "$moved_fingerprint")" != 200 ] && [ "$(call_status "$ordinary_fingerprint")" != 200 ] ||
-  fail "a call past the person budget passed before the person was an admin"
+refused_by_person_limit "$moved_fingerprint" && refused_by_person_limit "$ordinary_fingerprint" ||
+  fail "a call past the person budget was not refused by the person limit before the person was an admin"
+[ "$(budget_of "$moved_fingerprint")" = "$person_budget_id" ] && [ "$(budget_of "$unlinked_fingerprint")" = null ] ||
+  fail "the starting budgets are not the person budget and none"
 for person in moved unlinked; do
   fingerprint_name="${person}_fingerprint"
   before="$(kept "${!fingerprint_name}")"
@@ -190,9 +204,8 @@ for person in moved unlinked; do
   [ "$(yq --input-format json '.spend' <<<"$before")" = 5 ] || fail "the $person customer has no spend to keep"
 done
 echo "a row on the person budget and one with no budget move to the admin budget with spend and alias unchanged"
-[ "$(call_status "$moved_fingerprint")" = 200 ] && [ "$(call_status "$unlinked_fingerprint")" = 200 ] ||
-  fail "a call past the person budget did not pass for an admin"
-[ "$(call_status "$ordinary_fingerprint")" != 200 ] || fail "the ordinary person's call past the person budget passed"
+admitted "$moved_fingerprint" && admitted "$unlinked_fingerprint" || fail "a call past the person budget did not pass for an admin"
+refused_by_person_limit "$ordinary_fingerprint" || fail "the ordinary person's call was not refused by the person limit"
 echo "a call past the person budget passes for an admin and is refused for the ordinary person"
 
 run_task second-run 0 admin-cell-moved

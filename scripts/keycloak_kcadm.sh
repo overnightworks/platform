@@ -22,7 +22,10 @@ sign_in_kcadm() {
       --server http://localhost:8080 --realm master --client "$KC_BOOTSTRAP_ADMIN_CLIENT_ID"' "$config_file" >/dev/null ||
     fail "Keycloak cannot be signed in to"
 }
-kcadm() { keycloak_exec --stdin deployment/keycloak --container keycloak -- "$kcadm_path" "$@" --config "$config_file"; }
+# kcadm_stderr: where kcadm's diagnostics go. They can quote a request URL that holds a person's id, so a task that never
+# prints one sets /dev/null.
+kcadm_stderr=/dev/stderr
+kcadm() { keycloak_exec --stdin deployment/keycloak --container keycloak -- "$kcadm_path" "$@" --config "$config_file" 2>"$kcadm_stderr"; }
 # find_person <username>: sets person_id. Keycloak's search leaves out service accounts, and a value in quotes matches a
 # username, email or name exactly, so only the entries whose username is the requested one, which Keycloak stores in
 # lowercase, are the person. Another user's email or name can match too and a page holds at most 100, so every page is

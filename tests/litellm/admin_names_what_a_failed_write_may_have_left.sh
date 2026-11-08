@@ -3,7 +3,7 @@
 # missing argument is refused before any call; a run on nothing writes the budget, the membership and the customer row
 # in that order, and a second run sends no write and prints unchanged; a failure and a lost answer at each of the five
 # writes, and a failed read-back after each of three, name what was written or may have been and never claim that
-# nothing changed, and running again completes the work without resetting a customer's spend; an INT or a TERM after an
+# nothing changed, a customer row that cannot be read before the first write stops the run with nothing written, and running again completes the work without resetting a customer's spend; an INT or a TERM after an
 # attempted write names it and exits non-zero; and no output holds the person's id, the fingerprint, a key or a reply
 # body.
 # Usage: mise exec -- tests/litellm/admin_names_what_a_failed_write_may_have_left.sh
@@ -47,13 +47,14 @@ case "$kcadm_arguments" in
   "get users --target-realm "*) echo '[]' ;;
   "get group-by-path/services/litellm/admin "*) echo admin-group-id ;;
   "get users/$FAKE_PERSON_ID/groups --target-realm "*)
-    if [ "${FAKE_READBACK_FAILS-}" = membership ] && [ -s "$FAKE_STATE/writes" ]; then exit 1; fi
+    if [ "${FAKE_READBACK_FAILS-}" = membership ] && [ -f "$FAKE_STATE/member" ]; then exit 1; fi
     if [ -f "$FAKE_STATE/member" ]; then
       case "$kcadm_arguments" in *"--fields path"*) echo /services/litellm/admin ;; *) echo admin-group-id ;; esac
     fi ;;
   "update users/$FAKE_PERSON_ID/groups/admin-group-id "*)
     echo "write membership" >>"$FAKE_STATE/writes"
     if [ "${FAKE_FAILING_WRITE-}" = membership ]; then
+      echo "Resource not found for url: http://localhost:8080/admin/realms/hallucinai/users/$FAKE_PERSON_ID/groups/admin-group-id" >&2
       [ -z "${FAKE_TRANSPORT_FAILURE-}" ] || touch "$FAKE_STATE/member"
       exit 1
     fi
@@ -63,8 +64,9 @@ esac
 FAKE
 # The fake LiteLLM keeps the admin budget and the customer row in FAKE_STATE. A write named by FAKE_FAILING_WRITE (a
 # path) is answered with 500 and a body, or, with FAKE_TRANSPORT_FAILURE, applied and answered by a lost connection; a
-# write named by FAKE_SLOW_WRITE is applied after a pause. FAKE_READBACK_FAILS names the read (budget or customer)
-# that fails once a write was sent.
+# write named by FAKE_SLOW_WRITE waits for the file FAKE_STATE/release before it is applied. FAKE_READBACK_FAILS names
+# the read (budget, membership or customer) that fails once its own write was sent; FAKE_PREWRITE_FAILS=customer fails
+# the customer read of a run that wrote nothing yet.
 cat >"$fake_bin/curl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -79,7 +81,7 @@ for argument in "$@"; do
 done
 json() { yq --input-format json --output-format json --indent 0 "$@"; }
 status=200 reply='{}'
-fails_read() { [ "${FAKE_READBACK_FAILS-}" = "$1" ] && [ -s "$FAKE_STATE/writes" ]; }
+fails_read() { [ "${FAKE_READBACK_FAILS-}" = "$1" ] && grep -q "^write /$1/" "$FAKE_STATE/writes"; }
 if [ "$port" = 8080 ]; then
   printf '{"issuer":"%s"}\n' "$FAKE_ISSUER"
   exit 0
@@ -93,7 +95,8 @@ case "$path" in
   "/customer/info?end_user_id="*)
     if [ ! -f "$FAKE_STATE/customer.json" ]; then status=404
     else reply="$(cat "$FAKE_STATE/customer.json")"; fi
-    ! fails_read customer || status=500 ;;
+    ! fails_read customer || status=500
+    [ "${FAKE_PREWRITE_FAILS-}" != customer ] || [ -s "$FAKE_STATE/writes" ] || status=500 ;;
   /budget/new | /budget/update | /customer/new | /customer/update)
     echo "write $path" >>"$FAKE_STATE/writes"
     data="$(grep '^data = ' <<<"$config")"
@@ -101,7 +104,7 @@ case "$path" in
     data="$(sed 's/\\"/"/g; s/\\\\/\\/g' <<<"${data%\"}")"
     failing=false
     [ "${FAKE_FAILING_WRITE-}" != "$path" ] || failing=true
-    [ "${FAKE_SLOW_WRITE-}" != "$path" ] || sleep 3
+    [ "${FAKE_SLOW_WRITE-}" != "$path" ] || until [ -f "$FAKE_STATE/release" ]; do sleep 0.1; done
     if [ "$failing" = false ] || [ -n "${FAKE_TRANSPORT_FAILURE-}" ]; then
       case "$path" in
         /budget/*)
@@ -145,23 +148,28 @@ seed() {
       printf '{"user_id":"%s","spend":3,"alias":"keep","budget_id":"person-monthly"}\n' "$fingerprint" >"$FAKE_STATE/customer.json" ;;
   esac
 }
+# scan_for_secrets <what> <output>: fails when the output holds the person's id, the fingerprint, a key or a reply body.
+scan_for_secrets() {
+  local secret
+  for secret in "$master_key" "$reply_body" "$person_id" "$fingerprint"; do
+    case "$2" in *"$secret"*) fail "the output of $1 holds a key, a reply body, an id or the fingerprint" ;; esac
+  done
+}
 # run_task <expected exit> <task argument>...: runs the task in FAKE_STATE, which must end as expected, and sets status,
 # output and writes. No output holds the person's id, the fingerprint, a key or a reply body.
 run_task() {
-  local expected="$1" secret
+  local expected="$1"
   shift
   status=0
   : >"$FAKE_STATE/writes"
   output="$(cd "$repository_root" && mise run "$@" 2>&1)" || status=$?
   writes="$(cat "$FAKE_STATE/writes")"
-  for secret in "$master_key" "$reply_body" "$person_id" "$fingerprint"; do
-    case "$output" in *"$secret"*) fail "the output of $* holds a key, a reply body, an id or the fingerprint" ;; esac
-  done
+  scan_for_secrets "$*" "$output"
   [ "$status" = "$expected" ] || fail "$*: exit $status, not $expected: $output"
 }
 # completes <case name>: a run without failure ends the work: the budget, the membership and the customer row on it.
 completes() {
-  unset FAKE_FAILING_WRITE FAKE_TRANSPORT_FAILURE FAKE_READBACK_FAILS
+  unset FAKE_FAILING_WRITE FAKE_TRANSPORT_FAILURE FAKE_READBACK_FAILS FAKE_PREWRITE_FAILS
   run_task 0 litellm:admin alice
   [ -f "$FAKE_STATE/member" ] || fail "$1: the rerun left the person out of the group"
   [ "$(yq --input-format json --output-format yaml '.max_budget // "null"' "$FAKE_STATE/budget.json")" = null ] && [ "$(yq --input-format json --output-format yaml '.budget_duration' "$FAKE_STATE/budget.json")" = 1mo ] ||
@@ -178,11 +186,22 @@ echo "a missing argument is refused with nothing changed and no call"
 seed fresh none
 run_task 0 litellm:admin alice
 [ "$writes" = $'write /budget/new\nwrite membership\nwrite /customer/new' ] || fail "fresh: the writes are not budget, membership, customer: $writes"
+grep -q '^litellm:admin: alice is in ' <<<"$output" && ! grep -qE 'possibly|run again|nothing changed' <<<"$output" ||
+  fail "fresh: a finished run does not say it finished: $output"
 [ "$(yq --input-format json --output-format yaml '.user_id' "$FAKE_STATE/customer.json")" = "$fingerprint" ] || fail "fresh: the row is not under agent-runtime's fingerprint"
 run_task 0 litellm:admin alice
 [ -z "$writes" ] || fail "second run: a write was sent: $writes"
 grep -q '^litellm:admin: alice unchanged$' <<<"$output" || fail "second run: no unchanged line: $output"
 echo "a run on nothing writes the budget, the membership and the customer row, in that order, and a second sends no write and prints unchanged"
+
+# A customer row that cannot be read before the first write stops the run with nothing written.
+seed unreadable-customer none
+export FAKE_PREWRITE_FAILS=customer
+run_task 1 litellm:admin alice
+[ -z "$writes" ] || fail "unreadable customer: a write was sent before the customer was read: $writes"
+grep -q 'nothing changed$' <<<"$output" || fail "unreadable customer: not refused with nothing changed: $output"
+unset FAKE_PREWRITE_FAILS
+echo "a customer row that cannot be read before the first write ends the run with nothing written and nothing changed"
 
 # A failure and a lost answer at each write, each followed by a run that completes the work.
 write_cases=(
@@ -212,13 +231,20 @@ done
 unset FAKE_FAILING_WRITE FAKE_TRANSPORT_FAILURE
 echo "a failure and a lost answer at each of the five writes name what may be written, never claim nothing changed, and a rerun completes it with the spend kept"
 
-# A read-back that fails after a write names the write as well.
-for readback in budget membership customer; do
+# A read-back that fails after its own write names that write; the write before it was sent and the next one was not.
+readback_cases=(
+  'budget:write /budget/new:budget litellm-admin'
+  'membership:write membership:alice in /services/litellm/admin'
+  'customer:write /customer/new:customer row of alice'
+)
+for readback_case in "${readback_cases[@]}"; do
+  IFS=: read -r readback last_write named <<<"$readback_case"
   seed "readback-$readback" none
   export FAKE_READBACK_FAILS="$readback"
   run_task 1 litellm:admin alice
-  grep -q 'written or possibly written: ' <<<"$output" && ! grep -q 'nothing changed' <<<"$output" ||
+  grep -qF "written or possibly written: " <<<"$output" && grep -qF "$named" <<<"$output" && ! grep -q 'nothing changed' <<<"$output" ||
     fail "readback $readback: the output does not name what was written: $output"
+  [ "$(tail -n 1 <<<"$writes")" = "$last_write" ] || fail "readback $readback: the last write is not '$last_write': $writes"
   completes "readback $readback"
 done
 unset FAKE_READBACK_FAILS
@@ -236,11 +262,13 @@ os.execvp(sys.argv[1], sys.argv[1:])' bash scripts/litellm_keys.sh admin alice) 
   command_pid=$!
   timeout 60 bash -c 'until [ -s "$0" ]; do sleep 0.2; done' "$FAKE_STATE/writes" || fail "$signal_name: no write was attempted"
   kill "-$signal_name" "$command_pid"
+  touch "$FAKE_STATE/release"
   status=0
   wait "$command_pid" || status=$?
   [ "$status" != 0 ] || fail "$signal_name: the command ended 0"
   grep -q 'written or possibly written: budget litellm-admin' "$work_directory/signal-output" ||
     fail "$signal_name: the output does not name the write: $(cat "$work_directory/signal-output")"
+  scan_for_secrets "$signal_name" "$(cat "$work_directory/signal-output")"
   unset FAKE_SLOW_WRITE
   completes "signal $signal_name"
 done

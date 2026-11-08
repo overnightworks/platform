@@ -383,15 +383,17 @@
   value, one without `sk-`, a missing key and an app outside the table are refused and change no row; no output holds a
   value, the master key or the value's sha256. The step "P9c-2 cells" of part `postgres` (`tests/litellm/admin_budget_follows_the_fingerprint_and_keeps_spend.sh`)
   makes people in the realm and drives `litellm:admin`: an unknown name and a service account are refused with nothing
-  changed and no budget; a new admin gets a row under the fingerprint, which the cell computes in Python with
+  changed, no budget and no customer row; a new admin gets a row under the fingerprint, which the cell computes in Python with
   agent-runtime's recipe, on the budget with no limit and `1mo`, and joins the group; a finite admin budget is corrected
   while another admin's row stays; a row on the person budget and one with no budget move with spend and alias
-  unchanged; a mocked call past the person budget is refused for an ordinary person and passes for the admin; a second
+  unchanged; a mocked call past the person budget is refused for an ordinary person by the person limit (the error's type and the
+  start of its message, never printed) and passes for the admin; the cell first asserts the starting budgets, the moved row on the person budget and the other on none; a second
   run prints `unchanged`, and no output holds an id, a fingerprint or a key. The job `checks` runs
   `tests/litellm/admin_names_what_a_failed_write_may_have_left.sh` against a fake kubectl, kcadm and curl: a missing
-  argument is refused with no call, the writes come in order and a second run sends none, a failure or a lost answer at
-  each of the five writes, a failed read-back and an INT or a TERM name what may be written and a rerun completes it
-  with the spend kept. It also runs `tests/litellm/failed_write_names_what_is_done.sh`
+  argument is refused with no call, the writes come in order, a finished run says what it wrote and a second run sends
+  none, a customer row that cannot be read before the first write ends the run with nothing written, a failure or a lost
+  answer at each of the five writes, a failed read-back after each of three, an INT or a TERM name what may be written
+  and a rerun completes it with the spend kept, and no output holds an id, even when kcadm's diagnostic quotes one. It also runs `tests/litellm/failed_write_names_what_is_done.sh`
   against a fake kubectl and curl: a write that fails midway stops the rest, names what was made, the one that failed,
   also when its answer was lost, and what was not made, and prints no reply body; a budget-only change sends no period;
   a table without a number for the person budget or a row's limits, an absent revision, one that changes while the table
@@ -531,11 +533,12 @@
   never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body. The
   rpm and tpm limits are not in the table and stay as they are.
   `mise run litellm:admin <username>` is the unlimited AI budget of one admin, through the same script: it reads the person
-  as `keycloak:agent-owner` does (`scripts/keycloak_kcadm.sh`, which both tasks source), the realm's issuer from the public
-  discovery document and the group `/services/litellm/admin`, and LiteLLM's budget `litellm-admin` and customer row; it
-  then writes and reads back, in this order, the budget (no limit, `1mo`, created or corrected), the membership and the
+  as `keycloak:agent-owner` does (`scripts/keycloak_kcadm.sh`, which both tasks source, and whose kcadm diagnostics this
+  command discards, since they can quote a URL with the person's id), the realm's issuer from the public discovery
+  document and the group `/services/litellm/admin`, and LiteLLM's budget `litellm-admin` and customer row, all before
+  the first write; it then writes and reads back, in this order, the budget (no limit, `1mo`, created or corrected), the membership and the
   customer row, which is `/customer/new` under agent-runtime's `person_fingerprint` of issuer and person id or
-  `/customer/update` of `budget_id` alone, so spend and other fields stay. A second run prints `<username> unchanged`.
+  `/customer/update` of `budget_id` alone, so spend and other fields stay. A second run prints `<username> unchanged`, and a finished run prints what it wrote.
   A missing argument, a name no person carries and a service account's name end in `nothing changed`; a failure, a lost
   answer, a failed read-back or a signal after a write names what was written or may have been and says that running it
   again completes it; nothing is rolled back and no output holds an id, the fingerprint or a key. Removing an admin is

@@ -27,15 +27,18 @@ deadline=2m
 key_prefix=sk-
 key_minimum_length=16
 
+kcadm_stderr=/dev/null
 command_name="" task_name=litellm:admin realm="" username="" reported=false
 # The admin command's writes, each recorded before it is sent, since an answer lost on the way leaves it unknown.
 attempted=()
-# written_text: what the admin command wrote or may have written, and how to finish.
-written_text() {
+# written_list: what the admin command wrote or may have written.
+written_list() {
   local written
   written="$(printf '%s, ' "${attempted[@]}")"
-  echo "written or possibly written: ${written%, }; run again to complete it"
+  echo "${written%, }"
 }
+# written_text: the list as a failure reports it, with how to finish.
+written_text() { echo "written or possibly written: $(written_list); run again to complete it"; }
 fail() {
   local suffix=""
   if [ "$command_name" = admin ]; then
@@ -393,11 +396,10 @@ make_admin_budget() {
   differences "$desired" "$found"
   [ "$change_fields" = "{}" ] || fail "the budget $admin_budget did not read back as written"
 }
-# link_customer: puts the person's customer row on the admin budget, by a new row or a change of its budget alone, then
-# reads it back.
+# link_customer: puts the person's customer row, as read before the first write, on the admin budget, by a new row or a
+# change of its budget alone, then reads it back.
 link_customer() {
   local path=/customer/update
-  read_customer
   [ "$(yq '.budget_id' <<<"$customer_row")" != "$admin_budget" ] || return 0
   [ "$customer_row" != null ] || path=/customer/new
   attempted+=("customer row of $username")
@@ -426,7 +428,8 @@ admin_command() {
   kcadm get "group-by-path$admin_group" --target-realm "$realm" --fields id --format csv --noquotes >/dev/null ||
     fail "$realm holds no $admin_group or Keycloak cannot be read"
 
-  # Each step is written and read back in this order, so a customer without a limit never stands without the marker.
+  # Everything is read before the first write, and each step is written and read back in this order, so a customer without a limit never stands without the marker.
+  read_customer
   make_admin_budget
   ensure_member "$admin_group"
   person_groups="$(kcadm get "users/$person_id/groups" --target-realm "$realm" --fields path --format csv --noquotes)" ||
@@ -436,7 +439,7 @@ admin_command() {
   if [ "${#attempted[@]}" = 0 ]; then
     echo "litellm:admin: $username unchanged"
   else
-    echo "litellm:admin: $username is in $admin_group on the budget $admin_budget; $(written_text)"
+    echo "litellm:admin: $username is in $admin_group on the budget $admin_budget; written: $(written_list)"
   fi
 }
 
