@@ -3,6 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "b6bbf9ee856c09ba2f0727aae85829fbaa176ff6"
 branch = "claude/issue-158-p7b-keycloak"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/keycloak", "infrastructure/traefik/rendered.yaml", "infrastructure/traefik/values.yaml", "mise.toml", "tests/client_pod.sh", "tests/ingress/traefik_answers_only_cloudflared_and_routes_the_app.sh", "tests/keycloak", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/keycloak", "infrastructure/postgres", "infrastructure/traefik/rendered.yaml", "infrastructure/traefik/values.yaml", "mise.toml", "tests/client_pod.sh", "tests/ingress/traefik_answers_only_cloudflared_and_routes_the_app.sh", "tests/keycloak", "tests/postgres/load_dump.sh", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
 opened_commit = "8b4a1ae645a812ddc98ccbbd8f49a3621f7b32f8"
 whole_reason = "#116's P7b: the realm, its applier and its route are one proof, and its cells and documents go with them."
