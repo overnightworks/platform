@@ -208,8 +208,8 @@
   `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token) and, on a pull
   request, the pull request's ref. It first fails when the committed root or `tunnel` carries `spec.patches`, which
   the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
-  Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's files as dummies and
-  each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
+  Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's and skat's files as dummies
+  and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
   printed, each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password,
   and each key a container of a layer in `SECRET_KEY_LAYERS` reads from a Secret, a generated dummy.
   It also proves that `secrets:github-host-keys` passes flux's real export of a throwaway deploy key unchanged and
@@ -327,6 +327,10 @@
   `storage`.
 - `apps/skat/`: skat's Postgres from the base `infrastructure/postgres`, in namespace `skat` with `key-tables` `tables
   chairs receipts`; the Namespace is in `infrastructure/namespaces/`, not here.
+  skat's Deployment and Service: one pod with `Recreate`, its image the full app ref of a release that changes only in
+  a pull request, pulled through the Secret `ghcr-pull` and started from the files of the Secret `skat` and the
+  password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
+  container of the same image runs `skat migrate` before `skat serve`. It has no route, NetworkPolicy or tunnel line yet.
 - `apps/hopin/`: hopin's Deployment and Service, one pod with `Recreate`, its image the full app ref of a release
   that changes only in a pull request, pulled through the Secret `ghcr-pull` and started from the
   Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`. Its Ingress routes `hopin.hallucinai.de`

@@ -1,0 +1,117 @@
+# skat, pulled from its private package through the Secret ghcr-pull and started from the Secret skat's files, both
+# from platform-secrets, on the Postgres of this namespace. The init container migrates the database to the image's
+# head, which `skat serve` demands at start; its first run may find Postgres not ready yet, and the init container's
+# backoff heals that.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skat
+  namespace: skat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: skat
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: skat
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        # The kubelet verifies the image's numeric USER 1001 as non-root, so no runAsUser repeats it.
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: ghcr.io/overnightworks/skat:2026.11.08.1@sha256:677fe5ebd300ea2615b4fd92d1aa22253d6aafdae45854202013cb408e4c86aa
+          args: [skat, migrate]
+          env:
+            # The URL names no password: the file below is the password's one owner, the namespace's Postgres.
+            - name: SKAT_DATABASE_URL
+              value: postgresql://skat@postgres:5432/skat
+            - name: SKAT_DATABASE_PASSWORD_FILE
+              value: /run/secrets/postgres/password
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: postgres-password
+              mountPath: /run/secrets/postgres
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: skat
+          image: ghcr.io/overnightworks/skat:2026.11.08.1@sha256:677fe5ebd300ea2615b4fd92d1aa22253d6aafdae45854202013cb408e4c86aa
+          args: [skat, serve]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SKAT_OIDC_ISSUER
+              value: https://auth.hallucinai.de/realms/hallucinai
+            - name: SKAT_OIDC_CLIENT_SECRET_FILE
+              value: /run/secrets/skat/oidc_client_secret
+            - name: SKAT_PUBLIC_ORIGIN
+              value: https://skat.hallucinai.de
+            - name: SKAT_SESSION_SECRET_FILE
+              value: /run/secrets/skat/session_secret
+            - name: SKAT_DATABASE_URL
+              value: postgresql://skat@postgres:5432/skat
+            - name: SKAT_DATABASE_PASSWORD_FILE
+              value: /run/secrets/postgres/password
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets/skat
+              readOnly: true
+            - name: postgres-password
+              mountPath: /run/secrets/postgres
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Every key of the Secret becomes a file, so a missing one stops skat's start naming its setting.
+        - name: secrets
+          secret:
+            secretName: skat
+        - name: postgres-password
+          secret:
+            secretName: postgres
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skat
+  namespace: skat
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: skat
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
