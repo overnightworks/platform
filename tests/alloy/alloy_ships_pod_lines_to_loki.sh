@@ -4,17 +4,18 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=../client_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
-# The labels a stream carries; Loki derives service_name from container itself, so it is the one label Alloy does not send.
-expected_labels="container namespace pod"
+# Loki derives service_name from container itself, so it is the one stream label Alloy does not send.
 log_deadline_seconds=60
 http_port=12345
-# The one rule of Alloy's ClusterRole.
-expected_rules='[{"apiGroups":[""],"resources":["namespaces","pods","pods/log"],"verbs":["get","list","watch"]}]'
+# The rules of Alloy's ClusterRole.
+expected_rules='[{"apiGroups":[""],"resources":["pods"],"verbs":["get","list","watch"]},{"apiGroups":[""],"resources":["pods/log"],"verbs":["get"]}]'
 loki_address="http://loki.${LOKI_NAMESPACE}.svc:3100"
 writer_pod=alloy-nonce-writer
 
+# Every deletion is attempted, whichever fails; namespace alloy stays, as the layer owns it.
 remove_objects() {
-  kubectl -n "$SOURCE_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m "$writer_pod"
+  kubectl -n "$SOURCE_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m "$writer_pod" || true
+  kubectl -n "$ALLOY_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m query || true
   kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
 }
 trap remove_objects EXIT
@@ -43,7 +44,7 @@ rendered_rules="$(kubectl kustomize infrastructure/alloy | yq --no-doc 'select(.
 bound_roles="$({
   kubectl get clusterrolebindings -o yaml
   kubectl get rolebindings --all-namespaces -o yaml
-} | yq --no-doc '.items[] | select(.subjects[]? | .kind == "ServiceAccount" and .name == "alloy" and .namespace == "'"$ALLOY_NAMESPACE"'")
+} | yq --no-doc '.items[] | select(.subjects[]? | (.kind == "ServiceAccount" and .name == "alloy" and .namespace == "'"$ALLOY_NAMESPACE"'"))
   | .roleRef.kind + "/" + .roleRef.name' | sort -u)"
 [ "$bound_roles" = ClusterRole/alloy ] || fail "Alloy's ServiceAccount is bound to '$bound_roles', not ClusterRole/alloy alone"
 cluster_rules="$(kubectl get clusterrole alloy -o yaml | rules_of)"
@@ -56,21 +57,32 @@ request "$OTHER_NAMESPACE" other "alloy.$ALLOY_NAMESPACE.svc" "http://$alloy_add
 [ "$status" = 000 ] || fail "a Pod in namespace $OTHER_NAMESPACE got '$status' from Alloy, not no answer"
 echo "a Pod in namespace $OTHER_NAMESPACE gets no answer from Alloy"
 
-# A line of a pod in another namespace comes back from Loki with exactly the labels of its stream.
+# A line of a pod in another namespace comes back from Loki with exactly the labels of its stream. The header keeps
+# Loki's detected level, structured metadata, out of the stream's labels.
 nonce="nonce-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
-printf '%s\n' "$(WRITER_POD="$writer_pod" NONCE="$nonce" yq '.metadata.name = strenv(WRITER_POD)
-  | .spec.containers[0].command = ["sh", "-c"]
-  | .spec.containers[0].args = ["echo " + strenv(NONCE) + "; sleep 300"]' <<<"${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}")" |
-  kubectl -n "$SOURCE_NAMESPACE" create -f -
+writer_manifest="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
+writer_manifest="${writer_manifest//@NAME@/${writer_pod}}"
+writer_manifest="$(NONCE="$nonce" yq '.spec.containers[0].command = ["sh", "-c"]
+  | .spec.containers[0].args = ["echo " + strenv(NONCE) + "; sleep 300"]' <<<"$writer_manifest")"
+writer_container="$(yq '.spec.containers[0].name' <<<"$writer_manifest")"
+kubectl -n "$SOURCE_NAMESPACE" create -f - <<<"$writer_manifest"
 started="$SECONDS"
-labels=""
-until [ -n "$labels" ]; do
-  [ $((SECONDS - started)) -lt "$log_deadline_seconds" ] ||
+returned_streams=0
+while [ "$returned_streams" != 1 ]; do
+  remaining=$((log_deadline_seconds - (SECONDS - started)))
+  [ "$remaining" -gt 0 ] ||
     fail "the line $nonce of a Pod in namespace $SOURCE_NAMESPACE was not in Loki within $log_deadline_seconds seconds"
   request_body "$ALLOY_NAMESPACE" query "loki.$LOKI_NAMESPACE.svc" "$loki_address/loki/api/v1/query_range" \
+    --max-time "$remaining" --header 'X-Loki-Response-Encoding-Flags: categorize-labels' \
     --get --data-urlencode "query={namespace=\"$SOURCE_NAMESPACE\"} |= \"$nonce\""
-  labels="$(yq -p=json '(.data.result[0].stream // {}) | keys | .[]' <<<"$status" | { grep -vx service_name || true; } | sort | tr '\n' ' ')"
+  returned_streams="$(yq -p=json '.data.result | length' <<<"$status" 2>/dev/null || true)"
 done
-labels="${labels% }"
-[ "$labels" = "$expected_labels" ] || fail "the stream of $nonce carries the labels '$labels', not '$expected_labels'"
-echo "the line of a Pod in namespace $SOURCE_NAMESPACE reached Loki within $log_deadline_seconds seconds with the labels $labels"
+[ $((SECONDS - started)) -lt "$log_deadline_seconds" ] ||
+  fail "the line $nonce of a Pod in namespace $SOURCE_NAMESPACE reached Loki after $log_deadline_seconds seconds"
+returned_line="$(yq -p=json '.data.result[0].values | map(.[1]) | join(",")' <<<"$status")"
+[ "$returned_line" = "$nonce" ] || fail "the query for $nonce returned the lines '$returned_line'"
+labels="$(yq -p=json '.data.result[0].stream | to_entries | sort_by(.key) | .[] | .key + "=" + .value' <<<"$status" |
+  { grep -v '^service_name=' || true; } | tr '\n' ' ')"
+expected_labels="container=$writer_container namespace=$SOURCE_NAMESPACE pod=$writer_pod "
+[ "$labels" = "$expected_labels" ] || fail "the stream of $nonce carries '${labels% }', not '${expected_labels% }'"
+echo "the line of a Pod in namespace $SOURCE_NAMESPACE reached Loki within $log_deadline_seconds seconds with the labels ${labels% }"

@@ -4,15 +4,18 @@ metadata:
   name: alloy
   namespace: alloy
 ---
-# The one rule Alloy needs to find every pod and read its log through the API server; no Secret, ConfigMap or node.
+# The rules Alloy needs to find every pod and read its log through the API server; no Secret, ConfigMap, namespace or node.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: alloy
 rules:
   - apiGroups: [""]
-    resources: [pods, pods/log, namespaces]
+    resources: [pods]
     verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -85,3 +88,4 @@ spec:
         - name: storage
           emptyDir:
             medium: Memory
+            sizeLimit: 64Mi

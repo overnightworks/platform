@@ -22,6 +22,20 @@ discovery.relabel "pods" {
 
 loki.source.kubernetes "pods" {
   targets    = discovery.relabel.pods.output
+  forward_to = [loki.process.pods.receiver]
+}
+
+loki.process "pods" {
+  // A replaced pod re-reads every line the kubelet still holds, and Loki deletes a chunk by its newest line, so an old
+  // line in a chunk with fresh ones would outlive Loki's retention.
+  stage.drop {
+    older_than          = "1h"
+    drop_counter_reason = "too_old"
+  }
+  // loki.source.kubernetes adds these after every relabel.
+  stage.label_drop {
+    values = ["instance", "job"]
+  }
   forward_to = [loki.write.loki.receiver]
 }
 

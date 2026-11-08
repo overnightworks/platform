@@ -375,13 +375,15 @@
 - `infrastructure/alloy/`: Alloy, one pod with the image `docker.io/grafana/alloy` at a digest, in a Namespace that
   enforces Pod Security `restricted`; a plain manifest, since the chart's ClusterRole grants `secrets`, `configmaps` and
   `nodes` and no value narrows it. `config.alloy` is `discovery.kubernetes` into `loki.source.kubernetes`, which reads
-  every pod's log through the API server, into `loki.write` to Loki's Service, each stream labelled namespace, pod and
-  container; the ConfigMap generated from it carries its content's hash in its name, so a change rolls the pod. Its
-  ClusterRole grants only `get`, `list` and `watch` on `pods`, `pods/log` and `namespaces`; its NetworkPolicy admits
+  every pod's log through the API server, into `loki.process`, into `loki.write` to Loki's Service, each stream
+  labelled namespace, pod and container: `loki.process` drops every line older than one hour, since a replaced pod
+  re-reads what the kubelet holds and Loki deletes a chunk by its newest line, and drops the labels `job` and
+  `instance`. The ConfigMap generated from it carries its content's hash in its name, so a change rolls the pod. Its
+  ClusterRole grants only `get`, `list` and `watch` on `pods` and `get` on `pods/log`; its NetworkPolicy admits
   nobody to its port; its egress is open. The image moves by hand, in a pull request. In k3d a Pod in namespace `hopin`
   logs a nonce that a LogQL query returns within 60 seconds with exactly those labels (Loki adds `service_name` itself);
   the Namespace enforces `restricted` and no Alloy pod mounts a host path; the render and the cluster each hold one
-  ClusterRole of Alloy's with exactly that rule and no other binding of its ServiceAccount; a Pod in a throwaway
+  ClusterRole of Alloy's with exactly those rules and no other binding of its ServiceAccount; a Pod in a throwaway
   namespace gets no answer from its port; the throwaway objects are gone on every exit.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
