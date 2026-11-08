@@ -27,7 +27,7 @@ applied_revision="$(kubectl -n flux-system get kustomization gatus -o jsonpath='
 kubectl -n gatus rollout status deployment/gatus --timeout=5m
 
 port="$(kubectl -n gatus get service gatus -o jsonpath='{.spec.ports[0].port}')"
-setsid mise run gatus:open >"$scratch/forward.log" 2>&1 &
+KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" setsid mise run gatus:open >"$scratch/forward.log" 2>&1 &
 forward_pid=$!
 local_port=""
 for _ in $(seq 30); do
