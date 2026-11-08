@@ -6,7 +6,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 export KUBECONFIG="$HOME/.kube/config"
 
 # run_restic <namespace> <name> <shell script>: a Pod built from the restore test's own init container, so it holds the
-# namespace's repository credentials as the test does and nothing more; runs the script, sets its output and exit code.
+# namespace's repository credentials as the test does and nothing more; runs the script, sets its output (what it writes to
+# stdout) and exit code. Its stderr goes to the container's termination message, since `kubectl logs` merges the two
+# streams, and reaches this script's stderr when the script fails; a script that wants an error text in its output
+# redirects 2>&1 itself.
 # shellcheck disable=SC2034 # restic_output and restic_exit are this function's results for the cells below.
 run_restic() {
   local namespace="$1" name="$2" script="$3" manifest
@@ -15,13 +18,17 @@ run_restic() {
       '.spec.jobTemplate.spec.template.spec as $spec | $spec.initContainers[0] as $dump |
        { "apiVersion": "v1", "kind": "Pod", "metadata": { "name": strenv(NAME) }, "spec": ($spec | del(.initContainers) |
            .volumes |= map(select(.name == "restore")) |
-           .containers = [$dump | .name = "restic" | .command = ["sh", "-c", strenv(SCRIPT)]]) }')"
+           .containers = [$dump | .name = "restic" | .command = ["sh", "-c", "exec 2>/dev/termination-log\n" + strenv(SCRIPT)]]) }')"
   kubectl --namespace "$namespace" create --filename - <<<"$manifest" >/dev/null
   kubectl --namespace "$namespace" wait "pod/$name" --timeout=5m \
     --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}'
   restic_exit="$(kubectl --namespace "$namespace" get "pod/$name" \
     --output jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
   restic_output="$(kubectl --namespace "$namespace" logs "pod/$name")"
+  if [ "$restic_exit" != 0 ]; then
+    kubectl --namespace "$namespace" get "pod/$name" \
+      --output jsonpath='{.status.containerStatuses[0].state.terminated.message}' >&2
+  fi
   kubectl --namespace "$namespace" delete pod "$name" --wait --timeout=2m >/dev/null
 }
 # job_ended <namespace> <job>: waits for the Job's end; 0 when it completed, 1 when it failed.
@@ -79,7 +86,7 @@ restic_init='
       continue
     fi
     printf "%s\n" "$output"
-    echo "init attempts refused: $refused"
+    echo "init retries after refusal: $refused"
     exit "$status"
   done'
 ready_endpoints="$(kubectl --namespace "$BACKUP_LAYER" get endpointslice --selector kubernetes.io/service-name=rest-server \
@@ -87,7 +94,7 @@ ready_endpoints="$(kubectl --namespace "$BACKUP_LAYER" get endpointslice --selec
 [ -n "$ready_endpoints" ] || fail "the Service rest-server in $BACKUP_LAYER has no ready endpoint, so no Pod can reach it"
 for namespace in $BACKUP_NAMESPACES; do
   run_restic "$namespace" "repository-init" "$restic_init"
-  echo "$namespace: $(grep '^init attempts refused' <<<"$restic_output" || echo 'init attempts refused: not printed')"
+  echo "$namespace: $(grep '^init retries after refusal' <<<"$restic_output" || echo 'init retries after refusal: not printed')"
   [ "$restic_exit" = 0 ] || fail "restic init did not initialise the repository of $namespace (exit $restic_exit): $restic_output"
   run_restore_test "$namespace" no-snapshot-test
   [ "$status" = failed ] || fail "the restore test of $namespace passed on a repository without a snapshot"

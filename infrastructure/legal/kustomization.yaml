@@ -1,0 +1,15 @@
+# The page and the nginx configuration are read at start, so each ConfigMap's name carries its content's hash and a
+# change rolls the pod.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: legal
+resources:
+  - namespace.yaml
+  - legal.yaml
+configMapGenerator:
+  - name: legal-pages
+    files:
+      - built/impressum.html
+  - name: legal-nginx
+    files:
+      - default.conf
