@@ -165,6 +165,8 @@ jobs:
           # The apps' pull Secrets hold this job's own token, which GitHub masks; each app's package grants it Read.
           PULL_USER: ${{ github.actor }}
           PULL_TOKEN: ${{ github.token }}
+          # The layers whose containers read Secrets by key, each of which gets a dummy per key.
+          SECRET_KEY_LAYERS: infrastructure/keycloak
         run: tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh
 
       - name: Push the encrypted Secrets and serve them as the job's platform-secrets source
@@ -252,6 +254,21 @@ jobs:
           # The egress probe Pods' image; local-path's helper runs busybox too.
           PROBE_IMAGE: docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
+
+      - name: P7b cells
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          # The realm file whose realm the cells read, and the client whose login page they open.
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+          LOGIN_CLIENT: hopin
+          # The ruled AI group and the group it replaces, which the realm no longer declares.
+          AI_GROUP: /services/litellm
+          REPLACED_GROUP: /services/agent-service/api
+          # An app's manifest whose namespace must not reach Keycloak and whose Service Keycloak must not reach, and a
+          # host outside the cluster.
+          CALLER_MANIFEST: apps/hopin/hopin.yaml
+          OUTSIDE_TARGET: github.com:443
+        run: tests/keycloak/realm_route_and_policies.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
