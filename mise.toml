@@ -439,19 +439,68 @@ other_sessions() {
   in_postgres psql --no-psqlrc --tuples-only --no-align --command="SELECT count(*) FROM pg_stat_activity
     WHERE datname = current_database() AND backend_type = 'client backend' AND pid <> pg_backend_pid()"
 }
-# A killed load's remote pg_restore, a backup's pg_dump: a session that could still write or read half a load.
+# pg_restore reads the archive's header and table of contents before it connects, so one whose client died can run
+# without a session yet. Fails while one runs in the container, the processes cannot be listed, or one that still
+# exists cannot be read; only a process that is gone is skipped.
+no_restore_runs() {
+  in_postgres sh -c 'set -- /proc/[0-9]*/comm; [ -e "$1" ] || exit 1
+    for comm; do
+      if name="$(cat "$comm" 2>/dev/null)"; then [ "$name" != pg_restore ] || exit 1
+      elif [ -e "${comm%/comm}" ]; then exit 1; fi
+    done'
+}
+# A killed load's remote pg_restore, a backup's pg_dump: a session that could still write or read half a load. The
+# processes come first: a restore connects before it ends, and its backend outlives it until its commit is done, so
+# a restore the scan no longer finds has either never connected or left a session the next check counts.
 wait_alone() {
   local deadline=$((SECONDS + 120))
-  until [ "$(other_sessions)" = 0 ]; do [ "$SECONDS" -lt "$deadline" ] || return 1; sleep 2; done
+  until no_restore_runs && [ "$(other_sessions)" = 0 ]; do [ "$SECONDS" -lt "$deadline" ] || return 1; sleep 2; done
 }
-# A Ctrl-C reaches mise and this script, and mise forwards it once more, so the resume ignores INT and runs at most
+# A Ctrl-C reaches mise and this script, and mise forwards it once more, so each exit path ignores INT and runs at most
 # once, to its end.
+resume_flux() {
+  trap - EXIT TERM
+  trap '' INT
+  flux resume kustomization "$namespace" --wait
+}
 resume() {
   trap - EXIT TERM
   trap '' INT
   wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; the \
 Kustomization stays suspended and the writers at 0: run mise run db:load-dump --resume $namespace once it ended"
-  flux resume kustomization "$namespace" --wait
+  resume_flux
+}
+# The sha256 of the whole database as pg_dump writes it: schema, rows and sequence values. The fixed restrict key
+# keeps pg_dump's output, and so the sum, the same while the data stays the same.
+fingerprint() { in_postgres sh -c 'set -o pipefail; pg_dump --restrict-key=fingerprint | sha256sum'; }
+# The relations whose stored rows pg_dump does not write: materialized views, which it dumps as a definition and a
+# refresh, and tables that belong to an extension.
+unfingerprinted_relations() {
+  in_postgres psql --no-psqlrc --tuples-only --no-align --command="SELECT count(*) FROM pg_class c WHERE c.relkind = 'm'
+    OR (c.relkind IN ('r', 'p') AND EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_class'::regclass
+      AND d.objid = c.oid AND d.deptype = 'e'))"
+}
+unknown_outcome() {
+  echo "db:load-dump: whether the load changed the data is unknown; the Kustomization $namespace stays suspended \
+and its writers at 0: check the data, then run mise run db:load-dump --resume $namespace" >&2
+}
+# A non-zero status or a signal can follow a committed restore, and a client that died can leave its remote pg_restore
+# running, so the data counts as unchanged only once the database is alone, holds no relation the fingerprint leaves
+# out, and its fingerprint is the one before. A TERM before that decision leaves the outcome unknown.
+failed_load() {
+  trap 'unknown_outcome; exit 143' TERM
+  trap - EXIT
+  trap '' INT
+  local after_load
+  if wait_alone && [ "$(unfingerprinted_relations)" = 0 ] && after_load="$(fingerprint)" &&
+    [ "$after_load" = "$before_load" ]; then
+    # Decided: a TERM from here on must not follow this line with an unknown one.
+    trap '' TERM
+    echo "db:load-dump: the data is unchanged; resuming the Kustomization $namespace" >&2
+    resume_flux
+  else
+    unknown_outcome
+  fi
 }
 if [ "${usage_resume:-false}" = true ]; then
   existing="$(kubectl --namespace flux-system get kustomization "$namespace" --ignore-not-found --output name)" ||
@@ -467,10 +516,12 @@ suspended="$(kubectl --namespace flux-system get kustomization "$namespace" -o j
 [ "$suspended" != true ] ||
   fail "the Kustomization $namespace is suspended; nothing changed. After a killed load of this command run mise run \
 db:load-dump --resume $namespace, else ask whoever suspended it"
-flux suspend kustomization "$namespace"
-trap resume EXIT
+# Before the load no session of this run writes to the database, so the resume waits for none. It is armed before the
+# suspension, which a signal can apply before its client returns; the Kustomization was not suspended before.
+trap resume_flux EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+flux suspend kustomization "$namespace"
 
 say "stopping the writers of $namespace"
 deployments="$(kubectl --namespace "$namespace" get deployments -o name)"
@@ -481,20 +532,24 @@ writers="$(kubectl --namespace "$namespace" get pods -o yaml |
   yq '.items[] | select(.metadata.ownerReferences[]?.kind == "ReplicaSet") | "pod/" + .metadata.name')"
 [ -z "$writers" ] || kubectl --namespace "$namespace" wait $writers --for=delete --timeout=5m
 wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; nothing loaded"
+before_load="$(fingerprint)" || fail "cannot read the database $namespace before the load; nothing loaded"
 
 log="$file.load.log"
 : >"$log" && chmod 0600 "$log"
 say "loading $file in one transaction; pg_restore's messages go to $log"
-# A COPY error quotes a row, also in the server's log, which these settings keep silent for this session.
+# A COPY error quotes a row, also in the server's log, which these settings keep silent for this session. The
+# redirections stay on the kubectl command, where only its process gets them: on a function call they would hold
+# while a trap prints the outcome, which would then go to the log.
+trap failed_load EXIT
 load_status=0
-dump_into_postgres env PGOPTIONS='-c log_min_messages=panic -c log_min_error_statement=panic' pg_restore --clean \
-  --if-exists --no-owner --role="$namespace" --single-transaction --exit-on-error --dbname="$namespace" 2>"$log" ||
-  load_status=$?
-[ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log; the data is unchanged"
+kubectl --namespace "$namespace" exec --stdin "$pod" --container postgres -- \
+  env PGOPTIONS='-c log_min_messages=panic -c log_min_error_statement=panic' pg_restore --clean --if-exists --no-owner \
+  --role="$namespace" --single-transaction --exit-on-error --dbname="$namespace" <"$file" 2>"$log" || load_status=$?
+[ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log"
 # The data is committed: until it is verified, a signal or a failure leaves the writers stopped, not resumed on it.
 unverified() {
   echo "db:load-dump: the loaded data is not verified against $file; the Kustomization $namespace stays suspended and \
-its writers at 0: load the dump again, or run mise run db:load-dump --resume $namespace to start them on this data" >&2
+its writers at 0: check the data, then run mise run db:load-dump --resume $namespace" >&2
 }
 trap unverified EXIT
 
