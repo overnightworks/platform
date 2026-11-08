@@ -1,6 +1,6 @@
 # One Kustomization per directory under apps/, named like the directory and the app's namespace, so that an app's
 # objects share one owner that db:load-dump can suspend. Each starts from Secrets in platform-secrets, so it waits for
-# that layer, and runs workloads, so it waits for admission.
+# that layer, and runs workloads, so it waits for admission. skat also waits for storage, as its Postgres claims a volume.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -30,6 +30,25 @@ spec:
     - name: admission
   interval: 10m0s
   path: ./apps/speech-runtime
+  prune: true
+  wait: true
+  timeout: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: skat
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: platform-secrets
+    - name: admission
+    - name: storage
+  interval: 10m0s
+  path: ./apps/skat
   prune: true
   wait: true
   timeout: 10m0s
