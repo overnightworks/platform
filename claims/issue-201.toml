@@ -1,0 +1,8 @@
+claim_id = "797a793925114c66ba54fce959935e98"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "69a62e369121aaf3a2c0a8afb4532fc594acf31c"
+branch = "claude/issue-201-p9a-2-legal-check"
+scope = [".github/dependabot.yml", ".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", "AGENTS.md", "docs/legal-sections.md", "mise.lock", "mise.toml", "sonar-project.properties", "src/legal", "tests/legal"]
+opened_commit = "ff6411438219c2386e2db4c6fb5a058518e20537"
+whole_reason = "One validator and its command: the grammar, its tests, the tool that runs them, their CI and the contract document prove one refusal together."
