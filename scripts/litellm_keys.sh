@@ -317,7 +317,7 @@ key_command() {
   case "$key_count" in
     0) ;;
     1)
-      [ "$(key_hash "$app")" = "$value_hash" ] || fail "another key value holds the alias $app; nothing changed"
+      [ "$(key_hash)" = "$value_hash" ] || fail "another key value holds the alias $app; nothing changed"
       echo "litellm:key: $app unchanged"
       return 0
       ;;

@@ -9,6 +9,8 @@
 # rows carry the models LiteLLM lists and the routes the front's rules name, read from their owners.
 # The Kustomization litellm is suspended meanwhile, so that it does not restore the table, and resumed on every exit.
 set -euo pipefail
+# No value of this cell reaches a trace.
+{ set +x; } 2>/dev/null
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # The tasks fall back to the PC's kubeconfig, so the job's cluster is named for them.
@@ -32,6 +34,9 @@ attempt() {
     deletion_failures=$((deletion_failures + 1))
   }
 }
+clear_secret_key() {
+  kubectl --namespace "$app_namespace" patch secret "$app_namespace" --type merge --patch '{"data":{"litellm_key":null}}' >/dev/null
+}
 # admin_discard <path> [<JSON body>]: admin without its reply.
 admin_discard() { admin "$@" >/dev/null; }
 set_table() {
@@ -43,6 +48,7 @@ set_table() {
 cleanup() {
   local cell_status=$? alias
   delete_object --namespace "$app_namespace" delete pod keys-client --ignore-not-found --wait --timeout=2m
+  delete_object --namespace "$app_namespace" delete secret keys-client-header --ignore-not-found
   if [ -n "$local_port" ]; then
     for alias in "${aliases[@]}"; do
       attempt admin_discard /key/delete "$(ALIAS="$alias" yq --null-input --output-format json --indent 0 '{"key_aliases": [strenv(ALIAS)]}')"
@@ -50,8 +56,7 @@ cleanup() {
     attempt admin_discard /budget/delete "$(ID="$budget_id" yq --null-input --output-format json --indent 0 '{"id": strenv(ID)}')"
   fi
   [ -z "$forward" ] || kill "$forward" 2>/dev/null || true
-  attempt kubectl --namespace "$app_namespace" patch secret "$app_namespace" --type merge \
-    --patch '{"data":{"litellm_key":null}}' >/dev/null
+  attempt clear_secret_key
   [ -z "$table_original" ] || attempt set_table "$table_original"
   attempt flux resume kustomization litellm
   end_deletions "$cell_status"
@@ -75,7 +80,6 @@ front_port="$(kubectl --namespace "$namespace" get service litellm-front -o json
 front_url="http://litellm-front.$namespace.svc.cluster.local:$front_port"
 
 master_key="$(kubectl --namespace "$namespace" get secret litellm -o jsonpath='{.data.master_key}' | base64 --decode)"
-echo "::add-mask::$master_key"
 forbidden=()
 litellm_port="$(kubectl --namespace "$namespace" get service litellm -o jsonpath='{.spec.ports[0].port}')"
 forward_log="$RUNNER_TEMP/litellm-keys-port-forward.log"
@@ -193,7 +197,6 @@ echo "a row without a key is named, the run ends 1 and the other rows are made e
 
 # litellm:key registers the value of the app's Secret; the Secret takes its key by stdin, so no argument holds it.
 app_key="sk-$(openssl rand -hex 24)"
-echo "::add-mask::$app_key"
 forbid "$app_key"
 put_secret_key() {
   printf '{"data":{"litellm_key":"%s"}}' "$(printf '%s' "$1" | base64 --wrap=0)" |
@@ -206,12 +209,17 @@ run_task after-registration 0 litellm:keys --plan
 grep -q ' 0 changes planned' <<<"$output" || fail "the new row differs from the table: $output"
 client_pod="${CLIENT_POD//@NAME@/keys-client}"
 client_pod="${client_pod//@IMAGE@/$CLIENT_IMAGE}"
-# The Pod reads the value from the Secret through the kubelet, so neither its spec nor an argument holds it.
-client_pod="$(URL="$front_url/v1/models" SECRET="$app_namespace" yq '
-  .spec.containers[0].env = [{"name": "LITELLM_KEY", "valueFrom": {"secretKeyRef": {"name": strenv(SECRET), "key": "litellm_key"}}}] |
+# The header line reaches curl as a file of a Secret mounted in the Pod, so neither the Pod's arguments nor its stored
+# specification hold the value, and the Secret takes it by stdin.
+printf '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"keys-client-header"},"data":{"header":"%s"}}' \
+  "$(printf 'Authorization: Bearer %s\n' "$app_key" | base64 --wrap=0)" |
+  kubectl --namespace "$app_namespace" create -f - >/dev/null
+client_pod="$(URL="$front_url/v1/models" yq '
+  .spec.volumes = [{"name": "header", "secret": {"secretName": "keys-client-header", "defaultMode": 292}}] |
+  .spec.containers[0].volumeMounts = [{"name": "header", "mountPath": "/header", "readOnly": true}] |
   .spec.containers[0].args = ["--silent", "--output", "/dev/null", "--write-out", "%{http_code}",
   "--max-time", "10", "--retry", "5", "--retry-connrefused", "--retry-delay", "2", "--retry-max-time", "30",
-  "--header", "Authorization: Bearer $(LITELLM_KEY)", strenv(URL)]' <<<"$client_pod")"
+  "--header", "@/header/header", strenv(URL)]' <<<"$client_pod")"
 printf '%s\n' "$client_pod" | kubectl --namespace "$app_namespace" create -f - >/dev/null
 kubectl --namespace "$app_namespace" wait pod/keys-client --timeout=3m \
   --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' >/dev/null
@@ -226,18 +234,16 @@ before="$(snapshot)"
 
 # Each refusal changes no row.
 other_key="sk-$(openssl rand -hex 24)"
-echo "::add-mask::$other_key"
 forbid "$other_key"
 put_secret_key "$other_key"
 run_task changed-value 1 litellm:key hopin
 grep -q 'another key value holds the alias hopin' <<<"$output" || fail "a changed value was not refused as such: $output"
 no_prefix_key="no-prefix-$(openssl rand -hex 24)"
-echo "::add-mask::$no_prefix_key"
 forbid "$no_prefix_key"
 put_secret_key "$no_prefix_key"
 run_task no-prefix 1 litellm:key hopin
 grep -q 'starting with sk-' <<<"$output" || fail "a value without sk- was not refused as such: $output"
-kubectl --namespace "$app_namespace" patch secret "$app_namespace" --type merge --patch '{"data":{"litellm_key":null}}' >/dev/null
+clear_secret_key
 run_task no-key 1 litellm:key hopin
 grep -q 'has no litellm_key' <<<"$output" || fail "a Secret without the key was not refused as such: $output"
 run_task outside-table 1 litellm:key not-in-the-table

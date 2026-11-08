@@ -346,7 +346,7 @@
   raised budget changes that field alone and keeps `budget_reset_at`; the person budget takes the table's number; a row
   without a key is named and ends 1 after the other rows were made equal, with the models and routes LiteLLM and the
   front's rules name; `litellm:key hopin` makes the row from a generated value in the Secret `hopin`, a client Pod in
-  `hopin`, which reads the value through a `secretKeyRef`, gets 200 from the front's `GET /v1/models` with it, a second run prints `unchanged`, and a changed
+  `hopin`, which reads the header line from a mounted Secret through `curl --header @file`, gets 200 from the front's `GET /v1/models` with it, a second run prints `unchanged`, and a changed
   value, one without `sk-`, a missing key and an app outside the table are refused and change no row; no output holds a
   value, the master key or the value's sha256. The job `checks` runs `tests/litellm/failed_write_names_what_is_done.sh`
   against a fake kubectl and curl: a write that fails midway stops the rest, names what was made, the one that failed,

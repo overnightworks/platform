@@ -109,10 +109,14 @@ export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux,flux2 KUBECONFIG=/
 export FAKE_MASTER_KEY="$master_key" FAKE_APP_KEY="$app_key" FAKE_SECRET_VALUE="$app_key" FAKE_REPLY_BODY="$reply_body"
 export FAKE_REVISION=applied FAKE_TRANSPORT_FAILURE=""
 
-# use_table [<yq expression>]: the layer's files with the table edited, which the fake serves from now on.
+budget_id="$(yq '.litellm_settings.max_end_user_budget_id' "$layer/litellm-config.yaml")"
+# use_table [<yq expression>]: the layer's files with the table reduced to the test's own rows and then edited, which the
+# fake serves from now on. The rows sort as hopin, test-a, test-b, and hopin is the one without a key.
 use_table() {
   rm -rf "$work_directory/layer"
   cp -r "$layer" "$work_directory/layer"
+  yq -i '.apps = {"hopin": {"budget": 10, "parallel": 5}, "test-a": {"budget": 10, "parallel": 5}, "test-b": {"budget": 10, "parallel": 5}}' \
+    "$work_directory/layer/keys.yaml"
   [ -z "${1-}" ] || yq -i "$1" "$work_directory/layer/keys.yaml"
   export FAKE_LAYER="$work_directory/layer"
 }
@@ -141,18 +145,18 @@ run_task() {
 }
 
 run_task failed-midway 1 /key/update litellm:keys
-grep -q 'writing key presentator answered with status 500, not 200; made: budget:person-monthly; failed: key:presentator; not made: key:songmaker$' \
+grep -q "writing key test-a answered with status 500, not 200; made: budget:$budget_id; failed: key:test-a; not made: key:test-b\$" \
   <<<"$output" || fail "failed-midway: the output does not name what was made, what failed and what was not: $output"
 grep -q '^litellm:keys: table of revision main@sha1:fake$' <<<"$output" || fail "failed-midway: no revision: $output"
 [ "$(grep -c '^write ' <<<"$writes")" = 2 ] ||
   fail "failed-midway: a write ran after the failed one, or the made ones did not run: $writes"
 echo "a write that fails midway stops the rest and names what was made, which one failed and what was not, with no reply body"
 
-FAKE_TRANSPORT_FAILURE=1 run_task lost-answer 1 hash-presentator litellm:keys
-grep -q 'writing key presentator answered with status 000, not 200; made: budget:person-monthly; failed: key:presentator; not made: key:songmaker$' \
+FAKE_TRANSPORT_FAILURE=1 run_task lost-answer 1 hash-test-a litellm:keys
+grep -q "writing key test-a answered with status 000, not 200; made: budget:$budget_id; failed: key:test-a; not made: key:test-b\$" \
   <<<"$output" || fail "lost-answer: the write that may have happened is not named as failed: $output"
-FAKE_TRANSPORT_FAILURE=1 run_task lost-last-answer 1 hash-songmaker litellm:keys
-grep -q 'failed: key:songmaker; not made: none$' <<<"$output" ||
+FAKE_TRANSPORT_FAILURE=1 run_task lost-last-answer 1 hash-test-b litellm:keys
+grep -q 'failed: key:test-b; not made: none$' <<<"$output" ||
   fail "lost-last-answer: the last write is not named as failed with nothing left: $output"
 echo "a write whose answer is lost is named as failed, apart from the ones never tried"
 
@@ -189,7 +193,7 @@ table_cases=(
   'apps-null~.apps = null~apps are no map with a row'
   'apps-number~.apps = 5~apps are no map with a row'
   'apps-empty~.apps = {}~apps are no map with a row'
-  'bad-name~.apps.Bad_Name = .apps.presentator~which is no namespace name'
+  'bad-name~.apps.Bad_Name = .apps.hopin~which is no namespace name'
 )
 for table_case in "${table_cases[@]}"; do
   IFS='~' read -r case_name edit expected <<<"$table_case"
@@ -217,7 +221,7 @@ use_table 'del(.apps.hopin)'
 run_task budget-only 0 "" litellm:keys
 run_task budget-only 0 "" litellm:keys --plan
 grep -q ' 0 changes planned' <<<"$output" || fail "budget-only: a second plan differs: $output"
-use_table 'del(.apps.hopin) | .apps.presentator.budget += 1'
+use_table 'del(.apps.hopin) | .apps."test-a".budget += 1'
 run_task budget-only 0 "" litellm:keys
 [ "$(grep -c '^update ' "$FAKE_STATE/bodies")" = 1 ] || fail "budget-only: not one update: $(cat "$FAKE_STATE/bodies")"
 grep -q '^update .*"max_budget"' "$FAKE_STATE/bodies" || fail "budget-only: the update holds no budget: $(cat "$FAKE_STATE/bodies")"
