@@ -79,6 +79,21 @@ for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
 done
 [ "${#postgres_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $POSTGRES_BASE"
 
+# Each Secret a container of a layer in SECRET_KEY_LAYERS reads by key, beside the Postgres base's, gets a dummy per
+# key, in the URL-safe alphabet.
+key_secrets=()
+while read -r secret_namespace secret_name secret_key; do
+  [ "$secret_name" != "$postgres_secret" ] || continue
+  value="$(openssl rand -hex 32)"
+  echo "::add-mask::$value"
+  printf '%s' "$value" > "$(secret_files "$secret_name" "$secret_namespace")/$secret_key"
+  [[ " ${key_secrets[*]} " == *" $secret_namespace/$secret_name "* ]] || key_secrets+=("$secret_namespace/$secret_name")
+done < <(for layer in $SECRET_KEY_LAYERS; do kubectl kustomize "$layer"; echo ---; done | yq --no-doc \
+  '.metadata.namespace as $namespace | .. | select(tag == "!!map" and has("secretKeyRef")) |
+   $namespace + " " + .secretKeyRef.name + " " + .secretKeyRef.key' | sort -u)
+[ "${#key_secrets[@]}" -gt 0 ] || fail "no container of $SECRET_KEY_LAYERS reads a Secret by key"
+for secret in "${key_secrets[@]}"; do plain_secret "${secret#*/}" "${secret%/*}" Opaque; done
+
 # The recipient is the key's public half, so sops encrypts without reading any private key.
 recipient="$(age-keygen -y "$key_file")"
 data_values() { yq '.data // {} | .[]' "$1"; }

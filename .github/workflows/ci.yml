@@ -165,6 +165,8 @@ jobs:
           # The apps' pull Secrets hold this job's own token, which GitHub masks; each app's package grants it Read.
           PULL_USER: ${{ github.actor }}
           PULL_TOKEN: ${{ github.token }}
+          # The layers whose containers read a Secret by key, which the step serves as dummies.
+          SECRET_KEY_LAYERS: infrastructure/litellm
         run: tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh
 
       - name: Push the encrypted Secrets and serve them as the job's platform-secrets source

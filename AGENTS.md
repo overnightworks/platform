@@ -150,7 +150,8 @@
   the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
   Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's files as dummies and
   each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
-  printed, and each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password.
+  printed, and each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated
+  password, and each Secret a container of a layer in `SECRET_KEY_LAYERS` reads by key, a generated dummy per key.
   It also proves that `secrets:github-host-keys` passes flux's real export of a throwaway deploy key unchanged and
   refuses host keys GitHub does not list for `github.com`, and that `secrets:new-key` refuses a key directory not at
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
