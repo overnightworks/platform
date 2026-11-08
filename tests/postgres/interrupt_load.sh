@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # interrupt_load.sh <namespace> <dump> <INT|KILL>, from a platform checkout: interrupts mise run db:load-dump while its
-# pg_restore blocks inside its transaction on half the dump, asserts the recovery the signal leaves, then asserts that a
-# second load verifies equal. It prints names, counts and outcomes, never a row.
+# pg_restore blocks inside its transaction, asserts the recovery the signal leaves, then asserts that a second load
+# verifies equal. It prints names, counts and outcomes, never a row.
+# pg_restore reads a custom archive's whole table of contents before it opens its transaction, and the TOC can fill most
+# of the file, so the script feeds all of the dump but its last byte. That byte is the end of the last data block, the
+# zero-length chunk (a sign byte and the int's bytes) that closes every block: pg_restore waits for it inside its
+# transaction, as an idle session or in COPY, whatever the dump holds.
 set -euo pipefail
 namespace="$1" dump="$2" signal="$3"
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
@@ -29,6 +33,9 @@ blocked_count() { blocked_sessions 2>/dev/null || true; }
 blocks_inside_transaction() { [[ "$(blocked_count)" =~ ^[1-9][0-9]*$ ]]; }
 case "$signal" in INT | KILL) ;; *) fail "the signal is INT or KILL, not $signal" ;; esac
 [ -f "$dump" ] || fail "$dump is no file"
+withheld_bytes=1
+dump_size="$(stat -c %s "$dump")"
+[ "$dump_size" -gt "$withheld_bytes" ] || fail "$dump is not larger than the $withheld_bytes byte it withholds"
 
 # The loader's session ended: no process of it remains, a resume that outlives mise included.
 session_ended() {
@@ -58,7 +65,7 @@ exec 3<>"$fifo_dir/dump"
 # Its own session, so the signal reaches every process of the loader, whatever process group mise gives its task.
 setsid mise run db:load-dump "$namespace" "$fifo_dir/dump" 3>&- &
 loader=$!
-head -c "$(($(stat -c %s "$dump") / 2))" "$dump" >&3 &
+head -c "$((dump_size - withheld_bytes))" "$dump" >&3 &
 writer=$!
 
 for _ in $(seq 300); do
