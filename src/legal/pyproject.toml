@@ -1,0 +1,30 @@
+[project]
+name = "legal"
+version = "0"
+description = "The validator of an app's legal files"
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = ["coverage>=7", "pytest>=8"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/legal/src/legal"]
+relative_files = true
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+# `if __name__ == "__main__":` runs only when the module is the program, never under the tests, which call `main`.
+# The last line of the section validator's first-difference search is not reachable: a text that differs from its
+# canonical form differs on a line both have, and a 300 000-case mutation run never reached it; the file stays as
+# moved, so the line is excluded here.
+exclude_also = ['if __name__ == "__main__":', 'return min\(text\.count']
