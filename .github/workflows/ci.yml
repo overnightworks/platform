@@ -332,6 +332,15 @@ jobs:
           THIRD_SNI: third.invalid
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
+      - name: Assert that /impressum reaches a Pod beside cloudflared through Traefik with the committed bytes and header and everything else gets 404
+        if: matrix.part == 'core'
+        env:
+          LEGAL_NAMESPACE: legal
+          LEGAL_LAYER_DIRECTORY: infrastructure/legal
+          LEGAL_HOST: hallucinai.de
+          OTHER_NAMESPACE: legal-client
+        run: tests/legal/impressum_through_traefik.sh
+
       - name: Assert that Loki keeps a pushed line for LogQL, deletes after at most 28 days, answers only its two namespaces and keeps its claim
         if: matrix.part == 'core'
         env:
