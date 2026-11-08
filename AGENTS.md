@@ -114,6 +114,8 @@
 - `.github/workflows/ci.yml`: the `checks` job, which fails when a directory under `apps/` has no Kustomization of its
   name over it in `clusters/pc/apps.yaml` or such a Kustomization has no directory, the `cluster` job, the `bootstrap`
   job, the `opentofu` job, the `images` job and the `quality` job that calls quality's `gate.yml`.
+  The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
+  steps call; `ci.yml` holds the job structure, the setup and the calls.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
   `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
