@@ -1,0 +1,8 @@
+# The API server refuses every pod of this layer that runs as root, escalates or keeps capabilities. No Secret lands
+# here, so the Namespace needs no prune annotation and stays with its layer.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: legal
+  labels:
+    pod-security.kubernetes.io/enforce: restricted

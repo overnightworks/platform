@@ -241,6 +241,9 @@
   and shows that a busybox Pod with Keycloak's labels reaches its Postgres but neither the Service `kubernetes` nor
   github.com, while one without them reaches all three. k3d does not prove the egress to hal's Docker bridges or to
   hopin, whose own policy already refuses both Pods.
+  The step "songmaker's stores" asserts that Postgres and Redis of namespace `songmaker` are Ready as the image's own
+  non-root user, that a Pod there reaches both and one in a throwaway namespace neither, and that a key written to
+  Redis is gone once its pod is deleted and Ready again.
   The step "P7b cells" then waits for config-cli's Job on the empty database and asserts that Keycloak's
   `KC_PROXY_TRUSTED_ADDRESSES` equals the `trustedIPs` of Traefik's `web`, discovery names Keycloak's `KC_HOSTNAME`
   as the realm's issuer, every group `realm.yaml` declares exists and `/services/agent-service/api` does not, and
@@ -300,16 +303,21 @@
   `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include. `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
-  `keycloak` and `litellm` also on `platform-secrets` and `storage`, and `loki` on `storage`.
+  `keycloak` and `litellm` also on `platform-secrets` and `storage`, and `loki` and `prometheus` on `storage`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
-  `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` also on
-  `storage`.
+  `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` and `songmaker` also
+  on `storage`.
 - `apps/skat/`: skat's Postgres from the base `infrastructure/postgres`, in namespace `skat` with `key-tables` `tables
   chairs receipts`; the Namespace is in `infrastructure/namespaces/`, not here.
   skat's Deployment and Service: one pod with `Recreate`, its image the full app ref of a release that changes only in
   a pull request, pulled through the Secret `ghcr-pull` and started from the files of the Secret `skat` and the
   password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
   container of the same image runs `skat migrate` before `skat serve`. It has no route, NetworkPolicy or tunnel line yet.
+- `apps/songmaker/`: songmaker's stores, no image and no route yet: its Postgres from the base `infrastructure/postgres`,
+  in namespace `songmaker` with `key-tables` `songs generations`, and `redis.yaml`, the queue: one StatefulSet pod at
+  the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a read-only root, persistence
+  off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a NetworkPolicy that admits only the
+  namespace's own pods. The Namespace is in `infrastructure/namespaces/`, not here.
 - `apps/hopin/`: hopin's Deployment and Service, one pod with `Recreate`, its image the full app ref of a release
   that changes only in a pull request, pulled through the Secret `ghcr-pull` and started from the
   Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`. Its Ingress routes `hopin.hallucinai.de`
@@ -336,7 +344,7 @@
   annotation, so neither a prune nor the StatefulSet's deletion takes it; a Service on 5432 that only its own namespace
   reaches; and the ConfigMap `postgres` with `check-key-tables.sh`, the one key-table check, `table-digests.sh`, the one
   digest of a table's sorted rows, which `db:load-dump --compare` and B4's check run inside the container, and the
-  including layer's `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/` and `apps/skat/` include it;
+  including layer's `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` include it;
   keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
 - `infrastructure/keycloak/`: Keycloak, one pod with `Recreate`, on its Postgres, its routes Traefik's file provider and
   its admin console only `keycloak:admin`; its NetworkPolicy `keycloak-ingress` admits only namespace `traefik` and
@@ -365,6 +373,15 @@
   reads the master key: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
   key table's rows, those of the dashboard's UI session (which `/key/list` omits) and the rest, then `equal` or `DIFFERS`
   for the count against the rest; each step runs under a deadline and names itself when it fails.
+- `infrastructure/legal/`: the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
+  Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
+  is hal's `legal/frame/impressum.html` byte for byte, which holds no template field, and `default.conf` serves only
+  `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
+  host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
+  only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
+  fonts are not served: its references to them stay. `cluster` reads from a client Pod in `cloudflared` the page's
+  checksum against the committed file, its Content-Security-Policy against `default.conf`, and 404 without nginx's
+  headers for `/` and other paths, and a Pod in another namespace gets no answer from the Service.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
   and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at
@@ -376,15 +393,17 @@
 - `infrastructure/cloudflared/`: the platform's own tunnel `platform`. The ConfigMap holds its lines, one per host to
   Traefik's Service and a final `http_status:404`; the Deployment `cloudflared` reads the tunnel and its credential
   only from the token file of the Secret `tunnel-token`, which `platform-secrets` applies, so no tunnel id, credential
-  or Cloudflare API token is in this tree. Its image moves by hand, in a pull request started from the list of `renovate`. cloudflared
+  or Cloudflare API token is in this tree. Its image moves in a pull request started from the Dependency Dashboard that
+  `renovate` keeps. cloudflared
   reads its lines once, at start, so the Deployment's template carries `checksum/config`, the sha256 of the ConfigMap's
   `config.yaml`; a changed line changes the template and rolls the pod, and `cluster` fails with the right hash when
   the two differ.
 - `infrastructure/traefik/`: Traefik, the cluster's ingress for Kubernetes Ingress objects, in a Namespace that
   enforces Pod Security `restricted`. `values.yaml` is its hand-written source; `rendered.yaml` is generated by
   `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A chart or image bump
-  changes the task's chart version and digest, `image.digest` and `versionOverride` together and regenerates, by hand in a
-  pull request started from the list of `renovate`, and the `images:` entry of `infrastructure/litellm/kustomization.yaml`, the image of the Deployments
+  changes the task's chart version and digest, `image.digest` and `versionOverride` together and regenerates, in a pull
+  request started from the Dependency Dashboard that `renovate` keeps, and the `images:` entry of
+  `infrastructure/litellm/kustomization.yaml`, the image of the Deployments
   `litellm-front` and `agent-egress`, with them. Its NetworkPolicy admits only pods of namespace `cloudflared`, and
   only to the `web` port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied,
   while the node's probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
@@ -397,14 +416,51 @@
   Namespace that enforces Pod Security `restricted`; gateway, canary, caches and minio are off. `values.yaml` is its
   hand-written source; `rendered.yaml` is generated by `mise run charts:render`, not edited by hand, and `cluster` fails
   when a regeneration differs. A chart or image bump changes the task's chart version and digest and `loki.image.tag` and
-  `loki.image.digest` together and regenerates, by hand in a pull request started from the list of `renovate`. `limits_config.retention_period` of 28 days
+  `loki.image.digest` together and regenerates, in a pull request started from the Dependency Dashboard that `renovate`
+  keeps. `limits_config.retention_period` of 28 days
   with the compactor's retention on is the one rule for Loki's copy of every line, which the privacy texts promise gone
   before 30 days; the compactor runs at start, so a PC that was off deletes shortly after its next start. The claim
   is on the Retain class and carries the prune annotation. Its NetworkPolicy admits only the namespaces `alloy` and
-  `grafana`, and only to port 3100. In k3d a client Pod in a throwaway namespace `alloy` pushes a line and reads it
-  back by LogQL; the configuration at `/config` has the retention on at most 28 days with a `delete_request_store`; a
-  Pod in another namespace gets no answer; the claim is Bound on a Retain volume with prune disabled; the throwaway
-  namespaces are gone on every exit.
+  `grafana`, and only to port 3100. In k3d a client Pod in namespace `alloy`, which the layer `alloy` owns and the cell
+  leaves, pushes a line and reads it back by LogQL; the configuration at `/config` has the retention on at most 28 days
+  with a `delete_request_store`; a Pod in a throwaway namespace gets no answer; the claim is Bound on a Retain volume
+  with prune disabled; the throwaway namespace is gone on every exit.
+- `infrastructure/alloy/`: Alloy, one pod with the image `docker.io/grafana/alloy` at a digest, in a Namespace that
+  enforces Pod Security `restricted`; a plain manifest, since the chart's ClusterRole grants `secrets`, `configmaps` and
+  `nodes` and no value narrows it. `config.alloy` is `discovery.kubernetes` into `loki.source.kubernetes`, which reads
+  every pod's log through the API server, into `loki.process`, into `loki.write` to Loki's Service, each stream
+  labelled namespace, pod and container: `loki.process` drops every line older than one hour, since a replaced pod
+  re-reads what the kubelet holds and Loki deletes a chunk by its newest line, and drops the labels `job` and
+  `instance`. The ConfigMap generated from it carries its content's hash in its name, so a change rolls the pod. Its
+  ClusterRole grants only `get`, `list` and `watch` on `pods` and `get` on `pods/log`; its NetworkPolicy admits
+  nobody to its port; its egress is open. The image moves in a pull request started from the Dependency Dashboard that
+  `renovate` keeps. In k3d a Pod in namespace `hopin`
+  logs a nonce that a LogQL query returns within 60 seconds with exactly those labels (Loki adds `service_name` itself);
+  the Namespace enforces `restricted` and no Alloy pod mounts a host path; the render and the cluster each hold one
+  ClusterRole of Alloy's with exactly those rules and no other binding of its ServiceAccount; a Pod in a throwaway
+  namespace gets no answer from its port; the throwaway objects are gone on every exit.
+- `infrastructure/prometheus/`: Prometheus with kube-state-metrics in a Namespace that enforces Pod Security
+  `restricted`, which stands in `infrastructure/namespaces/` since a Namespace never moves between Kustomizations;
+  alertmanager, node-exporter and the pushgateway are off. `values.yaml` is its hand-written source; `rendered.yaml`
+  is generated by `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A
+  chart or image bump changes the task's chart version and digest and each image's tag and digest in `values.yaml`
+  together and regenerates, in a pull request started from the Dependency Dashboard that `renovate` keeps. It scrapes the
+  kubelet and cAdvisor at each node's port 10250, verified against the
+  ServiceAccount's CA, which signs the kubelet's serving certificate in k3s, with the chart's `get` on `nodes/metrics`
+  and never `nodes/proxy`, whose `get` reaches the kubelet's exec; and kube-state-metrics, Flux's controllers on
+  `http-prom` and itself; kube-state-metrics' `customResourceState` makes `gotk_resource_info` for every Kustomization. Retention
+  is 30 days and 7GB on one 8Gi claim of the Retain class with the prune annotation. `rules.yaml` holds the rules
+  `TargetDown`, `KustomizationNotReady`, `DeploymentUnavailable`, `PodRestarting` and `DiskLow`, read from `/etc/rules`;
+  `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` per device, without the memory-backed mounts and overlay
+  snapshots. The NetworkPolicy admits only the namespaces `grafana`, `gatus` and its own to port 9090, and only its
+  own namespace to kube-state-metrics' 8080. `cluster` runs `promtool check rules` and `promtool test rules` from the
+  rendered Prometheus image on `tests/prometheus/rules_test.yml`, which proves each rule's duration, firing and
+  resolving; and in k3d its ServiceAccount may get `nodes/metrics` and not `nodes/proxy`, every target is up,
+  `gotk_resource_info` exists for every Kustomization, `DiskLow`'s
+  expression without its threshold has a series, a Deployment at a dead image ref and a Kustomization at a missing
+  path make `DeploymentUnavailable` and `KustomizationNotReady` pending, a Pod in the throwaway namespace `grafana`
+  gets 200 and one in another namespace no answer, the claim is Bound on a Retain volume with prune disabled, and the
+  throwaway objects are gone on every exit.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's
