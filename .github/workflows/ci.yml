@@ -307,6 +307,7 @@ jobs:
         run: tests/keycloak/realm_route_and_policies.sh
 
       - name: P7c cells
+        if: matrix.part == 'core'
         env:
           # LiteLLM's namespace, an app namespace its front admits, a namespace it does not, and an SNI no router of
           # agent-egress allows.
