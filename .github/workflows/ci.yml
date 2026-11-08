@@ -320,6 +320,12 @@ jobs:
           THIRD_SNI: third.invalid
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
+      - name: P9b cells
+        if: matrix.part == 'core'
+        env:
+          LITELLM_NAMESPACE: litellm
+        run: tests/litellm/expire_deletes_only_what_is_past_90_days.sh
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: tests/flux/print_flux_state.sh
