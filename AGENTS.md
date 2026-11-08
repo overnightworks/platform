@@ -373,16 +373,19 @@
   failing layer reports itself; a regeneration that adds, renames or removes a controller changes those
   `healthChecks` with it, and `cluster` fails when they differ from the root's inventory.
 - `clusters/pc/infrastructure.yaml`: one Flux Kustomization per directory under `infrastructure/`, each with
-  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include (its subdirectory `backup/` is a component only `keycloak` and `litellm` include). `namespaces`, then
+  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include (its subdirectory `backup/` is a component `keycloak`, `litellm` and `apps/skat` include). `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
   `keycloak` and `litellm` also on `platform-secrets`, `storage` and `k8up`, `backup` on `platform-secrets` and `storage`,
   and `loki` and `prometheus` on `storage`. No layer depends on `nvidia`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` and `songmaker` also
-  on `storage`.
-- `apps/skat/`: skat's Postgres from the base `infrastructure/postgres`, in namespace `skat` with `key-tables` `tables
-  chairs receipts`; the Namespace is in `infrastructure/namespaces/`, not here.
+  on `storage`, and `skat` also on `k8up`.
+- `apps/skat/`: skat's Postgres from the base `infrastructure/postgres`, in namespace `skat` with `key-tables`
+  `alembic_version tables chairs receipts` (the restore test fails on an empty first table, and `alembic_version`, which
+  `skat migrate` writes, is the one a migrated database always fills), backed up like keycloak's and litellm's through
+  the component `infrastructure/postgres/backup`, whose repository is `skat` on the rest server; the Namespace is in
+  `infrastructure/namespaces/`, not here.
   skat's Deployment and Service: one pod with `Recreate`, its image the full app ref of a release that changes only in
   a pull request, pulled through the Secret `ghcr-pull` and started from the files of the Secret `skat` and the
   password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
@@ -433,8 +436,8 @@
   digest of a table's sorted rows, which `db:load-dump --compare` and B4's check run inside the container, and the
   including layer's `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` include it;
   keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
-- `infrastructure/postgres/backup/`: the component a Postgres layer includes to be backed up, so `apps/skat` stays
-  out until it has its credentials and its restore drill. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
+- `infrastructure/postgres/backup/`: the component a Postgres layer includes to be backed up; `infrastructure/keycloak/`,
+  `infrastructure/litellm/` and `apps/skat/` do. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
   4 weekly and 3 monthly, a monthly `check`) of the Postgres pod's `pg_dump --format=custom` into `backup-repository`,
   the URL the including layer sets in the ConfigMap `postgres`; a PodConfig gives k8up's Job pods the fields `restricted`
   requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month and fails
@@ -449,7 +452,9 @@
   repository per namespace, its htpasswd built by an initContainer from the Secret `rest-users` (one file per user,
   from `platform-secrets`); the user equals the namespace, since `--private-repos` admits a user only to the path of its
   own name and the repository's path is the namespace; its claim retained and never pruned. Its NetworkPolicy admits only
-  the namespaces that hold a repository; a new one joins that list together with its component and `rest-users` entry.
+  the namespaces that hold a repository; a new one joins that list together with its component and `rest-users` entry. The server builds its users once, at its
+  start, and a changed `rest-users` rolls nothing, so a new entry takes effect after `kubectl -n backup rollout restart
+  deployment/rest-server`.
 - `infrastructure/keycloak/`: Keycloak, one pod with `Recreate`, on its Postgres, its routes Traefik's file provider and
   its admin console only `keycloak:admin`; its NetworkPolicy `keycloak-ingress` admits only namespace `traefik` and
   its own. `realm.yaml` and `master.yaml` are hal's realms and the Job `config-cli` applies them with every managed
