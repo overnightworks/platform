@@ -293,6 +293,14 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
+      - name: Assert that songmaker's Postgres and Redis are Ready and non-root, closed to other namespaces, and that Redis forgets on restart
+        if: matrix.part == 'core'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          # The throwaway namespace of the Pod that must get no answer.
+          OTHER_NAMESPACE: songmaker-client
+        run: tests/songmaker/stores_are_ready_non_root_closed_and_forget.sh
+
       - name: P7b cells
         if: matrix.part == 'core'
         env:
@@ -350,10 +358,20 @@ jobs:
         if: matrix.part == 'core'
         env:
           LOKI_NAMESPACE: loki
-          # The throwaway namespaces the step creates and removes: one of Loki's admitted senders, and one that is not.
+          # Loki's admitted sender, the Namespace of the layer alloy, and the throwaway namespace of one that is not.
           WRITER_NAMESPACE: alloy
           OTHER_NAMESPACE: loki-client
         run: tests/loki/loki_keeps_lines_under_28_days.sh
+
+      - name: Assert that Alloy ships a pod's line to Loki with three labels, holds one ClusterRole with exactly two rules and answers nobody
+        if: matrix.part == 'core'
+        env:
+          ALLOY_NAMESPACE: alloy
+          LOKI_NAMESPACE: loki
+          # The namespace of the throwaway Pod that logs the nonce, and the throwaway namespace of the Pod Alloy never answers.
+          SOURCE_NAMESPACE: hopin
+          OTHER_NAMESPACE: alloy-client
+        run: tests/alloy/alloy_ships_pod_lines_to_loki.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'

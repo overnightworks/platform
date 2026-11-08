@@ -1,0 +1,8 @@
+# The API server refuses every Alloy pod that runs as root, escalates, keeps capabilities, mounts a host path or binds
+# the host network: Alloy reads the lines through the API server, so it needs none of them.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: alloy
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
