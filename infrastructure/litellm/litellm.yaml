@@ -34,22 +34,30 @@ spec:
       containers:
         - name: litellm
           image: ghcr.io/berriai/litellm:v1.106.6@sha256:37e2dafb088a7723beb998590682957386dfc83ffea1848486f8e0e5cfac0b06
-          # The image's /bin/sh (busybox) refuses a key from the Secret litellm that is not exactly one non-empty
-          # printable line, naming only the variable: an empty master key would leave the proxy without auth.
+          # The image's /bin/sh (busybox) refuses a key or password that is not exactly one non-empty printable line,
+          # and a password outside A-Z a-z 0-9 - _, which DATABASE_URL takes unescaped, naming only the variable: an
+          # empty master key would leave the proxy without auth. A core dump would hold the keys, so none is written.
           command:
             - /bin/sh
             - -c
             - |
               set -eu
-              for name in ANTHROPIC_API_KEY OPENAI_API_KEY LITELLM_MASTER_KEY; do
+              ulimit -c 0
+              for name in ANTHROPIC_API_KEY OPENAI_API_KEY LITELLM_MASTER_KEY DATABASE_PASSWORD; do
                 eval "value=\${$name-}"
                 case "$value" in
                   "" | *[!!-~]*)
-                    echo "litellm: $name from the Secret litellm is not exactly one printable line" >&2
+                    echo "litellm: $name is not exactly one printable line" >&2
                     exit 1
                     ;;
                 esac
               done
+              case "$DATABASE_PASSWORD" in
+                *[!A-Za-z0-9_-]*)
+                  echo "litellm: DATABASE_PASSWORD holds a character outside A-Z a-z 0-9 - _" >&2
+                  exit 1
+                  ;;
+              esac
               unset name value
               exec litellm --config /etc/litellm/config.yaml --host 0.0.0.0 --port 4000
           ports:
@@ -86,7 +94,8 @@ spec:
                 secretKeyRef:
                   name: litellm
                   key: master_key
-            # The base's password is URL-safe (A-Z a-z 0-9 - _), so the URL takes it unescaped.
+            # The base's password is URL-safe (A-Z a-z 0-9 - _), so the URL takes it unescaped; the start refuses
+            # any other.
             - name: DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
