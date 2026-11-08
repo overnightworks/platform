@@ -40,6 +40,11 @@ data:
   keycloak-config-cli: docker.io/adorsys/keycloak-config-cli
   # infrastructure/grafana/rendered.yaml; https://hub.docker.com/r/grafana/grafana
   grafana: docker.io/grafana/grafana
+  # infrastructure/k8up/values.yaml, the operator and its Job pods, and infrastructure/postgres/backup/backup.yaml, the
+  # restore test's restic; https://github.com/k8up-io/k8up/pkgs/container/k8up
+  k8up: ghcr.io/k8up-io/k8up
+  # infrastructure/backup/rest-server.yaml; https://github.com/restic/rest-server#docker
+  rest-server: docker.io/restic/rest-server
   # infrastructure/gatus/gatus.yaml; https://github.com/TwiN/gatus#docker
   gatus: ghcr.io/twin/gatus
   # apps/songmaker/redis.yaml; https://hub.docker.com/_/redis

@@ -31,7 +31,7 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
 - Provenance: platform's `images` job checks a bumped ref's tag, attestation and signer. Admission on the PC checks the
   ref's form only.
 
-Not provided: a backup of an app's state and a copy of anything off the PC. A dead disk loses every app's data.
+Provided for an app's database: a weekly k8up backup into its own repository on the platform, kept 4 weekly and 3 monthly, with a monthly `restic check` and a monthly restore test (`infrastructure/postgres/backup`, which keycloak and litellm include). Not provided: a backup of an app's files, a database's backup without its layer including that component, and a copy of anything off the PC. A dead disk loses every app's data.
 
 ## What every app offers
 

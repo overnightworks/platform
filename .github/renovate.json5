@@ -33,12 +33,31 @@
       datasourceTemplate: "docker",
     },
     {
-      // Grafana's image, its tag and digest in one value.
+      // A chart's image by repository, with its registry where the chart takes one, and tag and digest in the one tag value.
       customType: "regex",
-      managerFilePatterns: ["/^infrastructure\\/grafana\\/values\\.yaml$/"],
-      matchStrings: ["registry: (?<registry>\\S+)\\n\\s*repository: (?<repository>\\S+)\\n(?:\\s*#.*\\n)*\\s*tag: (?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"],
-      depNameTemplate: "{{{registry}}}/{{{repository}}}",
+      managerFilePatterns: ["/^infrastructure\\/.+\\/values\\.yaml$/"],
+      matchStrings: ["(?:registry: (?<registry>\\S+)\\n\\s*)?repository: (?<repository>\\S+)\\n(?:\\s*#.*\\n)*\\s*tag: (?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"],
+      depNameTemplate: "{{#if registry}}{{{registry}}}/{{/if}}{{{repository}}}",
       datasourceTemplate: "docker",
+    },
+    {
+      // k8up's chart, fetched from its GitHub release (the chart has no OCI or Helm repository entry the task can pin).
+      // The tag names of the repository's other releases do not match the version pattern and are dropped.
+      customType: "regex",
+      managerFilePatterns: ["/^mise\\.toml$/"],
+      matchStrings: ["k8up_chart=\"\\$k8up_release/k8up-(?<currentValue>\\d+\\.\\d+\\.\\d+)/"],
+      depNameTemplate: "k8up-io/k8up",
+      datasourceTemplate: "github-releases",
+      extractVersionTemplate: "^k8up-(?<version>.+)$",
+    },
+    {
+      // k8up's CRD file, released with the operator: the image tag's version.
+      customType: "regex",
+      managerFilePatterns: ["/^mise\\.toml$/"],
+      matchStrings: ["k8up_crds=\"\\$k8up_release/(?<currentValue>v\\d+\\.\\d+\\.\\d+)/"],
+      depNameTemplate: "k8up-io/k8up",
+      datasourceTemplate: "github-releases",
+      versioningTemplate: "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
     },
     {
       // Traefik's image by digest, its tag in versionOverride.

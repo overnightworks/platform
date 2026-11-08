@@ -66,6 +66,9 @@ jobs:
       - name: Check that legal:check passes hopin's legal files at the tag it runs, names file and line of a broken one and quotes no text
         run: mise exec -- tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh
 
+      - name: Check that a failed LiteLLM write stops the rest and names what was made, and that no key value reaches an argument or an output
+        run: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
+
       - name: Check that the Renovate report check fails naming a missing report, a report with no dependency and each missing or skipped pin
         run: tests/renovate/report_check_names_each_missing_pin.sh
 
@@ -137,6 +140,9 @@ jobs:
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
       POSTGRES_BASE: infrastructure/postgres
+      # The component a Postgres layer includes to be backed up, and the rest-server it backs up to.
+      POSTGRES_BACKUP_COMPONENT: infrastructure/postgres/backup
+      REST_SERVER_MANIFEST: infrastructure/backup/rest-server.yaml
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -372,11 +378,29 @@ jobs:
           THIRD_SNI: third.invalid
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
+      - name: P7d cells
+        if: matrix.part == 'core'
+        env:
+          # The Kustomization and Namespace of the rest-server, a namespace with no repository, which gets no answer, and a
+          # Keycloak table its realm leaves empty.
+          BACKUP_LAYER: backup
+          OUTSIDE_NAMESPACE: hopin
+          EMPTY_KEY_TABLE: broker_link
+          VENDOR_LIST: infrastructure/admission/image-vendors.yaml
+        run: tests/backup/backup_restores_and_keeps_repositories_apart.sh
       - name: P9b cells
         if: matrix.part == 'core'
         env:
           LITELLM_NAMESPACE: litellm
         run: tests/litellm/expire_deletes_only_what_is_past_90_days.sh
+
+      # The step suspends the Kustomization litellm, which would otherwise restore the table it changes.
+      - name: P9c cells
+        if: matrix.part == 'postgres'
+        env:
+          LITELLM_NAMESPACE: litellm
+          APP_NAMESPACE: hopin
+        run: tests/litellm/keys_table_drives_budgets_and_the_app_key.sh
 
       - name: Assert that /impressum reaches a Pod beside cloudflared through Traefik with the committed bytes and header and everything else gets 404
         if: matrix.part == 'core'
