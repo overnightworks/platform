@@ -14,14 +14,16 @@ kubectl -n "$LEGAL_NAMESPACE" wait deployment/legal --for=condition=Available --
 echo "the Kustomization legal applied the candidate, and the Deployment legal is Available"
 
 # answer <name> <path>: a Pod in the tunnel's namespace asks Traefik's web port for the path with the host; sets body
-# (its bytes, trailing newlines kept), code and header to the content-security-policy header. curl appends the
-# trailer, which a shell variable keeps behind the body's last newline.
+# (its bytes, trailing newlines kept), code, header to the content-security-policy header and cache_control to the
+# cache-control header. curl appends the trailer, which a shell variable keeps behind the body's last newline.
 trailer_mark='@@trailer@@'
 answer() {
   request_body "$TUNNEL_NAMESPACE" "$1" "$LEGAL_HOST" "$traefik_url$2" \
-    --write-out "${trailer_mark}%{http_code}${trailer_mark}%header{content-security-policy}"
-  header="${status##*"$trailer_mark"}"
-  local before_header="${status%"$trailer_mark"*}"
+    --write-out "${trailer_mark}%{http_code}${trailer_mark}%header{content-security-policy}${trailer_mark}%header{cache-control}"
+  cache_control="${status##*"$trailer_mark"}"
+  local before_cache_control="${status%"$trailer_mark"*}"
+  header="${before_cache_control##*"$trailer_mark"}"
+  local before_header="${before_cache_control%"$trailer_mark"*}"
   code="${before_header##*"$trailer_mark"}"
   body="${before_header%"$trailer_mark"*}"
 }
@@ -42,6 +44,12 @@ expected_policy="$(sed -n 's/^ *add_header Content-Security-Policy "\(.*\)" alwa
 [ "$header" = "$expected_policy" ] ||
   fail "the Content-Security-Policy of /impressum is '$header', not the one $LEGAL_LAYER_DIRECTORY/default.conf sets"
 echo "its Content-Security-Policy is the one $LEGAL_LAYER_DIRECTORY/default.conf sets"
+
+expected_cache_control="$(sed -n 's/^ *add_header Cache-Control "\(.*\)" always;$/\1/p' "$LEGAL_LAYER_DIRECTORY/default.conf")"
+[ -n "$expected_cache_control" ] || fail "$LEGAL_LAYER_DIRECTORY/default.conf sets no Cache-Control"
+[ "$cache_control" = "$expected_cache_control" ] ||
+  fail "the Cache-Control of /impressum is '$cache_control', not the one $LEGAL_LAYER_DIRECTORY/default.conf sets"
+echo "its Cache-Control is the one $LEGAL_LAYER_DIRECTORY/default.conf sets"
 
 # The Ingress names the one path, so Traefik answers every other one with its own 404, which carries none of nginx's
 # headers; nginx would answer with the policy.
