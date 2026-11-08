@@ -1,0 +1,7 @@
+claim_id = "f39870f2bd594005afb35309e78170b4"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "ae74daa92a9e3bb4010c76aca252f6c7e20fe83b"
+branch = "claude/issue-219-g2-organisation-rulesets"
+scope = ["AGENTS.md", "src/opentofu/github/organization.tf", "src/opentofu/github/tests/organization_rulesets.tftest.hcl"]
+opened_commit = "6805bc71cb1cfeb041c1043617f3ef12bbad692e"
