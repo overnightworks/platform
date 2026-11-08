@@ -73,7 +73,11 @@
   <rule>`, never the text, and exits non-zero. It refuses a link or directory in place of a file, a missing
   `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
   `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
-  with branch coverage at 100 % and writes `src/legal/coverage.xml`. Both run through `uv` (locked in `mise.toml`),
+  with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads, from this checkout's root, the frame of
+  `infrastructure/legal/frame/`, builds the three pages with `src/legal/src/legal/pages.py`, which checks their ids and
+  links, and writes only `infrastructure/legal/built/impressum.html`, the other two pages staying in memory; it needs no
+  network, prints `legal:build: wrote <file>` and exits 0, or prints `legal: <file> is missing; the frame is required`
+  (or the failed check's line) and exits non-zero, writing nothing. All three run through `uv` (locked in `mise.toml`),
   which fetches Python 3.14 on first use and keeps its environment under `~/.cache/platform/legal`.
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
@@ -250,7 +254,7 @@
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
   runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request that turns Ready within the minute
   prints no key block.
-  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock` and the renders, and fails when git
+  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock`, the renders and the imprint, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. Before the reconcile the
   kubelet's configz holds the `container-log-max-files` of `host/k3s/config.yaml`; after a writer pod's log directory
   is deleted on the node, its file is back within 30 seconds and `kubectl logs` shows newer lines; and through two
@@ -515,7 +519,8 @@
   rpm and tpm limits are not in the table and stay as they are.
 - `infrastructure/legal/`: the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
-  is hal's `legal/frame/impressum.html` byte for byte, which holds no template field, and `default.conf` serves only
+  is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
+  field, and `default.conf` serves only
   `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
   host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
   only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
@@ -631,7 +636,8 @@
   kept plan `last.tfplan`) under `${XDG_CACHE_HOME:-~/.cache}/platform/opentofu/github/`, both outside the checkout.
 - `src/legal/`: the Python project of the legal validator, standard library only, with `uv.lock` and its own tests; there
   is no root `pyproject.toml`, which would make `tests/` a judged tree. `src/legal/src/legal/section.py` is hal's
-  `legal_section.py` without `parse_general`; `check.py` is the program. `checks` runs `legal:test`, uploads the report
+  `legal_section.py` without `parse_general`; `check.py` is the program of `legal:check`; `pages.py` is hal's assembler of the three pages
+  (`legal_pages.py` without its fingerprints, plans and records) and `build.py` the program of `legal:build`. `checks` runs `legal:test`, uploads the report
   as artifact `coverage`, which the `quality` job passes as `coverage-artifact`, and runs
   `tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh`, which reads hopin's public repository at the tag of
   the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails.
