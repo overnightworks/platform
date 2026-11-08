@@ -49,7 +49,8 @@
   read marks its row incomplete and prints the remainders as `?`, never as a number.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
-  Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
+  Deployments at 0 and its Flux Jobs deleted, waiting for the deletion of the Pods a ReplicaSet owns except those in phase
+  `Failed` or `Succeeded` (an evicted Pod stays and holds no session; a Pod with no readable phase is waited for), in one `pg_restore` transaction whose messages go to `<file>.load.log`
   at 0600, verifies each table `key-tables` names (all tables and their sorted rows' sha256 with `--compare`) and only
   then resumes Flux and waits for the namespace to converge. It refuses a suspended Kustomization. Another session
   that holds the database before the load, a database it cannot read then, or an INT before the load costs at most one
@@ -64,7 +65,8 @@
   `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>` interrupts a load inside its transaction and asserts
   that recovery, writers included. `tests/postgres/load_dump.sh` drives the task and that script against fake commands
   for the outcomes the cluster cannot arrange: a failed `flux resume`, an unreadable suspension (also after a kill), a
-  signal during the comparison, a table only the database holds, a database it cannot read before or after the load,
+  signal during the comparison, an evicted Pod beside a running one, which alone is waited for, and one alone, which costs
+  no wait, a table only the database holds, a database it cannot read before or after the load,
   a materialized view, a `pg_restore` that outlives its status while its backend commits, a TERM during the check
   after a failed restore, and an INT after the commit, whose outcome reaches the operator and not the load log.
 - `mise run legal:check <key> <dir>` checks an app's `<dir>/legal/datenschutz.html` and, if present,
