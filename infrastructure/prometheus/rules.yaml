@@ -30,11 +30,11 @@ data:
             annotations:
               summary: 'The container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarted more than 3 times in an hour'
           - alert: DiskLow
-            # cAdvisor's root filesystem per device, without the memory-backed mounts and overlay snapshots, which repeat
-            # the disk or are no disk.
+            # cAdvisor's root filesystem of block devices under /dev, without loop devices and /dev/shm: a snap's read-only
+            # squashfs is always full, and what is not under /dev is memory-backed or an overlay of the same disk.
             expr: >-
-              container_fs_usage_bytes{id="/", device!~"/dev|/dev/shm|/run|/var/run|overlay.*|tmpfs"}
-              / container_fs_limit_bytes{id="/", device!~"/dev|/dev/shm|/run|/var/run|overlay.*|tmpfs"} > 0.85
+              container_fs_usage_bytes{id="/", device=~"/dev/.+", device!~"/dev/(loop.*|shm)"}
+              / container_fs_limit_bytes{id="/", device=~"/dev/.+", device!~"/dev/(loop.*|shm)"} > 0.85
             for: 10m
             annotations:
               summary: 'The filesystem {{ $labels.device }} of {{ $labels.instance }} is {{ $value | humanizePercentage }} full'

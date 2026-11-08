@@ -608,8 +608,9 @@
   `http-prom` and itself; kube-state-metrics' `customResourceState` makes `gotk_resource_info` for every Kustomization. Retention
   is 30 days and 7GB on one 8Gi claim of the Retain class with the prune annotation. `rules.yaml` holds the rules
   `TargetDown`, `KustomizationNotReady`, `DeploymentUnavailable`, `PodRestarting` and `DiskLow`, read from `/etc/rules`;
-  `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` per device, without the memory-backed mounts and overlay
-  snapshots. The job `flux-controllers` keeps only Pods in phase Running, since a finished Pod keeps a target that
+  `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` for the devices under `/dev` only, without loop devices
+  and `/dev/shm`: a snap's read-only squashfs is always full, and what is not under `/dev` is memory-backed or an
+  overlay of the same disk. The job `flux-controllers` keeps only Pods in phase Running, since a finished Pod keeps a target that
   reads down, and a static job `alertmanager` scrapes Alertmanager, so `TargetDown` covers it.
   Alertmanager, the chart's subchart and a vendor image at a digest in `image.tag`, mails one alert per mail through
   `email_configs`: one receiver `mail`, every label a grouping label, `send_resolved`, plain text, and a repeat

@@ -133,7 +133,7 @@ route_seconds() {
   local duration
   duration="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "prometheus-alertmanager") | .data["alertmanager.yml"] | from_yaml | .route.'"$1" \
     infrastructure/prometheus/rendered.yaml)"
-  [[ $duration =~ ^[0-9]+s$ ]] || fail "the route's $1 is '$duration', not a whole number of seconds"
+  [[ $duration =~ ^[0-9]+s$ ]] || fail "the route's $1 is '$duration', not a whole number of seconds" >&2
   echo "${duration%s}"
 }
 group_wait="$(route_seconds group_wait)"
