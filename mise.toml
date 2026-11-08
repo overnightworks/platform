@@ -444,12 +444,14 @@ exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.c
 '''
 
 [tasks."legal:build"]
-description = "Build the legal pages from the frame and write infrastructure/legal/built/impressum.html"
+description = "Build the legal pages from the frame and the sections and write infrastructure/legal/built/impressum.html"
 env = { UV_PROJECT_ENVIRONMENT = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/venv", PYTHONDONTWRITEBYTECODE = "1", PYTHONPATH = "src/legal/src" }
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.build
+# The zone is the host of the Ingress that serves hallucinai.de's legal pages.
+zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' infrastructure/legal/legal.yaml)"
+exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.build "$zone"
 '''
 
 [tasks.bootstrap]
