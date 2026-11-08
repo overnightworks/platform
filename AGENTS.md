@@ -252,7 +252,7 @@
   `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include. `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
-  `keycloak` and `litellm` also on `platform-secrets` and `storage`.
+  `keycloak` and `litellm` also on `platform-secrets` and `storage`, and `loki` on `storage`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` also on
   `storage`.

@@ -1,6 +1,9 @@
 # Loki's chart values; mise run charts:render renders them into rendered.yaml beside this file. A bump changes the
 # chart digest in that task and loki.image.tag and loki.image.digest together and regenerates.
 deploymentMode: SingleBinary
+# The chart's cluster-scoped ClusterRole and ClusterRoleBinding of the backend grant nothing here, so only namespaced RBAC renders.
+rbac:
+  namespaced: true
 loki:
   image:
     registry: docker.io
