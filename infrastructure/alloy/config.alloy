@@ -1,0 +1,46 @@
+// Every pod's lines, read through the API server, into Loki with the labels namespace, pod and container only.
+discovery.kubernetes "pods" {
+  role = "pod"
+}
+
+discovery.relabel "pods" {
+  targets = discovery.kubernetes.pods.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+}
+
+loki.source.kubernetes "pods" {
+  targets    = discovery.relabel.pods.output
+  forward_to = [loki.process.pods.receiver]
+}
+
+loki.process "pods" {
+  // A replaced pod re-reads every line the kubelet still holds, and Loki deletes a chunk by its newest line, so an old
+  // line in a chunk with fresh ones would outlive Loki's retention.
+  stage.drop {
+    older_than          = "1h"
+    drop_counter_reason = "too_old"
+  }
+  // loki.source.kubernetes adds these after every relabel.
+  stage.label_drop {
+    values = ["instance", "job"]
+  }
+  forward_to = [loki.write.loki.receiver]
+}
+
+loki.write "loki" {
+  endpoint {
+    url = "http://loki.loki.svc:3100/loki/api/v1/push"
+  }
+}
