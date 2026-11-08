@@ -62,7 +62,7 @@ echo "a Pod in namespace $OTHER_NAMESPACE gets no answer from Loki"
 claim="$(kubectl -n "$LOKI_NAMESPACE" get pod loki-0 \
   -o jsonpath='{.spec.volumes[?(@.name=="storage")].persistentVolumeClaim.claimName}')"
 read -r phase volume prune < <(kubectl -n "$LOKI_NAMESPACE" get pvc "$claim" \
-  -o jsonpath='{.status.phase} {.spec.volumeName} {.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}')
+  -o jsonpath='{.status.phase} {.spec.volumeName} {.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}{"\n"}')
 reclaim_policy="$(kubectl get pv "$volume" -o jsonpath='{.spec.persistentVolumeReclaimPolicy}')"
 [ "$phase|$prune|$reclaim_policy" = "Bound|disabled|Retain" ] ||
   fail "the claim $LOKI_NAMESPACE/$claim reads '$phase|$prune|$reclaim_policy', not Bound|disabled|Retain"
