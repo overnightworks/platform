@@ -1,8 +1,0 @@
-claim_id = "6fbd4a5f6b8f4ea6a47e04701dc6db12"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "d57d0ea2bc2758fa2bdb0ac0d5b7c5a9d1b99829"
-branch = "claude/issue-214-github-skat-agents"
-scope = ["src/opentofu/github"]
-opened_commit = "fd92bc6455c2ac019ba08c27721c3d22b83a7df7"
-whole_reason = "One root: the declaration and the test that pins it."
