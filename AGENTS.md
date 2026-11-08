@@ -148,9 +148,9 @@
   Loki's running configuration is the only check of it.
 - The inotify limits (`host/sysctl/inotify.conf`: 512 instances and 524288 watches per user, so root's inotify instances
   suffice for the kubelet's log follows and for hal's containers beside k3s) go to `/etc/sysctl.d/90-inotify.conf` by
-  `scripts/bootstrap_pc.sh --only files`, whose file entry notifies `systemd-sysctl.service`, which mise restarts so the
-  values apply without a reboot; the services step is not needed. It needs sudo, so it is the operator's. Undo: declare
-  the file `state = "absent"` and apply `--only files`; the kernel keeps the raised values until the next reboot, or
+  `scripts/bootstrap_pc.sh --only files,services`, whose file entry notifies `systemd-sysctl.service`, which the services
+  step restarts so the values apply without a reboot. It needs sudo, so it is the operator's. Undo: declare
+  the file `state = "absent"` and apply `--only files,services`; the kernel keeps the raised values until the next reboot, or
   until `sudo sysctl -w` sets them back.
 - The disk's bounds run in the operator's user manager, which lingers, and need no sudo: after `scripts/bootstrap_pc.sh
   --only tools` (the units' binaries must exist first), `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`
