@@ -1,6 +1,6 @@
 # agent-egress, the SNI-allowlisting TLS passthrough between LiteLLM and its two providers (egress-allowed.yml). A
-# NetworkPolicy cannot filter by host name, so this Traefik keeps the provider keys from reaching any other host. Until
-# the live switch it sends only to cluster DNS, so nothing the copy of hal's data holds leaves the cluster.
+# NetworkPolicy cannot filter by host name, so this Traefik keeps the provider keys from reaching any other host. It
+# sends only to cluster DNS, so nothing the copy of hal's data holds leaves the cluster.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,7 +29,7 @@ spec:
             value: "0"
       containers:
         - name: traefik
-          image: docker.io/library/traefik:v3.7.17@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
+          image: docker.io/library/traefik
           ports:
             - name: litellm
               containerPort: 443

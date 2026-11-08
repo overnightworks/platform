@@ -1,5 +1,6 @@
-# LiteLLM, its front and its egress, beside its Postgres from the base. Each Traefik and LiteLLM read their files once,
-# at start, so each ConfigMap's name carries its content's hash and a change rolls the pod.
+# LiteLLM, its front and its egress, beside its Postgres from the base. LiteLLM reads its file and each Traefik its
+# static file once, at start, while each Traefik watches its dynamic directory; so each ConfigMap's name carries its
+# content's hash and a change rolls the pod.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: litellm
@@ -8,6 +9,12 @@ resources:
   - litellm.yaml
   - front.yaml
   - egress.yaml
+# The front and the egress run the image of the cluster's ingress, at infrastructure/traefik/values.yaml's
+# versionOverride and image.digest, which the P7c cells compare.
+images:
+  - name: docker.io/library/traefik
+    newTag: v3.7.17
+    digest: sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
 configMapGenerator:
   - name: postgres
     behavior: merge
