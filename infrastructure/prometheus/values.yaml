@@ -110,6 +110,20 @@ kube-state-metrics:
   image:
     tag: v2.20.0
     sha: sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+  # Without secrets and configmaps: a list on secrets returns their data, and no rule or dashboard reads them.
+  collectors:
+    - cronjobs
+    - daemonsets
+    - deployments
+    - jobs
+    - namespaces
+    - nodes
+    - persistentvolumeclaims
+    - persistentvolumes
+    - pods
+    - replicasets
+    - services
+    - statefulsets
   # Flux's resources, so gotk_resource_info exists for each Kustomization.
   rbac:
     extraRules:

@@ -39,11 +39,17 @@ echo "every Deployment of namespace $PROMETHEUS_NAMESPACE is Available"
 # Prometheus' ServiceAccount may read the kubelet's metrics and may not reach nodes/proxy, whose get opens the kubelet's
 # exec through a WebSocket upgrade.
 service_account="system:serviceaccount:$PROMETHEUS_NAMESPACE:prometheus-server"
-kubectl auth can-i get nodes/metrics --as "$service_account" >/dev/null || fail "$service_account may not get nodes/metrics"
-if kubectl auth can-i get nodes/proxy --as "$service_account" >/dev/null; then
+kubectl auth can-i get nodes --subresource=metrics --as "$service_account" >/dev/null || fail "$service_account may not get nodes/metrics"
+if kubectl auth can-i get nodes --subresource=proxy --as "$service_account" >/dev/null; then
   fail "$service_account may get nodes/proxy"
 fi
 echo "$service_account may get nodes/metrics and not nodes/proxy"
+
+# kube-state-metrics' list on secrets would return their data, which no rule needs.
+if kubectl auth can-i list secrets --all-namespaces --as "system:serviceaccount:$PROMETHEUS_NAMESPACE:prometheus-kube-state-metrics" >/dev/null; then
+  fail "prometheus-kube-state-metrics may list secrets"
+fi
+echo "prometheus-kube-state-metrics may not list secrets"
 
 # Every target the rendered configuration names is up, and none is down.
 jobs="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "prometheus-server") | .data["prometheus.yml"] | from_yaml | .scrape_configs[].job_name' \
