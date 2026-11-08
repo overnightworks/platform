@@ -63,8 +63,9 @@
   container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
   `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
   attributes, and adds the person to `/agent-owners`, with `--adder` also to `/agent-adders`. It refuses another
-  client, a username that is not exactly one user who is no client's service account and an `agent_owner` naming
-  someone else; before its first write a refusal ends in `nothing changed`, after one it names what was written or may
+  client, a username that no person carries, which Keycloak's user search finds without service accounts and
+  matches by the lowercase username, so a service account's name in any case is refused with the rest, and an
+  `agent_owner` naming someone else; before its first write a refusal ends in `nothing changed`, after one it names what was written or may
   have been and says that running it again completes it. It reads everything back, prints names and member counts and
   prints `nothing changed` on a second run.
 - `mise run keycloak:move-group [--delete-old] <file>` is for the rename of the AI group: it creates
@@ -257,7 +258,7 @@
   401 and no token.
   The step "P2 cells" then drives `tests/keycloak/agent_client_tokens_and_groups.sh` for `agent-mozart`: `/agent-adders`
   is empty and `/agent-owners` holds the service account alone; `keycloak:agent-owner` refuses an unknown username, a
-  service account, another owner, a client with a service account the file does not declare though Keycloak holds it
+  service account's name also in upper case, another owner, a client with a service account the file does not declare though Keycloak holds it
   (its account unchanged) and the other clients,
   takes a person whose username starts like a service account's, and sets the owner and groups once, a second run
   changing nothing, the groups' complete member lists then equal to what is expected; the client's standard, implicit
@@ -267,9 +268,10 @@
   for `agent_owner` while `firstName` alone gets 204 and the metadata hides it; a person's token carries both groups;
   and a disabled client or service account gets 401, a state a config-cli re-run keeps together with every service
   account's groups, one extra group the console gave the agent's, `agent_owner` and both groups' members.
-  `tests/keycloak/agent_owner_names_what_a_failed_write_left.sh` runs `keycloak:agent-owner` against a fake kubectl: an
-  unknown username is refused before any client's service account is read, and a membership write that fails, after
-  the owner's write or alone, prints what was written and no `nothing changed`.
+  `tests/keycloak/agent_owner_names_what_a_failed_write_left.sh` runs `keycloak:agent-owner` against a fake kubectl: a
+  name no person carries, a service account's name in any case and a name only another user's email carries are
+  refused with `nothing changed`, and a membership write that fails, after the owner's write or alone, prints what was
+  written and no `nothing changed`.
   The step "P7c cells" first fails when LiteLLM's `hostAliases` and agent-egress's `HostSNI` names differ, or the
   front's or agent-egress's image differs from Traefik's `values.yaml`. It makes a person budget and a key for the
   first model, whose metadata allows a client's `mock_response`, with the master key through a port-forward to

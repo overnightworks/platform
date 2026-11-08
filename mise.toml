@@ -686,7 +686,7 @@ description = "Set an agent's agent_owner to a person and add that person to /ag
 usage = '''
 flag "--adder" help="Also add the person to /agent-adders"
 arg "<client>" help="A service-account client of realm.yaml with agent-identity among its default scopes"
-arg "<username>" help="Exactly one person, not a service account"
+arg "<username>" help="A person, which no service account is"
 '''
 quiet = true
 run = '''
@@ -729,22 +729,23 @@ CLIENT="$client" yq --exit-status '.clients[] | select(.clientId == strenv(CLIEN
 client_id="$(kcadm get clients --target-realm "$realm" --query "clientId=$client" --fields id --format csv --noquotes)" ||
   fail "$unreadable"
 [ -n "$client_id" ] || fail "$realm holds no client $client"
-users="$(kcadm get users --target-realm "$realm" --query "username=$username" --query exact=true)" || fail "$unreadable"
-[ "$(yq -p json 'length' <<<"$users")" = 1 ] || fail "$username is not exactly one user of $realm"
-person_id="$(yq -p json '.[0].id' <<<"$users")"
-# A service account is the service-account user of a client; a person may carry any username. No read of a user tells
-# the two apart, and reading a client's service-account-user creates a missing one, so only the client the name points
-# to is read. A service account renamed by hand passes as a person.
-if [[ "$username" == service-account-* ]]; then
-  named_client_id="$(kcadm get clients --target-realm "$realm" --query "clientId=${username#service-account-}" \
-    --fields id,serviceAccountsEnabled | yq -p json -r '.[] | select(.serviceAccountsEnabled == true) | .id')" ||
+# Keycloak's search leaves out service accounts, and a value in quotes matches a username, email or name exactly, so
+# only the entries whose username is the requested one, which Keycloak stores in lowercase, are the person. Another
+# user's email or name can match too and a page holds at most 100, so every page is read until a short one.
+wanted_username="${username,,}" person_ids="" offset=0
+while :; do
+  page="$(kcadm get users --target-realm "$realm" --query "search=\"$username\"" --offset "$offset" --limit 100)" ||
     fail "$unreadable"
-  if [ -n "$named_client_id" ]; then
-    named_account_id="$(kcadm get "clients/$named_client_id/service-account-user" --target-realm "$realm" --fields id \
-      --format csv --noquotes)" || fail "$unreadable"
-    [ "$named_account_id" != "$person_id" ] || fail "$username is a service account, not a person"
-  fi
-fi
+  matched="$(WANTED="$wanted_username" yq -p json -r '.[] | select(.username == strenv(WANTED)) | .id' <<<"$page")" ||
+    fail "$unreadable"
+  [ -z "$matched" ] || person_ids+="$matched"$'\n'
+  [ "$(yq -p json 'length' <<<"$page")" -ge 100 ] || break
+  offset=$((offset + 100))
+done
+person_count="$(grep -c . <<<"$person_ids" || true)"
+[ "$person_count" -gt 0 ] || fail "no person named $username in $realm"
+[ "$person_count" = 1 ] || fail "Keycloak returned $person_count users named $username"
+person_id="${person_ids%$'\n'}"
 account_id="$(kcadm get "clients/$client_id/service-account-user" --target-realm "$realm" --fields id --format csv --noquotes)" ||
   fail "$unreadable"
 account="$(kcadm get "users/$account_id" --target-realm "$realm")" || fail "$unreadable"

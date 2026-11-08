@@ -120,6 +120,8 @@ owner_command "$client" p2-nobody
 refused "an unknown username" ""
 owner_command "$client" "service-account-$client"
 refused "a service account as owner" ""
+owner_command "$client" "SERVICE-ACCOUNT-${client^^}"
+refused "a service account as owner, in upper case" ""
 other_client="$(yq '[.clients[] | select(.serviceAccountsEnabled == true and ((.defaultClientScopes // []) | contains(["agent-identity"]) | not))][0].clientId' "$REALM_FILE")"
 owner_command "$other_client" "$stand_in"
 refused "the service-account client $other_client without agent-identity" ""
