@@ -1,8 +1,0 @@
-claim_id = "1fdf9c039b0d40739eb3e9bbf18b5f6e"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "f8e650885639224a4848360806aada264312f621"
-branch = "claude/issue-175-secrets-expiry-check"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "mise.toml", "scripts/check_secrets_expiry.sh", "tests/secrets/expiry_check_names_each_breach.sh"]
-opened_commit = "21e42bd9b101a549f94128ddc93d57740971a037"
-whole_reason = "One check: its task, script, cell and command line prove it together."
