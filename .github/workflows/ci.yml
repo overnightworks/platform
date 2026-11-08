@@ -58,7 +58,7 @@ jobs:
       matrix:
         part: [core, postgres]
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
@@ -307,6 +307,7 @@ jobs:
         run: tests/keycloak/realm_route_and_policies.sh
 
       - name: P2 cells
+        if: matrix.part == 'core'
         env:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
