@@ -759,8 +759,18 @@ run = '''
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 port="$(kubectl --namespace gatus get service gatus -o jsonpath='{.spec.ports[0].port}')"
-echo "gatus:open: open http://127.0.0.1:$port/; Ctrl-C ends the forward"
-exec kubectl --namespace gatus port-forward --address 127.0.0.1 service/gatus "$port:$port"
+# kubectl runs in the foreground, so Ctrl-C reaches it and ends it; the reader on its stdout prints the address once
+# kubectl says it listens, and a forward that fails prints none.
+announce() {
+  local line local_port
+  while IFS= read -r line; do
+    local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) ->.*/\1/p' <<<"$line")"
+    if [ -n "$local_port" ]; then
+      echo "gatus:open: open http://127.0.0.1:$local_port/; Ctrl-C ends the forward"
+    fi
+  done
+}
+kubectl --namespace gatus port-forward --address 127.0.0.1 service/gatus ":$port" > >(announce)
 '''
 
 # kcadm runs in Keycloak's own container and signs in as config-cli with the secret that container holds, so no
