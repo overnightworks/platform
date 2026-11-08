@@ -12,11 +12,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 dump="${1:?usage: $0 <dump>}"
 [ -r "$dump" ] && [ ! -d "$dump" ] || fail "no readable dump file $dump"
 namespace=keycloak
-# Postgres ends a statement past 60 s and a lock wait past 10 s, as a lock the operator's session holds could otherwise
-# hold this check forever. pg_dump resets both for its session, so the container's own timeout, below the local
-# deadline, ends pg_dump and pg_restore: the pipe into table-digests.sh closes and no process of the database's
-# session outlives the check. The local deadline ends the kubectl exec around each, which a stalled connection could
-# otherwise keep open.
+# A connection attempt ends past 10 s, a statement past 60 s and a lock wait past 10 s, as a lock the operator's session
+# holds could otherwise hold this check forever. pg_dump resets both for its session, so the container's own timeout,
+# below the local deadline, ends pg_dump and pg_restore: the pipe into table-digests.sh closes and no process of the
+# database's session outlives the check. The local deadline ends the kubectl exec around each, which a stalled
+# connection could otherwise keep open.
 deadline=2m
 remote_deadline=100s
 remote_deadline_status=97
@@ -24,7 +24,7 @@ remote_deadline_status=97
 remote_bound='bounded() { limit=$1; shift; timeout "$limit" "$@"; status=$?; case $status in 124|143) return 97;; esac; return "$status"; }'
 in_postgres() {
   timeout "$deadline" kubectl --namespace "$namespace" exec postgres-0 --container postgres -- \
-    env PGOPTIONS='-c statement_timeout=60s -c lock_timeout=10s' "$@"
+    env PGCONNECT_TIMEOUT=10 PGOPTIONS='-c statement_timeout=60s -c lock_timeout=10s' "$@"
 }
 dump_into_postgres() {
   timeout "$deadline" kubectl --namespace "$namespace" exec --stdin postgres-0 --container postgres -- "$@" <"$dump"
