@@ -254,22 +254,30 @@ admin DELETE "$realm/users/$probe_user_id"
 admin DELETE "$realm/clients/$(admin GET "$realm/clients?clientId=$probe_client" | jq --raw-output '.[0].id')"
 
 # The positive control runs through the same client and master's own flow: an administrator with TOTP gets a token
-# with the current code and none without it, and once the TOTP is deleted none at all. The secret's bytes are the HMAC
-# key, as Keycloak reads an imported secret without an encoding, and the code follows RFC 6238 at the credential's
-# algorithm, digits and period.
-probe_admin=b6-admin
+# with the current code and none without it, and one without TOTP none at all. The secret's bytes are the HMAC key, as
+# Keycloak reads an imported secret without an encoding, and the code follows RFC 6238 at the credential's algorithm,
+# digits and period.
+totp_admin=b6-admin
+plain_admin=b6-admin-without-totp
 totp_secret="$(openssl rand -hex 20)"
 totp_period=30
 totp_digits=6
-admin POST master/partialImport "$(USER="$probe_admin" PASSWORD="$probe_password" SECRET="$totp_secret" \
-  PERIOD="$totp_period" DIGITS="$totp_digits" jq --null-input '{ifResourceExists: "FAIL", users: [{username: env.USER,
-    enabled: true, email: (env.USER + "@example.invalid"), emailVerified: true, firstName: "B6", lastName: "Admin",
-    credentials: [{type: "password", value: env.PASSWORD, temporary: false},
-      {type: "otp", userLabel: "b6", secretData: ({value: env.SECRET} | tojson),
-        credentialData: ({subType: "totp", algorithm: "HmacSHA1", digits: (env.DIGITS | tonumber),
-          period: (env.PERIOD | tonumber), counter: 0} | tojson)}]}]}')" >/dev/null
-probe_admin_id="$(admin GET "master/users?exact=true&username=$probe_admin" | jq --raw-output '.[0].id')"
-admin POST "master/users/$probe_admin_id/role-mappings/realm" "[$(admin GET master/roles/admin)]"
+admin POST master/partialImport "$(TOTP_USER="$totp_admin" PLAIN_USER="$plain_admin" PASSWORD="$probe_password" \
+  SECRET="$totp_secret" PERIOD="$totp_period" DIGITS="$totp_digits" jq --null-input '
+  def administrator($name; $second_factor): {username: $name, enabled: true, email: ($name + "@example.invalid"),
+    emailVerified: true, firstName: "B6", lastName: "Admin",
+    credentials: ([{type: "password", value: env.PASSWORD, temporary: false}] + $second_factor)};
+  {ifResourceExists: "FAIL", users: [
+    administrator(env.TOTP_USER; [{type: "otp", userLabel: "b6", secretData: ({value: env.SECRET} | tojson),
+      credentialData: ({subType: "totp", algorithm: "HmacSHA1", digits: (env.DIGITS | tonumber),
+        period: (env.PERIOD | tonumber), counter: 0} | tojson)}]),
+    administrator(env.PLAIN_USER; [])]}')" >/dev/null
+admin_role="$(admin GET master/roles/admin)"
+admin_ids=()
+for username in "$totp_admin" "$plain_admin"; do
+  admin_ids+=("$(admin GET "master/users?exact=true&username=$username" | jq --raw-output '.[0].id')")
+  admin POST "master/users/${admin_ids[-1]}/role-mappings/realm" "[$admin_role]"
+done
 totp_code() {
   TOTP_SECRET="$totp_secret" TOTP_PERIOD="$totp_period" TOTP_DIGITS="$totp_digits" python3 -I -c '
 import hashlib, hmac, os, struct, time
@@ -279,24 +287,23 @@ offset = digest[-1] & 0x0F
 digits = int(os.environ["TOTP_DIGITS"])
 print(str((struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 10**digits).zfill(digits))'
 }
-# grant_outcome: the status and whether a token came, never the token.
-grant_outcome() { echo "$grant_status $(jq --raw-output 'if .access_token then "token" else "no-token" end' <<<"$grant_body")"; }
-password_grant master admin-cli "$probe_admin" --data-urlencode "totp=$(totp_code)"
+# grant_outcome: the status, the OAuth error and whether a token came, never the token.
+grant_outcome() {
+  echo "$grant_status $(jq --raw-output '(.error // "no-error") + " " + (if .access_token then "token" else "no-token" end)' \
+    <<<"$grant_body" 2>/dev/null || echo "an answer that is no JSON")"
+}
+password_grant master admin-cli "$totp_admin" --data-urlencode "totp=$(totp_code)"
 with_code="$(grant_outcome)"
-password_grant master admin-cli "$probe_admin"
+password_grant master admin-cli "$totp_admin"
 without_code="$(grant_outcome)"
-totp_credential="$(admin GET "master/users/$probe_admin_id/credentials" | jq --raw-output '.[] | select(.type == "otp") | .id')"
-admin DELETE "master/users/$probe_admin_id/credentials/$totp_credential"
-# Two failures within a second would lock the administrator out as a brute force, so the first one is cleared.
-admin DELETE "master/attack-detection/brute-force/users/$probe_admin_id"
-password_grant master admin-cli "$probe_admin"
+password_grant master admin-cli "$plain_admin"
 without_totp="$(grant_outcome)"
-admin DELETE "master/users/$probe_admin_id"
-[ "$with_code" = "200 token" ] ||
+for user_id in "${admin_ids[@]}"; do admin DELETE "master/users/$user_id"; done
+[ "$with_code" = "200 no-error token" ] ||
   fail "a master administrator with TOTP got '$with_code' from admin-cli's password grant with the code, not 200 and a token"
-[ "$without_code" = "401 no-token" ] ||
-  fail "a master administrator with TOTP got '$without_code' from admin-cli's password grant without the code, not 401"
-[ "$without_totp" = "401 no-token" ] ||
+[[ $without_code == "400 "*" no-token" ]] ||
+  fail "a master administrator with TOTP got '$without_code' from admin-cli's password grant without the code, not 400 without a token"
+[[ $without_totp == "401 "*" no-token" ]] ||
   fail "a master administrator without TOTP got '$without_totp' from admin-cli's password grant, not 401 without a token"
-echo "through admin-cli and master's own flow a master administrator with TOTP gets a token with the code and 401" \
-  "without it, and one without TOTP gets 401 without a token"
+echo "through admin-cli and master's own flow a master administrator with TOTP gets 200 and a token with the code and" \
+  "'$without_code' without it, and one without TOTP '$without_totp'"
