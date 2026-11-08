@@ -55,11 +55,12 @@
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
   per host and hal's console answers on another port of `localhost`.
-- `mise run keycloak:move-group [--delete-old] <file>` is the operator's, for the rename of the AI group, and is deleted
-  after its last run at the live switch: it dumps `keycloak` to the new file at 0600 (and refuses one that exists),
-  adds every member of `/services/agent-service/api` to `/services/litellm` through kcadm in Keycloak's container,
-  signed in as config-cli, verifies the old members are a subset and prints the two groups' member counts; only
-  `--delete-old` deletes the old group. `db:load-dump keycloak <file>` rolls it back.
+- `mise run keycloak:move-group [--delete-old] <file>` is the operator's, for the rename of the AI group: it creates
+  the new file at 0600 (and refuses one that exists), dumps `keycloak` into it with the messages of `pg_dump` and
+  `pg_restore --list` in `<file>.dump.log` at 0600, whose path and line count it prints, deletes only its own file
+  after a failed dump, adds every member of `/services/agent-service/api` to `/services/litellm` through kcadm in
+  Keycloak's container, signed in as config-cli, verifies the old members are a subset and prints the two groups'
+  member counts; only `--delete-old` deletes the old group. `db:load-dump keycloak <file>` rolls it back.
 - `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
   pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
   installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else

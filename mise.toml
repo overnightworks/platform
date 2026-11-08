@@ -608,13 +608,13 @@ echo "keycloak:admin: open $admin_url/admin/master/console/ in a private window;
 exec kubectl --namespace keycloak port-forward --address 127.0.0.1 service/keycloak "${BASH_REMATCH[1]}:http"
 '''
 
-# Deleted after its last run at the live switch. kcadm runs in Keycloak's own container and signs in as config-cli
-# with the secret that container holds, so no secret reaches this shell; every line is a name or a count.
+# kcadm runs in Keycloak's own container and signs in as config-cli with the secret that container holds, so no
+# secret reaches this shell; every line is a name, a count or an outcome.
 [tasks."keycloak:move-group"]
 description = "Dump keycloak to a new file, add every member of /services/agent-service/api to /services/litellm, verify"
 usage = '''
 flag "--delete-old" help="After the verified move, delete /services/agent-service/api"
-arg "<file>" help="A new file for the custom-format dump of keycloak, mode 0600; db:load-dump keycloak <file> rolls back"
+arg "<file>" help="A new file for the custom-format dump of keycloak, mode 0600, with <file>.dump.log beside it for the messages of pg_dump and pg_restore; db:load-dump keycloak <file> rolls back"
 '''
 quiet = true
 run = '''
@@ -648,14 +648,19 @@ members() {
 }
 count() { if [ -z "$1" ]; then echo 0; else grep -c . <<<"$1"; fi; }
 
-[ ! -e "$file" ] || fail "$file exists; nothing written or moved"
-set -o noclobber
+# noclobber makes the creation fail on any file that exists by then, so the file this run deletes is its own.
+[ ! -e "$file" ] && (set -o noclobber && : >"$file") 2>/dev/null ||
+  fail "$file exists or cannot be created; nothing written or moved"
+# Their messages can quote a row, so they go to the log beside the dump, never to the terminal.
+log="$file.dump.log"
+: >"$log" && chmod 0600 "$log"
 # A partial dump must not look like the backup this task promises, so a failed one is deleted.
-kubectl --namespace keycloak exec postgres-0 --container postgres -- pg_dump --format=custom >"$file" ||
-  { rm -f -- "$file"; fail "pg_dump failed, so $file is deleted; nothing moved"; }
-kubectl --namespace keycloak exec --stdin postgres-0 --container postgres -- pg_restore --list >/dev/null <"$file" ||
-  { rm -f -- "$file"; fail "pg_restore cannot list the dump, so $file is deleted; nothing moved"; }
-say "keycloak dumped to $file"
+kubectl --namespace keycloak exec postgres-0 --container postgres -- pg_dump --format=custom >>"$file" 2>"$log" ||
+  { rm -f -- "$file"; fail "pg_dump failed with $(grep -c . "$log") lines in $log, so $file is deleted; nothing moved"; }
+kubectl --namespace keycloak exec --stdin postgres-0 --container postgres -- pg_restore --list >/dev/null <"$file" \
+  2>>"$log" || { rm -f -- "$file"; fail "pg_restore cannot list the dump, with $(grep -c . "$log") lines in $log, so \
+$file is deleted; nothing moved"; }
+say "keycloak dumped to $file; pg_dump's and pg_restore's messages, $(grep -c . "$log") lines, are in $log"
 
 old_id="$(group_id "$old_group")" || fail "$realm holds no $old_group or Keycloak cannot be read; nothing moved"
 new_id="$(group_id "$new_group")" || fail "$realm holds no $new_group or Keycloak cannot be read; nothing moved"
