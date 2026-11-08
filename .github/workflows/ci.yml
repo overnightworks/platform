@@ -52,7 +52,8 @@ jobs:
 
   cluster:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The whole integrated tree: every layer's images, its Secrets and each slice's cells, Backups and restores included.
+    timeout-minutes: 45
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
