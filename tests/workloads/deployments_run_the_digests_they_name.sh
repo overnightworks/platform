@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 policy="$(yq 'select(.kind == "ValidatingAdmissionPolicy" and .spec.paramKind != null) | .metadata.name' "$POLICY_FILE")"
 exempt=" $(kubectl get validatingadmissionpolicy "$policy" -o jsonpath='{.spec.matchConstraints.namespaceSelector.matchExpressions[?(@.operator=="NotIn")].values[*]}') "
 # The runtime's imageID names the digest it resolved each container's image to.

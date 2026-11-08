@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # systemd does not run in this container, so a fake systemctl answers for the timer and its service. The timer
 # has not fired, as after a first install or a manual start, unless FAKE_LAST_TRIGGER sets its last trigger;
 # the service's start time is FAKE_LAST_RUN.

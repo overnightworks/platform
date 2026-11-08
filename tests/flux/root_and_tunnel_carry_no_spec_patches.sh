@@ -2,8 +2,8 @@
 set -euo pipefail
 # The job root's overlay adds spec.patches to both, which would replace committed ones without a word (RFC 6902
 # add).
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 root_file=clusters/pc/flux-system/gotk-sync.yaml
 objects="$(kubectl create --dry-run=client -f "$root_file" \
   -o go-template='{{.kind}}{{if .spec.patches}} with spec.patches{{end}}{{"\n"}}')"

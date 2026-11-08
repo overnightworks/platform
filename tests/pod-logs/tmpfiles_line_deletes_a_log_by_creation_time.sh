@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 apt-get install --yes --no-install-recommends systemd >/dev/null
 # The committed line with its age shortened to seconds; its type, path and kind of age stay as committed.
 age_seconds=3

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-fail() { echo "::error::$1"; exit 1; }
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # The policy with the vendor list as its parameter, and the system namespaces' policy without one.
 policy="$(yq 'select(.kind == "ValidatingAdmissionPolicy" and .spec.paramKind != null) | .metadata.name' "$POLICY_FILE")"
 binding="$(yq 'select(.kind == "ValidatingAdmissionPolicyBinding" and .spec.paramRef != null) | .metadata.name' "$POLICY_FILE")"

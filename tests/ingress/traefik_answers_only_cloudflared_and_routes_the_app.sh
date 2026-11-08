@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-fail() { echo "::error::$1"; exit 1; }
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 applied_revision="$(kubectl -n flux-system get kustomization traefik -o jsonpath='{.status.lastAppliedRevision}')"
 [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
   fail "the Kustomization traefik applied '$applied_revision', not the candidate $CANDIDATE_REVISION"

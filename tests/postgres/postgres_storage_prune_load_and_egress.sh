@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-fail() { echo "::error::$1"; exit 1; }
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # The loader and the interrupt test run as on the PC, against this cluster.
 export KUBECONFIG="$HOME/.kube/config"
 sql() { kubectl --namespace "$1" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only \

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 layer() { kubectl --namespace "${1%/*}" get kustomization "${1#*/}" -o jsonpath="$2"; }
 
 for manifest in $APP_MANIFESTS; do

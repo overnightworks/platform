@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 umask 077
 proof_dir="$RUNNER_TEMP/github-host-keys"
 mkdir "$proof_dir"

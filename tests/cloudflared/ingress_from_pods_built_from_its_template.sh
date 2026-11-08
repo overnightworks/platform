@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 deployment="$(kubectl -n "$TUNNEL_NAMESPACE" get deployment cloudflared -o json)"
 [ "$(yq '.spec.template.spec.containers | length' <<<"$deployment")" = 1 ] ||
   fail "the Deployment cloudflared has not exactly one container"

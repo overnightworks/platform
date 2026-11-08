@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # The key, the values and the plain manifests exist only in this runner's temp directory; no step prints them.
 umask 077
 private_dir="$RUNNER_TEMP/decryption-proof"

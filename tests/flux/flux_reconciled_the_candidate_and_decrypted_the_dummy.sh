@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 inventory() {
   kubectl -n flux-system get kustomization flux-system \
     -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}'

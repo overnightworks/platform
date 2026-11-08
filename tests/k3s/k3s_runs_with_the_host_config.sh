@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-fail() { echo "::error::$1"; exit 1; }
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 server="k3d-${CLUSTER_NAME}-server-0"
 
 # k3s stages its manifests in one pass before it deploys coredns, so the set is final once that Deployment

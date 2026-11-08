@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # A key file under the runner's temp directory, so no real key and no home directory is touched.
 proof_dir="$RUNNER_TEMP/new-key"
 key_dir="$proof_dir/age"

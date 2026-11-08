@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-fail() { echo "::error::$1"; exit 1; }
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 generated=(clusters/pc/flux-system/gotk-components.yaml mise.lock infrastructure/)
 mise run flux:export
 mise lock

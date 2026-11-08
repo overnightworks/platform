@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # platform-secrets runs on the job's own source, whose revision is its artifact's digest.
 for kustomization in namespaces tunnel; do
   applied_revision="$(kubectl -n flux-system get kustomization "$kustomization" \

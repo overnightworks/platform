@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 server="k3d-${CLUSTER_NAME}-server-0"
 node="$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')"
 configured="$(yq '.["kubelet-arg"][] | select(test("^container-log-max-files=")) | sub("^[^=]*=", "")' \

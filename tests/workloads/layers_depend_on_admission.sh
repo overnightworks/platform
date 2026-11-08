@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
+# shellcheck source=../failure.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # An inventory id is <namespace>_<name>_<group>_<kind>; Kubernetes names hold no underscore.
 workload_id='_(apps_(Deployment|StatefulSet|DaemonSet|ReplicaSet)|batch_(Job|CronJob)|_(Pod|ReplicationController)|helm[.]toolkit[.]fluxcd[.]io_HelmRelease)$'
 created() {
