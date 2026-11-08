@@ -6,6 +6,11 @@
 # of the file, so the script feeds all of the dump but its last byte. That byte is the end of the last data block, the
 # zero-length chunk (a sign byte and the int's bytes) that closes every block: pg_restore waits for it inside its
 # transaction, as an idle session or in COPY, for a dump with data.
+# A session inside its transaction also waits for its client between two statements and while a COPY streams, so a probe
+# counts only once the writer has ended and the withheld byte is the one thing pg_restore waits for; the first such
+# probe decides, and a writer that ended with a failure fails the script, since the loader then never got the dump.
+# When no probe sees the blocked state in 300 seconds, it prints what the restore was doing: the database's other
+# sessions by state and wait event, the container's process states and the loader's local processes, never a row.
 set -euo pipefail
 namespace="$1" dump="$2" signal="$3"
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
@@ -26,6 +31,30 @@ blocked_sessions() {
   kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only --no-align \
     --command="SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
       AND xact_start IS NOT NULL AND wait_event = 'ClientRead'"
+}
+# The sessions' states, wait events and whether each holds a transaction, without their queries or rows.
+session_states() {
+  kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --command="SELECT pid, state,
+    wait_event_type, wait_event, xact_start IS NOT NULL AS in_transaction, backend_type FROM pg_stat_activity
+    WHERE datname = current_database() AND pid <> pg_backend_pid()"
+}
+# The comm and the state field of every process of the container, as /proc holds them; the container's shell expands.
+# shellcheck disable=SC2016
+container_process_states() {
+  kubectl --namespace "$namespace" exec postgres-0 --container postgres -- sh -c \
+    'for process in /proc/[0-9]*; do
+      echo "$(cat "$process/comm" 2>/dev/null) $(sed "s/^.*) //; s/ .*//" "$process/stat" 2>/dev/null)"
+    done'
+}
+# What the restore was doing; a read that fails says so and never hides the timeout.
+print_diagnostics() {
+  echo "interrupt_load: writer finished: $writer_done" >&2
+  echo "interrupt_load: database sessions (pid, state, wait event, in transaction, backend type):" >&2
+  session_states >&2 2>&1 || echo "interrupt_load: the sessions could not be read" >&2
+  echo "interrupt_load: container processes (comm, state):" >&2
+  container_process_states >&2 2>&1 || echo "interrupt_load: the container's processes could not be read" >&2
+  echo "interrupt_load: loader processes (pid, state, wchan, comm):" >&2
+  ps -o pid=,stat=,wchan=,comm= --sid "$loader" >&2 2>&1 || echo "interrupt_load: the loader's processes could not be read" >&2
 }
 # The writers the loader stops and Flux restores: "<name>=<replicas>" per Deployment, and the Jobs Flux applied.
 replicas() {
@@ -75,12 +104,21 @@ loader=$!
 head -c "$((dump_size - withheld_bytes))" "$dump" >&3 &
 writer=$!
 
+writer_done=false blocked=false
 for _ in $(seq 300); do
   kill -0 "$loader" 2>/dev/null || fail "the loader exited before its pg_restore blocked inside its transaction"
-  ! blocks_inside_transaction || break
+  if [ "$writer_done" = false ] && ! kill -0 "$writer" 2>/dev/null; then
+    wait "$writer" || fail "the writer failed, so pg_restore never got the dump"
+    writer=""
+    writer_done=true
+  fi
+  if [ "$writer_done" = true ] && blocks_inside_transaction; then
+    blocked=true
+    break
+  fi
   sleep 1
 done
-blocks_inside_transaction || fail "no pg_restore blocked inside its transaction within 300 seconds"
+[ "$blocked" = true ] || { print_diagnostics; fail "no pg_restore blocked inside its transaction within 300 seconds"; }
 running="$(replicas)" || fail "cannot read the Deployments of $namespace"
 existing_jobs="$(flux_jobs)" || fail "cannot read the Jobs of $namespace"
 [ -z "$(grep -v '=0$' <<<"$running" || true)" ] && [ -z "$existing_jobs" ] ||
@@ -89,7 +127,7 @@ echo "interrupt_load: pg_restore blocks inside its transaction; sending $signal 
 # Their process groups decide which of them a terminal's signal would reach.
 ps -o pid=,pgid=,comm= --sid "$loader"
 pkill "-$signal" --session "$loader"
-kill "$writer" 2>/dev/null || true
+[ -z "$writer" ] || kill "$writer" 2>/dev/null || true
 exec 3>&-
 loader_status=0
 wait "$loader" || loader_status=$?
