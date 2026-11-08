@@ -32,6 +32,10 @@
   fails when it cannot list the directory. It reads the clean's last start (the later of the service's and the timer's
   last trigger, which a reboot keeps) and result, whoever started it, so a failed or never-run clean keeps failing the
   check until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
+- `mise run check:secrets-expiry` runs on the PC through k3s's own kubeconfig, without sudo, and reads only metadata: it
+  names, by namespace, name and date, every Secret whose annotation `platform.hallucinai.de/expires-on: YYYY-MM-DD` lies
+  within 30 days or in the past, and each whose value is no such date, and fails on any or when the listing fails; it
+  passes with no annotated Secret.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
@@ -55,7 +59,16 @@
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
   per host and hal's console answers on another port of `localhost`.
-- `mise run keycloak:move-group [--delete-old] <file>` is the operator's, for the rename of the AI group: it creates
+- `mise run keycloak:agent-owner [--adder] <client> <username>` runs through kcadm in Keycloak's
+  container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
+  `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
+  attributes, and adds the person to `/agent-owners`, with `--adder` also to `/agent-adders`. It refuses another
+  client, a username that no person carries, which Keycloak's user search finds without service accounts and
+  matches by the lowercase username, so a service account's name in any case is refused with the rest, and an
+  `agent_owner` naming someone else; before its first write a refusal ends in `nothing changed`, after one it names what was written or may
+  have been and says that running it again completes it. It reads everything back, prints names and member counts and
+  prints `nothing changed` on a second run.
+- `mise run keycloak:move-group [--delete-old] <file>` is for the rename of the AI group: it creates
   the new file at 0600 (and refuses one that exists), dumps `keycloak` into it with the messages of `pg_dump` and
   `pg_restore --list` in `<file>.dump.log` at 0600, whose path and line count it prints, deletes only its own file
   after a failed dump, adds every member of `/services/agent-service/api` to `/services/litellm` through kcadm in
@@ -65,8 +78,9 @@
   `db:load-dump keycloak <dump>` converged, through k3s's own kubeconfig, without sudo or a fetched secret: it fails
   unless config-cli's Job completed within its `backoffLimit`, no client or user carries Keycloak's
   `is_temporary_admin`, the realm's key ids equal those of the public issuer, and the rows of `user_entity`,
-  `credential` and `user_group_membership` equal the dump's by count and the sha256 of their sorted lines. It prints
-  names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`. Each database
+  `credential`, `user_group_membership` and `user_attribute` equal the dump's by count and the sha256 of their sorted
+  lines, except the rows of the service accounts that clients declared in `realm.yaml` gained since the dump, whose
+  count its "added" line prints. It prints names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`. Each database
   step runs under a statement and lock timeout and a 2-minute local deadline; pg_dump and pg_restore also run under
   the container's own 100-second timeout, so no database session outlives the check. Either deadline's end fails it
   naming the step and which deadline.
@@ -123,6 +137,8 @@
   exists; then deletes the timer's entry, which a plan reports unknown once its file is gone, declares the four files
   `state = "absent"` and applies `--only files`; then drops the `kubelet-arg` and runs `mise run bootstrap:k3s`.
   Deleted logs stay deleted.
+  `check-pod-logs` never reads Loki's copy of the lines, whose bound `infrastructure/loki/` sets; the `cluster` cell on
+  Loki's running configuration is the only check of it.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
   runs beside it.
@@ -136,6 +152,9 @@
   `quality` job that calls quality's `gate.yml`.
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
+  `cluster` runs in two parts, each on its own k3d cluster and both listed as `cluster`: `postgres` holds the "P7a
+  cells" and `core` every other cell and the checks that need no cluster, the setup through the reconcile's assertion
+  runs in both, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
   `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
@@ -212,11 +231,13 @@
   named like it, holds the base's objects of the namespace, that no other Kustomization holds one but platform-secrets'
   Secrets, and that it depends on `admission`, `platform-secrets` and `storage`; deletes the Kustomization `litellm`, whose
   inventory goes while the claim, its volume and the Namespace stay, and the root re-creates it with the row written
-  before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two synthetic dumps it
-  makes, one of data and one whose table of contents is most of the file, with the Kustomization `litellm` pointed at
-  `tests/postgres/writers` for a Deployment and a Job that Flux applies, stops and restores, an INT that reaches the
+  before; points the Kustomization `litellm` at `tests/postgres/writers`, the Postgres base with a Deployment and a
+  Job that Flux applies, stops and restores, in place of LiteLLM, its front and its egress, and empties the database
+  to what a fresh claim holds; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two
+  synthetic dumps it makes, one of data and one whose table of contents is most of the file, an INT that reaches the
   loader after its restore committed and a failed load beside a materialized view, which each leave it suspended, and
-  a held foreign session, which costs one wait;
+  a held foreign session, which costs one wait; empties the database again and gives the layer its own path back,
+  which must turn Ready;
   and shows that a busybox Pod with Keycloak's labels reaches its Postgres but neither the Service `kubernetes` nor
   github.com, while one without them reaches all three. k3d does not prove the egress to hal's Docker bridges or to
   hopin, whose own policy already refuses both Pods.
@@ -237,6 +258,38 @@
   through `admin-cli` and master's own flow a master administrator with TOTP gets 200 and a token with the current
   code, which the job computes from the secret it imported, and 400 and no token without it, and one without TOTP gets
   401 and no token.
+  The step "P2 cells" then drives `tests/keycloak/agent_client_tokens_and_groups.sh` for `agent-mozart`: `/agent-adders`
+  is empty and `/agent-owners` holds the service account alone; `keycloak:agent-owner` refuses an unknown username, a
+  service account's name also in upper case, another owner, a client with a service account the file does not declare though Keycloak holds it
+  (its account unchanged) and the other clients,
+  takes a person whose username starts like a service account's, and sets the owner and groups once, a second run
+  changing nothing, the groups' complete member lists then equal to what is expected; the client's standard, implicit
+  and direct-access flows are off and a password grant through it is refused; a token with `scope=mcp-hopin` carries
+  the file's groups exactly, its exact scope, one audience, no refresh token, 300 seconds, `at+jwt`, and its claims, and
+  one without the scope no audience and exactly the default scopes that go into a token; its own token is refused at the account and admin API, and a person gets 400
+  for `agent_owner` while `firstName` alone gets 204 and the metadata hides it; a person's token carries both groups;
+  and a disabled client or service account gets 401, a state a config-cli re-run keeps together with every service
+  account's groups, one extra group the console gave the agent's, `agent_owner` and both groups' members.
+  `tests/keycloak/agent_owner_names_what_a_failed_write_left.sh` runs `keycloak:agent-owner` against a fake kubectl: a
+  name no person carries, a service account's name in any case and a name only another user's email carries are
+  refused with `nothing changed`, and a membership write that fails, after the owner's write or alone, prints what was
+  written and no `nothing changed`.
+  The step "P7c cells" first fails when LiteLLM's `hostAliases` and agent-egress's `HostSNI` names differ, or the
+  front's or agent-egress's image differs from Traefik's `values.yaml`. It makes a person budget and a key for the
+  first model, whose metadata allows a client's `mock_response`, with the master key through a port-forward to
+  LiteLLM and checks that both carry those values, then
+  from client Pods: in `hopin`, the front's three routes without a key get LiteLLM's 401, a GET on its two POST paths,
+  `POST /v1/models` and `/key/generate` with the master key the front's own 404, a query string 400 on a GET and a
+  POST, a mocked completion with the key its `mock_response` answer and a real one a 5xx; a Pod in another namespace
+  or in `litellm` gets no answer from the front, and one in `hopin` or `litellm` none from LiteLLM, while each gets
+  one from the API server; of its Postgres, agent-egress, the Service `kubernetes` and the first provider host, each
+  name resolved, a Pod with LiteLLM's labels reaches only the first two, one with agent-egress's or the front's labels
+  none, and one without labels all but agent-egress; through agent-egress a third SNI's handshake ends in the gateway
+  without a dial, while the provider's ends after the gateway logged its failed dial of a resolved provider address;
+  and LiteLLM's start, read from its Deployment and run with fake values in a client Pod's busybox sh,
+  refuses each key and the password empty, ending in a newline, with a space or a non-ASCII byte, and the password
+  outside the URL-safe alphabet, naming only the variable, while a good set reaches the exec at core limit 0. k3d
+  does not prove a provider call through an open egress.
 - `clusters/pc/flux-system/`: Flux's own components and its sync to this repository. `gotk-components.yaml` is
   generated by `mise run flux:export` for the components `FLUX_COMPONENTS` in `mise.toml` lists, which hold no Helm reconciler
   (every chart is rendered into Git); it is not edited by hand, and `cluster` fails when a regeneration differs.
@@ -247,7 +300,7 @@
   `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include. `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
-  `keycloak` and `litellm` also on `platform-secrets` and `storage`.
+  `keycloak` and `litellm` also on `platform-secrets` and `storage`, and `loki` on `storage`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` also on
   `storage`.
@@ -292,8 +345,26 @@
   template or a realm file changes, and a run that changes master's front end converges by retry. On an empty
   database Keycloak creates config-cli's client from `KC_BOOTSTRAP_ADMIN_CLIENT_ID`; a restored one keeps its own.
   `KC_HOSTNAME_ADMIN` in `keycloak.yaml` is the one owner of the admin front end, which `kustomization.yaml` copies
-  to the Job. The Secret `keycloak` from `platform-secrets` holds config-cli's secret and each app client's. The
-  realm sets theme `hallucinai`, which Keycloak replaces with its own until an image carries it.
+  to the Job. The Secret `keycloak` from `platform-secrets` holds config-cli's secret, each app client's and the agent
+  client's (`client-agent-mozart`). The realm file holds the user profile (Keycloak's default with `agent_owner`,
+  readable and writable only by an administrator) and the agent objects: the groups `/agents`, `/agent-adders` and
+  `/agent-owners`, the scope `agent-identity`, the client `agent-mozart` and its service account's groups; who owns or
+  adds an agent is console data set by `keycloak:agent-owner`. The realm sets theme `hallucinai`, which Keycloak replaces with its own until an image carries it.
+- `infrastructure/litellm/`: LiteLLM, its front `litellm-front` and its egress `agent-egress`, hal's three
+  configurations as ConfigMaps whose names carry their content's hash, so a change rolls the pod that reads it at
+  start. LiteLLM, one pod with `Recreate` at uid 1000 with a read-only root, reads its master and provider keys from
+  the Secret `litellm` and builds `DATABASE_URL` from the Secret `postgres`, both from `platform-secrets`, and does
+  not start unless each key and the password is one non-empty printable line and the password URL-safe; it starts
+  with core dumps off, admits only the front and sends only to cluster DNS, its Postgres and agent-egress, which its
+  `hostAliases` name for the provider hosts at the fixed ClusterIP of agent-egress's Service, in k3s's default
+  service CIDR. The front, a Traefik on port 4000, admits only the namespaces `hopin`, `presentator` and `songmaker`
+  and passes only `POST /v1/chat/completions`, `POST /v1/images/generations` and `GET /v1/models` without a query
+  string. agent-egress, a Traefik on 443 that admits only LiteLLM, passes TLS
+  only for the SNIs of `egress-allowed.yml` and sends only to cluster DNS, so nothing the copy of hal's data holds
+  leaves the cluster. `mise exec -- tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>` is the operator's, since it
+  reads the master key: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
+  key table's rows, those of the dashboard's UI session (which `/key/list` omits) and the rest, then `equal` or `DIFFERS`
+  for the count against the rest; each step runs under a deadline and names itself when it fails.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
   and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at
@@ -313,14 +384,27 @@
   enforces Pod Security `restricted`. `values.yaml` is its hand-written source; `rendered.yaml` is generated by
   `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A chart or image bump
   changes the task's chart digest, `image.digest` and `versionOverride` together and regenerates, by hand in a pull
-  request. Its NetworkPolicy admits only pods of namespace `cloudflared`, and only to the `web`
-  port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied, while the node's
-  probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
+  request, and the `images:` entry of `infrastructure/litellm/kustomization.yaml`, the image of the Deployments
+  `litellm-front` and `agent-egress`, with them. Its NetworkPolicy admits only pods of namespace `cloudflared`, and
+  only to the `web` port; every other sender and port, Traefik's own `traefik` and `metrics` included, is denied,
+  while the node's probes pass. `web` trusts the forwarded headers of 10.42.0.0/16, the pod CIDR k3s uses because
   `host/k3s/config.yaml` sets no `cluster-cidr` (`cluster` checks it against the nodes' pod CIDRs), and carries hal's
   entrypoint hardening: alias headers deleted, paths sanitized, and every encoded path character refused with 400 by
   each route, so an unrouted host still gets 404. Its file provider holds hal's routers `auth` and `auth-root`
   verbatim: on `auth.hallucinai.de` only the realm `hallucinai`, its localization and the resources under Keycloak's
   five-character version reach Keycloak, `/` redirects to the account page, and every other path is 404.
+- `infrastructure/loki/`: Loki in monolithic mode, one pod with replication factor 1 and the filesystem store, in a
+  Namespace that enforces Pod Security `restricted`; gateway, canary, caches and minio are off. `values.yaml` is its
+  hand-written source; `rendered.yaml` is generated by `mise run charts:render`, not edited by hand, and `cluster` fails
+  when a regeneration differs. A chart or image bump changes the task's chart digest and `loki.image.tag` and
+  `loki.image.digest` together and regenerates, by hand in a pull request. `limits_config.retention_period` of 28 days
+  with the compactor's retention on is the one rule for Loki's copy of every line, which the privacy texts promise gone
+  before 30 days; the compactor runs at start, so a PC that was off deletes shortly after its next start. The claim
+  is on the Retain class and carries the prune annotation. Its NetworkPolicy admits only the namespaces `alloy` and
+  `grafana`, and only to port 3100. In k3d a client Pod in a throwaway namespace `alloy` pushes a line and reads it
+  back by LogQL; the configuration at `/config` has the retention on at most 28 days with a `delete_request_store`; a
+  Pod in another namespace gets no answer; the claim is Bound on a Retain volume with prune disabled; the throwaway
+  namespaces are gone on every exit.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's

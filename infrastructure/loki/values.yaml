@@ -1,0 +1,74 @@
+# Loki's chart values; mise run charts:render renders them into rendered.yaml beside this file. A bump changes the
+# chart digest in that task and loki.image.tag and loki.image.digest together and regenerates.
+deploymentMode: SingleBinary
+# The chart's cluster-scoped ClusterRole and ClusterRoleBinding of the backend grant nothing here, so only namespaced RBAC renders.
+rbac:
+  namespaced: true
+loki:
+  image:
+    registry: docker.io
+    repository: grafana/loki
+    tag: 3.6.16
+    # The tag alone moves on Docker Hub after a release, so the image is pinned by its index digest.
+    digest: sha256:79f3fbf2a3eca97dd735e2aa0871a2fc15365a81c68dea67f639b092c301f454
+  # Pod Security restricted requires a seccomp profile, which the chart's defaults leave out.
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  # One tenant: Alloy and Grafana send no X-Scope-OrgID.
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  schemaConfig:
+    configs:
+      - from: "2024-04-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          # Retention deletes whole index tables, so the period is the 24h it requires.
+          period: 24h
+  limits_config:
+    # The one rule for Loki's copy of every line: the privacy texts promise a deletion before 30 days.
+    retention_period: 28d
+  compactor:
+    working_directory: /var/loki/compactor
+    # The compactor applies the retention, and runs at start, so a PC that was off deletes shortly after its next start.
+    retention_enabled: true
+    delete_request_store: filesystem
+singleBinary:
+  replicas: 1
+  persistence:
+    size: 10Gi
+    # Neither a prune nor the StatefulSet's deletion takes the claim, which holds every line until retention does.
+    whenDeleted: Retain
+    whenScaled: Retain
+    enableStatefulSetAutoDeletePVC: false
+    storageClass: local-path
+    annotations:
+      kustomize.toolkit.fluxcd.io/prune: disabled
+# Monolithic mode keeps one pod: no gateway, canary, caches, rules sidecar, minio or chart tests.
+gateway:
+  enabled: false
+lokiCanary:
+  enabled: false
+test:
+  enabled: false
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+sidecar:
+  rules:
+    enabled: false
+minio:
+  enabled: false
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0

@@ -1,0 +1,32 @@
+# The one owner of the names LiteLLM may reach: the text provider and the picture provider. TLS passes through; the
+# gateway holds no key and dials only the upstream of a matching SNI. Any other SNI, or none, matches no router, and
+# sniStrict ends the handshake in the gateway itself. Every router names its entrypoint. LiteLLM's hostAliases
+# (litellm.yaml) send exactly these names to the gateway.
+tcp:
+  routers:
+    provider:
+      rule: HostSNI(`api.anthropic.com`)
+      entryPoints: [litellm]
+      service: provider
+      tls:
+        passthrough: true
+    pictures:
+      rule: HostSNI(`api.openai.com`)
+      entryPoints: [litellm]
+      service: pictures
+      tls:
+        passthrough: true
+  services:
+    provider:
+      loadBalancer:
+        servers:
+          - address: api.anthropic.com:443
+    pictures:
+      loadBalancer:
+        servers:
+          - address: api.openai.com:443
+
+tls:
+  options:
+    default:
+      sniStrict: true

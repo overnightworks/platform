@@ -50,7 +50,16 @@ jobs:
           mise exec -- tests/keycloak/realm_secrets_are_env_references.sh
           infrastructure/keycloak/realm.yaml infrastructure/keycloak/master.yaml
 
+      - name: Check that check:secrets-expiry passes no annotated Secret and a date 31 days out and names each Secret within 30 days, past, unparseable or unlisted
+        run: tests/secrets/expiry_check_names_each_breach.sh
+
   cluster:
+    # GitHub appends matrix values to a literal job name, and the gate looks for the name cluster.
+    name: ${{ github.job }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [core, postgres]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -128,6 +137,7 @@ jobs:
 
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
       - name: Compare the generated files with a fresh regeneration
+        if: matrix.part == 'core'
         run: tests/generated/generated_files_match_regeneration.sh
 
       - name: Create the k3d cluster with its registry
@@ -152,24 +162,31 @@ jobs:
 
       # flux install writes a binding subject for every controller, omitted ones included.
       - name: Assert that no binding names the removed helm-controller
+        if: matrix.part == 'core'
         run: tests/flux/no_binding_names_helm_controller.sh
 
       - name: Check that secrets:github-host-keys passes only GitHub's own keys under github.com
+        if: matrix.part == 'core'
         run: tests/secrets/github_host_keys_pass_only_githubs_own.sh
 
       - name: Check that secrets:new-key refuses a key directory not at 700, a present drill file and a regular file in the key path, and accepts a symlinked 700 key directory
+        if: matrix.part == 'core'
         run: tests/secrets/new_key_refuses_unsafe_key_paths.sh
 
       - name: Check that bootstrap:secrets prints only its own lines and no key block for a source that turns Ready within the minute
+        if: matrix.part == 'core'
         run: tests/secrets/bootstrap_secrets.sh
 
       - name: Check that db:load-dump and interrupt_load.sh end as they owe where a command fails, a signal arrives or a table is empty
+        if: matrix.part == 'core'
         run: tests/postgres/load_dump.sh
 
       - name: Assert that k3s runs with host/k3s/config.yaml
+        if: matrix.part == 'core'
         run: tests/k3s/k3s_runs_with_the_host_config.sh
 
       - name: Assert that the kubelet keeps the configured log files, reopens a deleted pod log and never compresses one
+        if: matrix.part == 'core'
         run: tests/pod-logs/kubelet_keeps_reopens_and_never_compresses_logs.sh
 
       - name: Encrypt a dummy Secret and the app's Secrets to a throwaway age key
@@ -178,7 +195,7 @@ jobs:
           PULL_USER: ${{ github.actor }}
           PULL_TOKEN: ${{ github.token }}
           # The layers whose containers read Secrets by key, each of which gets a dummy per key.
-          SECRET_KEY_LAYERS: infrastructure/keycloak
+          SECRET_KEY_LAYERS: infrastructure/keycloak infrastructure/litellm
         run: tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh
 
       - name: Push the encrypted Secrets and serve them as the job's platform-secrets source
@@ -200,6 +217,7 @@ jobs:
         run: tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh
 
       - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's pods and routes the app, and that speech-runtime answers only its callers' pods
+        if: matrix.part == 'core'
         env:
           # A client Pod's namespace that is neither Traefik's nor the tunnel's nor speech-runtime's callers', and the
           # host its Ingress routes.
@@ -221,14 +239,17 @@ jobs:
         run: tests/ingress/traefik_answers_only_cloudflared_and_routes_the_app.sh
 
       - name: Assert that each app runs at its full app ref after platform-secrets, pulled through its pull Secret
+        if: matrix.part == 'core'
         run: tests/workloads/apps_run_at_their_full_ref.sh
 
       - name: Assert that every Deployment outside the system namespaces runs the digests it names
+        if: matrix.part == 'core'
         env:
           POLICY_FILE: infrastructure/admission/image-policy.yaml
         run: tests/workloads/deployments_run_the_digests_they_name.sh
 
       - name: Assert that every workload layer depends on admission and was applied after it
+        if: matrix.part == 'core'
         env:
           ROOT_LAYER: flux-system/flux-system
           ADMISSION_LAYER: flux-system/admission
@@ -236,6 +257,7 @@ jobs:
         run: tests/workloads/layers_depend_on_admission.sh
 
       - name: Probe the image policies by server-side dry-run
+        if: matrix.part == 'core'
         env:
           # The policy covers this namespace like every other one; the step deletes it after the probes.
           PROBE_NAMESPACE: admission-probe
@@ -246,12 +268,15 @@ jobs:
         run: tests/admission/image_policies_by_dry_run.sh
 
       - name: Assert that namespaces and tunnel applied the candidate and cloudflared runs at 0 replicas
+        if: matrix.part == 'core'
         run: tests/cloudflared/tunnel_applied_at_zero_replicas.sh
 
       - name: Assert cloudflared's ingress from Pods built from its Deployment's template
+        if: matrix.part == 'core'
         run: tests/cloudflared/ingress_from_pods_built_from_its_template.sh
 
       - name: P7a cells
+        if: matrix.part == 'postgres'
         env:
           # The layer whose Kustomization the prune proof deletes and whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
@@ -266,6 +291,7 @@ jobs:
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
       - name: P7b cells
+        if: matrix.part == 'core'
         env:
           KEYCLOAK_NAMESPACE: keycloak
           # The realm files config-cli applies, whose groups and service accounts the cells read, and the client whose
@@ -282,6 +308,38 @@ jobs:
           CLUSTER_SERVICE: default/kubernetes
           OUTSIDE_TARGET: github.com:443
         run: tests/keycloak/realm_route_and_policies.sh
+
+      - name: P2 cells
+        if: matrix.part == 'core'
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+          # The agent client whose tokens the cells mint, and the allowlist of its service account's groups.
+          AGENT_CLIENT: agent-mozart
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /agent-owners
+        run: |
+          tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
+          tests/keycloak/agent_client_tokens_and_groups.sh
+
+      - name: P7c cells
+        if: matrix.part == 'core'
+        env:
+          # LiteLLM's namespace, an app namespace its front admits, a namespace it does not, and an SNI no router of
+          # agent-egress allows.
+          LITELLM_NAMESPACE: litellm
+          APP_NAMESPACE: hopin
+          OTHER_NAMESPACE: litellm-client
+          THIRD_SNI: third.invalid
+        run: tests/litellm/front_key_check_routing_and_closed_egress.sh
+
+      - name: Assert that Loki keeps a pushed line for LogQL, deletes after at most 28 days, answers only its two namespaces and keeps its claim
+        if: matrix.part == 'core'
+        env:
+          LOKI_NAMESPACE: loki
+          # The throwaway namespaces the step creates and removes: one of Loki's admitted senders, and one that is not.
+          WRITER_NAMESPACE: alloy
+          OTHER_NAMESPACE: loki-client
+        run: tests/loki/loki_keeps_lines_under_28_days.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
