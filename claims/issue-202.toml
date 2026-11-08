@@ -1,0 +1,8 @@
+claim_id = "433344f4e5bf42d3a6745f3fb342ce7d"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "69a62e369121aaf3a2c0a8afb4532fc594acf31c"
+branch = "claude/issue-202-p9c-litellm-keys"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/litellm/keys.yaml", "infrastructure/litellm/kustomization.yaml", "mise.toml", "scripts/litellm_keys.sh", "tests/litellm"]
+opened_commit = "c0175298b4c1d1ce5da05ab35e053195234e10a3"
+whole_reason = "One table and its two commands: a key without its budget row, or a table no command applies, changes nothing a person can rely on."
