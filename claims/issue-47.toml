@@ -1,0 +1,8 @@
+claim_id = "a31f3f97718147ef82535003ae5cb7af"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "4cb3d8e71d69b80c174d7b1fae303f533bc3ab3e"
+branch = "claude/issue-47-renovate-prometheus-pins"
+scope = [".github/renovate.json5", ".github/workflows/renovate.yml", "AGENTS.md", "infrastructure/prometheus/rendered.yaml", "infrastructure/prometheus/values.yaml", "scripts/check_renovate_report.sh", "tests/renovate"]
+opened_commit = "77d80ae3298964be2522a6ad47c857c595b252b7"
+whole_reason = "The workflow, its configuration, the chart lines that give it a version and the owner sentence prove one watch together."
