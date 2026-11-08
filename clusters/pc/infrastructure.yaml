@@ -146,3 +146,23 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+---
+# The rest-server of the backups, its Secret rest-users from platform-secrets and its claim through storage.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: backup
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+    - name: platform-secrets
+    - name: storage
+  interval: 10m0s
+  path: ./infrastructure/backup
+  prune: true
+  wait: true
+  timeout: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system

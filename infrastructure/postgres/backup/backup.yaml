@@ -1,0 +1,180 @@
+# k8up's weekly backup of this namespace's Postgres into its own repository on the platform's rest-server, its retention,
+# its monthly check and the monthly restore test. A layer that includes this component adds its repository URL.
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: postgres
+spec:
+  podConfigRef:
+    name: postgres-backup
+  backend:
+    rest:
+      url: set-by-the-including-layer
+      userSecretRef:
+        name: restic
+        key: username
+      # k8up's field name, misspelled in its API.
+      passwordSecretReg:
+        name: restic
+        key: password
+    repoPasswordSecretRef:
+      name: restic
+      key: repository-password
+  backup:
+    schedule: "0 3 * * 0"
+  prune:
+    schedule: "30 3 * * 0"
+    retention:
+      keepWeekly: 4
+      keepMonthly: 3
+  check:
+    schedule: "0 4 1 * *"
+---
+# k8up merges this over every Job pod it starts for the Schedule, the only way to the container-level fields a
+# restricted namespace requires; it keeps the job's name, image and command.
+apiVersion: k8up.io/v1
+kind: PodConfig
+metadata:
+  name: postgres-backup
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: job
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+# The StatefulSet's claim, declared here because the annotation cannot reach it through the immutable claim template: a
+# backup holds only the dump its pod streams, never the database files. Same spec as the template, and like it never pruned.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-postgres-0
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+    k8up.io/backup: "false"
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+# The latest snapshot's dump into an emptyDir, then a restore into a throwaway server inside this pod; the dump never
+# leaves it and the running Postgres is not touched. backup:fetch runs the same init container.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: restore-test
+spec:
+  schedule: "0 5 1 * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            # The alpine image's postgres user, which k8up's image runs as here too.
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: restic-dump
+              # k8up's own image, so the restic that reads a repository is the one that wrote it. Its digest equals the
+              # one in infrastructure/k8up/values.yaml; a bump changes both, and the cluster job fails when they differ.
+              image: ghcr.io/k8up-io/k8up:v2.16.1@sha256:f59bfa37c51511d5ad67e53816fb55c62d0e6411890e59bb6b965923129f30b5
+              command:
+                - sh
+                - -c
+                - umask 077; restic --no-cache dump latest "/$(NAMESPACE)-postgres.dump" >/restore/dump
+              env:
+                - name: NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: REPOSITORY_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: postgres
+                      key: backup-repository
+                - name: RESTIC_REPOSITORY
+                  value: rest:$(REPOSITORY_URL)
+                - name: RESTIC_REST_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic
+                      key: username
+                - name: RESTIC_REST_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic
+                      key: password
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic
+                      key: repository-password
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: restore
+                  mountPath: /restore
+          containers:
+            - name: restore-test
+              # The StatefulSet's image, set by the replacement in kustomization.yaml.
+              image: postgres
+              command: [sh, /etc/restore-test/restore-test.sh, /restore/dump]
+              env:
+                - name: PGUSER
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: PGDATABASE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: restore
+                  mountPath: /restore
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+                - name: checks
+                  mountPath: /etc/postgres-checks
+                  readOnly: true
+                - name: script
+                  mountPath: /etc/restore-test
+                  readOnly: true
+          volumes:
+            - name: restore
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}
+            - name: checks
+              configMap:
+                name: postgres
+            - name: script
+              configMap:
+                name: restore-test

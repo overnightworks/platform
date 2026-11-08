@@ -605,6 +605,59 @@ in_postgres sh /etc/postgres-checks/check-key-tables.sh --counts-only
 say "$namespace converged"
 '''
 
+[tasks."backup:fetch"]
+description = "Write the latest Postgres dump of a namespace's k8up repository to a new file, through the restore test's init container"
+usage = '''
+arg "<namespace>" help="The namespace whose repository the dump comes from"
+arg "<file>" help="A new file for the custom-format dump, mode 0600"
+'''
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+namespace="${usage_namespace?}" file="${usage_file?}"
+pod="backup-fetch-$(openssl rand -hex 4)"
+say() { echo "backup:fetch: $1"; }
+fail() { echo "backup:fetch: $1" >&2; exit 1; }
+
+# noclobber makes the creation fail on any file that exists by then, so the file this run deletes is its own.
+[ ! -e "$file" ] && (set -o noclobber && : >"$file") 2>/dev/null || fail "$file exists or cannot be created; nothing fetched"
+cleanup() { kubectl --namespace "$namespace" delete pod "$pod" --ignore-not-found --wait=false >/dev/null || true; }
+trap 'cleanup; rm -f -- "$file"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# The restore test's pod with its init container alone and a holder container, so the dump is what the monthly test
+# would restore: the same repository, credentials and restic.
+manifest="$(kubectl --namespace "$namespace" get cronjob restore-test --output json |
+  NAME="$pod" yq --output-format json \
+    '.spec.jobTemplate.spec.template.spec as $spec | $spec.initContainers[0] as $dump |
+     { "apiVersion": "v1", "kind": "Pod", "metadata": { "name": strenv(NAME) },
+       "spec": ($spec | .volumes |= map(select(.name == "restore")) | .containers = [{
+         "name": "holder", "image": $dump.image, "command": ["sleep", "3600"],
+         "securityContext": $dump.securityContext, "volumeMounts": [{ "name": "restore", "mountPath": "/restore" }] }]) }')" ||
+  fail "cannot read the CronJob restore-test in $namespace; nothing fetched"
+kubectl --namespace "$namespace" create --filename - <<<"$manifest" >/dev/null ||
+  fail "could not start the fetch pod in $namespace; nothing fetched"
+
+deadline=$((SECONDS + 900))
+until phase="$(kubectl --namespace "$namespace" get pod "$pod" --output jsonpath='{.status.phase}')" && [ "$phase" = Running ]; do
+  [ "$phase" != Failed ] || fail "the fetch pod $pod failed: restic could not read the latest snapshot of $namespace"
+  [ "$SECONDS" -lt "$deadline" ] || fail "the fetch pod $pod is not running after 15 minutes"
+  sleep 2
+done
+kubectl --namespace "$namespace" exec "$pod" --container holder -- cat /restore/dump >"$file" ||
+  fail "could not copy the dump out of the pod $pod"
+# restic names a format that holds no dump as an error before here; this catches a file that is not one.
+[ "$(head -c 5 "$file")" = PGDMP ] || fail "$file holds no custom-format dump; it is deleted"
+trap - EXIT
+cleanup
+chmod 0600 "$file"
+say "wrote the latest dump of $namespace to $file ($(stat --format=%s "$file") bytes, mode 0600)"
+'''
+
 [tasks."keycloak:admin"]
 description = "Forward Keycloak's admin front end to this PC's loopback and print the line that opens its console"
 quiet = true

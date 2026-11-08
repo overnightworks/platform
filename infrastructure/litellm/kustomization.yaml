@@ -8,3 +8,17 @@ configMapGenerator:
     behavior: merge
     literals:
       - key-tables=LiteLLM_VerificationToken
+      - backup-repository=http://rest-server.backup.svc.cluster.local:8000/litellm/
+components:
+  - ../postgres/backup
+replacements:
+  - source:
+      kind: ConfigMap
+      name: postgres
+      fieldPath: data.backup-repository
+    targets:
+      - select:
+          kind: Schedule
+          name: postgres
+        fieldPaths:
+          - spec.backend.rest.url

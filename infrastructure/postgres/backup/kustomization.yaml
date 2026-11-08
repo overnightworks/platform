@@ -1,0 +1,36 @@
+# The backup of the Postgres base, a component so a layer opts in: keycloak and litellm include it beside ../postgres,
+# skat stays out until it has its credentials and its restore drill.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - backup.yaml
+configMapGenerator:
+  - name: restore-test
+    files:
+      - restore-test.sh
+    options:
+      disableNameSuffixHash: true
+patches:
+  # k8up execs this in the running pod and streams it to restic; the extension names the file in the snapshot, which
+  # then is /<namespace>-postgres.dump.
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          k8up.io/backupcommand: pg_dump --format=custom
+          k8up.io/file-extension: .dump
+replacements:
+  # The restore test restores with the server's own image, so a pg_restore older than its dump cannot occur.
+  - source:
+      kind: StatefulSet
+      name: postgres
+      fieldPath: spec.template.spec.containers.[name=postgres].image
+    targets:
+      - select:
+          kind: CronJob
+          name: restore-test
+        fieldPaths:
+          - spec.jobTemplate.spec.template.spec.containers.[name=restore-test].image

@@ -26,3 +26,5 @@ data:
   # infrastructure/k8up/values.yaml, the operator and its Job pods, and infrastructure/postgres/backup/backup.yaml, the
   # restore test's restic; https://github.com/k8up-io/k8up/pkgs/container/k8up
   k8up: ghcr.io/k8up-io/k8up
+  # infrastructure/backup/rest-server.yaml; https://github.com/restic/rest-server#docker
+  rest-server: docker.io/restic/rest-server
