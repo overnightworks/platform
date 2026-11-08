@@ -297,7 +297,9 @@
   refuses each key and the password empty, ending in a newline, with a space or a non-ASCII byte, and the password
   outside the URL-safe alphabet, naming only the variable, while a good set reaches the exec at core limit 0. k3d
   does not prove a provider call through an open egress.
-  The step "P7d cells" (`tests/backup/`) shows, for each namespace including the backup component, that the restore test
+  The step "P7d cells" (`tests/backup/`) first asserts that the rest server has a ready endpoint, then shows, for each
+  namespace including the backup component, that the restore test (after a `restic init` that is retried up to 30 times,
+  only on a refused connection, with the refusals counted in the log)
   fails on its repository without a snapshot, and for the first namespace on an empty first key table; a Backup yields
   one snapshot holding the custom-format dump alone, by a Job pod at a listed digest that Pod Security `restricted`
   admits; neither the Job's log nor a Snapshot object holds the repository's credentials; the restore test passes on

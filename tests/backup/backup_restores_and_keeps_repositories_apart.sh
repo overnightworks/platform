@@ -66,8 +66,28 @@ done
 echo "the restore test of each namespace reads with the operator's own image"
 
 # The restore test fails on the empty repository that restic init made; its positive control follows.
+# restic's REST backend creates a repository with one request that no retry wraps, so a fresh Pod's first packets can meet
+# a refusal before the network policy admits its address; init alone is retried, only on a refusal, and its count is printed.
+restic_init='
+  refused=0
+  while :; do
+    status=0
+    output="$(restic --no-cache init 2>&1)" || status=$?
+    if [ "$status" != 0 ] && [ "$refused" -lt 30 ] && printf "%s" "$output" | grep -q "connection refused"; then
+      refused=$((refused + 1))
+      sleep 1
+      continue
+    fi
+    printf "%s\n" "$output"
+    echo "init attempts refused: $refused"
+    exit "$status"
+  done'
+ready_endpoints="$(kubectl --namespace "$BACKUP_LAYER" get endpointslice --selector kubernetes.io/service-name=rest-server \
+  --output jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[0]}')"
+[ -n "$ready_endpoints" ] || fail "the Service rest-server in $BACKUP_LAYER has no ready endpoint, so no Pod can reach it"
 for namespace in $BACKUP_NAMESPACES; do
-  run_restic "$namespace" "repository-init" 'restic --no-cache init'
+  run_restic "$namespace" "repository-init" "$restic_init"
+  echo "$namespace: $(grep '^init attempts refused' <<<"$restic_output" || echo 'init attempts refused: not printed')"
   [ "$restic_exit" = 0 ] || fail "restic init did not initialise the repository of $namespace (exit $restic_exit): $restic_output"
   run_restore_test "$namespace" no-snapshot-test
   [ "$status" = failed ] || fail "the restore test of $namespace passed on a repository without a snapshot"
