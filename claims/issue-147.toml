@@ -1,7 +1,0 @@
-claim_id = "0bfb70dc5778473fb29e11f88a8c632b"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "2d9f0d2e7f7f72f94f904389bf2853b63f351861"
-branch = "claude/issue-147-apps-stops-pruning"
-scope = ["clusters/pc/apps.yaml"]
-opened_commit = "3296c9a2a69742b60d37557187ed9fd5f0a06bb3"
