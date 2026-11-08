@@ -33,6 +33,14 @@
       datasourceTemplate: "docker",
     },
     {
+      // Grafana's image, its tag and digest in one value.
+      customType: "regex",
+      managerFilePatterns: ["/^infrastructure\\/grafana\\/values\\.yaml$/"],
+      matchStrings: ["registry: (?<registry>\\S+)\\n\\s*repository: (?<repository>\\S+)\\n(?:\\s*#.*\\n)*\\s*tag: (?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"],
+      depNameTemplate: "{{{registry}}}/{{{repository}}}",
+      datasourceTemplate: "docker",
+    },
+    {
       // Traefik's image by digest, its tag in versionOverride.
       customType: "regex",
       managerFilePatterns: ["/^infrastructure\\/traefik\\/values\\.yaml$/"],

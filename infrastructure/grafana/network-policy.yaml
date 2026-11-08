@@ -36,6 +36,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: loki
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: single-binary
       ports:
         - port: 3100
           protocol: TCP
@@ -43,6 +46,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: prometheus
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
       ports:
         - port: 9090
           protocol: TCP

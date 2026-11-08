@@ -57,6 +57,7 @@ data:
     index_gateway:
       mode: simple
     limits_config:
+      deletion_mode: disabled
       max_cache_freshness_per_query: 10m
       query_timeout: 300s
       reject_old_samples: true
@@ -236,7 +237,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 69578ce4a02e5831731ac4f2f7da194b194388d314f13c47e32f8040df5461b1
+        checksum/config: 7ea2dccf5ece4308c43f20081be194bbbf6976952803883ba9176d1e70be551d
         storage/size: "10Gi"
         kubectl.kubernetes.io/default-container: "loki"
       labels:

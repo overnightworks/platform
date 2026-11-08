@@ -34,6 +34,9 @@ loki:
   limits_config:
     # The one rule for Loki's copy of every line: the privacy texts promise a deletion before 30 days.
     retention_period: 28d
+    # Grafana's anonymous Editor can post through its data source proxy, so the delete API stays off; retention is the
+    # one way a line goes.
+    deletion_mode: disabled
   compactor:
     working_directory: /var/loki/compactor
     # The compactor applies the retention, and runs at start, so a PC that was off deletes shortly after its next start.
