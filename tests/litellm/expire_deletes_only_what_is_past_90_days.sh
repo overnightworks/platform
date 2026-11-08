@@ -66,7 +66,11 @@ run_expire() {
     kubectl --namespace "$namespace" describe "job/$1"
     kubectl --namespace "$namespace" get pods --selector "job-name=$1" \
       -o jsonpath='{range .items[*].status.containerStatuses[*]}{.state.terminated.exitCode} {.state.terminated.reason}{"\n"}{end}' || true
-    kubectl --namespace "$namespace" logs "job/$1" || true
+    # A failed Pod's log holds psql's connection error, which quotes no row.
+    for pod in $(kubectl --namespace "$namespace" get pods --selector "job-name=$1" --output name); do
+      echo "log of $pod:"
+      kubectl --namespace "$namespace" logs "$pod" || true
+    done
     # The shipped Job discards psql's stderr because an error can quote a row; here the statement runs once more
     # against the cell's own dummy rows so the cause is printed.
     echo "the statement run again in the Postgres container:"
