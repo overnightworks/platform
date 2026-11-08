@@ -74,6 +74,9 @@ echo "::add-mask::$app_key"
 echo "the master key made the person budget $budget and a key for $model"
 
 client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
+# kube-router refuses a new Pod's connection until its address joins the sets a policy admits, so every request retries
+# a refused connection, as CLIENT_POD's own arguments do; a denial then holds past that delay too.
+retry=(--retry 5 --retry-connrefused --retry-delay 2 --retry-max-time 30)
 # run_client <namespace> <name> <labels as JSON> <argument>...: a client Pod with the labels runs the image with the
 # arguments (curl's, or a command) to its end and is deleted; sets output to what it printed and exit_code to its exit.
 run_client() {
@@ -96,7 +99,8 @@ run_client() {
 call() {
   local namespace="$1" url="$2"
   shift 2
-  run_client "$namespace" litellm-client '{}' --silent --max-time 90 --write-out '\n%{http_code}' "$@" "$url"
+  run_client "$namespace" litellm-client '{}' --silent --max-time 90 "${retry[@]}" --write-out '\n%{http_code}' "$@" \
+    "$url"
   status="${output##*$'\n'}"
   answer="${output%"$status"}"
 }
@@ -151,8 +155,8 @@ echo "a completion with the key made by the master key gets the mock_response an
 # one from the API server, so neither a broken Pod nor its DNS passes as the denial.
 control_url="http://kubernetes.default.svc.cluster.local:$(service_port kubernetes default)/"
 expect_denied() {
-  run_client "$1" litellm-client '{}' --silent --connect-timeout 5 --max-time 10 --write-out '%{http_code}\n' \
-    --output /dev/null "$2" --output /dev/null "$control_url"
+  run_client "$1" litellm-client '{}' --silent --connect-timeout 5 --max-time 10 "${retry[@]}" \
+    --write-out '%{http_code}\n' --output /dev/null "$2" --output /dev/null "$control_url"
   [[ $output =~ ^000$'\n'[1-5][0-9][0-9]$ ]] ||
     fail "a pod in $1 got [${output//$'\n'/ }] from $2 and the API server, not 000 and an answer"
 }
@@ -172,7 +176,7 @@ targets=("postgres.$namespace.svc.cluster.local:$(service_port postgres "$namesp
   "kubernetes.default.svc.cluster.local:$(service_port kubernetes default)" "$provider_host:443")
 # One line, as run_client passes each argument as a line. A target is closed only when curl tried an address and
 # connected to none, so a name DNS does not resolve under the policy is unresolved, not closed.
-reach_script='for target; do result="$(curl --verbose --silent --output /dev/null --write-out "connects=%{num_connects}" --connect-timeout 5 --max-time 8 "http://$target/" 2>&1)"; case "$result" in *connects=1*) echo "$target open" ;; *"Trying "*) echo "$target closed" ;; *) echo "$target unresolved" ;; esac; done'
+reach_script='for target; do result="$(curl --verbose --silent --output /dev/null --write-out "connects=%{num_connects}" --connect-timeout 5 --max-time 8 --retry 5 --retry-connrefused --retry-delay 2 --retry-max-time 12 "http://$target/" 2>&1)"; case "$result" in *connects=1*) echo "$target open" ;; *"Trying "*) echo "$target closed" ;; *) echo "$target unresolved" ;; esac; done'
 # expect_reach <labels as JSON> <open|closed per target>...
 expect_reach() {
   local labels="$1" expected="" index
@@ -196,7 +200,7 @@ echo "LiteLLM reaches only its Postgres and agent-egress, agent-egress and the f
 # fail the cell, and so does a dial error that names a DNS lookup.
 sni_handshake() {
   run_client "$namespace" litellm-sni '{"app.kubernetes.io/name": "litellm"}' --silent --show-error --output /dev/null \
-    --max-time 45 --resolve "$1:$egress_port:$egress_address" "https://$1:$egress_port/"
+    --max-time 45 "${retry[@]}" --resolve "$1:$egress_port:$egress_address" "https://$1:$egress_port/"
 }
 sni_handshake "$THIRD_SNI"
 [ "$exit_code" = 35 ] && grep -q alert <<<"$output" ||
