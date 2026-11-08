@@ -33,6 +33,14 @@
       datasourceTemplate: "docker",
     },
     {
+      // Alertmanager's image, which the chart renders from a tag that carries its digest; the chart names the repository.
+      customType: "regex",
+      managerFilePatterns: ["/^infrastructure\\/prometheus\\/values\\.yaml$/"],
+      matchStrings: ["alertmanager:\\n\\s*image:\\n(?:\\s*#.*\\n)*\\s*tag: (?<currentValue>[A-Za-z0-9._+-]+)@(?<currentDigest>sha256:[a-f0-9]{64})"],
+      depNameTemplate: "quay.io/prometheus/alertmanager",
+      datasourceTemplate: "docker",
+    },
+    {
       // Traefik's image by digest, its tag in versionOverride.
       customType: "regex",
       managerFilePatterns: ["/^infrastructure\\/traefik\\/values\\.yaml$/"],

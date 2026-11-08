@@ -72,8 +72,9 @@ alertmanager:
           # and sed's s|..|..| puts them there, so each is limited to the characters of a host:port or an address.
           refuse() { echo "mail-config: the key $1 of the Secret alertmanager is empty, malformed or holds a character the mail template cannot hold" >&2; exit 1; }
           case $SMARTHOST in ''|*[!A-Za-z0-9.:-]*) refuse smarthost ;; esac
-          # Alertmanager refuses a smarthost without a port at load, naming the host in its log.
-          case $SMARTHOST in [A-Za-z0-9]*:[0-9]*) ;; *) refuse smarthost ;; esac
+          # Alertmanager refuses a smarthost that is not one host and one numeric port at load, naming it in its log.
+          case $SMARTHOST in *:*) ;; *) refuse smarthost ;; esac
+          case $SMARTHOST in :*|*:|*:*:*|*:*[!0-9]*) refuse smarthost ;; esac
           case $USERNAME in ''|*[!A-Za-z0-9._%+@-]*) refuse username ;; esac
           case $TO in ''|*[!A-Za-z0-9._%+@-]*) refuse to ;; esac
           # The password goes to its own file, which Alertmanager reads; only a newline cannot be part of it.
@@ -84,7 +85,8 @@ alertmanager:
           sed -e "s|@SMARTHOST@|$SMARTHOST|g" -e "s|@USERNAME@|$USERNAME|g" -e "s|@TO@|$TO|g" \
             /etc/alertmanager/alertmanager.yml > /run/alertmanager/alertmanager.yml
   # One mail per alert: every label is a grouping label, so no two alerts share a mail. The repeat interval is a year,
-  # so none is repeated while it fires; the resolved mail follows within the group interval.
+  # so an alert that fires for a whole year is mailed again and none sooner; the resolved mail follows within the
+  # group interval.
   config:
     templates: []
     global:

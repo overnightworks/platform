@@ -109,7 +109,8 @@ run_init_probe() {
 run_init_probe "" ""
 [ "$exit_code" = 0 ] || fail "the init container refused a good set of values"
 echo "the init container accepts a good set of values"
-for refusal in "smarthost:" "smarthost:no-port.invalid" "username:" "username:bad\\\"name" "to:" "password:"; do
+for refusal in "smarthost:" "smarthost:no-port.invalid" "smarthost:probe-smarthost.invalid:587junk" \
+  "smarthost:probe-smarthost.invalid:587:1" "smarthost:probe-smarthost.invalid:" "username:" "username:bad\\\"name" "to:" "password:"; do
   key="${refusal%%:*}"
   run_init_probe "$key" "${refusal#*:}"
   [ "$exit_code" != 0 ] || fail "the init container accepted a bad $key"
@@ -120,10 +121,15 @@ for refusal in "smarthost:" "smarthost:no-port.invalid" "username:" "username:ba
   echo "the init container refuses a bad $key, names only the key and exits $exit_code"
 done
 
-# A fired alert is sent once; the smarthost cannot be looked up, so the send fails and shows only in the counters.
-# alertmanager_notifications_total counts one per flush of the group and not one per retry, which
-# alertmanager_notification_requests_total counts. A resolved alert is sent only after its firing alert was, so against
-# a smarthost that never answers the resolved mail is not attempted: its proof is the PC's.
+# A fired alert is sent on its first flush, and every later flush of a failing send follows one group_interval after the
+# one before, so the sends are bounded by the time since the alert was posted. The smarthost cannot be looked up, so the
+# send fails and shows only in the counters. alertmanager_notifications_total counts one per flush of the group and not
+# one per retry, which alertmanager_notification_requests_total counts, and both are Alertmanager's own and not the
+# synthetic alert's: a firing rule of the cluster would add to them. The alert's state is read from the API by its name.
+# A resolved alert is sent only after its firing alert was, so against a smarthost that never answers the resolved mail
+# is not attempted: its proof is the PC's.
+group_wait=10
+group_interval=30
 sends="alertmanager_notifications_total{integration=\"email\"}"
 attempts="alertmanager_notification_requests_total{integration=\"email\"}"
 kubectl create namespace "$OTHER_NAMESPACE"
@@ -133,20 +139,31 @@ alert() {
   printf '[{"labels": {"alertname": "%s"}, "annotations": {"summary": "a synthetic alert"}, "startsAt": "%s"%s}]' \
     "$alert_name" "$1" "${2:+, \"endsAt\": \"$2\"}"
 }
+# active_synthetic_alerts <count>: Alertmanager lists exactly that many active alerts named alert_name.
+active_synthetic_alerts() {
+  request_body "$PROMETHEUS_NAMESPACE" alert-reader "$address" \
+    "$alertmanager_url/api/v2/alerts?filter=alertname%3D%22$alert_name%22"
+  [ "$(yq -p=json '[.[] | select(.status.state == "active")] | length' <<<"$status")" = "$1" ]
+}
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+posted_after=$SECONDS
 request "$PROMETHEUS_NAMESPACE" alert-fires "$address" "$alertmanager_url/api/v2/alerts" \
   --request POST --header 'Content-Type: application/json' --data "$(alert "$started_at")"
 [ "$status" = 200 ] || fail "a Pod in $PROMETHEUS_NAMESPACE got '$status' posting a synthetic alert, not 200"
+until_true 60 "Alertmanager lists the synthetic alert as active" active_synthetic_alerts 1
 one_send_was_made() { [ "$(metric "$sends")" -ge $((sends_before + 1)) ]; }
 until_true 120 "the fired alert makes a send" one_send_was_made
-[ "$(metric "$sends")" = $((sends_before + 1)) ] || fail "the fired alert made more than one send"
+sends_made=$(($(metric "$sends") - sends_before))
+elapsed=$((SECONDS - posted_after))
+flushes_possible=$((1 + (elapsed > group_wait ? (elapsed - group_wait) / group_interval : 0)))
+[ "$sends_made" -le "$flushes_possible" ] ||
+  fail "$sends_made sends within $elapsed seconds of the alert, while at most $flushes_possible flushes fit"
 [ "$(metric "$attempts")" -ge $((attempts_before + 1)) ] || fail "the send made no attempt"
-echo "a synthetic alert posted from a Pod in $PROMETHEUS_NAMESPACE fires and makes one send, which fails at the smarthost"
+echo "a synthetic alert posted from a Pod in $PROMETHEUS_NAMESPACE fires and its sends stay within one per flush, which fail at the smarthost"
 request "$PROMETHEUS_NAMESPACE" alert-resolves "$address" "$alertmanager_url/api/v2/alerts" \
   --request POST --header 'Content-Type: application/json' --data "$(alert "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
 [ "$status" = 200 ] || fail "a Pod in $PROMETHEUS_NAMESPACE got '$status' posting the resolution, not 200"
-alert_is_resolved() { [ "$(metric 'alertmanager_alerts{state="active"}')" = 0 ]; }
-until_true 60 "the resolved alert leaves the active alerts" alert_is_resolved
+until_true 60 "the resolved alert leaves the active alerts" active_synthetic_alerts 0
 echo "the same alert with an end resolves"
 
 # Only Prometheus' own namespace and gatus reach the port, and a Pod there proves the address is right.
@@ -159,31 +176,62 @@ request "$OTHER_NAMESPACE" alertmanager-stranger "$address" "$alertmanager_url/-
 [ "$status" = 000 ] || fail "a Pod in namespace $OTHER_NAMESPACE got '$status' from Alertmanager, not no answer"
 echo "a Pod in namespace $OTHER_NAMESPACE gets no answer from Alertmanager"
 
-# A Pod with Alertmanager's labels resolves names and reaches neither the Service kubernetes nor github.com; a Pod without
-# the labels reaches both, so the probe itself works. A target is closed only when curl tried an address and connected
-# to none, so a name DNS does not resolve is unresolved and fails the cell.
-reach_script='for target; do result="$(curl --verbose --silent --output /dev/null --write-out "connects=%{num_connects}" --connect-timeout 5 --max-time 8 --retry 5 --retry-connrefused --retry-delay 2 --retry-max-time 12 "$target" 2>&1)"; case "$result" in *connects=1*) echo "$target open" ;; *"Trying "*) echo "$target closed" ;; *) echo "$target unresolved" ;; esac; done'
+# A Pod with Alertmanager's labels reaches neither the Service kubernetes, github.com nor a throwaway listener on
+# port 587 inside the pod network, which only the policy's except keeps closed; a Pod without the labels reaches all
+# three, so the probe itself works. A target is closed only when curl tried an address and connected to none, so a name
+# DNS does not resolve is unresolved and fails the cell. kube-router judges a new Pod's traffic only once it has the
+# Pod's rules, so until then a Pod with the labels still connects: each target is tried again until it is closed, for at
+# most 60 seconds, and must then stay closed on three more tries. A target that never closes is open.
+listener=alertmanager-listener
+listener_image="$(kubectl -n "$PROMETHEUS_NAMESPACE" get statefulset prometheus-alertmanager \
+  -o jsonpath='{.spec.template.spec.initContainers[0].image}')"
+# Port 587 is below the unprivileged range, so the listener runs as root without any capability but the bind.
+IMAGE="$listener_image" NAME="$listener" yq --null-input '{"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(NAME)},
+  "spec": {"restartPolicy": "Never", "automountServiceAccountToken": false, "enableServiceLinks": false,
+    "containers": [{"name": "listener", "image": strenv(IMAGE), "command": ["httpd", "-f", "-p", "587", "-h", "/tmp"],
+      "securityContext": {"allowPrivilegeEscalation": false, "runAsUser": 0,
+        "capabilities": {"drop": ["ALL"], "add": ["NET_BIND_SERVICE"]}}}]}}' |
+  kubectl -n "$OTHER_NAMESPACE" create -f - >/dev/null
+kubectl -n "$OTHER_NAMESPACE" wait "pod/$listener" --timeout=2m --for=jsonpath='{.status.containerStatuses[0].started}'=true >/dev/null
+listener_target="http://$(kubectl -n "$OTHER_NAMESPACE" get pod "$listener" -o jsonpath='{.status.podIP}'):587/"
+reach_script='probe() {
+  result="$(curl --verbose --silent --output /dev/null --write-out "connects=%{num_connects}" --connect-timeout 5 --max-time 8 "$1" 2>&1)"
+  case "$result" in *connects=1*) echo open ;; *"Trying "*) echo closed ;; *) echo unresolved ;; esac
+}
+expected="$1"
+shift
+for target; do
+  state="$(probe "$target")"
+  if [ "$expected" = closed ]; then
+    deadline=$(($(date +%s) + 60))
+    while [ "$state" != closed ] && [ "$(date +%s)" -lt "$deadline" ]; do sleep 3; state="$(probe "$target")"; done
+    if [ "$state" = closed ]; then
+      for _ in 1 2 3; do sleep 2; [ "$(probe "$target")" = closed ] || state=open; done
+    fi
+  fi
+  echo "$target $state"
+done'
 kubernetes_target="https://kubernetes.default.svc.cluster.local:$(kubectl -n default get service kubernetes -o jsonpath='{.spec.ports[0].port}')/"
+reach_targets=("$kubernetes_target" https://github.com/ "$listener_target")
 # reach <labels as JSON> <expected state of each target>: a client Pod with the labels in Alertmanager's namespace.
 reach() {
-  local labels="$1" expected="" client_pod
-  shift
+  local labels="$1" state="$2" expected="" client_pod target
   client_pod="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
-  client_pod="$(NAME=alertmanager-labelled LABELS="$labels" ARGUMENTS="$(printf '%s\n' sh -c "$reach_script" sh \
-    "$kubernetes_target" https://github.com/)" yq '.metadata.name = strenv(NAME) | .metadata.labels = (strenv(LABELS) | from_yaml) |
+  client_pod="$(NAME=alertmanager-labelled LABELS="$labels" ARGUMENTS="$(printf '%s\n' sh -c "$reach_script" sh "$state" \
+    "${reach_targets[@]}")" yq '.metadata.name = strenv(NAME) | .metadata.labels = (strenv(LABELS) | from_yaml) |
     .spec.containers[0].args = (strenv(ARGUMENTS) | split("\n"))' <<<"${client_pod//@NAME@/alertmanager-labelled}")"
   printf '%s\n' "$client_pod" | kubectl -n "$PROMETHEUS_NAMESPACE" create -f - >/dev/null
-  kubectl -n "$PROMETHEUS_NAMESPACE" wait pod/alertmanager-labelled --timeout=3m \
+  kubectl -n "$PROMETHEUS_NAMESPACE" wait pod/alertmanager-labelled --timeout=6m \
     --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' >/dev/null ||
     fail "the client Pod alertmanager-labelled did not run to its end"
   output="$(kubectl -n "$PROMETHEUS_NAMESPACE" logs pod/alertmanager-labelled)"
   kubectl -n "$PROMETHEUS_NAMESPACE" delete pod alertmanager-labelled --wait --timeout=2m >/dev/null
-  expected="$kubernetes_target ${1}"$'\n'"https://github.com/ ${2}"
+  for target in "${reach_targets[@]}"; do expected+="${expected:+$'\n'}$target $state"; done
   [ "$output" = "$expected" ] || fail "a Pod with the labels $labels reaches [${output//$'\n'/; }], not [${expected//$'\n'/; }]"
 }
-reach '{"app.kubernetes.io/name": "alertmanager"}' closed closed
-reach '{}' open open
-echo "a Pod with Alertmanager's labels reaches neither the Service kubernetes nor github.com, and one without them both"
+reach '{}' open
+reach '{"app.kubernetes.io/name": "alertmanager"}' closed
+echo "a Pod with Alertmanager's labels reaches neither the Service kubernetes, github.com nor a listener on 587 in the pod network, and one without them all three"
 
 # A Pod of flux-system that has not run keeps no target of the job flux-controllers. It stays Pending at a tag no
 # registry holds, on a repository the policy of flux-system admits, and holds an address, which Prometheus' discovery

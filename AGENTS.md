@@ -345,12 +345,15 @@
   which prints names, counts and verdicts, never a Secret value, the finished file or Alertmanager's status API: the
   StatefulSet is Ready as a non-root user on a Bound Retain claim with prune disabled, Prometheus lists one active
   Alertmanager, `amtool` accepts the finished file and routes an alert of each rule to the receiver, an init container
-  built from the StatefulSet's refuses an empty smarthost, one without a port, an empty or malformed username, an
-  empty recipient and an empty password, naming only the key, a synthetic alert posted from a Pod in `prometheus`
-  makes one send (the counter of flushes, which retries do not raise) that fails at the unresolvable smarthost and
-  the same alert with an end resolves, a Pod in `prometheus` and one in `gatus` get 200 for `/-/ready` and one in a
-  third namespace no answer, a Pod with Alertmanager's labels reaches neither the Service `kubernetes` nor github.com
-  where one without them reaches both, and a Pending Pod of flux-system with the port `http-prom` is a dropped target
+  built from the StatefulSet's refuses an empty smarthost, one that is not one host and one numeric port, an empty or
+  malformed username, an empty recipient and an empty password, naming only the key, a synthetic alert posted from a
+  Pod in `prometheus` is listed as active and makes sends that fail at the unresolvable smarthost and stay within one
+  per flush of the time since it was posted (Alertmanager's counter of flushes, which retries do not raise and a firing
+  rule of the cluster would raise too), and the same alert with an end resolves, a Pod in `prometheus` and one in
+  `gatus` get 200 for `/-/ready` and one in a third namespace no answer, a Pod with Alertmanager's labels reaches
+  neither the Service `kubernetes`, github.com nor a throwaway listener on port 587 in the pod network (each tried
+  again for up to 60 seconds until closed, and then closed on three more tries, since a new Pod is judged only once
+  kube-router has its rules) where one without them reaches all three, and a Pending Pod of flux-system with the port `http-prom` is a dropped target
   of `flux-controllers` with no `up` series. k3d proves neither a delivery nor the resolved mail, which Alertmanager
   attempts only after a firing mail succeeded; the PC's synthetic alert proves one firing and one resolved mail.
 - `clusters/pc/flux-system/`: Flux's own components and its sync to this repository. `gotk-components.yaml` is
@@ -537,15 +540,17 @@
   reads down, and a static job `alertmanager` scrapes Alertmanager, so `TargetDown` covers it.
   Alertmanager, the chart's subchart and a vendor image at a digest in `image.tag`, mails one alert per mail through
   `email_configs`: one receiver `mail`, every label a grouping label, `send_resolved`, plain text, and a repeat
-  interval and a `data.retention` of a year, so a firing alert is not mailed again. The route stands in `values.yaml`
+  interval and a `data.retention` of a year, so an alert that fires for a whole year is mailed again and none sooner. The route stands in `values.yaml`
   as a template; the Secret `alertmanager` of `platform-secrets` (keys `smarthost` as `host:port`, `username`, also the
   sender, `to` and `password`) holds the only address and provider, which an init container reads through
   `secretKeyRef` and writes, finished, into a memory-backed `emptyDir` that only Alertmanager's user reads; it refuses
   an empty or malformed value naming only its key, and the layer waits for `platform-secrets`. Its claim of 100Mi is on
   the Retain class with the prune annotation, so a restart keeps the notification log. Its NetworkPolicy `alertmanager`
   admits only the namespaces `prometheus` and `gatus` to port 9093 and sends only to cluster DNS and TCP 465 and 587
-  outside the pod and service networks. A failed or lost send shows only in Alertmanager's counters and log, and a
-  resolved alert is mailed only after its firing mail was. The NetworkPolicy admits only the namespaces `grafana`, `gatus` and its own to port 9090, and only its
+  outside the pod and service networks. A failed or lost send shows only in Alertmanager's counters and log, which
+  names the smarthost and no username, recipient or password; a resolved alert is mailed only after its firing mail
+  was. A changed Secret does not roll the pod, so a rotated password is read only after the next restart, and a
+  SIGKILL shortly after a firing mail can mail it once more, which a SIGTERM restart did not. The NetworkPolicy admits only the namespaces `grafana`, `gatus` and its own to port 9090, and only its
   own namespace to kube-state-metrics' 8080. `cluster` runs `promtool check rules` and `promtool test rules` from the
   rendered Prometheus image on `tests/prometheus/rules_test.yml`, which proves each rule's duration, firing and
   resolving; and in k3d its ServiceAccount may get `nodes/metrics` and not `nodes/proxy`, every target is up,
