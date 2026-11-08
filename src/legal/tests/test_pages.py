@@ -8,7 +8,7 @@ from datetime import date
 import pytest
 
 from legal.pages import TEMPLATES, Block, BlockKind, Frame, build_pages
-from legal.section import LegalError, Parsed, parse_fragment
+from legal.section import LegalError, parse_fragment, parse_general
 
 ZONE = "edge-fixture.invalid"
 TEXT_PAGE = (
@@ -32,17 +32,6 @@ FRAME = Frame(
 )
 
 
-def general_parsed(path: str, text: str) -> Parsed:
-    """The general part: each h2 of the file parsed as a fragment of its own, in file order."""
-    chunks = re.split(r"(?=^<h2 )", text, flags=re.MULTILINE)
-    headings = []
-    for chunk in filter(None, chunks):
-        anchor = re.match(r'<h2 id="([^"]*)"', chunk)
-        assert anchor
-        headings += parse_fragment(path, chunk.encode(), anchor[1], ZONE).headings
-    return Parsed(tuple(headings), (), ())
-
-
 def block(
     kind: BlockKind,
     text: str,
@@ -52,7 +41,7 @@ def block(
 ) -> Block:
     path = f"legal/sections/{anchor or 'allgemein'}/{page}.html"
     if kind is BlockKind.GENERAL:
-        parsed = general_parsed(path, text)
+        parsed = parse_general(path, text.encode(), ZONE)
     else:
         parsed = parse_fragment(path, text.encode(), anchor, ZONE)
     return Block(path, page, kind, parsed, day)
