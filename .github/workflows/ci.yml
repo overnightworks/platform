@@ -216,7 +216,7 @@ jobs:
       - name: Assert that Flux reconciled the candidate commit and decrypted the dummy
         run: tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh
 
-      - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's pods and routes the app, and that speech-runtime answers only its callers' pods
+      - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's and Gatus's pods and routes the app, and that speech-runtime answers only its callers' pods
         if: matrix.part == 'core'
         env:
           # A client Pod's namespace that is neither Traefik's nor the tunnel's nor speech-runtime's callers', and the
