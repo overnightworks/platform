@@ -1,0 +1,40 @@
+# The platform's alert rules, which Prometheus reads from /etc/rules; tests/prometheus/rules_test.yml proves their
+# durations, firing and resolving with promtool.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: prometheus
+data:
+  rules.yml: |
+    groups:
+      - name: platform
+        rules:
+          - alert: TargetDown
+            expr: up == 0
+            for: 5m
+            annotations:
+              summary: 'Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}'
+          - alert: KustomizationNotReady
+            expr: gotk_resource_info{customresource_kind="Kustomization", ready!="True"} == 1
+            for: 15m
+            annotations:
+              summary: 'The Kustomization {{ $labels.exported_namespace }}/{{ $labels.name }} is not Ready'
+          - alert: DeploymentUnavailable
+            expr: kube_deployment_status_replicas_unavailable{namespace!~"kube-system|flux-system"} > 0
+            for: 10m
+            annotations:
+              summary: 'The Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has unavailable replicas'
+          - alert: PodRestarting
+            expr: increase(kube_pod_container_status_restarts_total[1h]) > 3
+            annotations:
+              summary: 'The container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} restarted more than 3 times in an hour'
+          - alert: DiskLow
+            # cAdvisor's root filesystem per device, without the memory-backed mounts and overlay snapshots, which repeat
+            # the disk or are no disk.
+            expr: >-
+              container_fs_usage_bytes{id="/", device!~"/dev|/dev/shm|/run|/var/run|overlay.*|tmpfs"}
+              / container_fs_limit_bytes{id="/", device!~"/dev|/dev/shm|/run|/var/run|overlay.*|tmpfs"} > 0.85
+            for: 10m
+            annotations:
+              summary: 'The filesystem {{ $labels.device }} of {{ $labels.instance }} is {{ $value | humanizePercentage }} full'
