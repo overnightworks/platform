@@ -359,6 +359,28 @@ def _end_of(reader: _Reader) -> None:
         raise reader.unexpected(token, "nothing may follow the last closing tag")
 
 
+def parse_general(path: str, data: bytes, zone: str) -> Parsed:
+    """The general part: several `h2`, each with at least one block, in the file's order."""
+    text, tokens = _tokens(path, data)
+    reader = _Reader(path, text, tokens, zone)
+    headings: list[Heading] = []
+    reader.skip_whitespace()
+    while reader.opens("h2"):
+        opening, title, closing = reader.heading("h2")
+        if not _SLUG.fullmatch(opening.value or ""):
+            raise reader.refuse(opening.line, "the h2 id is not lowercase words joined by hyphens")
+        reader.skip_whitespace()
+        if not reader.blocks():
+            raise reader.unexpected(reader.peek(), "<h2> needs a paragraph or list")
+        following = reader.peek()
+        stop = following.start if following else len(text)
+        headings.append(Heading(opening.value or "", title, text[closing.end : stop], opening.line))
+    if not headings:
+        raise reader.refuse(1, "has no <h2>")
+    _end_of(reader)
+    return Parsed(tuple(headings), (), tuple(reader.links))
+
+
 def parse_fragment(path: str, data: bytes, anchor: str, zone: str) -> Parsed:
     """A block of one unit: an `h2` with the unit's anchor, an intro and subsections."""
     text, tokens = _tokens(path, data)

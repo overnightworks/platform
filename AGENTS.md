@@ -80,10 +80,13 @@
   `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
   `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
   with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads, from this checkout's root, the frame of
-  `infrastructure/legal/frame/`, builds the three pages with `src/legal/src/legal/pages.py`, which checks their ids and
-  links, and writes only `infrastructure/legal/built/impressum.html`, the other two pages staying in memory; it needs no
+  `infrastructure/legal/frame/`, the sections of `infrastructure/legal/sections/` and their `stand.toml`, builds the three
+  pages with `src/legal/src/legal/pages.py`, which checks their ids and links, and writes only `infrastructure/legal/built/impressum.html`, the other two pages staying in memory; it needs no
   network, prints `legal:build: wrote <file>` and exits 0, or prints `legal: <file> is missing; the frame is required`
-  (or the failed check's line) and exits non-zero, writing nothing. All three run through `uv` (locked in `mise.toml`),
+  (or the failed check's line, which names a directory under `sections/` that is neither `allgemein` nor one of `keycloak`,
+  `litellm` or `speech-runtime`, a section with no `stand.toml` entry, an entry without a file or a section whose sha256
+  differs from its entry, printing the file's) and exits non-zero, writing nothing. It reads the `zone` as `legal:check`
+  does. All three run through `uv` (locked in `mise.toml`),
   which fetches Python 3.14 on first use and keeps its environment under `~/.cache/platform/legal`.
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
@@ -523,10 +526,13 @@
   kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
   never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body. The
   rpm and tpm limits are not in the table and stay as they are.
-- `infrastructure/legal/`: the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
+- `infrastructure/legal/`: the legal sections and the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
   is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
-  field, and `default.conf` serves only
+  field. `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
+  operator's. `stand.toml` holds one table per section path with its `date` (the Stand it prints, `D. Monat YYYY`, a
+  page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand; nothing of
+  them is served yet. `default.conf` serves only
   `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
   host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
   only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
@@ -656,11 +662,14 @@
   the command refuses any such plan, which closes it for every object of the root.
 - `src/legal/`: the Python project of the legal validator, standard library only, with `uv.lock` and its own tests; there
   is no root `pyproject.toml`, which would make `tests/` a judged tree. `src/legal/src/legal/section.py` is hal's
-  `legal_section.py` without `parse_general`; `check.py` is the program of `legal:check`; `pages.py` is hal's assembler of the three pages
+  `legal_section.py`; `check.py` is the program of `legal:check`; `pages.py` is hal's assembler of the three pages
   (`legal_pages.py` without its fingerprints, plans and records) and `build.py` the program of `legal:build`. `checks` runs `legal:test`, uploads the report
   as artifact `coverage`, which the `quality` job passes as `coverage-artifact`, and runs
   `tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh`, which reads hopin's public repository at the tag of
-  the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails.
+  the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails, and
+  `tests/legal/sections_equal_hals_at_commit.sh`, which fetches hal's public repository at the commit its variable
+  `hal_commit` names and fails naming the step when that fetch fails or `diff -r` finds `infrastructure/legal/sections`
+  unlike hal's `legal/sections`; the pin moves when hal changes `legal/sections` before it leaves.
 - `.github/workflows/renovate.yml`: the job `renovate`, daily and on dispatch, runs Renovate's image at a digest by one
   `docker run`, with the job's own token (`contents: read`, `pull-requests: read`, `issues: write`: it can write no
   branch) and `.github/renovate.json5`. The configuration holds custom regex managers over the pin forms under
