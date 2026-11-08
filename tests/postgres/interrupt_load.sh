@@ -5,7 +5,7 @@
 # pg_restore reads a custom archive's whole table of contents before it opens its transaction, and the TOC can fill most
 # of the file, so the script feeds all of the dump but its last byte. That byte is the end of the last data block, the
 # zero-length chunk (a sign byte and the int's bytes) that closes every block: pg_restore waits for it inside its
-# transaction, as an idle session or in COPY, whatever the dump holds.
+# transaction, as an idle session or in COPY, for a dump with data.
 set -euo pipefail
 namespace="$1" dump="$2" signal="$3"
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"

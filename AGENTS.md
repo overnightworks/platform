@@ -179,9 +179,9 @@
   retains, each Postgres is Ready as its image's postgres user on a bound claim of it with the prune annotation at
   `<namespace>/<claim>`, and `pg_isready` passes as the namespace's user; deletes the Kustomization `litellm`, whose
   inventory goes while the claim, its volume and the Namespace stay, and the root re-creates it with the row written
-  before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two synthetic dumps it makes, one of data and one whose table of contents is most of the file, with the
-  Kustomization `litellm` pointed at `tests/postgres/writers` for a Deployment and a Job that Flux applies, stops and
-  restores;
+  before; drives `db:load-dump` and both interrupts of `tests/postgres/interrupt_load.sh` on two synthetic dumps it makes, one of data and one whose table of contents is most of the
+  file, with the Kustomization `litellm` pointed at `tests/postgres/writers` for a Deployment and a Job that Flux
+  applies, stops and restores;
   and shows that a busybox Pod with Keycloak's labels reaches its Postgres but neither the Service `kubernetes` nor
   github.com, while one without them reaches all three. k3d does not prove the egress to hal's Docker bridges or to
   hopin, whose own policy already refuses both Pods.

@@ -1575,7 +1575,7 @@ jobs:
 
           # pg_restore cannot list the first half of the toc-heavy dump, so its table of contents is the larger half.
           list_dump() { kubectl --namespace "$layer" exec --stdin postgres-0 --container postgres -- pg_restore --list > /dev/null; }
-          head -c "$(($(stat -c %s "$toc_dump") / 2))" "$toc_dump" | list_dump 2> /dev/null &&
+          list_dump 2> /dev/null < <(head -c "$(($(stat -c %s "$toc_dump") / 2))" "$toc_dump") &&
             fail "pg_restore listed the first half of the toc-heavy dump"
           list_dump < "$toc_dump" || fail "pg_restore cannot list the toc-heavy dump"
 
