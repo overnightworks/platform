@@ -1,0 +1,7 @@
+# Without this file Flux's generated build would also read values.yaml as a manifest.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - network-policy.yaml
+  - rendered.yaml

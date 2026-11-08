@@ -1,0 +1,8 @@
+# The API server refuses every Loki pod that runs as root, escalates, keeps capabilities, mounts a host path or binds
+# the host network, for this chart version and every later one.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loki
+  labels:
+    pod-security.kubernetes.io/enforce: restricted

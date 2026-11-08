@@ -5,7 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/failure.sh"
 
 # request <namespace> <name> <host> <url> [<curl argument>...]: a client Pod in the namespace asks the URL with
 # the host and the further arguments, runs to its end and is deleted; sets status to the statuses it printed
-# and exit_code to curl's.
+# and exit_code to curl's. With client_report=body, status holds the response bodies instead of the statuses.
 # shellcheck disable=SC2034 # status and exit_code are the results the sourcing script reads.
 request() {
   local namespace="$1" name="$2" host="$3" url="$4" client_pod
@@ -14,6 +14,9 @@ request() {
   client_pod="${client_pod//@NAME@/${name}}"
   client_pod="${client_pod//@HOST@/${host}}"
   client_pod="${client_pod//@URL@/${url}}"
+  if [ "${client_report:-status}" = body ]; then
+    client_pod="$(yq '.spec.containers[0].args |= map(select(. != "--output" and . != "/dev/null" and . != "--write-out" and . != "%{http_code}"))' <<<"$client_pod")"
+  fi
   if [ "$#" -gt 0 ]; then
     client_pod="$(CURL_ARGUMENTS="$(printf '%s\n' "$@")" yq '.spec.containers[0].args += (strenv(CURL_ARGUMENTS) | split("\n"))' <<<"$client_pod")"
   fi
@@ -27,3 +30,6 @@ request() {
   status="$(kubectl -n "$namespace" logs "pod/$name")"
   kubectl -n "$namespace" delete pod "$name" --wait --timeout=2m
 }
+
+# request_body <namespace> <name> <host> <url> [<curl argument>...]: request, with status holding what the URL answered.
+request_body() { client_report=body request "$@"; }

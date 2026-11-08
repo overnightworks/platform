@@ -8,6 +8,8 @@ metadata:
 data:
   # infrastructure/traefik/rendered.yaml; https://hub.docker.com/_/traefik
   traefik: docker.io/library/traefik
+  # infrastructure/loki/rendered.yaml; https://hub.docker.com/r/grafana/loki
+  loki: docker.io/grafana/loki
   # infrastructure/cloudflared/cloudflared.yaml; https://github.com/cloudflare/cloudflared#installing-cloudflared
   cloudflared: docker.io/cloudflare/cloudflared
   # .github/workflows/ci.yml, the cluster job's env CLIENT_IMAGE; https://hub.docker.com/r/curlimages/curl

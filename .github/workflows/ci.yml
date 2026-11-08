@@ -283,6 +283,14 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/keycloak/realm_route_and_policies.sh
 
+      - name: Assert that Loki keeps a pushed line for LogQL, deletes after at most 28 days, answers only its two namespaces and keeps its claim
+        env:
+          LOKI_NAMESPACE: loki
+          # The throwaway namespaces the step creates and removes: one of Loki's admitted senders, and one that is not.
+          WRITER_NAMESPACE: alloy
+          OTHER_NAMESPACE: loki-client
+        run: tests/loki/loki_keeps_lines_under_28_days.sh
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: tests/flux/print_flux_state.sh
