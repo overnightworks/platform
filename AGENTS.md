@@ -411,9 +411,10 @@
   each Schedule the cluster holds, and the recording rule of the newest completed Backup has one for each namespace of
   `$BACKUP_NAMESPACES`.
   The step "P9b cells" plants a backdated and a fresh row in each of the five tables through the Postgres pod and runs a
-  Job made from the CronJob: it prints one deletion in each count and leaves the fresh rows and the idle customers
-  with a budget or with spend, a second run prints zeros, and the first log holds no planted value; its Pod ran in a
-  Namespace enforcing `restricted` with its Postgres's image.
+  Job made from the CronJob, with `litellm-expire`'s own schedule held off and restored on every exit: it prints one
+  deletion in each count and leaves the fresh rows and the idle customers with a budget or with spend, a second run
+  prints zeros, and the first log holds no planted value; its Pod ran in a Namespace enforcing `restricted` with its
+  Postgres's image.
   The part `postgres` also runs `tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh`,
   which prints names, counts and verdicts, never a Secret value, the finished file or Alertmanager's status API: the
   StatefulSet is Ready as a non-root user on a Bound Retain claim with prune disabled, Prometheus lists one active

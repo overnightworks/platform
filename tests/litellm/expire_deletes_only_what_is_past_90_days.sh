@@ -13,7 +13,20 @@ for _ in $(seq 60); do
   [ "$(sql <<<"SELECT to_regclass('\"LiteLLM_EndUserTable\"') IS NOT NULL AND to_regclass('\"LiteLLM_ToolTable\"') IS NOT NULL")" = t ] && break
   sleep 2
 done
+# The real CronJob fires at 04:00 UTC and would delete the planted rows before the cell's own Job; the cell holds it
+# for its run. The hold is set under its own field manager: kustomize-controller reassigns the fields of every manager
+# whose name starts with "kubectl" (kubectl-patch included) to itself and then removes them, as its manifest sets no
+# suspend, while it leaves the fields of any other manager alone.
+hold_manager=expire-cell
+cronjob=litellm-expire
+prior_suspend=
+holding=false
+set_suspend() {
+  kubectl --namespace "$namespace" patch cronjob "$cronjob" --type merge --field-manager "$hold_manager" \
+    --patch "{\"spec\":{\"suspend\":$1}}"
+}
 cleanup() {
+  local cell_status=$?
   kubectl --namespace "$namespace" delete job --selector "$marker=job" --wait=false || true
   sql <<EOSQL || true
 DELETE FROM "LiteLLM_DailyEndUserSpend" WHERE end_user_id LIKE '$marker-%';
@@ -23,8 +36,27 @@ DELETE FROM "LiteLLM_ToolTable" WHERE tool_name LIKE '$marker-%';
 DELETE FROM "LiteLLM_EndUserTable" WHERE user_id LIKE '$marker-%';
 DELETE FROM "LiteLLM_BudgetTable" WHERE budget_id LIKE '$marker-%';
 EOSQL
+  # A CronJob left suspended would hide the next cell's failure, so a failed restore fails the cell.
+  if $holding && ! set_suspend "${prior_suspend:-false}"; then
+    echo "::error::the CronJob $cronjob could not be restored to suspend=${prior_suspend:-false}"
+    deletion_failures=$((deletion_failures + 1))
+  fi
+  end_deletions "$cell_status"
 }
 trap cleanup EXIT
+
+prior_suspend="$(kubectl --namespace "$namespace" get cronjob "$cronjob" -o jsonpath='{.spec.suspend}')"
+holding=true
+set_suspend true
+echo "the CronJob $cronjob is held (suspend was '${prior_suspend:-unset}'); the managers of spec.suspend now:"
+kubectl --namespace "$namespace" get cronjob "$cronjob" -o json --show-managed-fields |
+  jq -r '.metadata.managedFields[] | select(.fieldsV1."f:spec"."f:suspend") | "\(.manager) \(.operation)"'
+for _ in $(seq 150); do
+  [ -z "$(kubectl --namespace "$namespace" get cronjob "$cronjob" -o jsonpath='{.status.active[*].name}')" ] && break
+  sleep 2
+done
+[ -z "$(kubectl --namespace "$namespace" get cronjob "$cronjob" -o jsonpath='{.status.active[*].name}')" ] ||
+  fail "the CronJob $cronjob still has an active Job after 5 minutes"
 # Days relative to the database's own UTC day. One backdated and one fresh row per table; the customers are the
 # backdated one (idle), the fresh one (a daily row inside the period), one linked to its own budget and one with
 # spend, both idle.
