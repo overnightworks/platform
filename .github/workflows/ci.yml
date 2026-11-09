@@ -285,6 +285,14 @@ jobs:
           TRUSTED_PROXIES_SETTING: HOPIN_TRUSTED_PROXIES
           SIGN_IN_PATH: /auth/start
           SIGN_IN_BUDGET: "40"
+          # The same four for skat at the tag of its image in apps/skat/skat.yaml: SKAT_TRUSTED_PROXIES is
+          # skat/src/skat/web/settings.py line 73; AUTH_START_PATH is src/skat/web/constants.py line 15 and
+          # SIGN_IN_RATE_LIMIT_BUDGET (max_requests=40 per 10 minutes) line 31, applied to the start path by
+          # src/skat/host/app.py line 81.
+          ROUTED_APP_2_MANIFEST: apps/skat/skat.yaml
+          ROUTED_APP_2_TRUSTED_PROXIES_SETTING: SKAT_TRUSTED_PROXIES
+          ROUTED_APP_2_SIGN_IN_PATH: /auth/start
+          ROUTED_APP_2_SIGN_IN_BUDGET: "40"
           FIRST_CLIENT_ADDRESS: 192.0.2.1
           SECOND_CLIENT_ADDRESS: 192.0.2.2
           # speech-runtime's Namespace and Service, and one namespace its NetworkPolicy admits.
