@@ -82,6 +82,20 @@ case "$verb" in
         if ! loaded; then
           { [ "$stdin_flag" = true ] && [ "${1-}" = sh ]; } || refuse "kubectl exec into the database before the load"
         fi
+        # After the load, the programs are the body's: psql under env, or sh -c around pg_restore or pg_dump.
+        if loaded; then
+          program=("$@")
+          if [ "${program[0]}" = env ]; then
+            program=("${program[@]:1}")
+            while [[ ${program[0]-} == *=* ]]; do program=("${program[@]:1}"); done
+          fi
+          case "${program[0]-}" in
+            psql) ;;
+            sh) { [ "${program[1]-}" = -c ] && [[ ${program[2]-} == *pg_restore* || ${program[2]-} == *pg_dump* ]]; } ||
+              refuse "kubectl exec sh that runs neither pg_restore nor pg_dump" ;;
+            *) refuse "kubectl exec program ${program[0]-}" ;;
+          esac
+        fi
         rewritten=()
         for argument in "$@"; do rewritten+=("${argument//\/etc\/postgres-checks\//$FAKE_POSTGRES_CHECKS/}"); done
         export PATH="$FAKE_CONTAINER_BIN:$PATH"
@@ -196,18 +210,24 @@ FAKE
 
 write_fake "$container_bin" pg_dump <<'FAKE'
 loaded || refuse "pg_dump before the load"
-[ $# = 3 ] && [ "$1 $2" = "--data-only --lock-wait-timeout=10s" ] && [[ $3 == --table=* ]] || refuse "pg_dump form"
-cat "$scenario/live-tables/${3#--table=}"
+[ $# -ge 3 ] && [ "$1 $2" = "--data-only --lock-wait-timeout=10s" ] || refuse "pg_dump form"
+shift 2
+for argument in "$@"; do
+  [[ $argument == --table=* ]] || refuse "pg_dump option $argument"
+  cat "$scenario/live-tables/${argument#--table=}"
+done
 FAKE
 
 write_fake "$container_bin" psql <<'FAKE'
 loaded || refuse "psql before the load"
 [ $# = 5 ] && [ "$1 $2 $3 $4" = "--no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1" ] && [[ $5 == "--command=SELECT"* ]] ||
   refuse "psql form, which is one SELECT"
+# One statement: nothing but white space follows a semicolon.
+sql="${5#--command=}"
+[[ $sql != *\;* ]] || [[ "${sql#*;}" =~ ^[[:space:]]*$ ]] || refuse "psql runs more than one statement"
 case "$5" in
   *is_temporary_admin*) cat "$scenario/temporary-count" ;;
   *service_account_client_link*) cat "$scenario/live-service-accounts" ;;
-  *sha256*) cat "$scenario/live-client-digests" ;;
   *) refuse "psql query" ;;
 esac
 FAKE
@@ -226,26 +246,15 @@ copy_table() {
   { printf 'COPY public.%s (%s) FROM stdin;\n' "$2" "$3"; sed 's/ | /\t/g'; printf '\\.\n'; } >"$1/$2"
 }
 copy_escape() { sed -e 's/\\/\\\\/g' <<<"$1"; }
-# store_profile <directory> <profile json> [single|pieces|chunks]: the component_config of the user-profile component, the
-# profile in one value or in pieces, beside the realm key's private part, which the gate never prints.
+# store_profile <directory> <profile json>: the component_config of the user-profile component, the profile in its one value,
+# beside the realm key's private part, which the gate never prints.
 store_profile() {
-  local directory="$1" profile="$2" form="${3:-single}" index=0 piece name
   {
     printf 'COPY public.component_config (id, component_id, name, value) FROM stdin;\n'
-    case "$form" in
-      single) printf 'cfg-profile\tcomp-profile\tkc.user.profile.config\t%s\n' "$(copy_escape "$profile")" ;;
-      *)
-        while [ -n "$profile" ]; do
-          piece="${profile:0:150}" profile="${profile:150}"
-          if [ "$form" = pieces ]; then name="config-piece-$index"; else name="kc.user.profile.config_$index"; fi
-          printf 'cfg-piece-%s\tcomp-profile\t%s\t%s\n' "$index" "$name" "$(copy_escape "$piece")"
-          index=$((index + 1))
-        done
-        [ "$form" != pieces ] || printf 'cfg-count\tcomp-profile\tconfig-pieces-count\t%s\n' "$index" ;;
-    esac
+    printf 'cfg-profile\tcomp-profile\tkc.user.profile.config\t%s\n' "$(copy_escape "$2")"
     printf 'cfg-key\tcomp-rsa\tprivateKey\t%s\n' "$private_key"
     printf '\\.\n'
-  } >"$directory/component_config"
+  } >"$1/component_config"
 }
 expected_profile="$(yq -o json -I0 '.userProfile | del(.attributes[] | select(.name == "agent_owner"))' \
   "$repository_root/infrastructure/keycloak/realm.yaml")"
@@ -294,8 +303,8 @@ ROWS
   append_live_row user_group_membership 'g-services | u-agent'
   echo u-agent >"$base/live-service-accounts"
   echo 0 >"$base/temporary-count"
-  { echo "songmaker $(digest_of "$secret_songmaker")"; echo "presentator $(digest_of "$secret_presentator")"
-    echo "agent-mozart $(digest_of "$secret_agent")"; } >"$base/live-client-digests"
+  cp "$base/dump-tables/realm" "$base/dump-tables/client" "$base/live-tables/"
+  append_live_row client "c-agent | agent-mozart | realm-hall | $secret_agent"
   jq -n '{spec: {backoffLimit: 6}, status: {failed: 1, conditions: [{type: "Complete", status: "True"}]}}' >"$base/job.json"
   echo group-admin-id >"$base/admin-group-id"
   printf 'u-alice\nu-bob\nu-carol\n' >"$base/admin-members"
@@ -331,7 +340,7 @@ add_row_to() {
 add_row() { add_row_to "$case_directory/dump-tables" "$1" "$2"; }
 append_live_row() { add_row_to "$base/live-tables" "$1" "$2"; }
 drop_rows() { grep -v -- "$2" "$case_directory/dump-tables/$1" >"$case_directory/dump-tables/$1.new" && mv "$case_directory/dump-tables/$1.new" "$case_directory/dump-tables/$1"; }
-set_profile() { store_profile "$case_directory/dump-tables" "$1" "${2:-single}"; }
+set_profile() { store_profile "$case_directory/dump-tables" "$1"; }
 # serve <url>: what the fake curl answers for it; the body is stdin.
 serve() { cat >"$case_directory/http/$(printf '%s' "$1" | tr -c 'A-Za-z0-9\n' _)"; }
 fail_url() { touch "$case_directory/http/$(printf '%s' "$1" | tr -c 'A-Za-z0-9\n' _).fail"; }
@@ -346,12 +355,12 @@ serve_public() {
   serve "$issuer/protocol/openid-connect/certs" <<<'{"keys":[{"kid":"kid-b"},{"kid":"kid-a"}]}'
 }
 
-# What the scripts must not hold, outside comments: a PATH assignment, command -p, env as a command and an absolute,
-# $HOME or ~ path in command position (after a line start, a separator, a keyword, exec or timeout), which would bypass
-# the fakes; a slash that opens an awk regular expression is none. The copy check and kcadm's library hold awk programs
-# and the container's command line, so only a PATH assignment and command -p are looked for there.
-interception_pattern='(^|[^A-Za-z_])PATH=|command[[:space:]]+-p|(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec))[[:space:]]*env[[:space:]]|(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec|timeout [0-9]+))[[:space:]]*"?(/[A-Za-z]|\$HOME|\$\{HOME|~)'
-bypass_pattern='(^|[^A-Za-z_])PATH=|command[[:space:]]+-p'
+# What the scripts must not hold, outside comments: a PATH assignment, command -p, and an absolute, $HOME or ~ path in command
+# position (after a line start, a separator, a keyword, exec or timeout), which would bypass the fakes; a slash that opens
+# an awk regular expression is none. The commands' own script also must not run env, which the copy check's command line
+# for the container does.
+path_pattern='(^|[^A-Za-z_])PATH=|command[[:space:]]+-p|(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec|timeout [0-9]+))[[:space:]]*"?(/[A-Za-z]|\$HOME|\$\{HOME|~)'
+env_pattern='(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec))[[:space:]]*env[[:space:]]'
 # logs_clean [<tree>]: every call was one of the contract's, from the fakes first on PATH by bare name, and none of the
 # tree's scripts could bypass them.
 logs_clean() {
@@ -362,11 +371,11 @@ logs_clean() {
     return 1
   fi
   [ ! -s "$case_directory/log/git" ] || { reason="git was called"; return 1; }
-  grep -vE '^[[:space:]]*#' "$tree/scripts/cutover_load.sh" | grep -qE "$interception_pattern" &&
-    { reason="the script assigns PATH, uses command -p or env, or calls an executable by an absolute, \$HOME or ~ path"; return 1; }
-  for file in scripts/keycloak_kcadm.sh tests/keycloak/restored_copy_keeps_its_keys_and_people.sh; do
-    grep -vE '^[[:space:]]*#' "$tree/$file" | grep -qE "$bypass_pattern" &&
-      { reason="$file assigns PATH or uses command -p"; return 1; }
+  grep -vE '^[[:space:]]*#' "$tree/scripts/cutover_load.sh" | grep -qE "$env_pattern" &&
+    { reason="the script runs env, which would bypass the fakes"; return 1; }
+  for file in scripts/cutover_load.sh scripts/keycloak_kcadm.sh tests/keycloak/restored_copy_keeps_its_keys_and_people.sh; do
+    grep -vE '^[[:space:]]*#' "$tree/$file" | grep -qE "$path_pattern" &&
+      { reason="$file assigns PATH, uses command -p or calls an executable by an absolute, \$HOME or ~ path"; return 1; }
   done
   return 0
 }
@@ -433,7 +442,7 @@ expect_no_line 'DIFFERS'
 expect_no_line 'admin-cli|hopin-web'
 expect_line '^cutover:load: /services/litellm/admin: 3 members$'
 expect_line '^keycloak:move-group: /services/agent-service/api: 3 members; /services/litellm: 5 members'
-expect_line '^cutover:load: the copy holds hal.s issuer, key ids, people, memberships and client secrets; 3 members moved to /services/litellm$'
+expect_line '^cutover:load: the copy holds hal.s issuer, key ids, people, memberships and client secrets; 3 members in /services/agent-service/api moved to /services/litellm$'
 load_line="$(event '^mise run db:load-dump')" job_line="$(event 'get job config-cli')" admin_line="$(event 'kcadm.sh get group-by-path/services/litellm/admin')"
 move_line="$(event '^mise run keycloak:move-group')" first_restore="$(event '^pg_restore')"
 [ "$first_restore" -lt "$load_line" ] && [ "$load_line" -lt "$job_line" ] && [ "$job_line" -lt "$admin_line" ] && [ "$admin_line" -lt "$move_line" ] ||
@@ -447,15 +456,6 @@ run_load
 expect_status 0
 second_file="$(grep -o 'keycloak-before-move-group-[0-9TZ]*\.dump' "$case_directory/log/mise")"
 [ -n "$first_file" ] && [ "$first_file" != "$second_file" ] || fail "healthy: a rerun used the same move-group file: $first_file, $second_file"
-
-for form in pieces chunks; do
-  new_case "healthy-profile-in-$form"
-  serve_copy
-  set_profile "$stored_profile" "$form"
-  run_load
-  expect_status 0
-  expect_line '^cutover:load: the gate passed'
-done
 
 # ------------------------------------------------------ case 2: the profile, each difference named alone
 # profile_case <name> <jq program on the stored profile> <the one finding>
@@ -507,12 +507,26 @@ serve_copy
 drop_rows component 'comp-profile'
 run_load
 refused_before_the_load "^cutover:load: the dump holds no readable user profile of realm $realm\$"
-new_case profile-piece-missing
-serve_copy
-set_profile "$stored_profile" pieces
-grep -v 'cfg-piece-1' "$case_directory/dump-tables/component_config" >"$case_directory/x" && mv "$case_directory/x" "$case_directory/dump-tables/component_config"
-run_load
-refused_before_the_load "^cutover:load: the dump holds no readable user profile of realm $realm\$"
+# More than one storage form or value is no readable profile, whatever it holds: the gate never picks one.
+unreadable_profile_case() {
+  new_case "$1"
+  serve_copy
+  "$2"
+  run_load
+  refused_before_the_load "^cutover:load: the dump holds no readable user profile of realm $realm\$"
+}
+pieces_only() {
+  drop_rows component_config cfg-profile
+  add_row component_config "cfg-piece-0 | comp-profile | config-piece-0 | $(copy_escape "$stored_profile")"
+  add_row component_config 'cfg-count | comp-profile | config-pieces-count | 1'
+}
+whole_and_pieces() { add_row component_config "cfg-piece-0 | comp-profile | config-piece-0 | $(copy_escape "$expected_profile")"; }
+whole_twice() { add_row component_config "cfg-twice | comp-profile | kc.user.profile.config | $(copy_escape "$expected_profile")"; }
+two_components() { add_row component 'comp-profile-2 | declarative-user-profile | realm-hall | declarative-user-profile | org.keycloak.userprofile.UserProfileProvider | realm-hall | \N'; }
+unreadable_profile_case profile-in-pieces-only pieces_only
+unreadable_profile_case profile-whole-and-pieces whole_and_pieces
+unreadable_profile_case profile-whole-twice whole_twice
+unreadable_profile_case profile-two-components two_components
 new_case no-realm
 serve_copy
 drop_rows realm "$realm"
@@ -532,6 +546,7 @@ run_load
 expect_status 1
 expect_line '^db:load-dump: the load failed$'
 expect_line "the way back is the operator's cd ~/srv/hal && hal start keycloak\$"
+expect_no_line 'the copy is loaded'
 [ "$(wc -l <"$case_directory/log/mise")" = 1 ] || fail "load-fails: mise ran after the failed load"
 [ "$(wc -l <"$case_directory/log/kubectl")" = 1 ] || fail "load-fails: kubectl ran after the failed load: $(calls_of kubectl)"
 
@@ -568,10 +583,26 @@ secret_case() {
   expect_line '^cutover:load: the check of the copy against the dump and the evidence exited 1'
   [ "$(wc -l <"$case_directory/log/mise")" = 1 ] || fail "$case_name: the move ran"
 }
-other_secret() { sed -i "s/^songmaker .*/songmaker $(digest_of "$(random_value)")/" "$case_directory/live-client-digests"; }
-missing_client() { sed -i '/^presentator /d' "$case_directory/live-client-digests"; }
+other_secret() { sed -i "s/\t$secret_songmaker\$/\t$(random_value)/" "$case_directory/live-tables/client"; }
+missing_client() { sed -i '/\tpresentator\t/d' "$case_directory/live-tables/client"; }
 secret_case differs other_secret songmaker
 secret_case client-missing missing_client presentator
+# A secret whose stored text holds an escaped newline or ends in one is compared as stored and never printed in part.
+planted_values+=(LEAKEDTAILVALUE OTHERTAILVALUE)
+secret_text_case() {
+  new_case "secret-text-$1"
+  serve_copy
+  sed -i "s/\t$secret_songmaker\$/\t$2/" "$case_directory/dump-tables/client"
+  sed -i "s/\t$secret_songmaker\$/\t$3/" "$case_directory/live-tables/client"
+  run_load
+  expect_status "$4"
+  if [ "$4" = 0 ]; then expect_line '^songmaker: client secret equal$'; else expect_line '^songmaker: client secret DIFFERS$'; fi
+  [ "$(grep -c 'client secret DIFFERS' <<<"$output")" = "$4" ] || fail "$case_name: another client was named: $output"
+}
+secret_text_case newline-equal 'firstpart\\nLEAKEDTAILVALUE' 'firstpart\\nLEAKEDTAILVALUE' 0
+secret_text_case newline-differs 'firstpart\\nLEAKEDTAILVALUE' 'firstpart\\nOTHERTAILVALUE' 1
+secret_text_case trailing-newline-equal 'abc\\n' 'abc\\n' 0
+secret_text_case trailing-newline-differs 'abc\\n' 'abc' 1
 new_case secret-none-in-the-dump
 serve_copy
 sed -i 's/\t'"$secret_songmaker"'$/\t\\N/; s/\t'"$secret_presentator"'$/\t\\N/' "$case_directory/dump-tables/client"
@@ -666,10 +697,12 @@ check_case keys-fail public_keys_fail '^cutover:check: the key set at .* cannot 
 
 # ------------------------------------------------------ planted forbidden calls turn the cell red
 # plant <label> <file in the tree> <line>...: a scratch copy of the tree's scripts in which the file makes the calls right
-# after its `set -euo pipefail`, run on the healthy scenario.
+# after its anchor line (`set -euo pipefail`, or the first line of the kcadm library's code, or plant_anchor), run on the
+# healthy scenario.
 plant() {
-  local label="$1" file="$2" tree="$work_directory/planted-$1" copied line
+  local label="$1" file="$2" tree="$work_directory/planted-$1" copied line anchor="${plant_anchor:-set -euo pipefail}"
   shift 2
+  [ "$file" != scripts/keycloak_kcadm.sh ] || anchor='kcadm_path=/opt/keycloak/bin/kcadm.sh'
   mkdir -p "$tree/scripts" "$tree/tests/keycloak" "$tree/infrastructure/keycloak"
   cp -p "$repository_root/scripts/cutover_load.sh" "$repository_root/scripts/keycloak_kcadm.sh" "$tree/scripts/"
   cp -p "$repository_root/tests/keycloak/restored_copy_keeps_its_keys_and_people.sh" "$tree/tests/keycloak/"
@@ -679,7 +712,7 @@ plant() {
   {
     while IFS= read -r line; do
       printf '%s\n' "$line"
-      [ "$line" != 'set -euo pipefail' ] || printf '%s\n' "$@"
+      [ "$line" != "$anchor" ] || printf '%s\n' "$@"
     done <"$repository_root/$file"
   } >"$copied.new"
   mv "$copied.new" "$copied"
@@ -701,6 +734,10 @@ plant changed-path "$cutover_load" 'PATH="/usr/sbin:$PATH"; kubectl --version ||
 plant git-call "$cutover_load" 'git status || true'
 plant public-fetch-in-the-copy-check "$restored_copy" "curl --silent --fail --max-time 20 $issuer/.well-known/openid-configuration || true"
 plant curl-post-in-the-copy-check "$restored_copy" "curl --silent --request POST $discovery_url || true"
+plant absolute-path-in-the-copy-check "$restored_copy" '/usr/bin/curl --silent http://127.0.0.1:1 || true'
+plant absolute-path-in-the-kcadm-library scripts/keycloak_kcadm.sh '/usr/bin/true'
+plant_anchor='  phase=after_load' plant psql-two-statements "$cutover_load" 'kubectl --namespace keycloak exec postgres-0 --container postgres -- env PGCONNECT_TIMEOUT=10 psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 "--command=SELECT 1; DELETE FROM client" || true'
+plant_anchor='  phase=after_load' plant other-program-after-the-load "$cutover_load" 'kubectl --namespace keycloak exec postgres-0 --container postgres -- rm -rf /var/lib/postgresql || true'
 plant env-in-the-script "$cutover_load" 'env FOO=1 true'
 
 echo "cutover:load and cutover:check name each difference and print no value: profile, objects, unreadable dumps, load, copy, secrets, admin group, move, usage, check, interception and read-only held"

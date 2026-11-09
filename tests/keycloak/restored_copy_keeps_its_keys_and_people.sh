@@ -123,22 +123,10 @@ done
 added_count=0
 [ -z "$added_service_accounts" ] || added_count="$(wc -w <<<"$added_service_accounts")"
 echo "$added_count service accounts of declared clients were added since the dump, with their memberships"
-# Each client of the realm that holds a secret, as "<client> <sha256 of its secret>": from the dump through the awk program
-# below, which undoes COPY's escapes, and from the database through sha256 over the stored text. Both digests are made in
-# the container, so no secret reaches this shell, and only a client's name is printed.
-client_secrets='function unescape(text,   result, position, character) {
-    result = ""
-    for (position = 1; position <= length(text); position++) {
-      character = substr(text, position, 1)
-      if (character == "\\") {
-        position++; character = substr(text, position, 1)
-        if (character == "n") character = "\n"; else if (character == "t") character = "\t"; else if (character == "r") character = "\r"
-      }
-      result = result character
-    }
-    return result
-  }
-  copying && /^\\[.]$/ { copying = 0; next }
+# Each client of the realm that holds a secret, as "<client><tab><sha256 of its COPY-escaped secret>", from the dump and from
+# the database through the same awk program, as the four tables are. The digests are made in the container, so no secret
+# reaches this shell, and the escaped text has no newline or tab that could split a line: only a client's name is printed.
+client_secrets='copying && /^\\[.]$/ { copying = 0; next }
   copying {
     split($0, cell, "\t")
     if (table == "realm") { if (cell[column["name"]] == realm) realm_id = cell[column["id"]] }
@@ -152,19 +140,20 @@ client_secrets='function unescape(text,   result, position, character) {
     for (i = 1; i <= columns; i++) column[names[i]] = i
     copying = 1
   }
-  END { for (i = 1; i <= clients; i++) if (realm_id != "" && client_realm[i] == realm_id && client_secret[i] != "\\N") print client_name[i] "\t" unescape(client_secret[i]) }'
+  END { for (i = 1; i <= clients; i++) if (realm_id != "" && client_realm[i] == realm_id && client_secret[i] != "\\N") print client_name[i] "\t" client_secret[i] }'
+digest_each='while IFS="$(printf "\t")" read -r client secret; do
+      printf "%s\t%s\n" "$client" "$(printf %s "$secret" | sha256sum | cut -d" " -f1)"
+    done'
 dumped_digests="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail
   bounded "$2" pg_restore --data-only --table=realm --table=client --file=- 2>/dev/null | awk -v realm="$3" "$1" |
-    while IFS="$(printf "\t")" read -r client secret; do
-      printf "%s %s\n" "$client" "$(printf %s "$secret" | sha256sum | cut -d" " -f1)"
-    done' sh "$client_secrets" "$remote_deadline" "$realm")" || step_failed "$?" "reading the dump's client secrets"
-copy_digests="$(in_postgres psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT
-  c.client_id || ' ' || encode(sha256(convert_to(c.secret, 'UTF8')), 'hex') FROM client c JOIN realm r ON r.id = c.realm_id
-  WHERE r.name = '$realm' AND c.secret IS NOT NULL" 2>/dev/null)" || step_failed "$?" "reading the database's client secrets"
+    '"$digest_each" sh "$client_secrets" "$remote_deadline" "$realm")" || step_failed "$?" "reading the dump's client secrets"
+copy_digests="$(in_postgres sh -c "$remote_bound"'; set -o pipefail
+  bounded "$2" pg_dump --data-only --lock-wait-timeout=10s --table=realm --table=client 2>/dev/null | awk -v realm="$3" "$1" |
+    '"$digest_each" sh "$client_secrets" "$remote_deadline" "$realm")" || step_failed "$?" "reading the database's client secrets"
 declare -A copy_digest_of=()
-while read -r client digest; do [ -z "$client" ] || copy_digest_of[$client]="$digest"; done <<<"$copy_digests"
+while IFS=$'\t' read -r client digest; do [ -z "$client" ] || copy_digest_of[$client]="$digest"; done <<<"$copy_digests"
 [ -n "$dumped_digests" ] || { echo "the dump holds no client secret of $realm: DIFFERS"; outcome=1; }
-while read -r client digest; do
+while IFS=$'\t' read -r client digest; do
   [ -n "$client" ] || continue
   if [ "${copy_digest_of[$client]-}" = "$digest" ]; then echo "$client: client secret equal"
   else echo "$client: client secret DIFFERS"; outcome=1; fi

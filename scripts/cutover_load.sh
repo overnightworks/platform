@@ -35,6 +35,7 @@ fail() {
   local suffix=""
   case "$phase" in
     before_load) suffix="; nothing loaded" ;;
+    loading) suffix="; the database may be partly loaded, its lines above say what db:load-dump changed; the way back is the operator's cd ~/srv/hal && hal start keycloak" ;;
     after_load) suffix="; the copy is loaded and not proven; the way back is the operator's cd ~/srv/hal && hal start keycloak" ;;
   esac
   echo "$task_name: $1$suffix" >&2
@@ -67,7 +68,10 @@ read_evidence() {
 
 # The awk program the gate runs in the database's container over the dump's COPY streams, which pg_restore writes to
 # stdout without connecting. It prints no-realm, then the console-made objects as `object <kind> <name>`, then no-profile
-# or the realm's stored user profile between profile-begin and profile-end. It buffers the rows it needs, so the order of
+# or the realm's stored user profile between profile-begin and profile-end. Keycloak 26 stores the profile as one
+# component of the realm with exactly one config value kc.user.profile.config (DeclarativeUserProfileProvider's
+# UP_COMPONENT_CONFIG_KEY); its migration to 23 merges the older config-piece-<n> values into it. Any other state, a
+# second component or value, or a leftover piece, is no readable profile. It buffers the rows it needs, so the order of
 # the tables in the dump does not matter, and it holds component_config's other values, among them the realm keys'
 # private parts, without printing any.
 gate_program='function unescape(text,   result, position, character) {
@@ -89,7 +93,7 @@ gate_program='function unescape(text,   result, position, character) {
     else if (table == "component") {
       if (cell[column["provider_type"]] == "org.keycloak.userprofile.UserProfileProvider") { components++; component_id[components] = cell[column["id"]]; component_realm[components] = cell[column["realm_id"]] }
     } else if (table == "component_config") {
-      if (cell[column["name"]] ~ /^(kc[.]user[.]profile[.]config|config-piece-[0-9]+|kc[.]user[.]profile[.]config_[0-9]+)$/) { configs++; config_component[configs] = cell[column["component_id"]]; config_name[configs] = cell[column["name"]]; config_value[configs] = cell[column["value"]] }
+      if (cell[column["name"]] ~ /^(kc[.]user[.]profile[.]config$|config-piece)/) { configs++; config_component[configs] = cell[column["component_id"]]; config_name[configs] = cell[column["name"]]; config_value[configs] = cell[column["value"]] }
     } else {
       rows++; row_table[rows] = table; row_realm[rows] = cell[column["realm_id"]]
       row_name[rows] = cell[column[table == "client" ? "client_id" : table == "user_entity" ? "username" : "name"]]
@@ -116,19 +120,12 @@ gate_program='function unescape(text,   result, position, character) {
     for (i = 1; i <= count; i++) if (wanted_list[i] in present) { kind_and_name = wanted_list[i]; sub(":", " ", kind_and_name); print "object " kind_and_name }
     profile_component = ""; matches = 0
     for (i = 1; i <= components; i++) if (component_realm[i] == realm_id) { matches++; profile_component = component_id[i] }
-    max_piece = -1; min_piece = 0; whole = ""; has_whole = 0
+    wholes = 0; others = 0; whole = ""
     for (i = 1; i <= configs; i++) {
       if (config_component[i] != profile_component) continue
-      if (config_name[i] == "kc.user.profile.config") { whole = config_value[i]; has_whole = 1; continue }
-      piece_number = config_name[i]; sub(/^[^0-9]*/, "", piece_number); piece_number += 0
-      piece[piece_number] = config_value[i]
-      if (max_piece < 0 || piece_number < min_piece) min_piece = piece_number
-      if (piece_number > max_piece) max_piece = piece_number
+      if (config_name[i] == "kc.user.profile.config") { wholes++; whole = config_value[i] } else others++
     }
-    text = ""; readable = matches == 1
-    if (readable && max_piece >= 0) { for (i = min_piece; i <= max_piece; i++) { if (!(i in piece)) readable = 0; text = text piece[i] } }
-    else if (readable && has_whole) text = whole
-    else readable = 0
+    text = whole; readable = matches == 1 && wholes == 1 && others == 0
     if (readable) print "profile-begin\n" unescape(text) "\nprofile-end"; else print "no-profile"
   }'
 
@@ -177,14 +174,14 @@ gate() {
   say "the gate passed: the dump's user profile equals realm.yaml's apart from agent_owner, and it holds no console-made object"
 }
 
-# run_step <what> <command>...: runs the command and passes its lines on unchanged, to stderr when it fails, which then
-# ends the run naming the step.
+# run_step <what> <command>...: runs the command and passes its lines on unchanged as they come, keeps them in step_output,
+# and ends the run naming the step when it exits non-zero. The loop runs in this shell through lastpipe.
+shopt -s lastpipe
 run_step() {
-  local what="$1" step_status=0
+  local what="$1" step_status=0 line
   shift
-  step_output="$("$@" 2>&1)" || step_status=$?
-  if [ "$step_status" = 0 ]; then [ -z "$step_output" ] || printf '%s\n' "$step_output"
-  else [ -z "$step_output" ] || printf '%s\n' "$step_output" >&2; fi
+  step_output=""
+  "$@" 2>&1 | while IFS= read -r line; do printf '%s\n' "$line"; step_output+="$line"$'\n'; done || step_status=$?
   [ "$step_status" = 0 ] || fail "$what exited $step_status"
 }
 
@@ -209,8 +206,9 @@ load() {
   { [ -f "$dump" ] && [ -r "$dump" ]; } || usage "no readable dump file $dump"
   phase=before_load
   gate "$dump"
-  phase=after_load
+  phase=loading
   run_step "db:load-dump" mise run db:load-dump --compare keycloak "$dump"
+  phase=after_load
   run_step "the check of the copy against the dump and the evidence" \
     "$root/tests/keycloak/restored_copy_keeps_its_keys_and_people.sh" "$dump" "$2"
   trap remove_config EXIT
@@ -220,9 +218,9 @@ load() {
   evidence_directory="$(cd "$(dirname "$2")" && pwd)"
   move_file="$evidence_directory/keycloak-before-move-group-$(date --utc +%Y%m%dT%H%M%SZ).dump"
   run_step "keycloak:move-group" mise run keycloak:move-group "$move_file"
-  moved="$(sed -n 's/^keycloak:move-group: [^:]*: \([0-9][0-9]*\) members;.*/\1/p' <<<"$step_output" | head -n 1)"
+  moved="$(sed -n 's/^keycloak:move-group: \([^:]*\): \([0-9][0-9]*\) members;.*/\1 \2/p' <<<"$step_output" | head -n 1)"
   [ -n "$moved" ] || fail "keycloak:move-group's count of the old group cannot be read, though it exited 0"
-  say "the copy holds hal's issuer, key ids, people, memberships and client secrets; $moved members moved to /services/litellm"
+  say "the copy holds hal's issuer, key ids, people, memberships and client secrets; ${moved#* } members in ${moved% *} moved to /services/litellm"
 }
 
 # check <evidence>: the public issuer and key ids against the evidence's. It cannot tell which Keycloak answers, as hal
