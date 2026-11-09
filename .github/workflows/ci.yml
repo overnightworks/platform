@@ -76,8 +76,8 @@ jobs:
       - name: Check that the app texts under infrastructure/legal equal their apps' files and dates at the release each names
         run: mise exec -- tests/legal/app_texts_equal_their_release.sh
 
-      - name: Check that the vendored appkit files equal their release wheel and that infrastructure/legal/assets holds nothing else
-        run: tests/legal/appkit_assets_equal_their_release_wheel.sh
+      - name: Check that the vendored design files equal their release wheel and that infrastructure/legal/assets holds nothing else
+        run: tests/legal/design_assets_equal_their_release_wheel.sh
 
       - name: Check that a failed LiteLLM write stops the rest and names what was made, and that no key value reaches an argument or an output
         run: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
