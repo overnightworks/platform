@@ -1,0 +1,7 @@
+claim_id = "a65833b37402419dbc2d657ea375a018"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "869856f60d98b9271f443a648d15c304f3a89f47"
+branch = "claude/issue-313-fold-figure"
+scope = ["src/opentofu/github/repositories.tf", "src/opentofu/github/tests/repository_creation.tftest.hcl", "src/opentofu/github/tests/repository_listing.tftest.hcl"]
+opened_commit = "8cc3c005ade3faa46a4a965051404cc350a306ce"
