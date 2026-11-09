@@ -1,8 +1,0 @@
-claim_id = "d47a23edf7884a93ac998a4a7878fa86"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "d7eb6b231506d163bf45147696aafdb575ec0e7f"
-branch = "claude/issue-256-meta-api-token-in-ci"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "mise.toml", "scripts/github_meta.sh", "tests/secrets"]
-opened_commit = "9273e4975a9d9b094f395f5dae8407879c935c8d"
-whole_reason = "The task, its test, the step that passes the token and the sentence that describes them change together, or the token reaches one read and not the other."
