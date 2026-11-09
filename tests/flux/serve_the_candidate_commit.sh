@@ -24,7 +24,7 @@ SCRIPT
 chmod +x "$served/cgi-bin/git-http-backend"
 export GIT_PROJECT_ROOT="$served" GIT_HTTP_EXPORT_ALL=1
 
-# Only the cluster's own network reaches the server: its gateway is the address host.k3d.internal names.
+# Only the cluster's own network reaches the server: its gateway is that address.
 network="k3d-${CLUSTER_NAME}"
 bind_address="$(docker network inspect "$network" --format '{{(index .IPAM.Config 0).Gateway}}')" || bind_address=""
 [ -n "$bind_address" ] || fail "no gateway address could be read from the docker network $network"
@@ -43,6 +43,6 @@ for _ in $(seq 30); do
 done
 [ "${served_revision:-}" = "$CANDIDATE_REVISION" ] ||
   fail "the served branch ${CANDIDATE_BRANCH} is at '${served_revision:-nothing}', not the candidate $CANDIDATE_REVISION"
-# The cluster reaches the runner by the name k3d adds to its DNS.
-echo "CANDIDATE_SOURCE_URL=http://host.k3d.internal:${CANDIDATE_SOURCE_PORT}/cgi-bin/git-http-backend/repository.git" >> "$GITHUB_ENV"
+# The cluster reaches the runner by that address, which needs no record in CoreDNS.
+echo "CANDIDATE_SOURCE_URL=${url}" >> "$GITHUB_ENV"
 echo "the server (pid $(<"$RUNNER_TEMP/candidate-source.pid"), bound to ${bind_address}) serves ${CANDIDATE_BRANCH} at the candidate"
