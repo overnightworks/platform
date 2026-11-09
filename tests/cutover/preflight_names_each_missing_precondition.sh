@@ -333,7 +333,7 @@ hold_lock() {
 }
 # What the script must not hold, outside comments: a PATH assignment, command -p, env as a command, and an absolute,
 # $HOME or ~ path in command position (after a line start, a separator, a keyword, exec or timeout), which would bypass the fakes.
-interception_pattern='(^|[^A-Za-z_])PATH=|command[[:space:]]+-p|(^|[;&|(!{]|\$\(|[[:space:]](then|do|else|exec))[[:space:]]*env[[:space:]]|(^|[;&|(!{]|\$\(|[[:space:]](then|do|else|exec|timeout [0-9]+))[[:space:]]*"?(/|\$HOME|\$\{HOME|~)'
+interception_pattern='(^|[^A-Za-z_])PATH=|command[[:space:]]+-p|(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec))[[:space:]]*env[[:space:]]|(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec|timeout [0-9]+))[[:space:]]*"?(/|\$HOME|\$\{HOME|~)'
 # logs_clean: every call was one of the contract's reads, from the fakes first on PATH, by bare name.
 logs_clean() {
   local script_under_test="${1:-$script}"
