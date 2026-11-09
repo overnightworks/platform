@@ -213,7 +213,7 @@
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
-  check, the "P7a cells", the steps "songmaker's web" and "songmaker's workers", the "P9c cells";
+  check, the "P7a cells", the steps "songmaker's web" and "songmaker's workers" and the "P9c cells";
   `backup` holds the Alertmanager step, the Grafana step, the "P7d cells", the "P9f cells", the "P9c-2 cells" and the step of `tests/no_network/`; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
   assertion runs in all three, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
