@@ -446,7 +446,7 @@ exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.c
 '''
 
 [tasks."legal:build"]
-description = "Build the legal pages from the frame and the sections and write infrastructure/legal/built/impressum.html"
+description = "Build the legal pages from the frame, the sections and the app texts and write its three pages to infrastructure/legal/built/"
 env = { UV_PROJECT_ENVIRONMENT = "{{ env.XDG_CACHE_HOME | default(value=env.HOME ~ '/.cache') }}/platform/legal/venv", PYTHONDONTWRITEBYTECODE = "1", PYTHONPATH = "src/legal/src" }
 run = '''
 #!/usr/bin/env bash

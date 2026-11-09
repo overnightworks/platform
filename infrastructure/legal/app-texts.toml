@@ -1,0 +1,35 @@
+# The apps whose own legal text the pages show: the copies under app-texts/<key>/ equal the files of
+# overnightworks/<key> at the release, which tests/legal/app_texts_equal_their_release.sh proves. An app with an image
+# under apps/<key> has its release from that image and no tag here; any other app names its tag.
+
+[hopin]
+
+[hopin.datenschutz]
+date = 2026-11-06
+sha256 = "9e64c1c528b010a169c60676e7538d1774e3c3d77eb5649cfd212494f37a9d80"
+
+[hopin.nutzungsbedingungen]
+date = 2026-11-06
+sha256 = "963e735c2c69bee13fc978e9e2d2d6fd0b9ba6a1ed7d94d0c5256a084968993f"
+
+[presentator]
+tag = "v2026.11.08.1"
+
+[presentator.datenschutz]
+date = 2026-11-08
+sha256 = "01e4f697e897cf1804d90ade97ab5fed158cfaae208825e34c4ddce59dd2918a"
+
+[presentator.nutzungsbedingungen]
+date = 2026-11-08
+sha256 = "94ba94a7cb63bcd358402f31f9875d7d188fe7845be8f27c766c6c30732a0d6c"
+
+[songmaker]
+tag = "v2026.11.08.1"
+
+[songmaker.datenschutz]
+date = 2026-11-05
+sha256 = "7136c6062280368c8c91d18c4e29c20f2abec4ff691dc9e6f1ea00f4f73f4403"
+
+[songmaker.nutzungsbedingungen]
+date = 2026-11-05
+sha256 = "a65fe491b90c5f647165565723914d7daa85f6fc82c8bbcf05fda8c71e432c34"
