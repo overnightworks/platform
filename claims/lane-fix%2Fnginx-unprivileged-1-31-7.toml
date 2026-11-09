@@ -1,7 +1,0 @@
-claim_id = "c5b50ecf950a461682b8cf1a32deeb9d"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "f4a47816011deb68ee308df9ea63ae5b774704bf"
-branch = "fix/nginx-unprivileged-1-31-7"
-scope = ["infrastructure/legal/legal.yaml"]
-opened_commit = "aed3b6d65158b4dbd9c0c31b5189386d423e09bc"
