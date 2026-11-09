@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# A run on main gets a group of its own, so it neither waits for nor is cancelled by another run: every landing is proven to its end.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   checks:
     runs-on: ubuntu-latest
