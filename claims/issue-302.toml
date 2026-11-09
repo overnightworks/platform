@@ -1,8 +1,0 @@
-claim_id = "be4248ec2954423f89997e17b781f358"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "7e1abdaf50c9e857221bc8b0409ee73b2fbd60b0"
-branch = "claude/issue-302-songmaker-release-2026-11-09-1"
-scope = ["apps/songmaker/music-worker.yaml", "apps/songmaker/scoring-worker.yaml", "apps/songmaker/web.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/songmaker/datenschutz.html", "infrastructure/legal/built/datenschutz.html"]
-opened_commit = "ffb1a3ec7145c443f75f8e489a40771a15b580cc"
-whole_reason = "One release: the images and the legal copy move together, as the owners rule requires, so the served text never runs ahead of or behind the running app."
