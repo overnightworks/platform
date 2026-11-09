@@ -213,12 +213,13 @@
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
-  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells"; `core`
-  every other cell and the checks that need no cluster. The setup through the reconcile's assertion runs in all three,
-  and a new cell joins the part with more room.
+  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells" and
+  the step of `tests/no_network/`, the shortest part; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
+  assertion runs in all three, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
-  `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
+  `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container of an image pinned by its index digest, without network, ending red
+  when it runs past 2 minutes).
   It judges every image of every rendered Pod template, image volumes included, and every host-qualified value of every
   `env` map in this workflow, the workflow's, each job's and each step's: a vendor ref passes only as a repository of
   the vendor list at a sha256 digest, an app ref under `ghcr.io/<owner>/` passes only through its release checks (its
@@ -252,7 +253,8 @@
   `cluster` reconciles `clusters/pc` in k3d, with `host/k3s/config.yaml` mounted alone and read-only at
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
-  each PC-only source swapped for one the job serves; a new PC-only source joins that list; `tunnel` given its own
+  each PC-only source swapped for one the job serves; a new PC-only source joins that list and, since `PC_ONLY_SOURCE` in `scripts/verify_image_release.sh` holds one source, that script too; a source
+  that script does not map fails the images render; `tunnel` given its own
   `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token; `nvidia` given its
   own, which only give the device plugin's DaemonSet a node selector no k3d node carries, as k3d holds no card) and the
   `flux-system` source's ref, in the object applied and in Flux's build: a pull request's ref on a pull request, `main` at the
@@ -363,6 +365,16 @@
   for `agent_owner` while `firstName` alone gets 204 and the metadata hides it; a person's token carries both groups;
   and a disabled client or service account gets 401, a state a config-cli re-run keeps together with every service
   account's groups, one extra group the console gave the agent's, `agent_owner` and both groups' members.
+  `tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh` then lets a throwaway person with every profile field
+  set, in every `/apps/<app>` group and `/services/speech-service`, sign in to each client of the file with the standard
+  flow (authorization code with PKCE through curl and a cookie jar, the consent of a client that asks for one accepted),
+  asking for `openid` and the client's default and optional scopes, and make a refresh grant where a refresh token
+  comes. It first fails unless the live scopes `profile` and `email` hold as many mappers as the file declares. No
+  access token holds a claim that a live mapper of the two scopes names; every ID token holds `groups`, and
+  `preferred_username` where the client has `profile`; for hopin and presentator both access tokens hold
+  `speech-service` in `aud`, the person's `sub`, the client as `azp` and the person's groups, and the client-credentials
+  grant with the scope gives the workload role, `client_id` and that audience. It prints claim names and outcomes, never
+  a token, a claim value or a secret, and deletes the person on every exit.
   `tests/keycloak/agent_owner_names_what_a_failed_write_left.sh` runs `keycloak:agent-owner` against a fake kubectl: a
   name no person carries, a service account's name in any case and a name only another user's email carries are
   refused with `nothing changed`, and a membership write that fails, after the owner's write or alone, prints what was
@@ -414,7 +426,7 @@
   kube-router has its rules) where one without them reaches all three, and a Pending Pod of flux-system with the port `http-prom` is a dropped target
   of `flux-controllers` with no `up` series. k3d proves neither a delivery nor the resolved mail, which Alertmanager
   attempts only after a firing mail succeeded; the PC's synthetic alert proves one firing and one resolved mail.
-  The step "P9c cells", in the part `postgres`, suspends the Kustomization `litellm` and resumes it on every exit, removing
+  The step "P9c cells", in the part `postgres`, suspends the Kustomizations `litellm` and `platform-secrets`, so that no reconcile undoes its write to the Secret `hopin`, and resumes both on every exit, removing
   its keys, person budget and Secret key: `mise run litellm:keys --plan` lists the differences between the table and two
   keys made with the master key, exits 2 and changes no row; the run sets the numbers, a second run prints 0 changes and a
   raised budget changes that field alone and keeps `budget_reset_at`; the person budget takes the table's number; a row
@@ -428,6 +440,31 @@
   a table without a number for the person budget or a row's limits, an absent revision, one that changes while the table
   is read and a value with a newline are refused before any write; and the value reaches curl's stdin and no argument
   or output, a run under `bash -x` included.
+  The step "Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind
+  on the node", in the part `backup`, runs `tests/no_network/pod_loses_its_link_before_the_worker_starts.sh` in Namespaces
+  without a Pod Security label that it creates and deletes: its own and one fresh for each mode of the lives. `tests/no_network/pod.sh` renders the shape
+  a worker Pod takes: the init container `remove-link` (the busybox of `PROBE_IMAGE`, uid 0, only `NET_ADMIN`, read-only
+  root, no token or volume), which runs `remove_link.sh`, the one program, before a non-root worker at `restricted`'s
+  fields. The program ends 0 with `lo` alone or once it deleted `eth0` and read `lo` alone, and non-zero on a failed
+  read, another link or a failed delete, and it reads the links as plain assignments, since busybox sh ignores `set -e`
+  inside a command substitution; `remove_link_branches.sh` runs it in the init container's own shell, the busybox of
+  `PROBE_IMAGE` in a throwaway `docker run` without network, against a fake `ip` function for each branch (a read that
+  fails, one that prints `lo` and then fails, an empty one, a failed delete among them), first in the cell. The cell proves that the worker's `ip -o link`, `ip -o addr` and routes of both families hold `lo` alone
+  with 127.0.0.1/8 and ::1/128, an inspection that fails failing the cell; that it reaches neither the API's ClusterIP,
+  cluster DNS, the node's address, the node's `cni0` fe80 address (scope `lo`, the only one a Pod has) nor 1.1.1.1 while a listener
+  on 127.0.0.1 answers; that the same Pod without the init container holds `eth0` and a default route and reaches the
+  API, DNS and the node; an exec probe, a log line, an `emptyDir` and a ConfigMap; the program run by two init containers; a
+  worker that never starts without `NET_ADMIN` or beside a second link; a worker restarted in its sandbox with `lo`
+  alone, and a sandbox of the Pod's own, found by its pod-name label and removed on the node through the node's `crictl stopp` and `rmp`, that is recreated with the init
+  container run again; and, over twelve lives (normal, force-deleted, deleted while an init container runs, crashed),
+  that the lease files of the one directory under `/var/lib/cni/networks` the cell reads from the node, the node's veth
+  links, the Namespace's sandboxes and the CNI rules of `iptables-save` (read from a listing that holds kube-proxy's
+  `KUBE-SERVICES`) equal their state before, each life having taken
+  a new lease while it lived, with the same lives without the init container first as the control.
+  `mise exec -- tests/no_network/pod_on_the_pc_holds_only_lo.sh` runs on the PC through k3s's own kubeconfig, without
+  sudo: a Pod of the shape in a throwaway Namespace without a Pod Security label holds `lo` alone and reaches neither
+  the API's Service, cluster DNS nor the node, a default Pod beside it holds `eth0` and reaches them, and every
+  throwaway object is gone on every exit; it prints names and counts and changes nothing on the host.
 - `clusters/pc/flux-system/`: Flux's own components and its sync to this repository. `gotk-components.yaml` is
   generated by `mise run flux:export` for the components `FLUX_COMPONENTS` in `mise.toml` lists, which hold no Helm reconciler
   (every chart is rendered into Git); it is not edited by hand, and `cluster` fails when a regeneration differs.
@@ -548,7 +585,12 @@
   database Keycloak creates config-cli's client from `KC_BOOTSTRAP_ADMIN_CLIENT_ID`; a restored one keeps its own.
   `KC_HOSTNAME_ADMIN` in `keycloak.yaml` is the one owner of the admin front end, which `kustomization.yaml` copies
   to the Job. The Secret `keycloak` from `platform-secrets` holds config-cli's secret, each app client's and the agent
-  client's (`client-agent-mozart`). The realm file holds the user profile (Keycloak's default with `agent_owner`,
+  client's (`client-agent-mozart`). The realm file declares Keycloak's built-in client scopes `profile` and `email`
+  with all 16 mappers as Keycloak 26.8.1 ships them, since config-cli removes a mapper of a declared scope that the file
+  omits, and with `access.token.claim` and `introspection.token.claim` off on each: no access token carries a person's name or
+  e-mail address, which no app reads there and the speech service has no use for, while ID token and userinfo keep them.
+  Turning it back is a commit setting them to `"true"`, since client scopes are `no-delete`. A Keycloak bump compares the declared `profile` and `email` scopes with the new
+  version's own, since config-cli otherwise overwrites them with the old copy. The realm file holds the user profile (Keycloak's default with `agent_owner`,
   readable and writable only by an administrator) and the agent objects: the groups `/agents`, `/agent-adders` and
   `/agent-owners`, the scope `agent-identity`, the client `agent-mozart` and its service account's groups; who owns or
   adds an agent is console data set by `keycloak:agent-owner`. The realm sets theme `hallucinai`, which Keycloak replaces with its own until an image carries it.
