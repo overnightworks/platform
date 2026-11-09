@@ -16,7 +16,7 @@ An app that runs on the platform follows [docs/app.md](docs/app.md).
 Each runbook is one task with its commands and how to see it worked. A new PC starts with the first.
 
 - [Install the PC](docs/runbooks/install-the-pc.md): the host step from a checkout, and a new host part.
-- [Remove a host part](docs/runbooks/remove-a-host-part.md): the pod-log parts, the inotify limits or the disk units.
+- [Remove a host part](docs/runbooks/remove-a-host-part.md): the pod-log parts, the inotify limits, the journal's retention or the disk units.
 - [Uninstall k3s](docs/runbooks/uninstall-k3s.md): k3s leaves the PC.
 - [`check:pod-logs` fails](docs/runbooks/pod-logs-check-fails.md): a pod log past its bound or a clean that did not run.
 - [GPU runtime handler missing](docs/runbooks/gpu-runtime-handler-missing.md): the card's runtime is missing.
