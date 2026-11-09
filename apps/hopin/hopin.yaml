@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: hopin
-          image: ghcr.io/overnightworks/hopin:2026.11.08.2@sha256:1bc97beab609a3f752a1236732eabb1ae4ff4e7b2fd5079901eda2d4e6f94fa0
+          image: ghcr.io/overnightworks/hopin:2026.11.09.1@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
           ports:
             - name: http
               containerPort: 8080
