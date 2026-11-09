@@ -1,0 +1,7 @@
+# The API server refuses every Grafana pod that runs as root, escalates, keeps capabilities or mounts a host path.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grafana
+  labels:
+    pod-security.kubernetes.io/enforce: restricted

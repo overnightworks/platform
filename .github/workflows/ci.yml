@@ -451,8 +451,9 @@ jobs:
         if: matrix.part == 'core'
         env:
           PROMETHEUS_NAMESPACE: prometheus
-          # The throwaway namespaces the step creates and removes: one of the readers the NetworkPolicy admits, one that
-          # is not and holds the Deployment at a dead image, and the Kustomization at a missing path.
+          # The namespace of a reader the NetworkPolicy admits, which the layer owns, then the throwaway namespace the step
+          # creates and removes, one that is not admitted and holds the Deployment at a dead image, and the Kustomization at
+          # a missing path.
           READER_NAMESPACE: grafana
           OTHER_NAMESPACE: prometheus-probe
           BROKEN_KUSTOMIZATION: prometheus-probe
@@ -466,6 +467,20 @@ jobs:
           READER_NAMESPACE: gatus
           OTHER_NAMESPACE: alertmanager-client
         run: tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh
+
+      - name: Assert that Grafana answers a query through both data sources at the address grafana:open printed, holds no state and answers only Gatus's pods
+        if: matrix.part == 'postgres'
+        env:
+          GRAFANA_NAMESPACE: grafana
+          LOKI_NAMESPACE: loki
+          PROMETHEUS_NAMESPACE: prometheus
+          # Grafana's one admitted sender, the throwaway namespace of a Pod that is not, a Service every other Pod
+          # reaches and a host outside the cluster.
+          GATUS_NAMESPACE: gatus
+          OTHER_NAMESPACE: grafana-client
+          CLUSTER_SERVICE: default/kubernetes
+          OUTSIDE_TARGET: github.com:443
+        run: tests/grafana/grafana_answers_both_data_sources_without_state_and_only_gatus_reaches_it.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
