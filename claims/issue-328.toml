@@ -1,8 +1,0 @@
-claim_id = "5ce3bd3593f949109287bf37b75f96e5"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "e0d35863e1740fbe1ba852a4e93db7c1987b5f64"
-branch = "claude/issue-328-load-files"
-scope = [".github/workflows/ci.yml", "docs/runbooks/restore-a-database.md", "mise.toml", "scripts/load_files.sh", "scripts/rsh_into_pod.sh", "tests/backup/load_replaces_database_and_files_together.sh", "tests/postgres/load_dump.sh"]
-opened_commit = "b8051227367d93bee6d0f6831efdd5c027bffe7d"
-whole_reason = "The refusal, the load and its recovery are one contract, and the cell needs all of them."
