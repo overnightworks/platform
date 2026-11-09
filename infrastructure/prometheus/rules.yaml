@@ -68,3 +68,10 @@ data:
             for: 15m
             annotations:
               summary: 'No backup of {{ $labels.namespace }} completed in 8 days'
+          # kube-state-metrics emits no next time for a suspended CronJob, so one is not judged. The hour lets the controller
+          # catch up after a boot, which the CronJobs' own timeZone and kube-state-metrics' reading of it keep in step.
+          - alert: ScheduledJobMissed
+            expr: time() - max by (namespace, cronjob) (kube_cronjob_next_schedule_time) > 3600
+            for: 15m
+            annotations:
+              summary: 'The CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} did not start within an hour of its due time'
