@@ -273,7 +273,7 @@ def app_refusal(repository: Path, capsys) -> str:
     return refusal_of(repository, capsys).removeprefix("legal: ")
 
 
-@pytest.mark.parametrize("key", ["allgemein", "keycloak", "litellm", "speech-runtime"])
+@pytest.mark.parametrize("key", ["allgemein", "keycloak", "litellm", "speech"])
 def test_an_app_key_that_a_section_unit_owns_is_refused_by_name(repository, sections, apps, capsys, key):
     entries = {**apps, key: {"datenschutz": app_file(repository, key, "datenschutz", app_text(key), date(2026, 1, 1))}}
     declare_apps(repository, entries)

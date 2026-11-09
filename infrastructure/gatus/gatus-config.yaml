@@ -20,7 +20,7 @@ endpoints:
     interval: 60s
     conditions:
       - "[STATUS] == 200"
-  - name: speech-runtime
+  - name: speech
     url: http://speech-runtime.speech-runtime.svc:8080/health
     interval: 60s
     conditions:

@@ -5,12 +5,12 @@
 [hopin]
 
 [hopin.datenschutz]
-date = 2026-11-06
-sha256 = "9e64c1c528b010a169c60676e7538d1774e3c3d77eb5649cfd212494f37a9d80"
+date = 2026-11-09
+sha256 = "da746191c2480ceda793160fa1396099fb8ffcc598c27b4aa15adc9c67bea606"
 
 [hopin.nutzungsbedingungen]
-date = 2026-11-06
-sha256 = "963e735c2c69bee13fc978e9e2d2d6fd0b9ba6a1ed7d94d0c5256a084968993f"
+date = 2026-11-09
+sha256 = "901d03ad3bf0907bf65fb1431c39d9dc4f8ab5c3819fbc8b808af2683a096083"
 
 [presentator]
 tag = "v2026.11.08.1"
