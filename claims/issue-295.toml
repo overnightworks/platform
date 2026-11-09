@@ -1,0 +1,8 @@
+claim_id = "5a20c3b6183f44e0928326c652c2b231"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "fe101f842824a34556072751a0c62a4a077a6d40"
+branch = "claude/issue-295-p4-operations-reference"
+scope = ["AGENTS.md", "docs/operations.md", "tests/disk/docuum_deletes_the_least_recently_used_unprotected_image.sh", "tests/disk/gtrash_prune_deletes_old_trash_entries_and_keeps_the_rest.sh", "tests/disk/mise_disk_warns_from_85_percent.sh", "tests/disk/tmpfiles_line_deletes_old_codex_sessions_and_keeps_claude_sessions.sh", "tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh", "tests/grafana/grafana_answers_both_data_sources_without_state_and_only_gatus_reaches_it.sh", "tests/litellm/admin_budget_follows_the_fingerprint_and_keeps_spend.sh", "tests/litellm/failed_write_names_what_is_done.sh", "tests/litellm/keys_table_drives_budgets_and_the_app_key.sh", "tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh", "tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh", "tests/secrets/expiry_check_names_each_breach.sh"]
+opened_commit = "a474c8672966c739eb89b23b9cbfa38f7fc04482"
+whole_reason = "One move: the sentences leave AGENTS.md in the commit that writes them into the reference and gives their tests the citations, so no tree state holds a rule twice or nowhere."
