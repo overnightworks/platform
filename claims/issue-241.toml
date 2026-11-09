@@ -1,8 +1,0 @@
-claim_id = "d939f1b8588941eab84f026dc05933d6"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "42f99139db79f32b17dbce8194745a3a76a3e471"
-branch = "claude/issue-241-p9f1-job-and-backup-alerts"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/prometheus", "tests/prometheus"]
-opened_commit = "ec30cf474b63e950f99e5224eb0710b98bb80206"
-whole_reason = "One alert path: the rules, the metric they read and the cells that prove them firing and quiet work only together."
