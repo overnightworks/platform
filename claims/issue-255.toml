@@ -1,0 +1,8 @@
+claim_id = "aef3333291b842a1b7e774db13383d7e"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "aa9098a9eb378f27428f0e905d9a8a043553c0fb"
+branch = "claude/issue-255-p9f2-missed-scheduled-run"
+scope = ["AGENTS.md", "infrastructure/litellm/expire.yaml", "infrastructure/postgres/backup/backup.yaml", "infrastructure/prometheus/rules.yaml", "tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh", "tests/prometheus/rules_test.yml"]
+opened_commit = "781466f6abdb6d3cca823c89436c66311e79c7e2"
+whole_reason = "The rule is quiet on the PC only with both CronJobs in one zone and the restore test bounded, and the cell proves the zone condition, so rule, manifests, tests and the document change together."
