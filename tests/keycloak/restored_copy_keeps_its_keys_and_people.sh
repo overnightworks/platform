@@ -83,7 +83,7 @@ echo "key ids of $realm: copy ${copy_kids//$'\n'/ }, evidence ${evidence_kids//$
 # with print_column it prints that column of every row, else it prints the stream without the rows whose column value
 # is in added.
 rows_by_column='BEGIN { count = split(added, ids, " "); for (i = 1; i <= count; i++) skip[ids[i]] = 1 }
-  /^COPY / { field = 0; seen = 1; header = $0; sub(/^[^(]*[(]/, "", header); sub(/[)].*/, "", header)
+  !copying && /^COPY / { field = 0; seen = 1; header = $0; sub(/^[^(]*[(]/, "", header); sub(/[)].*/, "", header)
     table = $2; sub(/^[^.]*[.]/, "", table)
     columns = split(header, names, /, */); for (i = 1; i <= columns; i++) if (names[i] == column) field = i
     if (column != "" && !field) { print "the COPY of " table " has no column " column > "/dev/stderr"; missing = 1 }
@@ -106,8 +106,9 @@ dumped_user_ids="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail
 added_service_accounts="$(comm -13 <(printf '%s\n' "$dumped_user_ids") <(printf '%s\n' "$live_service_accounts") | tr '\n' ' ')"
 added_service_accounts="${added_service_accounts%% }"
 # Each table's rows from the dump and from the database through the ConfigMap postgres's table-digests.sh, the
-# loader's own digest, inside the container; stderr stays there too. The database's rows of an added service account
-# are dropped before the digest, by the column that names the user, so every other row still has to match.
+# loader's own digest, inside the container; pg_dump's and pg_restore's stderr stays there too. The database's rows of
+# an added service account are dropped before the digest, by the column that names the user, so every other row still
+# has to match.
 for table_and_column in user_entity:id credential: user_group_membership:user_id user_attribute:user_id; do
   table="${table_and_column%%:*}" column="${table_and_column#*:}"
   dumped="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail

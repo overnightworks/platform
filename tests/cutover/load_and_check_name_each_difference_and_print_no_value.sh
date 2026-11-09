@@ -645,6 +645,14 @@ missing_column_case client live-tables secret
 missing_column_case client dump-tables secret
 missing_column_case user_attribute live-tables user_id
 missing_column_case user_entity dump-tables id
+# A data row that starts like a COPY header is a row, and no message of the digests prints a cell of it.
+planted_values+=(LEAKEDATTRIBUTEVALUE)
+new_case row-starting-with-copy
+serve_copy
+add_row_to "$case_directory/live-tables" user_attribute 'COPY  | LEAKEDATTRIBUTEVALUE | x | u-alice'
+run_load
+expect_status 1
+expect_line '^user_attribute: .*, DIFFERS$'
 new_case empty-digests
 serve_copy
 touch "$case_directory/silent-digest"
