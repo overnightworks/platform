@@ -1,0 +1,7 @@
+claim_id = "8d12903b13c14b0db05f402db1be8ed6"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "e375b80aaed69c123a5f14f572ad5aacad4b1454"
+branch = "claude/issue-307-personas-in-github-config"
+scope = ["src/opentofu/github/repositories.tf", "src/opentofu/github/tests/repository_listing.tftest.hcl"]
+opened_commit = "0680cbe78019937adbf4c269e94c3587ed069f20"
