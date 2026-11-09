@@ -1,0 +1,7 @@
+claim_id = "cde7609c881540c4bc2563e649b3a4a5"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "0bf0c46559a5a8611dffae6ca3a845f0913e66e8"
+branch = "claude/issue-282-cutover-preflight"
+scope = ["mise.toml", "scripts/cutover_preflight.sh", "tests/cutover/preflight_names_each_missing_precondition.sh"]
+opened_commit = "515d93abb35cfe5e80a51aaf33b6033600f2bbe0"
