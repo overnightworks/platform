@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# The commands behind `mise run litellm:keys` and `mise run litellm:key`: they make the budgets and the app keys of
-# LiteLLM in namespace litellm equal to the table infrastructure/litellm/keys.yaml, which the ConfigMap litellm-keys
-# carries.
+# The commands behind `mise run litellm:keys`, `mise run litellm:key` and `mise run litellm:admin`: the first two make the
+# budgets and the app keys of LiteLLM in namespace litellm equal to the table infrastructure/litellm/keys.yaml, which the
+# ConfigMap litellm-keys carries.
 #   scripts/litellm_keys.sh keys [--plan]  sends only the fields that differ; --plan writes nothing and exits 0 with no
 #                                          change, 2 with changes, 1 on a failure or a table row without a key
 #   scripts/litellm_keys.sh key <app>      registers the value of key litellm_key in Secret <app> of namespace <app> as
 #                                          the key of the table's row <app>
+#   scripts/litellm_keys.sh admin <user>   puts the person on the unlimited admin budget and into the admin group of
+#                                          Keycloak, each step written and read back
 # A key's value and the master key travel from kubectl's stdout through shell variables to curl's stdin, never into an
 # argument, a URL, a file or a child's environment, and are never printed. A failure names the step and the HTTP
 # status, never a reply body.
@@ -14,6 +16,8 @@
 set -euo pipefail
 # [!-~] must mean printable ASCII.
 export LC_ALL=C
+# shellcheck source=keycloak_kcadm.sh
+source "$(dirname "${BASH_SOURCE[0]}")/keycloak_kcadm.sh"
 
 namespace=litellm
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
@@ -23,9 +27,25 @@ deadline=2m
 key_prefix=sk-
 key_minimum_length=16
 
-command_name=""
+exec {kcadm_diagnostics_fd}>/dev/null {kcadm_update_output_fd}>/dev/null
+command_name="" task_name=litellm:admin realm="" username="" reported=false
+# The admin command's writes, each recorded before it is sent, since an answer lost on the way leaves it unknown.
+attempted=()
+# written_list: what the admin command wrote or may have written.
+written_list() {
+  local written
+  written="$(printf '%s, ' "${attempted[@]}")"
+  echo "${written%, }"
+}
+# written_text: the list as a failure reports it, with how to finish.
+written_text() { echo "written or possibly written: $(written_list); run again to complete it"; }
 fail() {
-  echo "litellm:${command_name:-keys}: $1" >&2
+  local suffix=""
+  if [ "$command_name" = admin ]; then
+    if [ "${#attempted[@]}" = 0 ]; then suffix="; nothing changed"; else suffix="; $(written_text)"; fi
+  fi
+  reported=true
+  echo "litellm:${command_name:-keys}: $1$suffix" >&2
   exit 1
 }
 # bounded <step> <command>...: runs the command under the deadline; fails naming the step when it fails or runs out.
@@ -46,8 +66,19 @@ in_cluster() {
 json() { printf '%s' "$reply" | yq --input-format json "$@"; }
 
 scratch="$(mktemp -d)"
-forward=""
-trap '[ -z "$forward" ] || kill "$forward" 2>/dev/null || true; rm -rf "$scratch"' EXIT
+forwards=()
+# on_exit: ends the port-forwards and the Keycloak sign-in; an admin run that sent a write and ends without having said
+# so (a signal) names it.
+on_exit() {
+  local exit_status=$? pid
+  if [ "$command_name" = admin ] && [ "$reported" = false ] && [ "$exit_status" != 0 ] && [ "${#attempted[@]}" != 0 ]; then
+    echo "litellm:admin: interrupted; $(written_text)" >&2
+  fi
+  for pid in "${forwards[@]}"; do kill "$pid" 2>/dev/null || true; done
+  remove_config
+  rm -rf "$scratch"
+}
+trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -89,6 +120,22 @@ request() {
 # ask <request argument>...: request, ending the command on a failure.
 ask() { request "$@" || fail "$failure"; }
 
+# start_forward <namespace> <service> <port>: port-forwards the Service to a free local port, which it sets as
+# forwarded_port.
+start_forward() {
+  local pid log="$scratch/forward-$2.log"
+  timeout 10m kubectl --namespace "$1" port-forward "service/$2" ":$3" >"$log" 2>&1 &
+  pid=$!
+  forwards+=("$pid")
+  forwarded_port=""
+  for _ in $(seq 30); do
+    forwarded_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$log" | head -n 1)"
+    [ -z "$forwarded_port" ] || break
+    kill -0 "$pid" 2>/dev/null || fail "kubectl port-forward to the Service $2 ended"
+    sleep 1
+  done
+  [ -n "$forwarded_port" ] || fail "kubectl port-forward to the Service $2 did not start within 30 seconds"
+}
 # connect: reads the master key and starts the port-forward to LiteLLM; sets master_key and local_port.
 connect() {
   local secret_data port
@@ -99,16 +146,8 @@ connect() {
   [ -n "$master_key" ] || fail "the Secret litellm holds an empty master_key"
   port="$(in_cluster "reading the Service litellm" --namespace "$namespace" get service litellm \
     -o jsonpath='{.spec.ports[0].port}')"
-  timeout 10m kubectl --namespace "$namespace" port-forward service/litellm ":$port" >"$scratch/forward.log" 2>&1 &
-  forward=$!
-  local_port=""
-  for _ in $(seq 30); do
-    local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$scratch/forward.log" | head -n 1)"
-    [ -z "$local_port" ] || break
-    kill -0 "$forward" 2>/dev/null || fail "kubectl port-forward to the Service litellm ended"
-    sleep 1
-  done
-  [ -n "$local_port" ] || fail "kubectl port-forward to the Service litellm did not start within 30 seconds"
+  start_forward "$namespace" litellm "$port"
+  local_port="$forwarded_port"
 }
 
 # applied_revision: the Git revision Flux applied to the layer.
@@ -209,6 +248,11 @@ found_keys() {
   key_count="$(yq --input-format json 'length' <<<"$holders")"
   found_row="$(yq --input-format json --output-format json --indent 0 '.[0]' <<<"$holders")"
 }
+# read_budget <id>: sets found to the budget's row as JSON, or null.
+read_budget() {
+  ask "listing the budgets" /budget/list
+  found="$(json --output-format json --indent 0 '[.[] | select(.budget_id == "'"$1"'")] | .[0]')"
+}
 # key_hash: the stored hash of the key found_keys found.
 key_hash() { yq --input-format json '.token' <<<"$found_row"; }
 
@@ -245,8 +289,7 @@ keys_command() {
   # The person budget, then each app in name order.
   desired="$(PERIOD="$period" yq --output-format json --indent 0 '{"max_budget": .person_budget,
     "budget_duration": strenv(PERIOD)}' <<<"$table")"
-  ask "listing the budgets" /budget/list
-  found="$(json --output-format json --indent 0 '[.[] | select(.budget_id == "'"$budget_id"'")] | .[0]')"
+  read_budget "$budget_id"
   differences "$desired" "$found"
   if [ "$found" = null ]; then kind=budget-new; else kind=budget-update; fi
   add_change "$kind" "$budget_id"
@@ -329,6 +372,77 @@ key_command() {
   echo "litellm:key: $app made"
 }
 
+# The admin budget has no limit and resets monthly; its group marks who is on it.
+admin_budget=litellm-admin admin_period=1mo admin_group=/services/litellm/admin
+
+# read_customer: sets customer_row to the person's customer row as JSON, or null when LiteLLM has none.
+read_customer() {
+  request "reading the customer row of $username" "/customer/info?end_user_id=$fingerprint" || [ "$status" = 404 ] ||
+    fail "$failure"
+  if [ "$status" = 404 ]; then customer_row=null; else customer_row="$(json --output-format json --indent 0 '.')"; fi
+}
+# make_admin_budget: creates the admin budget or corrects its fields, then reads it back.
+make_admin_budget() {
+  local desired path
+  desired="$(PERIOD="$admin_period" yq --null-input --output-format json --indent 0 \
+    '{"max_budget": null, "budget_duration": strenv(PERIOD)}')"
+  read_budget "$admin_budget"
+  differences "$desired" "$found"
+  [ "$change_fields" != "{}" ] || return 0
+  if [ "$found" = null ]; then path=/budget/new; else path=/budget/update; fi
+  attempted+=("budget $admin_budget")
+  ask "writing budget $admin_budget" "$path" "{\"budget_id\":\"$admin_budget\",${change_fields#\{}" discard
+  read_budget "$admin_budget"
+  differences "$desired" "$found"
+  [ "$change_fields" = "{}" ] || fail "the budget $admin_budget did not read back as written"
+}
+# link_customer: puts the person's customer row, as read before the first write, on the admin budget, by a new row or a
+# change of its budget alone, then reads it back.
+link_customer() {
+  local path=/customer/update
+  [ "$(yq '.budget_id' <<<"$customer_row")" != "$admin_budget" ] || return 0
+  [ "$customer_row" != null ] || path=/customer/new
+  attempted+=("customer row of $username")
+  ask "writing the customer row of $username" "$path" \
+    "{\"user_id\":\"$fingerprint\",\"budget_id\":\"$admin_budget\"}" discard
+  read_customer
+  [ "$(yq '.budget_id' <<<"$customer_row")" = "$admin_budget" ] || fail "the customer row of $username did not read back on $admin_budget"
+}
+
+admin_command() {
+  local issuer identity person_groups
+  username="${1-}"
+  [ "$#" = 1 ] && [ -n "$username" ] || fail "usage: scripts/litellm_keys.sh admin <username>"
+  realm="$(yq '.realm' "$(dirname "${BASH_SOURCE[0]}")/../infrastructure/keycloak/realm.yaml")"
+  connect
+  sign_in_kcadm
+  find_person "$username"
+  start_forward keycloak keycloak http
+  reply="$(curl --silent --fail --max-time 30 "http://127.0.0.1:$forwarded_port/realms/$realm/.well-known/openid-configuration" \
+    </dev/null)" || fail "Keycloak's discovery document of the realm cannot be read"
+  issuer="$(json '.issuer')"
+  [[ $issuer == http*://* ]] || fail "Keycloak's discovery document names no issuer"
+  # agent-runtime's person_fingerprint: the compact JSON of [issuer, subject], whose sha256 follows fp-.
+  identity="$(ISSUER="$issuer" SUBJECT="$person_id" yq --null-input --output-format json --indent 0 '[strenv(ISSUER), strenv(SUBJECT)]')"
+  fingerprint="fp-$(printf '%s' "$identity" | sha256sum | cut -d ' ' -f 1)"
+  kcadm get "group-by-path$admin_group" --target-realm "$realm" --fields id --format csv --noquotes >/dev/null ||
+    fail "$realm holds no $admin_group or Keycloak cannot be read"
+
+  # The state this preflight enumerates is read before the first write, and each step is written and read back in this order, so a customer without a limit never stands without the marker.
+  read_customer
+  make_admin_budget
+  ensure_member "$admin_group"
+  person_groups="$(kcadm get "users/$person_id/groups" --target-realm "$realm" --fields path --format csv --noquotes)" ||
+    fail "$unreadable"
+  grep -qxF "$admin_group" <<<"$person_groups" || fail "$username did not read back in $admin_group"
+  link_customer
+  if [ "${#attempted[@]}" = 0 ]; then
+    echo "litellm:admin: $username unchanged"
+  else
+    echo "litellm:admin: $username is in $admin_group on the budget $admin_budget; written: $(written_list)"
+  fi
+}
+
 case "${1-}" in
   keys)
     command_name=keys
@@ -340,5 +454,10 @@ case "${1-}" in
     shift
     key_command "$@"
     ;;
-  *) fail "usage: scripts/litellm_keys.sh keys [--plan] | key <app>" ;;
+  admin)
+    command_name="admin"
+    shift
+    admin_command "$@"
+    ;;
+  *) fail "usage: scripts/litellm_keys.sh keys [--plan] | key <app> | admin <username>" ;;
 esac

@@ -213,8 +213,8 @@
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
-  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells", the "P9f cells"
-  and the step of `tests/no_network/`, the shortest part; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
+  check, the "P7a cells", the steps "songmaker's web" and "songmaker's workers", the "P9c cells", the Alertmanager step and the Grafana step;
+  `backup` holds the "P7d cells", the "P9f cells", the "P9c-2 cells" and the step of `tests/no_network/`; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
   assertion runs in all three, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
@@ -418,9 +418,10 @@
   each Schedule the cluster holds, and the recording rule of the newest completed Backup has one for each namespace of
   `$BACKUP_NAMESPACES`.
   The step "P9b cells" plants a backdated and a fresh row in each of the five tables through the Postgres pod and runs a
-  Job made from the CronJob: it prints one deletion in each count and leaves the fresh rows and the idle customers
-  with a budget or with spend, a second run prints zeros, and the first log holds no planted value; its Pod ran in a
-  Namespace enforcing `restricted` with its Postgres's image.
+  Job made from the CronJob, with `litellm-expire`'s own schedule held off and restored on every exit: it prints one
+  deletion in each count and leaves the fresh rows and the idle customers with a budget or with spend, a second run
+  prints zeros, and the first log holds no planted value; its Pod ran in a Namespace enforcing `restricted` with its
+  Postgres's image.
   The part `postgres` also runs `tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh`,
   which prints names, counts and verdicts, never a Secret value, the finished file or Alertmanager's status API: the
   StatefulSet is Ready as a non-root user on a Bound Retain claim with prune disabled, Prometheus lists one active
@@ -444,7 +445,19 @@
   front's rules name; `litellm:key hopin` makes the row from a generated value in the Secret `hopin`, a client Pod in
   `hopin`, which reads the header line from a mounted Secret through `curl --header @file`, gets 200 from the front's `GET /v1/models` with it, a second run prints `unchanged`, and a changed
   value, one without `sk-`, a missing key and an app outside the table are refused and change no row; no output holds a
-  value, the master key or the value's sha256. The job `checks` runs `tests/litellm/failed_write_names_what_is_done.sh`
+  value, the master key or the value's sha256. The step "P9c-2 cells" of part `backup` (`tests/litellm/admin_budget_follows_the_fingerprint_and_keeps_spend.sh`)
+  makes people in the realm and drives `litellm:admin`: an unknown name and a service account are refused with nothing
+  changed, no budget and no customer row; a new admin gets a row under the fingerprint, which the cell computes in Python with
+  agent-runtime's recipe, on the budget with no limit and `1mo`, and joins the group; a finite admin budget is corrected
+  while another admin's row stays; a row on the person budget and one with no budget move with spend and alias
+  unchanged; a mocked call past the person budget is refused for an ordinary person by the person limit (the error's type and the
+  start of its message, never printed) and passes for the admin; the cell first asserts the starting budgets, the moved row on the person budget and the other on none; a second
+  run prints `unchanged`, and no output holds an id, a fingerprint or a key. The job `checks` runs
+  `tests/litellm/admin_names_what_a_failed_write_may_have_left.sh` against a fake kubectl, kcadm and curl: a missing
+  argument is refused with no call, the writes come in order, a finished run says what it wrote and a second run sends
+  none, a customer row that cannot be read before the first write ends the run with nothing written, a failure or a lost
+  answer at each of the five writes, a failed read-back after each of three, an INT or a TERM name what may be written
+  and a rerun completes it with the spend kept, and no output holds an id, even when kcadm's diagnostic quotes one. It also runs `tests/litellm/failed_write_names_what_is_done.sh`
   against a fake kubectl and curl: a write that fails midway stops the rest, names what was made, the one that failed,
   also when its answer was lost, and what was not made, and prints no reply body; a budget-only change sends no period;
   a table without a number for the person budget or a row's limits, an absent revision, one that changes while the table
@@ -641,6 +654,17 @@
   kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
   never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body. The
   rpm and tpm limits are not in the table and stay as they are.
+  `mise run litellm:admin <username>` is the unlimited AI budget of one admin, through the same script: it reads the person
+  as `keycloak:agent-owner` does (`scripts/keycloak_kcadm.sh`, which both tasks source, and whose kcadm diagnostics this
+  command discards, since they can quote a URL with the person's id), the realm's issuer from the public discovery
+  document and the group `/services/litellm/admin`, and LiteLLM's budget `litellm-admin` and customer row, all before
+  the first write; it then writes and reads back, in this order, the budget (no limit, `1mo`, created or corrected), the membership and the
+  customer row, which is `/customer/new` under agent-runtime's `person_fingerprint` of issuer and person id or
+  `/customer/update` of `budget_id` alone, so spend and other fields stay. A second run prints `<username> unchanged`, and a finished run prints what it wrote.
+  A missing argument, a name no person carries and a service account's name end in `nothing changed`; a failure, a lost
+  answer, a failed read-back or a signal after a write names what was written or may have been and says that running it
+  again completes it; nothing is rolled back and no output holds an id, the fingerprint or a key. Removing an admin is
+  not built.
 - `infrastructure/legal/`: the legal sections, the three pages and their assets at `hallucinai.de`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
   is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
