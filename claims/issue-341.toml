@@ -1,0 +1,8 @@
+claim_id = "f38c9be17cca47d2835a3f5819ebedf4"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "0a43ebe78d8df109f5cdb96b6f069da6cf621d39"
+branch = "claude/issue-341-speech-and-hopin-renamed"
+scope = [".github/workflows/ci.yml", "apps/hopin/hopin.yaml", "apps/speech-runtime/speech-runtime.yaml", "docs/personal-data.md", "infrastructure/gatus/gatus-config.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/hopin", "infrastructure/legal/built", "infrastructure/legal/sections/speech", "infrastructure/legal/sections/speech-runtime", "infrastructure/legal/stand.toml", "src/legal/src/legal/build.py", "src/legal/tests/test_build.py"]
+opened_commit = "eee3846ff6e4f3e89b059665188a1ec21a184a16"
+whole_reason = "One change swaps both images, so Gatus's name, the legal section's key with its directory and stand, and hopin's refreshed texts with the rebuilt pages land together, or the cluster, images and legal checks go red."
