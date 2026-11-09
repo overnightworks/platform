@@ -1,0 +1,8 @@
+claim_id = "f0fd4412ad4048829786efc356dba73e"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "4dc1f150d2724cf20dcb158d3e18171e564d90f8"
+branch = "claude/issue-260-cluster-runs-the-workflows-commit"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "tests/flux", "tests/secrets/serve_encrypted_secrets_as_platform_secrets.sh"]
+opened_commit = "5649dfb96c6f3255243313d912ea44090331d498"
+whole_reason = "The checkout, the served source, the overlay's url and ref, the checks that name the candidate and the document describe one choice of commit and change together."
