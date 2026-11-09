@@ -3,11 +3,11 @@ locals {
   managed = toset([
     "aco",
     "agent-runtime",
-    "agents",
     "appkit",
     "hal",
     "hopin",
     "marketplace",
+    "personas",
     "platform",
     "platform-secrets",
     "presentator",
