@@ -1,0 +1,59 @@
+# presentator's state: the database, the bare mirrors of the deck sources and the built talks, and the claim the web and
+# the build worker share for the worker's socket. The sizes are nominal, as local-path enforces no capacity. The class
+# retains each volume and the annotation keeps a prune from taking a claim.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: database
+  namespace: presentator
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mirrors
+  namespace: presentator
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: builds
+  namespace: presentator
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Holds only the worker's socket, which a restart of the worker recreates.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: build-socket
+  namespace: presentator
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi

@@ -1,0 +1,38 @@
+# The web deletes the build worker's pod after each life and has no other right in the API; the worker's ServiceAccount
+# is bound to nothing.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: web
+  namespace: presentator
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: build-worker
+  namespace: presentator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: delete-build-worker
+  namespace: presentator
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    resourceNames: [build-worker-0]
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: delete-build-worker
+  namespace: presentator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: delete-build-worker
+subjects:
+  - kind: ServiceAccount
+    name: web
+    namespace: presentator
