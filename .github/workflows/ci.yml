@@ -511,6 +511,13 @@ jobs:
           APP_NAMESPACE: hopin
         run: tests/litellm/keys_table_drives_budgets_and_the_app_key.sh
 
+      # The step changes songmaker's database and audio claim, which no later step of this part reads.
+      - name: P7f cells
+        if: matrix.part == 'postgres'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+        run: tests/backup/load_replaces_database_and_files_together.sh
+
       - name: Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind on the node
         if: matrix.part == 'backup'
         env:
