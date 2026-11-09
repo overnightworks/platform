@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drive scripts/github_meta.sh and `mise run secrets:github-host-keys` against a fake curl that records its arguments and
 # its stdin: a set GITHUB_META_TOKEN reaches curl's stdin as an Authorization header and no argument, output or trace,
-# an unset or empty one leaves the read without any Authorization, and a token outside the Bearer alphabet is refused by
+# an unset or empty one leaves the read without any Authorization, and a token outside the token alphabet is refused by
 # the variable's name before curl starts.
 # Usage: mise exec -- tests/secrets/github_meta_token_is_refused_or_reaches_only_curls_stdin.sh
 set -euo pipefail
@@ -78,13 +78,13 @@ check_refused() {
   [ ! -s "$FAKE_RECORD/output" ] || fail "a token with $name printed on stdout"
   [ ! -e "$FAKE_RECORD/arguments" ] || fail "curl started for a token with $name"
   grep --quiet --fixed-strings GITHUB_META_TOKEN "$FAKE_RECORD/errors" || fail "the refusal for $name does not name GITHUB_META_TOKEN"
-  for part in ghs_a 'a"b' 'url =' x.invalid; do
+  for part in ghs_a 'a"b' '"' 'url =' x.invalid; do
     ! grep --quiet --fixed-strings -- "$part" "$FAKE_RECORD/errors" || fail "the refusal for $name holds a part of the value"
   done
 }
 check_refused quote 'ghs_a"b'
 check_refused newline $'ghs_a\nurl = https://x.invalid'
-echo "a token outside the Bearer alphabet is refused by name before curl starts"
+echo "a token outside the token alphabet is refused by name before curl starts"
 
 # The script and the task under bash -x: the trace holds no token.
 new_record traced
