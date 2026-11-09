@@ -22,3 +22,18 @@ import {
   to = module.organization.github_organization_custom_properties.quality_gate
   id = "quality_gate"
 }
+
+import {
+  to = module.organization.github_organization_custom_properties.code_scanning_exempt
+  id = "code_scanning_exempt"
+}
+
+import {
+  to = module.organization.github_repository_custom_property.platform_secrets_code_scanning_exempt
+  id = "overnightworks:platform-secrets:code_scanning_exempt"
+}
+
+import {
+  to = module.organization.github_organization_ruleset.code_scanning_required
+  id = "26872357"
+}

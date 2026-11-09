@@ -78,6 +78,19 @@ run "the_quality_property_schema_is_true_false_and_editable_by_organisation_acto
   }
 }
 
+run "the_quality_and_code_scanning_rulesets_refuse_merges_on_branches" {
+  command = plan
+
+  module {
+    source = "./organization"
+  }
+
+  assert {
+    condition     = github_organization_ruleset.code_scanning_required.target == "branch" && github_organization_ruleset.quality_verdict_required.target == "branch"
+    error_message = "Both rulesets must target branches, or they refuse no merge."
+  }
+}
+
 run "no_organisation_ruleset_has_a_bypass_actor" {
   command = plan
 
