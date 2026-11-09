@@ -208,6 +208,13 @@ def test_a_text_may_link_a_stable_id_of_another_block_while_its_target_exists():
     assert built([general(), service("anmeldung"), linking])
 
 
+def test_a_text_may_link_the_stable_id_of_the_general_part_that_names_the_log_period():
+    linking = app("alpha", body='<p><a href="#server-protokolle">l</a></p>\n')
+    protocols = general('<h2 id="server-protokolle">Server-Protokolle</h2>\n<p>a</p>\n')
+
+    assert built([protocols, linking])
+
+
 def test_a_link_to_a_stable_id_whose_block_left_refuses_the_run():
     linking = app("alpha", body='<p><a href="#anmeldung">l</a></p>\n')
 

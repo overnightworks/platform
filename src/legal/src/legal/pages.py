@@ -36,6 +36,7 @@ STABLE_IDS: Mapping[str, frozenset[str]] = {
             "kein-tracking",
             "automatisierte-entscheidungen",
             "pseudonym",
+            "server-protokolle",
             "anmeldung",
             "agent-dienst",
             "sprachdienst",
