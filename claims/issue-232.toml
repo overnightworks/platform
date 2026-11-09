@@ -1,8 +1,0 @@
-claim_id = "d674bf77f9854a3783cba13a2ca53f0d"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "acc0bf95365708348d0a8604eac223ebfc179038"
-branch = "claude/issue-232-p9a4a-app-texts"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "docs/legal-sections.md", "infrastructure/legal", "mise.toml", "src/legal", "tests/legal"]
-opened_commit = "42d3f75bbbbb06ad696ee1ce9daa3dba31b10131"
-whole_reason = "One move: the app texts, the list that declares them, the build that needs them and the cell that proves them equal to their releases prove nothing apart."
