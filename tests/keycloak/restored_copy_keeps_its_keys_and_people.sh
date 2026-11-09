@@ -83,12 +83,15 @@ echo "key ids of $realm: copy ${copy_kids//$'\n'/ }, evidence ${evidence_kids//$
 # with print_column it prints that column of every row, else it prints the stream without the rows whose column value
 # is in added.
 rows_by_column='BEGIN { count = split(added, ids, " "); for (i = 1; i <= count; i++) skip[ids[i]] = 1 }
-  /^COPY / { field = 0; header = $0; sub(/^[^(]*[(]/, "", header); sub(/[)].*/, "", header)
+  /^COPY / { field = 0; seen = 1; header = $0; sub(/^[^(]*[(]/, "", header); sub(/[)].*/, "", header)
+    table = $2; sub(/^[^.]*[.]/, "", table)
     columns = split(header, names, /, */); for (i = 1; i <= columns; i++) if (names[i] == column) field = i
+    if (column != "" && !field) { print "the COPY of " table " has no column " column > "/dev/stderr"; missing = 1 }
     copying = 1; if (!print_column) print; next }
   copying && /^\\[.]$/ { copying = 0; if (!print_column) print; next }
   copying && field { split($0, cells, "\t"); if (print_column) { print cells[field]; next } if (cells[field] in skip) next }
-  { if (!print_column) print }'
+  { if (!print_column) print }
+  END { if (!seen) { print "the stream holds no COPY of the table" > "/dev/stderr"; missing = 1 }; if (missing) exit 1 }'
 # The service accounts a realm-file client gained since the dump: user ids that stay in this script; a person or any
 # other added row shows up as a difference in the digests below, which skip only these users' rows.
 declared_clients="$(yq "[.clients[].clientId] | map(\"'\" + . + \"'\") | join(\",\")" "$realm_file")"
@@ -115,6 +118,7 @@ for table_and_column in user_entity:id credential: user_group_membership:user_id
       awk -v column="$3" -v added="$4" "$5" | sh /etc/postgres-checks/table-digests.sh' \
     sh "$table" "$remote_deadline" "$column" "$added_service_accounts" "$rows_by_column")" ||
     step_failed "$?" "reading the database's $table"
+  [ -n "$dumped" ] && [ -n "$loaded" ] || fail "$table: the digest of the dump or of the database is empty, though it holds a line for every table"
   verdict=equal
   [ "$dumped" = "$loaded" ] || { verdict=DIFFERS; outcome=1; }
   loaded_rows="${loaded##* }" dumped_rows="${dumped##* }"
@@ -138,9 +142,12 @@ client_secrets='copying && /^\\[.]$/ { copying = 0; next }
     header = $0; sub(/^[^(]*[(]/, "", header); sub(/[)].*/, "", header)
     split("", column); columns = split(header, names, /, */)
     for (i = 1; i <= columns; i++) column[names[i]] = i
+    required["realm"] = "id name"; required["client"] = "client_id realm_id secret"
+    needed = split(required[table], needs, " ")
+    for (i = 1; i <= needed; i++) if (!(needs[i] in column)) { print "the COPY of " table " has no column " needs[i] > "/dev/stderr"; missing = 1 }
     copying = 1
   }
-  END { for (i = 1; i <= clients; i++) if (realm_id != "" && client_realm[i] == realm_id && client_secret[i] != "\\N") print client_name[i] "\t" client_secret[i] }'
+  END { if (missing) exit 1; for (i = 1; i <= clients; i++) if (realm_id != "" && client_realm[i] == realm_id && client_secret[i] != "\\N") print client_name[i] "\t" client_secret[i] }'
 digest_each='while IFS="$(printf "\t")" read -r client secret; do
       printf "%s\t%s\n" "$client" "$(printf %s "$secret" | sha256sum | cut -d" " -f1)"
     done'

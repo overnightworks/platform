@@ -80,7 +80,11 @@ case "$verb" in
     case "$target/$container" in
       postgres-0/postgres)
         if ! loaded; then
-          { [ "$stdin_flag" = true ] && [ "${1-}" = sh ]; } || refuse "kubectl exec into the database before the load"
+          { [ "$stdin_flag" = true ] && [ "${1-}" = sh ] && [ "${2-}" = -c ] &&
+            [[ ${3-} == *"pg_restore --data-only"* && ${3-} == *"--file=-"* ]]; } ||
+            refuse "kubectl exec into the database before the load other than sh -c around pg_restore --data-only ... --file=-"
+          # A read that loses its stdout and still exits 0.
+          [ ! -e "$scenario/silent-read" ] || exit 0
         fi
         # After the load, the programs are the body's: psql under env, or sh -c around pg_restore or pg_dump.
         if loaded; then
@@ -92,7 +96,9 @@ case "$verb" in
           case "${program[0]-}" in
             psql) ;;
             sh) { [ "${program[1]-}" = -c ] && [[ ${program[2]-} == *pg_restore* || ${program[2]-} == *pg_dump* ]]; } ||
-              refuse "kubectl exec sh that runs neither pg_restore nor pg_dump" ;;
+              refuse "kubectl exec sh that runs neither pg_restore nor pg_dump"
+              # A digest that loses its stdout and still exits 0.
+              if [ -e "$scenario/silent-digest" ] && [[ ${program[2]} == *table-digests.sh* ]]; then exit 0; fi ;;
             *) refuse "kubectl exec program ${program[0]-}" ;;
           esac
         fi
@@ -480,6 +486,8 @@ profile_case changed-attribute '(.attributes[] | select(.name == "email") | .val
 profile_case missing-attribute 'del(.attributes[] | select(.name == "lastName"))' 'attribute lastName is missing'
 profile_case agent-owner '.attributes += [{name: "agent_owner", multivalued: false, permissions: {view: ["admin"], edit: ["admin"]}}]' 'attribute agent_owner is extra'
 profile_case extra-key '. + {unmanagedAttributePolicy: "ENABLED"}' 'key unmanagedAttributePolicy is extra'
+# A quote and a backslash in the stored profile come through the COPY escape as the JSON the profile is.
+profile_case escaped-text '. + {note: "say \"hi\" and a\\b"}' 'key note is extra'
 profile_case missing-group 'del(.groups)' 'group user-metadata is missing'
 
 # ------------------------------------------------------ case 3: each platform-only object, alone
@@ -540,6 +548,11 @@ serve_copy
 drop_rows realm "$realm"
 run_load
 refused_before_the_load "^cutover:load: the dump holds no realm $realm\$"
+new_case read-returns-nothing
+serve_copy
+touch "$case_directory/silent-read"
+run_load
+refused_before_the_load '^cutover:load: the read of the dump returned no answer$'
 new_case pg_restore-fails
 serve_copy
 touch "$case_directory/fail/pg_restore"
@@ -618,6 +631,34 @@ run_load
 expect_status 1
 expect_line 'the dump holds no client secret of .*DIFFERS'
 
+# ------------------------------------------------------ the digests name a missing column and never read equal
+missing_column_case() {
+  new_case "missing-column-$1"
+  serve_copy
+  sed -i "1s/\\b$3\\b/${3}_renamed/" "$case_directory/$2/$1"
+  run_load
+  expect_status 1
+  expect_line "the COPY of $1 has no column $3\$"
+  expect_no_line 'client secret equal'
+}
+missing_column_case client live-tables secret
+missing_column_case client dump-tables secret
+missing_column_case user_attribute live-tables user_id
+missing_column_case user_entity dump-tables id
+new_case empty-digests
+serve_copy
+touch "$case_directory/silent-digest"
+run_load
+expect_status 1
+expect_line 'the digest of the dump or of the database is empty'
+expect_no_line 'rows in the database.*equal$'
+new_case missing-table
+serve_copy
+: >"$case_directory/live-tables/credential"
+run_load
+expect_status 1
+expect_line 'the stream holds no COPY of the table'
+
 # ------------------------------------------------------ cases 8 and 9: the admin group and the move
 new_case admin-group-missing
 serve_copy
@@ -672,6 +713,22 @@ echo "token not-a-key-of-the-evidence" >>"$evidence"
 run_load
 expect_status 2
 expect_no_line 'not-a-key-of-the-evidence'
+empty_logs
+# A line of the evidence without a space is a whole value: no output holds it.
+planted_values+=(LEAKEDEVIDENCELINE)
+new_case usage-unknown-key-without-space
+echo "API_KEY=LEAKEDEVIDENCELINE" >>"$evidence"
+run_load
+expect_status 2
+expect_line "$evidence holds a key that the evidence of cutover:preflight does not have"
+empty_logs
+# A relative evidence path would put the move-group dump in the checkout.
+new_case usage-relative-evidence
+cd "$case_directory"
+run_case load "$dump" evidence
+cd "$repository_root"
+expect_status 2
+expect_line 'the evidence path evidence is not absolute'
 empty_logs
 new_case usage-check-no-evidence-file
 run_case check "$case_directory/absent"
@@ -746,6 +803,7 @@ plant absolute-path-in-the-copy-check "$restored_copy" '/usr/bin/curl --silent h
 plant absolute-path-in-the-kcadm-library scripts/keycloak_kcadm.sh '/usr/bin/true'
 plant_anchor='  phase=after_load' plant psql-two-statements "$cutover_load" 'kubectl --namespace keycloak exec postgres-0 --container postgres -- env PGCONNECT_TIMEOUT=10 psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 "--command=SELECT 1; DELETE FROM client" || true'
 plant_anchor='  phase=after_load' plant other-program-after-the-load "$cutover_load" 'kubectl --namespace keycloak exec postgres-0 --container postgres -- rm -rf /var/lib/postgresql || true'
+plant_anchor='  phase=loading' plant other-sh-before-the-load "$cutover_load" 'kubectl --namespace keycloak exec --stdin postgres-0 --container postgres -- sh -c "rm -rf /var/lib/postgresql" </dev/null || true'
 plant env-in-the-script "$cutover_load" 'env FOO=1 true'
 
 echo "cutover:load and cutover:check name each difference and print no value: profile, objects, unreadable dumps, load, copy, secrets, admin group, move, usage, check, interception and read-only held"

@@ -51,6 +51,7 @@ usage() {
 # format cutover:preflight writes: one issuer, at least one key id and no other key than hal-main, platform and read-at.
 read_evidence() {
   local key value issuers=0
+  case "$1" in /*) ;; *) usage "the evidence path $1 is not absolute" ;; esac
   { [ -f "$1" ] && [ -r "$1" ]; } || usage "no readable evidence file $1"
   evidence_issuer="" evidence_kids=""
   while IFS=' ' read -r key value || [ -n "$key" ]; do
@@ -58,7 +59,7 @@ read_evidence() {
       issuer) issuers=$((issuers + 1)); evidence_issuer="$value" ;;
       kid) evidence_kids+="$value"$'\n' ;;
       hal-main | platform | read-at) ;;
-      *) usage "$1 holds the key '$key', which the evidence of cutover:preflight does not have" ;;
+      *) usage "$1 holds a key that the evidence of cutover:preflight does not have" ;;
     esac
   done <"$1"
   { [ "$issuers" = 1 ] && [ -n "$evidence_issuer" ] && [ -n "${evidence_kids//$'\n'/}" ]; } ||
@@ -170,6 +171,9 @@ gate() {
     while IFS= read -r line; do
       [ -z "$line" ] || { say "profile $line"; findings=$((findings + 1)); }
     done <<<"$differences"
+  elif ! grep -qx no-realm <<<"$read_dump"; then
+    say "the read of the dump returned no answer"
+    findings=$((findings + 1))
   fi
   [ "$findings" = 0 ] || fail "the gate refuses the dump with $findings findings"
   say "the gate passed: the dump's user profile equals realm.yaml's apart from agent_owner, and it holds no console-made object"
