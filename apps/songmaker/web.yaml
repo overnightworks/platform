@@ -25,8 +25,10 @@ spec:
       imagePullSecrets:
         - name: ghcr-pull
       securityContext:
-        # The kubelet verifies the image's numeric USER 1000 as non-root, so no runAsUser repeats it.
+        # The image's numeric USER, and the reading uid: the backup's PreBackupPod and k8up's Job pods copy it by the
+        # replacement in kustomization.yaml, so they read the audio files this pod writes.
         runAsNonRoot: true
+        runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
       initContainers:
