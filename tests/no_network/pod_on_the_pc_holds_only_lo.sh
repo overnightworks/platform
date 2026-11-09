@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pod_on_the_pc_holds_only_lo.sh: on the PC, shows that a Pod of the shape of pod.sh holds lo alone and reaches neither
-# the API's Service nor cluster DNS nor the node, while a default Pod beside it holds eth0 and reaches the first two.
+# the API's Service nor cluster DNS nor the node, while a default Pod beside it holds eth0 and reaches all three.
 # The Pods live in a throwaway Namespace without a Pod Security label, which is deleted on every exit. It prints names
 # and counts and changes nothing on the host. Reads through the PC's k3s kubeconfig unless KUBECONFIG is set; runs with
 # the locked tools: mise exec -- tests/no_network/pod_on_the_pc_holds_only_lo.sh.
@@ -37,13 +37,15 @@ dns_address="$(service_address kube-system kube-dns)"
 node_address="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')"
 [ -n "$api_address" ] && [ -n "$dns_address" ] && [ -n "$node_address" ] || fail "an address to probe is missing"
 
-[ "$(link_names isolated)" = lo ] || fail "the isolated Pod's links are '$(link_names isolated | tr '\n' ' ')', not lo alone"
+names="$(link_names isolated)" || exit 1
+[ "$names" = lo ] || fail "the isolated Pod's links are '$(tr '\n' ' ' <<<"$names")', not lo alone"
 ! reaches isolated "$api_address" 443 || fail "the isolated Pod reached the API's Service"
 ! resolves isolated kubernetes.default.svc.cluster.local "$dns_address" || fail "the isolated Pod resolved a name at cluster DNS"
 ! reaches isolated "$node_address" 10250 || fail "the isolated Pod reached the node"
 echo "pod/isolated holds lo alone and reaches neither the API's Service, cluster DNS nor the node"
 
-[ "$(link_names default | tr '\n' ' ')" = 'eth0 lo ' ] || fail "the default Pod's links are '$(link_names default | tr '\n' ' ')', not eth0 and lo"
+names="$(link_names default)" || exit 1
+[ "$(tr '\n' ' ' <<<"$names")" = 'eth0 lo ' ] || fail "the default Pod's links are '$(tr '\n' ' ' <<<"$names")', not eth0 and lo"
 reaches default "$api_address" 443 || fail "the default Pod did not reach the API's Service"
 resolves default kubernetes.default.svc.cluster.local "$dns_address" || fail "the default Pod did not resolve a name at cluster DNS"
 reaches default "$node_address" 10250 || fail "the default Pod did not reach the node"
