@@ -543,9 +543,10 @@
   to the Job. The Secret `keycloak` from `platform-secrets` holds config-cli's secret, each app client's and the agent
   client's (`client-agent-mozart`). The realm file declares Keycloak's built-in client scopes `profile` and `email`
   with all 16 mappers as Keycloak 26.8.1 ships them, since config-cli removes a mapper of a declared scope that the file
-  omits, and with `access.token.claim` and `introspection.token.claim` off on each: no access token carries a name or an
+  omits, and with `access.token.claim` and `introspection.token.claim` off on each: no access token carries a person's name or
   e-mail address, which no app reads there and the speech service has no use for, while ID token and userinfo keep them.
-  Turning it back is a commit setting them to `"true"`, since client scopes are `no-delete`. The realm file holds the user profile (Keycloak's default with `agent_owner`,
+  Turning it back is a commit setting them to `"true"`, since client scopes are `no-delete`. A Keycloak bump compares the declared `profile` and `email` scopes with the new
+  version's own, since config-cli otherwise overwrites them with the old copy. The realm file holds the user profile (Keycloak's default with `agent_owner`,
   readable and writable only by an administrator) and the agent objects: the groups `/agents`, `/agent-adders` and
   `/agent-owners`, the scope `agent-identity`, the client `agent-mozart` and its service account's groups; who owns or
   adds an agent is console data set by `keycloak:agent-owner`. The realm sets theme `hallucinai`, which Keycloak replaces with its own until an image carries it.

@@ -120,7 +120,7 @@ clientScopes:
   # Keycloak's built-in scopes, declared with every mapper as Keycloak ships it because config-cli removes a mapper of a
   # declared scope that the file leaves out. Only the access and introspection claims are off: no client or service
   # reads a name or an e-mail from an access token, which goes on to other services (speech), so it holds none of
-  # them (data minimisation). ID token and userinfo carry every claim as before. Setting "true" again turns it back.
+  # them (data minimisation). ID token and userinfo carry every claim; "true" turns a claim back on.
   - name: profile
     description: "OpenID Connect built-in scope: profile"
     protocol: openid-connect
