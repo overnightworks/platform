@@ -61,12 +61,14 @@ metadata:
   name: restore-test
 spec:
   schedule: "0 5 1 * *"
+  timeZone: UTC
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
       backoffLimit: 0
+      activeDeadlineSeconds: 3600
       template:
         spec:
           restartPolicy: Never

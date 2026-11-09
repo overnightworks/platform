@@ -242,3 +242,34 @@ tests:
           - {labels: 'namespace:kube_job_status_completion_time:backup_max{namespace="recent"}', value: -100000}
           - {labels: 'namespace:kube_job_status_completion_time:backup_max{namespace="renewed"}', value: 1500}
           - {labels: 'namespace:kube_job_status_completion_time:backup_max{namespace="stale"}', value: -800000}
+  - interval: 1m
+    name: a CronJob whose next time stays over an hour in the past fires ScheduledJobMissed after the hour and the for, and resolves when it moves forward
+    input_series:
+      - series: kube_cronjob_next_schedule_time{namespace="late", cronjob="stuck", pod="ksm-a", instance="a:8080"}
+        values: "0x90 100000x30"
+      - series: kube_cronjob_next_schedule_time{namespace="late", cronjob="stuck", pod="ksm-b", instance="b:8080"}
+        values: "0x90 100000x30"
+      - series: kube_cronjob_next_schedule_time{namespace="fine", cronjob="future"}
+        values: "100000x120"
+      - series: kube_cronjob_next_schedule_time{namespace="fine", cronjob="within-grace"}
+        values: "-1800+60x120"
+    alert_rule_test:
+      - {eval_time: 74m, alertname: ScheduledJobMissed}
+      - eval_time: 76m
+        alertname: ScheduledJobMissed
+        exp_alerts:
+          - exp_labels: {namespace: late, cronjob: stuck}
+            exp_annotations: {summary: The CronJob late/stuck did not start within an hour of its due time}
+      - eval_time: 90m
+        alertname: ScheduledJobMissed
+        exp_alerts:
+          - exp_labels: {namespace: late, cronjob: stuck}
+            exp_annotations: {summary: The CronJob late/stuck did not start within an hour of its due time}
+      - {eval_time: 93m, alertname: ScheduledJobMissed}
+  - interval: 1m
+    name: a suspended CronJob has no next time and stays quiet for ScheduledJobMissed
+    input_series:
+      - series: kube_cronjob_spec_suspend{namespace="paused", cronjob="off"}
+        values: "1x120"
+    alert_rule_test:
+      - {eval_time: 100m, alertname: ScheduledJobMissed}
