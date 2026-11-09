@@ -154,7 +154,7 @@ spec:
             matchLabels:
               app.kubernetes.io/name: web
       ports:
-        - port: http
+        - port: 8001
           protocol: TCP
   egress:
     - to:
