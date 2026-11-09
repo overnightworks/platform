@@ -14,6 +14,8 @@ Impact: the platform does not run on the PC before step 6. hal runs beside it th
      the plan lists only `/etc/rancher/k3s` and its config file;
    - present, with `k3s-uninstall.sh` beside it: an existing install, which goes on at step 9.
 
+- Before step 10, an agent: `loginctl show-user "$USER" --property=Linger`. It must print `Linger=yes`.
+
 ## Fix
 
 3. The operator: `scripts/bootstrap_pc.sh --only files,firewall,services`.
@@ -24,14 +26,14 @@ Impact: the platform does not run on the PC before step 6. hal runs beside it th
 8. The operator: `mise run check:pod-logs`. It passes.
 9. A new pod-log part or inotify limit, the operator: `scripts/bootstrap_pc.sh --only files,services`. For the pod-log
    parts, steps 4, 7 and 8 follow.
-10. New disk units, after step 1, an agent: `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`.
+10. New disk units, after step 1, which run in the operator's user manager, which lingers, an agent: `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`.
 
 Rollback: [remove a host part](remove-a-host-part.md), or [uninstall k3s](uninstall-k3s.md).
 
 ## Escalate
 
 Any other entry state, `/etc/rancher/k3s` without `/usr/local/bin/k3s` included, or a plan that lists more: stop and
-ask the operator. A missing age key file comes back only from his password manager.
+ask the operator. A `Linger=no` answer too: without lingering, Docuum and the clean timers stop when he logs out. A missing age key file comes back only from his password manager.
 
 ## Ruled
 
