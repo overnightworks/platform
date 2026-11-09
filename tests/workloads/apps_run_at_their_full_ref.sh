@@ -39,7 +39,7 @@ for manifest in $APP_MANIFESTS; do
   pull_secrets="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.imagePullSecrets[*].name}')"
   [ -n "$pull_secrets" ] || fail "the Deployment $deployment names no pull Secret"
   for secret in $pull_secrets $(kubectl --namespace "$namespace" get deployment "$name" \
-    -o jsonpath='{.spec.template.spec.volumes[*].secret.secretName}'); do
+    -o jsonpath='{.spec.template.spec.volumes[*].secret.secretName} {.spec.template.spec.volumes[*].projected.sources[*].secret.name}'); do
     grep -qxF "${namespace}_${secret}__Secret" <<<"$secrets_inventory" ||
       fail "the Secret $namespace/$secret is not in the inventory of $SECRETS_LAYER"
     secret_created="$(kubectl --namespace "$namespace" get secret "$secret" -o jsonpath='{.metadata.creationTimestamp}')"

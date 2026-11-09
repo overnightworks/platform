@@ -1,0 +1,170 @@
+# songmaker's web, pulled from its private package through the Secret ghcr-pull and started from the files of the
+# Secret songmaker and the namespace's Postgres password, both from platform-secrets, which songmaker reads from the
+# fixed directory /run/secrets. The init container migrates the database to the image's head; its first run may find
+# Postgres not ready yet, and the init container's backoff heals that. The image's own start runs through uv, which
+# wants a writable cache, so the container runs the installed program directly.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: songmaker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        # The kubelet verifies the image's numeric USER 1000 as non-root, so no runAsUser repeats it.
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: ghcr.io/overnightworks/songmaker/web:2026.11.08.1@sha256:99416458ee080a7e8a7dab45bddc61fcc4a692cfe8a52a9fe19e8f05044fc757
+          command: [/app/.venv/bin/alembic, upgrade, head]
+          env:
+            # The URL names no password: the file in /run/secrets is the password's one owner, the namespace's Postgres.
+            - name: DATABASE_URL
+              value: postgresql://songmaker@postgres:5432/songmaker
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: postgres-password
+              mountPath: /run/secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: web
+          image: ghcr.io/overnightworks/songmaker/web:2026.11.08.1@sha256:99416458ee080a7e8a7dab45bddc61fcc4a692cfe8a52a9fe19e8f05044fc757
+          command: [/app/.venv/bin/songmaker, server, --port, '8080']
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              value: postgresql://songmaker@postgres:5432/songmaker
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+            - name: LOG_FORMAT
+              value: json
+            - name: HOST
+              value: 0.0.0.0
+            # The Host check admits the public host and localhost, the host of the kubelet's probe.
+            - name: ALLOWED_HOSTS
+              value: songmaker.hallucinai.de,localhost
+            # The web refuses to start without its sign-in settings, though it asks Keycloak only at a sign-in.
+            - name: OIDC_ISSUER
+              value: https://auth.hallucinai.de/realms/hallucinai
+            - name: OIDC_CLIENT_ID
+              value: songmaker
+            - name: OIDC_CLIENT_SECRET_FILE
+              value: /run/secrets/oidc_client_secret
+            - name: PUBLIC_BASE_URL
+              value: https://songmaker.hallucinai.de
+          # The start runs the migrations under a lock before it serves, so a slow one is not a failed start.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: audio
+              mountPath: /app/data/audio
+            - name: queue-streams
+              mountPath: /app/data/queue-streams
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Every key of the Secret songmaker becomes a file, beside the Postgres password under the name songmaker reads.
+        - name: secrets
+          projected:
+            sources:
+              - secret:
+                  name: songmaker
+              - secret:
+                  name: postgres
+                  items:
+                    - key: password
+                      path: postgres_password
+        - name: postgres-password
+          projected:
+            sources:
+              - secret:
+                  name: postgres
+                  items:
+                    - key: password
+                      path: postgres_password
+        - name: audio
+          persistentVolumeClaim:
+            claimName: audiofiles
+        - name: queue-streams
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: songmaker
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Only the namespace's own pods reach the web; the route's senders join with the route.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web
+  namespace: songmaker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - port: http
+          protocol: TCP

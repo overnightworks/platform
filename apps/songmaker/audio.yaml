@@ -1,0 +1,16 @@
+# songmaker's audio files, the truth the web and the workers share. The size is nominal, as local-path enforces no
+# capacity. The class retains the volume and the annotation keeps a prune from taking the claim; no k8up annotation
+# backs it up yet.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audiofiles
+  namespace: songmaker
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
