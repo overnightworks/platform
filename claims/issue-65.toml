@@ -3,6 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "42f99139db79f32b17dbce8194745a3a76a3e471"
 branch = "claude/issue-65-images-job-follow-ups"
-scope = [".github/workflows/ci.yml", "scripts/verify_image_release.sh", "tests/images"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "scripts/verify_image_release.sh", "tests/images"]
 opened_commit = "cbcaa9f9a53f9ec1b5c7007dee7901152f8824cd"
 whole_reason = "The bullets all concern the one images job and its runner, and a fix to one (the render image, its timeout, the PC-only list) changes the lines the others read."
