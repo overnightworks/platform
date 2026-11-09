@@ -48,7 +48,7 @@ for manifest in $APP_MANIFESTS; do
     app_files="$(secret_files "$app_secret" "$app_namespace")"
     case "$app_namespace" in
       skat) app_keys="oidc_client_secret session_secret" ;;
-      songmaker) app_keys="oidc_client_secret session_secret songmaker_internal_token" ;;
+      songmaker) app_keys="oidc_client_secret session_secret songmaker_internal_token litellm_key" ;;
       *) app_keys="oidc_client_secret session_secret turn_key_id turn_api_token" ;;
     esac
     for key in $app_keys; do

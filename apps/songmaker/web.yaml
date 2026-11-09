@@ -83,6 +83,16 @@ spec:
               value: /run/secrets/oidc_client_secret
             - name: PUBLIC_BASE_URL
               value: https://songmaker.hallucinai.de
+            # The co-writer's gateway is the platform's AI front with the key of this app's row in keys.yaml; a partly set
+            # value stops the start, so the four stand together. MCP stays off without a client id.
+            - name: AGENT__BACKEND
+              value: litellm
+            - name: AGENT__GATEWAY__ORIGIN
+              value: http://litellm-front.litellm:4000
+            - name: AGENT__GATEWAY__KEY_FILE
+              value: /run/secrets/litellm_key
+            - name: AGENT__API_GROUP
+              value: /services/agent-service/api
           # The start runs the migrations under a lock before it serves, so a slow one is not a failed start.
           startupProbe:
             httpGet:
