@@ -710,7 +710,10 @@
   namespace whose k8up Schedule is older than 8 days has no Backup Job completed in 8 days, so a fresh cluster stays quiet,
   and mails `namespace`; two Schedules in one namespace count as one, and a stopped Prune or Check alone is not alerted. A k3d
   run that crosses 05:00Z on the 1st starts a `restore-test` that fails for certain, and one at 04:00Z on the 1st a k8up
-  `check` that may fail, either of which could fire during the Alertmanager step's count;
+  `check` that may fail, and P7a empties the database, so litellm-expire at 04:00Z daily and, on a Sunday, the Backup at
+  03:00Z and the Prune at 03:30Z could fire too, any of which could fire during the Alertmanager step's count. A Job whose
+  pod never starts has no start time, so `ScheduledJobFailed` does not judge it, and `restore-test` under `Forbid` then
+  stays silent;
   `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` for the devices under `/dev` only, without loop devices
   and `/dev/shm`: a snap's read-only squashfs is always full, and what is not under `/dev` is memory-backed or an
   overlay of the same disk. The job `flux-controllers` keeps only Pods in phase Running, since a finished Pod keeps a target that
