@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154 # task_name, realm and username belong to the sourcing script.
-# Sourced by the tasks that read a person and write a group membership through kcadm in Keycloak's own container,
-# signed in as config-cli, so no secret reaches the caller's shell. The caller sets task_name, realm, the functions
-# fail (which ends the task) and, in attempted, the writes it sent or may have sent; it sets an EXIT trap that calls
-# remove_config before sign_in_kcadm runs.
+# Sourced by the tasks that read a person or a group's members and write a group membership through kcadm in Keycloak's
+# own container, signed in as config-cli, so no secret reaches the caller's shell. The caller sets task_name, realm, the
+# functions fail (which ends the task) and, in attempted, the writes it sent or may have sent; it sets an EXIT trap that
+# calls remove_config before sign_in_kcadm runs.
 kcadm_path=/opt/keycloak/bin/kcadm.sh
 config_file=""
 unreadable="Keycloak cannot be read"

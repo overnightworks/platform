@@ -879,6 +879,16 @@ description = "Read whether the cutover's preconditions hold in the cluster, hal
 quiet = true
 run = "scripts/cutover_preflight.sh"
 
+[tasks."cutover:load"]
+description = "Refuse a Keycloak dump that differs from realm.yaml's user profile or holds a console-made platform object, else load it, check the copy against the dump and the evidence and move the AI group's members"
+quiet = true
+run = "scripts/cutover_load.sh load"
+
+[tasks."cutover:check"]
+description = "Compare the public issuer and its key ids with the evidence file"
+quiet = true
+run = "scripts/cutover_load.sh check"
+
 [tasks."litellm:key"]
 description = "Register the litellm_key of Secret <app> as the key of the row <app> in infrastructure/litellm/keys.yaml"
 quiet = true

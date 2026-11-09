@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# restored_copy_keeps_its_keys_and_people.sh <dump>: on the PC, after db:load-dump keycloak <dump> converged, shows
-# that config-cli's Job completed within its retries, that Keycloak created no temporary administrator, that the
-# realm's key ids equal those of the public issuer, and that config-cli left the users, their attributes, credentials
-# and group memberships as the dump holds them; the first apply on a dump older than an agent client adds only that
-# client's service account and memberships. A dump holds keys and hashes, so it prints names, counts, key ids and
-# outcomes, never a row and never a message of pg_restore or psql. Reads through the PC's k3s kubeconfig unless
-# KUBECONFIG is set; runs with the locked tools: mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump>.
+# restored_copy_keeps_its_keys_and_people.sh <dump> <evidence>: on the PC, after db:load-dump keycloak <dump> converged,
+# shows that config-cli's Job completed within its retries, that Keycloak created no temporary administrator, that the
+# copy's issuer and key ids equal those in the evidence file cutover:preflight wrote, that config-cli left the users, their
+# attributes, credentials and group memberships as the dump holds them, and that every client of the realm keeps the
+# secret the dump holds; the first apply on a dump older than an agent client adds only that client's service account and
+# memberships. A dump holds keys and hashes, so it prints names, counts, key ids and outcomes, never a row, a secret, a
+# digest and never a message of pg_restore or psql. Reads through the PC's k3s kubeconfig unless KUBECONFIG is set; runs
+# with the locked tools: mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump> <evidence>.
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
-dump="${1:?usage: $0 <dump>}"
+dump="${1:?usage: $0 <dump> <evidence>}" evidence="${2:?usage: $0 <dump> <evidence>}"
 [ -r "$dump" ] && [ ! -d "$dump" ] || fail "no readable dump file $dump"
+evidence_issuer="$(sed -n 's/^issuer //p' "$evidence")" evidence_kids="$(sed -n 's/^kid //p' "$evidence" | sort)" ||
+  fail "no readable evidence file $evidence"
+[ -n "$evidence_issuer" ] && [ -n "$evidence_kids" ] || fail "the evidence file $evidence holds no issuer or no key id"
 namespace=keycloak
 # A connection attempt ends past 10 s, a statement past 60 s and a lock wait past 10 s, as a lock the operator's session
 # holds could otherwise hold this check forever. pg_dump resets both for its session, so the container's own timeout,
@@ -54,9 +58,7 @@ temporary="$(in_postgres psql --no-psqlrc --tuples-only --no-align --set=ON_ERRO
 if [ "$temporary" = 0 ]; then echo "no client and no user is a temporary administrator"
 else echo "$temporary clients and users are temporary administrators: DIFFERS"; outcome=1; fi
 
-# The key ids of the copy, through a loopback forward, against those the public issuer serves.
-keycloak="$(kubectl --namespace "$namespace" get deployment keycloak -o json)" || fail "the Deployment keycloak cannot be read"
-public_url="$(yq -p json '.spec.template.spec.containers[0].env[] | select(.name == "KC_HOSTNAME") | .value' <<<"$keycloak")"
+# The issuer and key ids of the copy, through a loopback forward, against the evidence file's.
 realm_file="$(dirname "${BASH_SOURCE[0]}")/../../infrastructure/keycloak/realm.yaml"
 realm="$(yq '.realm' "$realm_file")"
 forward_log="$(mktemp)"
@@ -66,14 +68,16 @@ trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$forward_log"' EXIT
 timeout 30 bash -c 'until grep -q "^Forwarding from 127.0.0.1:" "$0"; do sleep 1; done' "$forward_log" ||
   fail "the port-forward to Keycloak did not start"
 local_url="http://127.0.0.1:$(sed -n 's/^Forwarding from 127.0.0.1:\([0-9]*\) .*/\1/p' "$forward_log" | head -n 1)"
-key_ids() {
-  curl --silent --fail --max-time 20 "$1/realms/$realm/protocol/openid-connect/certs" | yq -p json '.keys[].kid' | sort
-}
-copy_kids="$(key_ids "$local_url")" || fail "the copy's key set of $realm cannot be read"
-public_kids="$(key_ids "$public_url")" || fail "the key set of $public_url/realms/$realm cannot be read"
+copy_issuer="$(curl --silent --fail --max-time 20 "$local_url/realms/$realm/.well-known/openid-configuration" |
+  yq -p json '.issuer')" || fail "the copy's discovery of $realm cannot be read"
+copy_kids="$(curl --silent --fail --max-time 20 "$local_url/realms/$realm/protocol/openid-connect/certs" |
+  yq -p json '.keys[].kid' | sort)" || fail "the copy's key set of $realm cannot be read"
 verdict=equal
-[ -n "$copy_kids" ] && [ "$copy_kids" = "$public_kids" ] || { verdict=DIFFERS; outcome=1; }
-echo "key ids of $realm: copy ${copy_kids//$'\n'/ }, $public_url ${public_kids//$'\n'/ }, $verdict"
+[ "$copy_issuer" = "$evidence_issuer" ] || { verdict=DIFFERS; outcome=1; }
+echo "issuer of $realm: copy $copy_issuer, evidence $evidence_issuer, $verdict"
+verdict=equal
+[ -n "$copy_kids" ] && [ "$copy_kids" = "$evidence_kids" ] || { verdict=DIFFERS; outcome=1; }
+echo "key ids of $realm: copy ${copy_kids//$'\n'/ }, evidence ${evidence_kids//$'\n'/ }, $verdict"
 
 # The awk program below, passed as an argument so no quoting of a container script reaches it. It reads a COPY stream:
 # with print_column it prints that column of every row, else it prints the stream without the rows whose column value
@@ -119,5 +123,53 @@ done
 added_count=0
 [ -z "$added_service_accounts" ] || added_count="$(wc -w <<<"$added_service_accounts")"
 echo "$added_count service accounts of declared clients were added since the dump, with their memberships"
-[ "$outcome" = 0 ] || fail "the restored copy differs from the dump or from the public issuer"
-echo "the restored copy kept its key ids, its people and their memberships through config-cli"
+# Each client of the realm that holds a secret, as "<client> <sha256 of its secret>": from the dump through the awk program
+# below, which undoes COPY's escapes, and from the database through sha256 over the stored text. Both digests are made in
+# the container, so no secret reaches this shell, and only a client's name is printed.
+client_secrets='function unescape(text,   result, position, character) {
+    result = ""
+    for (position = 1; position <= length(text); position++) {
+      character = substr(text, position, 1)
+      if (character == "\\") {
+        position++; character = substr(text, position, 1)
+        if (character == "n") character = "\n"; else if (character == "t") character = "\t"; else if (character == "r") character = "\r"
+      }
+      result = result character
+    }
+    return result
+  }
+  copying && /^\\[.]$/ { copying = 0; next }
+  copying {
+    split($0, cell, "\t")
+    if (table == "realm") { if (cell[column["name"]] == realm) realm_id = cell[column["id"]] }
+    else { clients++; client_realm[clients] = cell[column["realm_id"]]; client_name[clients] = cell[column["client_id"]]; client_secret[clients] = cell[column["secret"]] }
+    next
+  }
+  /^COPY / {
+    table = $2; sub(/^[^.]*[.]/, "", table)
+    header = $0; sub(/^[^(]*[(]/, "", header); sub(/[)].*/, "", header)
+    split("", column); columns = split(header, names, /, */)
+    for (i = 1; i <= columns; i++) column[names[i]] = i
+    copying = 1
+  }
+  END { for (i = 1; i <= clients; i++) if (realm_id != "" && client_realm[i] == realm_id && client_secret[i] != "\\N") print client_name[i] "\t" unescape(client_secret[i]) }'
+dumped_digests="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail
+  bounded "$2" pg_restore --data-only --table=realm --table=client --file=- 2>/dev/null | awk -v realm="$3" "$1" |
+    while IFS="$(printf "\t")" read -r client secret; do
+      printf "%s %s\n" "$client" "$(printf %s "$secret" | sha256sum | cut -d" " -f1)"
+    done' sh "$client_secrets" "$remote_deadline" "$realm")" || step_failed "$?" "reading the dump's client secrets"
+copy_digests="$(in_postgres psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT
+  c.client_id || ' ' || encode(sha256(convert_to(c.secret, 'UTF8')), 'hex') FROM client c JOIN realm r ON r.id = c.realm_id
+  WHERE r.name = '$realm' AND c.secret IS NOT NULL" 2>/dev/null)" || step_failed "$?" "reading the database's client secrets"
+declare -A copy_digest_of=()
+while read -r client digest; do [ -z "$client" ] || copy_digest_of[$client]="$digest"; done <<<"$copy_digests"
+[ -n "$dumped_digests" ] || { echo "the dump holds no client secret of $realm: DIFFERS"; outcome=1; }
+while read -r client digest; do
+  [ -n "$client" ] || continue
+  if [ "${copy_digest_of[$client]-}" = "$digest" ]; then echo "$client: client secret equal"
+  else echo "$client: client secret DIFFERS"; outcome=1; fi
+  unset "copy_digest_of[$client]"
+done <<<"$dumped_digests"
+for client in "${!copy_digest_of[@]}"; do echo "$client: client secret not in the dump, not compared"; done
+[ "$outcome" = 0 ] || fail "the restored copy differs from the dump or from the evidence"
+echo "the restored copy kept its issuer, key ids, people, memberships and client secrets through config-cli"
