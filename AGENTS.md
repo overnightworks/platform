@@ -10,14 +10,11 @@
   `bootstrap:secrets`, since a bare run talks to `~/.kube/config`.
 - `mise run secrets:new-key` is the operator's: it creates the age key once in the file sops reads, `SOPS_AGE_KEY_FILE`
   if set and non-empty, else `${XDG_CONFIG_HOME:-~/.config}/sops/age/keys.txt` (mode 600 in a directory at 700), and
-  prints only its recipient. The PC's key lives in that file, and
-  its one copy in the operator's password manager.
+  prints only its recipient.
 - `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
   which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
   names and times only, and fails on any; it passes with no pod logs yet while `/var/log/pods` does not exist, and
-  fails when it cannot list the directory. It reads the clean's last start (the later of the service's and the timer's
-  last trigger, which a reboot keeps) and result, whoever started it, so a failed or never-run clean keeps failing the
-  check until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
+  fails when it cannot list the directory.
 - `mise run backup:fetch <namespace> <file>` writes the latest dump of the namespace's k8up repository to a new file at
   0600, through a Pod built from the restore test's init container, the file it refuses to overwrite; `db:load-dump
   <namespace> <file>` then restores it. It prints only names and sizes, since a dump holds keys and hashes.
@@ -43,74 +40,13 @@
   `credential`, `user_group_membership` and `user_attribute` equal the dump's by count and the sha256 of their sorted
   lines, except the rows of the service accounts that clients declared in `realm.yaml` gained since the dump, whose
   count its "added" line prints. It prints names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`.
-- `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
-  pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. `mise run bootstrap:flux` applies Flux from `clusters/pc/flux-system` through k3s's own kubeconfig and waits
-  for its controllers. `mise run bootstrap:secrets` is the operator's, since it reads the age key file: through k3s's
+- `mise run bootstrap:secrets` is the operator's, since it reads the age key file: through k3s's
   own kubeconfig it creates `sops-age` from that file and the deploy-key Secret `platform-secrets`, each only when
   missing, and passes the deploy key only once GitHub's meta API lists every host key it holds, a check an existing
-  one passes on every run. It then requests a reconcile of the source `platform-secrets`, and only when that is not
-  Ready within a minute prints the public key to add once, read-only, in GitHub's web form, requesting a reconcile
-  every 30 seconds for up to 15 minutes; then it waits for the Kustomization. Its lines name each object as `<Kind>
+  one passes on every run. Its lines name each object as `<Kind>
   <name>`; the `secrets:` tasks it calls print only their refusals, under their own prefix. A refusal reads `<task>:
   <condition>; <the way back>`, except the host-key filter's `; nothing passed on`, after which `bootstrap:secrets`
   names the way back.
-
-## The PC's host step
-
-- It runs from a checkout, in this order: `scripts/bootstrap_pc.sh --only tools`; `scripts/bootstrap_pc.sh plan
-  --detailed-exitcode` (the script sets `LC_ALL=C`, which mise needs to read a localized ufw), which must list only
-  the entry state's changes; `scripts/bootstrap_pc.sh --only files,firewall,services`, which writes
-  `/etc/rancher/k3s/config.yaml` and the pod-log parts, adds mise's one ufw rule on `cni0` before k3s first starts and
-  starts `pod-logs-clean.timer`; `mise run bootstrap:k3s`; `mise run bootstrap:flux`; `mise run bootstrap:secrets`, by
-  the operator; `sudo systemctl start pod-logs-clean.service` once, since the timer's first run is the coming midnight
-  and the check fails until a clean has run; `mise run check:pod-logs`, by the operator.
-- `/usr/local/bin/k3s` decides the entry state. Absent, it is a first install (no `mise:` ufw rule and no
-  `/var/lib/mise/bootstrap/firewall.json`; the plan lists `/etc/rancher/k3s`, its config file, the firewall and the
-  rule) or the uninstalled state (the `mise:` rule and the state file kept, `/etc/rancher` holding at most
-  `node/password`; the plan lists only `/etc/rancher/k3s` and its config file). Present with `k3s-uninstall.sh`
-  beside it, it is an existing install. Each plan also lists the pod-log parts and the timer until they are applied.
-  Any other state, `/etc/rancher/k3s` without `/usr/local/bin/k3s` included, stops the step.
-- The undo is `sudo /usr/local/bin/k3s-uninstall.sh`, then the firewall section applied with `state = "absent"`, which
-  deletes mise's rule and its state file and keeps the operator's own; deleting the section or reverting the
-  commit changes nothing on the host. The uninstall leaves `/etc/rancher/node/password` (k3s's node password), the
-  empty `/var/lib/rancher`, `/var/log/pods` and `/var/log/containers`. The kernel settings k3s made and the empty
-  `*mangle` tables it created in the IPv4 and IPv6 rules stay until a reboot, so the rules equal those before the
-  install apart from those two tables. The uninstall runs without
-  the operator's word only while the cluster holds no PersistentVolume, no claim and no Secret beyond its first
-  install's; an inventory that differs or cannot be read stops k3s with `k3s-killall.sh`, which deletes nothing, and
-  the uninstall waits for his word.
-- The pod-log parts (`host/pod-logs/`) keep every pod log line at most 30 days, as the apps' privacy texts promise:
-  `pod-logs.conf` in `/etc/tmpfiles.d/` deletes each file under `/var/log/pods` 28 days after its creation, with its
-  emptied directories, and every `.gz` and `.tmp` in each container directory whatever its age, since the kubelet
-  makes none and a copy's creation time is younger than its lines; `pod-logs-clean.timer` and `.service` in
-  `/etc/systemd/system/` run that clean daily by the wall clock and after boot, then `scripts/check_pod_logs.sh` as
-  `/usr/local/sbin/check-pod-logs`;
-  `container-log-max-files=2` in `host/k3s/config.yaml` keeps the kubelet from compressing a rotated file. A first
-  apply on an existing install is `scripts/bootstrap_pc.sh --only files,services`, then `mise run bootstrap:k3s`,
-  `sudo systemctl start pod-logs-clean.service` and `mise run check:pod-logs`. Their undo declares the timer
-  `state = "stopped"` and `enabled = false` and applies `--only services`, so systemd disables it while its file
-  exists; then deletes the timer's entry, which a plan reports unknown once its file is gone, declares the four files
-  `state = "absent"` and applies `--only files`; then drops the `kubelet-arg` and runs `mise run bootstrap:k3s`.
-  Deleted logs stay deleted.
-  `check-pod-logs` never reads Loki's copy of the lines, whose bound `infrastructure/loki/` sets; the `cluster` cell on
-  Loki's running configuration is the only check of it.
-- The inotify limits (`host/sysctl/inotify.conf`: 512 instances and 524288 watches per user, so root's inotify instances
-  suffice for the kubelet's log follows and for hal's containers beside k3s) go to `/etc/sysctl.d/90-inotify.conf` by
-  `scripts/bootstrap_pc.sh --only files,services`, whose file entry notifies `systemd-sysctl.service`, which the services
-  step restarts so the values apply without a reboot. It needs sudo, so it is the operator's. Undo: declare
-  the file `state = "absent"` and apply `--only files,services`; the kernel keeps the raised values until the next reboot, or
-  until `sudo sysctl -w` sets them back.
-- The disk's bounds run in the operator's user manager, which lingers, and need no sudo: after `scripts/bootstrap_pc.sh
-  --only tools` (the units' binaries must exist first), `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`
-  writes `~/.config/user-tmpfiles.d/disk.conf` from `host/disk/` and the units `dev.mise.docuum.service`,
-  `dev.mise.uv-cache-clean-weekly.timer`, `dev.mise.user-tmpfiles-clean-daily.timer` and
-  `dev.mise.trash-prune-daily.timer` with their services, from `mise.toml`, and restarts Docuum. uv's cache
-  is emptied weekly without `--force`. Undo: declare the
-  units, the Trash's included, `state = "absent"` and apply the same parts; `~/.config/user-tmpfiles.d/disk.conf` and
-  `~/.local/share/docuum/state.yml` stay and are inert without the units.
-- The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
-  `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
-  runs beside it.
 
 ## Layout
 
@@ -244,9 +180,7 @@
 - The Namespace has
   no Pod Security label, as the plugin mounts the hostPath `/var/lib/kubelet/device-plugins`; nothing else runs in it,
   and the plugin drops every capability. There is no time-slicing or sharing configuration, since the card belongs to
-  songmaker's music. `host/k3s/config.yaml` keeps `runtimes` disabled: k3s adds containerd's `nvidia` runtime only when
-  it starts with the NVIDIA container toolkit present, and if the plugin's Pod events name a missing runtime handler the
-  operator runs `sudo systemctl restart k3s` once, which does not touch Docker. A Pod naming the class without the limit might reach the card; the first workload that requests it decides on
+  songmaker's music. A Pod naming the class without the limit might reach the card; the first workload that requests it decides on
   an admission rule.
 - `infrastructure/storage/`: local-path-provisioner from upstream's manifest, vendored verbatim under a header naming
   its URL and sha256, and patched to one default class with `reclaimPolicy: Retain` and the path
@@ -435,6 +369,19 @@
   `opentofu = "1.13"` and `yq = "4"` in `mise.toml`: `mise.lock` holds the exact patch of a prefix pin, which Renovate
   sees as newer than the prefix it would write, so a patch release inside the prefix is not listed; that is accepted,
   since the exact patch moves only when a lane refreshes `mise.lock`. Opening pull requests is not built.
+- The pod-log parts (`host/pod-logs/`) keep every pod log line at most 30 days, as the apps' privacy texts promise:
+  `pod-logs.conf` in `/etc/tmpfiles.d/` deletes each file under `/var/log/pods` 28 days after its creation, with its
+  emptied directories, and every `.gz` and `.tmp` in each container directory whatever its age, since the kubelet
+  makes none and a copy's creation time is younger than its lines; `pod-logs-clean.timer` and `.service` in
+  `/etc/systemd/system/` run that clean daily by the wall clock and after boot, then `scripts/check_pod_logs.sh` as
+  `/usr/local/sbin/check-pod-logs`;
+  `container-log-max-files=2` in `host/k3s/config.yaml` keeps the kubelet from compressing a rotated file.
+- `check-pod-logs` never reads Loki's copy of the lines, whose bound `infrastructure/loki/` sets; the `cluster` cell on
+  Loki's running configuration is the only check of it.
+- uv's cache is emptied weekly without `--force`.
+- The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
+  `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
+  runs beside it.
 
 ## Owners
 
@@ -449,3 +396,4 @@
 
 - `docs/github-settings.md`: read when changing what `src/opentofu/github` declares or how a change reaches GitHub.
 - `docs/operations.md`: read when changing an expiry, the status page, Grafana, a scrape job, the PC's disk bounds or the AI budgets.
+- `docs/runbooks/`: read when installing, changing or removing a part of the PC, or when a host check fails.
