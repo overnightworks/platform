@@ -73,7 +73,7 @@ spec:
   path: ./apps/songmaker
   prune: true
   wait: true
-  timeout: 10m0s
+  timeout: 30m0s
   sourceRef:
     kind: GitRepository
     name: flux-system

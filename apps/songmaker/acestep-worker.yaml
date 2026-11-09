@@ -1,0 +1,227 @@
+# songmaker's GPU worker, the music model's host. It stands at 0 replicas, since hal's worker keeps the card until the
+# go, and it has no way to the internet: HF_HUB_OFFLINE makes a missing model fail at once and the NetworkPolicy lets it
+# send only to cluster DNS, Redis and the web. Its image is the same private package release as the web, its
+# environment and mounts follow the release's docker-compose.yml, and its one secret is the internal token, which the
+# worker reads from /run/secrets. /health answers 503 without the card, so readiness proves the card as well.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acestep-worker
+  namespace: songmaker
+spec:
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: acestep-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: acestep-worker
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      runtimeClassName: nvidia
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: acestep-worker
+          image: ghcr.io/overnightworks/songmaker/acestep-worker:2026.11.09.1@sha256:9e1762734ca8d007c0760988920e8f5033d6edf85705e19f0f7b00e5c6d27bcb
+          env:
+            - name: WORKER_ID
+              value: acestep-worker-0
+            # The host the database holds for this worker, which the music worker calls: the Service below.
+            - name: WORKER_HOST
+              value: acestep-worker
+            - name: WORKER_PORT
+              value: "8001"
+            - name: GPU_ID
+              value: "0"
+            - name: VRAM_BUDGET_GB
+              value: "24"
+            - name: ACESTEP_STARTUP_TIMEOUT_SECONDS
+              value: "540"
+            - name: ACESTEP_LM_MODEL_PATH
+              value: acestep-5Hz-lm-4B
+            - name: ACESTEP_SKIP_VRAM_PREFLIGHT
+              value: "0"
+            - name: ACESTEP_CHECKPOINT_DIR
+              value: /opt/acestep
+            - name: AUDIO_OUTPUT_DIR
+              value: /app/data/worker_output
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+            - name: CONTROL_PLANE_URL
+              value: http://web:8080
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: HF_HUB_DISABLE_XET
+              value: "1"
+            # The root is read-only: the caches that uv, triton and torch write beside the source or under HOME go to
+            # the memory-free scratch volume.
+            - name: HOME
+              value: /tmp
+            - name: UV_CACHE_DIR
+              value: /tmp/uv
+          ports:
+            - name: http
+              containerPort: 8001
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: audio
+              mountPath: /app/data/audio
+            - name: checkpoints
+              mountPath: /opt/acestep/checkpoints
+            - name: worker-output
+              mountPath: /app/data/worker_output
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: secrets
+          projected:
+            sources:
+              - secret:
+                  name: songmaker
+                  items:
+                    - key: songmaker_internal_token
+                      path: songmaker_internal_token
+        - name: audio
+          persistentVolumeClaim:
+            claimName: audiofiles
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: checkpoints
+        - name: worker-output
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acestep-worker
+  namespace: songmaker
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: acestep-worker
+  ports:
+    - name: http
+      port: 8001
+      targetPort: http
+---
+# Only the music worker and the web reach the worker's port; it sends only to cluster DNS, Redis and the web.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: acestep-worker
+  namespace: songmaker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: acestep-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: music-worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+      ports:
+        - port: http
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# The model checkpoints stay where the PC holds them: a copy would take 84 GB and sudo, and nothing mounts them at 0
+# replicas. The directory is owned by uid 1000, the worker's user. Retain keeps the directory when the volume object
+# goes, and the claimRef keeps any other claim from taking it. The mount is writable as in the release's compose file.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: songmaker-acestep-checkpoints
+spec:
+  capacity:
+    storage: 90Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: songmaker
+    name: checkpoints
+  hostPath:
+    path: /home/felix-hummert/srv/songmaker/vendor/acestep/checkpoints
+    type: Directory
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: checkpoints
+  namespace: songmaker
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ""
+  volumeName: songmaker-acestep-checkpoints
+  resources:
+    requests:
+      storage: 90Gi

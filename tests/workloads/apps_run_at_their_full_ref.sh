@@ -21,13 +21,20 @@ for manifest in $APP_MANIFESTS; do
     fail "the Namespace $namespace reads '$markers', not Pod Security restricted and prune disabled"
   echo "the Namespace $namespace enforces restricted, and Flux never prunes it"
 
-  kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
-  state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
-  [ "$state" = "1|Recreate" ] || fail "the Deployment $deployment reads '$state', not one Ready pod and Recreate"
+  # A Deployment at 0 replicas has no pod to be Available; its strategy and image are still judged.
+  replicas="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.replicas}')"
+  if [ "$replicas" = 0 ]; then
+    state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.replicas}|{.spec.strategy.type}')"
+    [ "$state" = "|Recreate" ] || fail "the Deployment $deployment reads '$state', not no pod at 0 replicas and Recreate"
+  else
+    kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
+    state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
+    [ "$state" = "1|Recreate" ] || fail "the Deployment $deployment reads '$state', not one Ready pod and Recreate"
+  fi
   image="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.containers[*].image}')"
   [[ $image =~ ^ghcr[.]io/${GITHUB_REPOSITORY_OWNER,,}/[^[:space:]:@]+:[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] ||
     fail "the Deployment $deployment runs '$image', not one full app ref"
-  echo "the Deployment $deployment is Available with one Ready pod, Recreate, and runs the full app ref $image"
+  echo "the Deployment $deployment at $replicas replicas has Recreate and runs the full app ref $image"
   # What the image cost the runner: the kubelet's own report of each pull, and the disk after it.
   kubectl --namespace "$namespace" get events --field-selector reason=Pulled \
     -o jsonpath='{range .items[*]}{.message}{"\n"}{end}'

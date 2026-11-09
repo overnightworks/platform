@@ -8,6 +8,7 @@ resources:
   - web.yaml
   - music-worker.yaml
   - scoring-worker.yaml
+  - acestep-worker.yaml
 components:
   - ../../infrastructure/postgres/backup
   - ../../infrastructure/postgres/backup/files
