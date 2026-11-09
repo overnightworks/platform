@@ -38,9 +38,12 @@ stays the one alert channel. (OPS-6)
 The job `flux-controllers` keeps only Pods in phase Running, since a finished Pod keeps a target that reads down, and a
 static job `alertmanager` scrapes Alertmanager, so `TargetDown` covers it. The job `songmaker` scrapes the web's `/metrics`
 with the bearer token of the Secret `songmaker-monitoring`, which holds the value of the key `songmaker_monitoring_token` of
-the Secret `songmaker`; `/metrics` answers 503 until both exist, so a rotated token is set in both Secrets. Its alerts are
-`NoOnlineAceStepWorker`, silent while the Deployment `acestep-worker` stands at 0 replicas, `SongmakerJobFailure` and
-`SongmakerBackgroundLoopUnhealthy`. (OPS-7)
+the Secret `songmaker`; the mount is optional, so a missing `songmaker-monitoring` shows as `TargetDown`, and `/metrics`
+answers 503 while `songmaker` lacks the key. Prometheus re-reads the token file on every scrape, but the web reads its
+settings once, so a rotated token is set in both Secrets and the web restarted. The job carries the labels of the web's
+Deployment, so a dead web mails `DeploymentUnavailable` and `TargetDown` only for a Ready web that refuses the scrape. Its
+alerts are `NoOnlineAceStepWorker`, silent while the Deployment `acestep-worker` stands at 0 replicas or is not Ready,
+`SongmakerJobFailure` and `SongmakerBackgroundLoopUnhealthy`. (OPS-7)
 
 ## The PC's disk and its bounds (`host/disk/` and the user units of `mise.toml`)
 

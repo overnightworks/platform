@@ -282,7 +282,7 @@ tests:
         values: "0x15 1x25"
     alert_rule_test:
       - {eval_time: 14m, alertname: NoOnlineAceStepWorker}
-      - {eval_time: 24m, alertname: NoOnlineAceStepWorker}
+      - {eval_time: 25m, alertname: NoOnlineAceStepWorker}
       - eval_time: 26m
         alertname: NoOnlineAceStepWorker
         exp_alerts:
@@ -296,7 +296,8 @@ tests:
       - series: kube_deployment_spec_replicas{namespace="songmaker", deployment="acestep-worker"}
         values: "1x32"
     alert_rule_test:
-      - eval_time: 11m
+      - {eval_time: 9m, alertname: NoOnlineAceStepWorker}
+      - eval_time: 10m
         alertname: NoOnlineAceStepWorker
         exp_alerts:
           - exp_labels: {status: online}
@@ -336,7 +337,7 @@ tests:
       - series: songmaker_background_loop_consecutive_failures{loop="stumbling"}
         values: "2x28"
     alert_rule_test:
-      - {eval_time: 7m, alertname: SongmakerBackgroundLoopUnhealthy}
+      - {eval_time: 8m, alertname: SongmakerBackgroundLoopUnhealthy}
       - eval_time: 9m
         alertname: SongmakerBackgroundLoopUnhealthy
         exp_alerts:
@@ -349,3 +350,70 @@ tests:
         exp_alerts:
           - exp_labels: {loop: dead}
             exp_annotations: {summary: The songmaker background loop dead is unhealthy}
+  - interval: 1m
+    name: a dead web mails only DeploymentUnavailable and a Ready web with a wrong token mails TargetDown
+    input_series:
+      - series: up{job="songmaker", instance="web.songmaker.svc:8080", namespace="songmaker", deployment="web"}
+        values: "0x20"
+      - series: kube_deployment_status_replicas_unavailable{namespace="songmaker", deployment="web"}
+        values: "1x20"
+      - series: up{job="songmaker", instance="ready.songmaker.svc:8080", namespace="songmaker", deployment="ready"}
+        values: "0x20"
+      - series: kube_deployment_status_replicas_unavailable{namespace="songmaker", deployment="ready"}
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels: {job: songmaker, instance: "ready.songmaker.svc:8080", namespace: songmaker, deployment: ready}
+            exp_annotations: {summary: "Prometheus cannot scrape songmaker at ready.songmaker.svc:8080"}
+      - eval_time: 11m
+        alertname: DeploymentUnavailable
+        exp_alerts:
+          - exp_labels: {namespace: songmaker, deployment: web}
+            exp_annotations: {summary: The Deployment songmaker/web has unavailable replicas}
+  - interval: 1m
+    name: a target without Deployment labels still fires TargetDown while another Deployment has unavailable replicas
+    input_series:
+      - series: up{job="other", instance="other:9100"}
+        values: "0x20"
+      - series: kube_deployment_status_replicas_unavailable{namespace="songmaker", deployment="web"}
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels: {job: other, instance: "other:9100"}
+            exp_annotations: {summary: "Prometheus cannot scrape other at other:9100"}
+  - interval: 1m
+    name: a dead ACE-Step worker at one replica mails only DeploymentUnavailable
+    input_series:
+      - series: songmaker_acestep_workers_total{status="online"}
+        values: "0x20"
+      - series: kube_deployment_spec_replicas{namespace="songmaker", deployment="acestep-worker"}
+        values: "1x20"
+      - series: kube_deployment_status_replicas_unavailable{namespace="songmaker", deployment="acestep-worker"}
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: DeploymentUnavailable
+        exp_alerts:
+          - exp_labels: {namespace: songmaker, deployment: acestep-worker}
+            exp_annotations: {summary: The Deployment songmaker/acestep-worker has unavailable replicas}
+      - {eval_time: 11m, alertname: NoOnlineAceStepWorker}
+  - interval: 1m
+    name: a Ready ACE-Step worker that is not registered mails NoOnlineAceStepWorker after ten minutes
+    input_series:
+      - series: songmaker_acestep_workers_total{status="online"}
+        values: "0x20"
+      - series: kube_deployment_spec_replicas{namespace="songmaker", deployment="acestep-worker"}
+        values: "1x20"
+      - series: kube_deployment_status_replicas_unavailable{namespace="songmaker", deployment="acestep-worker"}
+        values: "0x20"
+    alert_rule_test:
+      - {eval_time: 9m, alertname: NoOnlineAceStepWorker}
+      - eval_time: 10m
+        alertname: NoOnlineAceStepWorker
+        exp_alerts:
+          - exp_labels: {status: online}
+            exp_annotations: {summary: No ACE-Step worker of songmaker is online}

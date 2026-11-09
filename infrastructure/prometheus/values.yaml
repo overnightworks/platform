@@ -164,11 +164,13 @@ server:
       mountPath: /etc/rules
       configMap: prometheus-rules
       readOnly: true
-  # songmaker's /metrics takes a bearer token, which the Secret songmaker-monitoring of platform-secrets holds.
+  # songmaker's /metrics takes a bearer token, which the Secret songmaker-monitoring of platform-secrets holds; the mount is
+  # optional so that a missing Secret shows as TargetDown instead of a Prometheus that never starts.
   extraSecretMounts:
     - name: songmaker-monitoring
       mountPath: /etc/songmaker-monitoring
       secretName: songmaker-monitoring
+      optional: true
       readOnly: true
 serverFiles:
   prometheus.yml:
@@ -216,6 +218,10 @@ scrapeConfigs:
       credentials_file: /etc/songmaker-monitoring/token
     static_configs:
       - targets: [web.songmaker.svc:8080]
+        # The labels name the Deployment, so TargetDown leaves a dead web to DeploymentUnavailable.
+        labels:
+          namespace: songmaker
+          deployment: web
   # Flux's controllers serve their metrics on the port http-prom, which flux-system's NetworkPolicy opens to every namespace.
   flux-controllers:
     kubernetes_sd_configs:

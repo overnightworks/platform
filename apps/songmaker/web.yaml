@@ -71,7 +71,7 @@ spec:
             - name: ALLOWED_HOSTS
               value: songmaker.hallucinai.de,web,web.songmaker.svc,localhost
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicy below admits
-            # only Traefik's pods and the namespace's own.
+            # only Traefik's, Prometheus's and the namespace's own pods, so their forwarded headers are trusted too.
             - name: TRUSTED_PROXIES
               value: 10.42.0.0/16
             # The web refuses to start without its sign-in settings, though it asks Keycloak only at a sign-in.

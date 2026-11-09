@@ -248,7 +248,10 @@ data:
         credentials_file: /etc/songmaker-monitoring/token
         type: Bearer
       static_configs:
-      - targets:
+      - labels:
+          deployment: web
+          namespace: songmaker
+        targets:
         - web.songmaker.svc:8080
     rule_files:
     - /etc/rules/rules.yml
@@ -841,6 +844,7 @@ spec:
         - name: songmaker-monitoring
           secret:
             secretName: songmaker-monitoring
+            optional: true
         - name: rules
           configMap:
             name: prometheus-rules
