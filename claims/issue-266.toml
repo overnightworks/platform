@@ -1,8 +1,0 @@
-claim_id = "6aab8593d6d74345b0e26f81454f841d"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "a1c2236db790b7765adce52637a0a690e76c3341"
-branch = "claude/issue-266-busybox-1-38"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/prometheus/rendered.yaml", "infrastructure/prometheus/values.yaml", "infrastructure/storage/kustomization.yaml"]
-opened_commit = "d20e3eebf9c84cc086d01231bb0a888fea0e558e"
-whole_reason = "One image bump: its three refs and the one render they regenerate must move together, or the tree runs two busyboxes."
