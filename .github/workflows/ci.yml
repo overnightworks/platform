@@ -75,8 +75,8 @@ jobs:
       - name: Check that a failed LiteLLM write stops the rest and names what was made, and that no key value reaches an argument or an output
         run: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
 
-      - name: Check that secrets:github-host-keys sends GITHUB_META_TOKEN only through curl's stdin and stays anonymous without it
-        run: mise exec -- tests/secrets/github_meta_token_reaches_only_curls_stdin.sh
+      - name: Check that GITHUB_META_TOKEN reaches only curl's stdin, stays anonymous when unset and is refused outside the token alphabet
+        run: mise exec -- tests/secrets/github_meta_token_is_refused_or_reaches_only_curls_stdin.sh
 
       - name: Check that the Renovate report check fails naming a missing report, a report with no dependency and each missing or skipped pin
         run: tests/renovate/report_check_names_each_missing_pin.sh
