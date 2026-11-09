@@ -1,0 +1,8 @@
+claim_id = "0239fda1ef664f598dba9ec0264f7717"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "9c31775ae67d77ce96aaeb98e2f6fd65510988a0"
+branch = "claude/issue-234-p8c-songmaker-web"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/songmaker/audio.yaml", "apps/songmaker/kustomization.yaml", "apps/songmaker/web.yaml", "docs/app.md", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh", "tests/songmaker", "tests/workloads/apps_run_at_their_full_ref.sh"]
+opened_commit = "0225e13c81302d862f65f8654bb8c73a5a78944c"
+whole_reason = "One Deployment with its claim, Service, policy, cell and dummy-Secret support: none is admitted or proved Ready without the rest."
