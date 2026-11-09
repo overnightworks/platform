@@ -10,8 +10,8 @@ flux push artifact "oci://localhost:${REGISTRY_PORT}/${repository}:${tag}" --pat
 
 # The cluster reaches the registry by its address on the cluster's network, which needs no record in CoreDNS.
 network="k3d-${CLUSTER_NAME}"
-registry_address="$(docker inspect "k3d-${REGISTRY_NAME}" --format "{{(index .NetworkSettings.Networks \"${network}\").IPAddress}}")" || registry_address=""
-[ -n "$registry_address" ] || fail "no address of the registry k3d-${REGISTRY_NAME} could be read from the docker network $network"
+registry_address="$(docker inspect "${REGISTRY_NAME}" --format "{{(index .NetworkSettings.Networks \"${network}\").IPAddress}}")" || registry_address=""
+[ -n "$registry_address" ] || fail "no address of the registry ${REGISTRY_NAME} could be read from the docker network $network"
 
 # Applied outside Flux's inventory: the root's patches point the Kustomization platform-secrets at it.
 source="$(cat <<'YAML'
