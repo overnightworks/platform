@@ -16,17 +16,17 @@ configMapGenerator:
   - name: legal-assets
     files:
       - legal-2.css=assets/legal-2.css
-      - appkit-0.15.0__appkit.css=assets/appkit-0.15.0/appkit.css
-      - appkit-0.15.0__fonts__open-sans-LICENSE=assets/appkit-0.15.0/fonts/open-sans-LICENSE
-      - appkit-0.15.0__fonts__open-sans-latin-400-normal.woff2=assets/appkit-0.15.0/fonts/open-sans-latin-400-normal.woff2
-      - appkit-0.15.0__fonts__open-sans-latin-600-normal.woff2=assets/appkit-0.15.0/fonts/open-sans-latin-600-normal.woff2
-      - appkit-0.15.0__fonts__open-sans-latin-ext-400-normal.woff2=assets/appkit-0.15.0/fonts/open-sans-latin-ext-400-normal.woff2
-      - appkit-0.15.0__fonts__open-sans-latin-ext-600-normal.woff2=assets/appkit-0.15.0/fonts/open-sans-latin-ext-600-normal.woff2
-      - appkit-0.15.0__fonts__oswald-LICENSE=assets/appkit-0.15.0/fonts/oswald-LICENSE
-      - appkit-0.15.0__fonts__oswald-latin-400-normal.woff2=assets/appkit-0.15.0/fonts/oswald-latin-400-normal.woff2
-      - appkit-0.15.0__fonts__oswald-latin-700-normal.woff2=assets/appkit-0.15.0/fonts/oswald-latin-700-normal.woff2
-      - appkit-0.15.0__fonts__oswald-latin-ext-400-normal.woff2=assets/appkit-0.15.0/fonts/oswald-latin-ext-400-normal.woff2
-      - appkit-0.15.0__fonts__oswald-latin-ext-700-normal.woff2=assets/appkit-0.15.0/fonts/oswald-latin-ext-700-normal.woff2
+      - design-0.18.0__design.css=assets/design-0.18.0/design.css
+      - design-0.18.0__fonts__open-sans-LICENSE=assets/design-0.18.0/fonts/open-sans-LICENSE
+      - design-0.18.0__fonts__open-sans-latin-400-normal.woff2=assets/design-0.18.0/fonts/open-sans-latin-400-normal.woff2
+      - design-0.18.0__fonts__open-sans-latin-600-normal.woff2=assets/design-0.18.0/fonts/open-sans-latin-600-normal.woff2
+      - design-0.18.0__fonts__open-sans-latin-ext-400-normal.woff2=assets/design-0.18.0/fonts/open-sans-latin-ext-400-normal.woff2
+      - design-0.18.0__fonts__open-sans-latin-ext-600-normal.woff2=assets/design-0.18.0/fonts/open-sans-latin-ext-600-normal.woff2
+      - design-0.18.0__fonts__oswald-LICENSE=assets/design-0.18.0/fonts/oswald-LICENSE
+      - design-0.18.0__fonts__oswald-latin-400-normal.woff2=assets/design-0.18.0/fonts/oswald-latin-400-normal.woff2
+      - design-0.18.0__fonts__oswald-latin-700-normal.woff2=assets/design-0.18.0/fonts/oswald-latin-700-normal.woff2
+      - design-0.18.0__fonts__oswald-latin-ext-400-normal.woff2=assets/design-0.18.0/fonts/oswald-latin-ext-400-normal.woff2
+      - design-0.18.0__fonts__oswald-latin-ext-700-normal.woff2=assets/design-0.18.0/fonts/oswald-latin-ext-700-normal.woff2
   - name: legal-nginx
     files:
       - default.conf
