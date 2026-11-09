@@ -437,7 +437,7 @@ jobs:
           OUTSIDE_NAMESPACE: hopin
           EMPTY_KEY_TABLE: broker_link
           VENDOR_LIST: infrastructure/admission/image-vendors.yaml
-        run: tests/backup/backup_restores_and_keeps_repositories_apart.sh
+        run: tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh
       - name: P9f cells
         if: matrix.part == 'backup'
         env:
