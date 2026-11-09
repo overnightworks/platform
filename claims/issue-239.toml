@@ -1,0 +1,8 @@
+claim_id = "dad29d05054a4dc4a596c1edf2f29a1e"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "949677a236cce433a514c1d1d3b8a1f3b16122c4"
+branch = "claude/issue-239-p8d-songmaker-workers"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/songmaker", "clusters/pc/apps.yaml", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh", "tests/songmaker", "tests/workloads/apps_run_at_their_full_ref.sh"]
+opened_commit = "b7917a3038607218edb47953e3745a0c042d908d"
+whole_reason = "One pair: two workers on one image release and one test footprint, whose pulls and cell prove them together."
