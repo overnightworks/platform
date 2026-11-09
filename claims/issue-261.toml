@@ -1,0 +1,7 @@
+claim_id = "1a3d7eb756cf44a0af818e92753f6cd4"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "4dc1f150d2724cf20dcb158d3e18171e564d90f8"
+branch = "claude/issue-261-p9b-holds-litellm-expire"
+scope = ["AGENTS.md", "tests/litellm/expire_deletes_only_what_is_past_90_days.sh"]
+opened_commit = "e45f3a79a077ff393e211f009167c8e8d0881bd2"
