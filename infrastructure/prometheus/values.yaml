@@ -164,6 +164,12 @@ server:
       mountPath: /etc/rules
       configMap: prometheus-rules
       readOnly: true
+  # songmaker's /metrics takes a bearer token, which the Secret songmaker-monitoring of platform-secrets holds.
+  extraSecretMounts:
+    - name: songmaker-monitoring
+      mountPath: /etc/songmaker-monitoring
+      secretName: songmaker-monitoring
+      readOnly: true
 serverFiles:
   prometheus.yml:
     rule_files:
@@ -204,6 +210,12 @@ scrapeConfigs:
   alertmanager:
     static_configs:
       - targets: [prometheus-alertmanager.prometheus.svc:9093]
+  songmaker:
+    authorization:
+      type: Bearer
+      credentials_file: /etc/songmaker-monitoring/token
+    static_configs:
+      - targets: [web.songmaker.svc:8080]
   # Flux's controllers serve their metrics on the port http-prom, which flux-system's NetworkPolicy opens to every namespace.
   flux-controllers:
     kubernetes_sd_configs:

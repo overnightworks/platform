@@ -273,3 +273,79 @@ tests:
         values: "1x120"
     alert_rule_test:
       - {eval_time: 100m, alertname: ScheduledJobMissed}
+  - interval: 1m
+    name: no online ACE-Step worker fires NoOnlineAceStepWorker ten minutes after the Deployment is wanted and never while it stands at zero replicas
+    input_series:
+      - series: songmaker_acestep_workers_total{status="online"}
+        values: "0x40"
+      - series: kube_deployment_spec_replicas{namespace="songmaker", deployment="acestep-worker"}
+        values: "0x15 1x25"
+    alert_rule_test:
+      - {eval_time: 14m, alertname: NoOnlineAceStepWorker}
+      - {eval_time: 24m, alertname: NoOnlineAceStepWorker}
+      - eval_time: 26m
+        alertname: NoOnlineAceStepWorker
+        exp_alerts:
+          - exp_labels: {status: online}
+            exp_annotations: {summary: No ACE-Step worker of songmaker is online}
+  - interval: 1m
+    name: an online ACE-Step worker keeps NoOnlineAceStepWorker quiet and one that registers ends it
+    input_series:
+      - series: songmaker_acestep_workers_total{status="online"}
+        values: "0x12 1x20"
+      - series: kube_deployment_spec_replicas{namespace="songmaker", deployment="acestep-worker"}
+        values: "1x32"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: NoOnlineAceStepWorker
+        exp_alerts:
+          - exp_labels: {status: online}
+            exp_annotations: {summary: No ACE-Step worker of songmaker is online}
+      - {eval_time: 14m, alertname: NoOnlineAceStepWorker}
+      - {eval_time: 30m, alertname: NoOnlineAceStepWorker}
+  - interval: 1m
+    name: a job failure fires SongmakerJobFailure for fifteen minutes from its timestamp and a gauge at zero never does
+    # promtool's clock starts at 0, so the gauge at zero reads as a failure of the first fifteen minutes; the cases begin after them.
+    input_series:
+      - series: songmaker_last_job_failure_timestamp_seconds{instance="web"}
+        values: "0x29 1800x30"
+      - series: songmaker_last_job_failure_timestamp_seconds{instance="fresh"}
+        values: "0x60"
+    alert_rule_test:
+      - {eval_time: 29m, alertname: SongmakerJobFailure}
+      - eval_time: 30m
+        alertname: SongmakerJobFailure
+        exp_alerts:
+          - exp_labels: {instance: web}
+            exp_annotations: {summary: A songmaker job failed within the last 15 minutes}
+      - eval_time: 44m
+        alertname: SongmakerJobFailure
+        exp_alerts:
+          - exp_labels: {instance: web}
+            exp_annotations: {summary: A songmaker job failed within the last 15 minutes}
+      - {eval_time: 45m, alertname: SongmakerJobFailure}
+  - interval: 1m
+    name: a background loop that is dead or failed three ticks for five minutes fires SongmakerBackgroundLoopUnhealthy and a shorter or milder one does not
+    input_series:
+      - series: songmaker_background_loop_alive{loop="dead"}
+        values: "1x3 0x25"
+      - series: songmaker_background_loop_alive{loop="blip"}
+        values: "1x3 0x4 1x21"
+      - series: songmaker_background_loop_consecutive_failures{loop="failing"}
+        values: "0x3 3x20 0x5"
+      - series: songmaker_background_loop_consecutive_failures{loop="stumbling"}
+        values: "2x28"
+    alert_rule_test:
+      - {eval_time: 7m, alertname: SongmakerBackgroundLoopUnhealthy}
+      - eval_time: 9m
+        alertname: SongmakerBackgroundLoopUnhealthy
+        exp_alerts:
+          - exp_labels: {loop: dead}
+            exp_annotations: {summary: The songmaker background loop dead is unhealthy}
+          - exp_labels: {loop: failing}
+            exp_annotations: {summary: The songmaker background loop failing is unhealthy}
+      - eval_time: 25m
+        alertname: SongmakerBackgroundLoopUnhealthy
+        exp_alerts:
+          - exp_labels: {loop: dead}
+            exp_annotations: {summary: The songmaker background loop dead is unhealthy}

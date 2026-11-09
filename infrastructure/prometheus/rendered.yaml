@@ -243,6 +243,13 @@ data:
       static_configs:
       - targets:
         - localhost:9090
+    - job_name: songmaker
+      authorization:
+        credentials_file: /etc/songmaker-monitoring/token
+        type: Bearer
+      static_configs:
+      - targets:
+        - web.songmaker.svc:8080
     rule_files:
     - /etc/rules/rules.yml
     alerting:
@@ -802,6 +809,10 @@ spec:
               mountPath: /etc/rules
               subPath: 
               readOnly: true
+            - name: songmaker-monitoring
+              mountPath: /etc/songmaker-monitoring
+              subPath: 
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -827,6 +838,9 @@ spec:
         - name: server-rules
           configMap:
             name: prometheus-rules
+        - name: songmaker-monitoring
+          secret:
+            secretName: songmaker-monitoring
         - name: rules
           configMap:
             name: prometheus-rules
