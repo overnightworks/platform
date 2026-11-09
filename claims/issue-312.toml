@@ -1,7 +1,0 @@
-claim_id = "0f0e9a3042b648dda3cac2ef0821f1ad"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "8f9de9a5832164cf97a24a2d27143cb28a687747"
-branch = "claude/issue-312-figure-repository"
-scope = ["src/opentofu/github/repositories.tf", "src/opentofu/github/tests/repository_creation.tftest.hcl", "src/opentofu/github/tests/repository_listing.tftest.hcl"]
-opened_commit = "9fc03698b7720135266a316128a8c91c3dffaf79"
