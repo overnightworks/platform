@@ -1,8 +1,0 @@
-claim_id = "71dbd458dfcc4a2fa4c1818d71705295"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "95c909e5ba9ff314d6dc74f598429008b87a04e2"
-branch = "claude/issue-337-songmaker-alerts"
-scope = ["apps/songmaker/web.yaml", "docs/operations.md", "infrastructure/prometheus/rendered.yaml", "infrastructure/prometheus/rules.yaml", "infrastructure/prometheus/values.yaml", "tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh", "tests/prometheus/rules_test.yml", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
-opened_commit = "da3f50b01c935da61e527365ca29f3db2618dc5b"
-whole_reason = "One scrape path: the job, its token mount, the web's admission and the rules that read it are proven only together."
