@@ -1,5 +1,7 @@
 # platform
 
+## Commands
+
 - Change a tool with `mise lock` after editing
   `mise.toml`, never by hand.
 - helm runs only here, never on
@@ -68,6 +70,9 @@
   <name>`; the `secrets:` tasks it calls print only their refusals, under their own prefix. A refusal reads `<task>:
   <condition>; <the way back>`, except the host-key filter's `; nothing passed on`, after which `bootstrap:secrets`
   names the way back.
+
+## The PC's host step
+
 - It runs from a checkout, in this order: `scripts/bootstrap_pc.sh --only tools`; `scripts/bootstrap_pc.sh plan
   --detailed-exitcode` (the script sets `LC_ALL=C`, which mise needs to read a localized ufw), which must list only
   the entry state's changes; `scripts/bootstrap_pc.sh --only files,firewall,services`, which writes
@@ -129,6 +134,8 @@
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
   `scripts/bootstrap_pc.sh` without `--only`, except its `plan --detailed-exitcode` that only lists changes, because hal
   runs beside it.
+
+## Layout
 
 - the `cluster` job, the `bootstrap` job, the `opentofu` job, the `images` job and the
   `quality` job that calls quality's `gate.yml`.
@@ -480,6 +487,9 @@
   `opentofu = "1.13"` and `yq = "4"` in `mise.toml`: `mise.lock` holds the exact patch of a prefix pin, which Renovate
   sees as newer than the prefix it would write, so a patch release inside the prefix is not listed; that is accepted,
   since the exact patch moves only when a lane refreshes `mise.lock`. Opening pull requests is not built.
+
+## Owners
+
 - A GitHub setting `src/opentofu/github` holds changes only through that root and the command, never by hand.
 - `infrastructure/admission/image-vendors.yaml` is the one vendor list, which `images` and the admission layer read;
   platform's head owns it. An entry changes only when a vendor is added or removed, with its first or last ref, in a
