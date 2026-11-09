@@ -102,8 +102,11 @@ jobs:
         # Every step after the bootstrap runs with the locked tools and the [env] of mise.toml.
         shell: mise exec -- bash --noprofile --norc -euo pipefail {0}
     env:
-      CANDIDATE_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      PULL_REQUEST_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || '' }}
+      # The commit the run's workflow comes from: the merge of the head into main on a pull request, main's commit on a
+      # push. The job checks it out and serves it to Flux as the one branch of a repository on the runner.
+      CANDIDATE_REVISION: ${{ github.sha }}
+      CANDIDATE_BRANCH: candidate
+      CANDIDATE_SOURCE_PORT: "8081"
       CLUSTER_NAME: platform
       # The k3s configuration the PC and this cluster share.
       K3S_CONFIG_SOURCE: host/k3s/config.yaml
@@ -159,8 +162,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # On a pull request the default checkout is the merge commit, while Flux reconciles the head.
-          ref: ${{ env.CANDIDATE_REVISION }}
+          # The served repository holds this commit with its history, since a shallow one cannot be pushed.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install the pinned tools
@@ -255,11 +258,18 @@ jobs:
       - name: Check that the committed root and tunnel carry no spec.patches
         run: tests/flux/root_and_tunnel_carry_no_spec_patches.sh
 
+      - name: Serve the candidate commit to Flux
+        run: tests/flux/serve_the_candidate_commit.sh
+
       - name: Reconcile the candidate tree
         run: tests/flux/reconcile_the_candidate_tree.sh
 
       - name: Assert that Flux reconciled the candidate commit and decrypted the dummy
         run: tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh
+
+      - name: Assert that a GitRepository at the committed root's url and branch turns Ready
+        if: matrix.part == 'core'
+        run: tests/flux/committed_source_url_turns_ready.sh
 
       - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's and Gatus's pods and routes the app, and that speech-runtime answers only its callers' pods
         if: matrix.part == 'core'
@@ -532,6 +542,11 @@ jobs:
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: tests/flux/print_flux_state.sh
+
+      # Flux fetches from the server every minute until the job ends.
+      - name: Stop the candidate server
+        if: always()
+        run: tests/flux/stop_the_candidate_server.sh
 
   bootstrap:
     runs-on: ubuntu-latest

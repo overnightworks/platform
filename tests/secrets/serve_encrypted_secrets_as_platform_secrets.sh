@@ -4,7 +4,7 @@ repository=platform-secrets
 tag=candidate
 flux push artifact "oci://localhost:${REGISTRY_PORT}/${repository}:${tag}" --path="$SECRETS_ARTIFACT_DIR" \
   --source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-  --revision="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}@sha1:$CANDIDATE_REVISION" --insecure-registry
+  --revision="${GITHUB_REF_NAME}@sha1:${CANDIDATE_REVISION}" --insecure-registry
 
 # Applied outside Flux's inventory: the root's patches point the Kustomization platform-secrets at it.
 source="$(cat <<'YAML'

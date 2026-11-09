@@ -33,9 +33,10 @@ kubectl -n flux-system get gitrepository flux-system -o yaml
 
 source_revision="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}')"
 applied_revision="$(kubectl -n flux-system get kustomization flux-system -o jsonpath='{.status.lastAppliedRevision}')"
-for revision in "$source_revision" "$applied_revision"; do
-  [ "${revision##*@sha1:}" = "$CANDIDATE_REVISION" ] || fail "revision '$revision' is not the candidate $CANDIDATE_REVISION"
-done
+[ "$source_revision" = "${CANDIDATE_BRANCH}@sha1:${CANDIDATE_REVISION}" ] ||
+  fail "the artifact revision '$source_revision' is not ${CANDIDATE_BRANCH}@sha1:${CANDIDATE_REVISION}"
+[ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
+  fail "revision '$applied_revision' is not the candidate $CANDIDATE_REVISION"
 echo "candidate revision:                   $CANDIDATE_REVISION"
 echo "GitRepository artifact revision:      $source_revision"
 echo "Kustomization lastAppliedRevision:    $applied_revision"
@@ -84,14 +85,10 @@ kubectl -n flux-system delete networkpolicy allow-scraping
 flux reconcile kustomization flux-system --with-source --timeout=5m
 kubectl -n flux-system get networkpolicy allow-scraping
 
-if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-  source_ref="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.spec.ref.name}')"
-  [ "$source_ref" = "$PULL_REQUEST_REF" ] || fail "the source ref '$source_ref' left $PULL_REQUEST_REF"
-else
-  source_ref="$(kubectl -n flux-system get gitrepository flux-system -o go-template='{{.spec.ref}}')"
-  committed_ref="$(kubectl create --dry-run=client -f clusters/pc/flux-system/gotk-sync.yaml \
-    -o go-template='{{if eq .kind "GitRepository"}}map[branch:{{.spec.ref.branch}} commit:'"$CANDIDATE_REVISION"']{{end}}')"
-  [ "$source_ref" = "$committed_ref" ] || fail "the source ref '$source_ref' is not the committed branch at the candidate '$committed_ref'"
-fi
+source_ref="$(kubectl -n flux-system get gitrepository flux-system -o go-template='{{.spec.ref}}')"
+expected_ref="map[branch:${CANDIDATE_BRANCH} commit:${CANDIDATE_REVISION}]"
+[ "$source_ref" = "$expected_ref" ] || fail "the source ref '$source_ref' is not the served branch at the candidate '$expected_ref'"
+source_url="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.spec.url}')"
+[ "$source_url" = "$CANDIDATE_SOURCE_URL" ] || fail "the source url '$source_url' is not the job's server '$CANDIDATE_SOURCE_URL'"
 echo "GitRepository spec.ref after the reconcile: $source_ref"
 assert_job_source
