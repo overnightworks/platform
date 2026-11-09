@@ -40,6 +40,10 @@ spec:
               value: redis://redis:6379/0
             - name: LOG_FORMAT
               value: json
+            # numba, which audio_engine's mastering uses with cache=True, writes its cache beside the source or under
+            # HOME, and the root is read-only.
+            - name: NUMBA_CACHE_DIR
+              value: /tmp
           # arq writes its health key every 30 seconds, so the first success comes within a minute of the start.
           startupProbe:
             exec:

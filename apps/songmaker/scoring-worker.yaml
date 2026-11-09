@@ -41,6 +41,10 @@ spec:
               value: json
             - name: HF_HUB_OFFLINE
               value: '1'
+            # numba, which audio_engine's mastering and librosa use with cache=True, writes its cache beside the source
+            # or under HOME, and the root is read-only.
+            - name: NUMBA_CACHE_DIR
+              value: /tmp
           startupProbe:
             exec:
               command: &health [/app/.venv/bin/python, /app/scripts/arq_healthcheck.py, scoring]

@@ -30,7 +30,9 @@ kubectl --namespace "$SONGMAKER_NAMESPACE" get events --field-selector reason=Pu
   -o jsonpath='{range .items[*]}{.message}{"\n"}{end}'
 df --human-readable /
 
-# egress_probe <name> <labels as JSON>: a Pod with the labels tries each target; sets probe_log to one line per target.
+# egress_probe <name> <labels as JSON>: a Pod with the labels tries each target for up to a minute, since a fresh Pod can be
+# refused until the NetworkPolicy controller admits its address, and reports it closed only when the last try failed too;
+# sets probe_log to one line per target.
 postgres_target="postgres.$SONGMAKER_NAMESPACE.svc.cluster.local:$(kubectl --namespace "$SONGMAKER_NAMESPACE" get service postgres -o jsonpath='{.spec.ports[0].port}')"
 redis_target="redis.$SONGMAKER_NAMESPACE.svc.cluster.local:$(kubectl --namespace "$SONGMAKER_NAMESPACE" get service redis -o jsonpath='{.spec.ports[0].port}')"
 service_port="$(kubectl --namespace "${CLUSTER_SERVICE%/*}" get service "${CLUSTER_SERVICE#*/}" -o jsonpath='{.spec.ports[0].port}')"
@@ -41,10 +43,10 @@ egress_probe() {
      "spec": {"restartPolicy": "Never", "automountServiceAccountToken": false,
        "securityContext": {"runAsNonRoot": true, "runAsUser": 65534, "seccompProfile": {"type": "RuntimeDefault"}},
        "containers": [{"name": "probe", "image": strenv(IMAGE),
-         "command": ["sh", "-c", "for target; do if nc -z -w 5 \"${target%:*}\" \"${target##*:}\"; then echo \"$target open\"; else echo \"$target closed\"; fi; done", "sh"] + (strenv(TARGETS) | split(" ")),
+         "command": ["sh", "-c", "for target; do state=closed; for try in 1 2 3 4 5 6 7 8 9 10 11 12; do if nc -z -w 2 \"${target%:*}\" \"${target##*:}\" 2>/dev/null; then state=open; break; fi; sleep 3; done; echo \"$target $state\"; done", "sh"] + (strenv(TARGETS) | split(" ")),
          "securityContext": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}}}]}}' |
     kubectl --namespace "$SONGMAKER_NAMESPACE" create -f -
-  kubectl --namespace "$SONGMAKER_NAMESPACE" wait "pod/$1" --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m
+  kubectl --namespace "$SONGMAKER_NAMESPACE" wait "pod/$1" --for=jsonpath='{.status.phase}'=Succeeded --timeout=5m
   probe_log="$(kubectl --namespace "$SONGMAKER_NAMESPACE" logs "pod/$1")"
   printf '%s\n' "$probe_log"
   kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod "$1" --wait --timeout=2m
