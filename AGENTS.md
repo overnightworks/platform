@@ -482,14 +482,14 @@
   failing layer reports itself; a regeneration that adds, renames or removes a controller changes those
   `healthChecks` with it, and `cluster` fails when they differ from the root's inventory.
 - `clusters/pc/infrastructure.yaml`: one Flux Kustomization per directory under `infrastructure/`, each with
-  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include (its subdirectory `backup/` is a component `keycloak`, `litellm` and `apps/skat` include). `namespaces`, then
+  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm`, `apps/skat` and `apps/songmaker` include (its subdirectory `backup/` is a component `keycloak`, `litellm`, `apps/skat` and `apps/songmaker` include). `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
   `keycloak` and `litellm` also on `platform-secrets`, `storage` and `k8up`, `backup` on `platform-secrets` and `storage`,
   `prometheus` on `platform-secrets` and `storage`, and `loki` on `storage`. No layer depends on `nvidia`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` and `songmaker` also
-  on `storage`, and `skat` also on `k8up`.
+  on `storage`, and `skat` and `songmaker` also on `k8up`.
 - `apps/skat/`: skat's Postgres from the base `infrastructure/postgres`, in namespace `skat` with `key-tables`
   `alembic_version tables chairs receipts` (the restore test fails on an empty first table, and `alembic_version`, which
   `skat migrate` writes, is the one a migrated database always fills), backed up like keycloak's and litellm's through
@@ -500,7 +500,8 @@
   password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
   container of the same image runs `skat migrate` before `skat serve`. It has no route, NetworkPolicy or tunnel line yet.
 - `apps/songmaker/`: songmaker's stores, web and workers, no route or login yet: its Postgres from the base
-  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `songs generations`, and `redis.yaml`, the
+  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `alembic_version songs generations`, backed up like skat's through the component `infrastructure/postgres/backup`
+  with the repository `songmaker` on the rest server, and `redis.yaml`, the
   queue: one StatefulSet pod at the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a
   read-only root, persistence off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a
   NetworkPolicy that admits only the namespace's own pods. `web.yaml` is the Deployment `web`, one pod with `Recreate`,
@@ -568,7 +569,7 @@
   including layer's `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` include it;
   keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
 - `infrastructure/postgres/backup/`: the component a Postgres layer includes to be backed up; `infrastructure/keycloak/`,
-  `infrastructure/litellm/` and `apps/skat/` do. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
+  `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` do. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
   4 weekly and 3 monthly, a monthly `check`) of the Postgres pod's `pg_dump --format=custom` into `backup-repository`,
   the URL the including layer sets in the ConfigMap `postgres`; a PodConfig gives k8up's Job pods the fields `restricted`
   requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month and fails
