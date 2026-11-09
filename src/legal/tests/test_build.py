@@ -7,7 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from legal.build import BUILT_DIRECTORY, SECTIONS_DIRECTORY, STAND_FILE, main, read_frame, read_sections
+from legal.build import (
+    APP_TEXTS_DIRECTORY,
+    APP_TEXTS_FILE,
+    BUILT_DIRECTORY,
+    SECTIONS_DIRECTORY,
+    STAND_FILE,
+    main,
+    read_app_texts,
+    read_frame,
+    read_sections,
+)
 from legal.pages import TEMPLATES, build_pages, frame_page_path, frame_template_path
 from legal.section import PAGES
 
@@ -15,6 +25,10 @@ SHIPPED_FRAME = Path(__file__).parents[3] / "infrastructure" / "legal" / "frame"
 ZONE = "edge-fixture.invalid"
 GENERAL_TEXT = '<h2 id="recht">Recht</h2>\n<p>a</p>\n'
 SERVICE_TEXT = '<h2 id="anmeldung">Anmeldung</h2>\n<p>s</p>\n'
+
+
+def app_text(key: str) -> str:
+    return f'<h2 id="{key}">{key}</h2>\n<p>text of {key}</p>\n'
 
 
 @pytest.fixture
@@ -49,6 +63,43 @@ def sections(repository: Path) -> dict[str, tuple[date, str]]:
         ]
     )
     declare(repository, entries)
+    declare_apps(repository, {})
+    return entries
+
+
+AppEntries = dict[str, dict[str, tuple[date, str]]]  # the declared date and sha256 by app key and page
+
+
+def declare_apps(repository: Path, entries: AppEntries, tags: dict[str, str] | None = None) -> None:
+    text = ""
+    for key, pages in entries.items():
+        text += f'[{key}]\n' + (f'tag = "{tags[key]}"\n' if tags and key in tags else "")
+        for page, (day, sha256) in pages.items():
+            text += f'[{key}.{page}]\ndate = {day.isoformat()}\nsha256 = "{sha256}"\n'
+    (repository / APP_TEXTS_FILE).write_text(text)
+
+
+def app_file(repository: Path, key: str, page: str, text: str, day: date) -> tuple[date, str]:
+    path = repository / APP_TEXTS_DIRECTORY / key / f"{page}.html"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return day, hashlib.sha256(text.encode()).hexdigest()
+
+
+@pytest.fixture
+def apps(repository: Path, sections) -> AppEntries:
+    entries: AppEntries = {
+        "songmaker": {
+            "datenschutz": app_file(repository, "songmaker", "datenschutz", app_text("songmaker"), date(2026, 11, 5)),
+        },
+        "hopin": {
+            "datenschutz": app_file(repository, "hopin", "datenschutz", app_text("hopin"), date(2026, 11, 6)),
+            "nutzungsbedingungen": app_file(
+                repository, "hopin", "nutzungsbedingungen", app_text("hopin"), date(2026, 11, 4)
+            ),
+        },
+    }
+    declare_apps(repository, entries, {"songmaker": "v1"})
     return entries
 
 
@@ -63,22 +114,36 @@ def refusal_of(repository: Path, capsys) -> str:
     return capsys.readouterr().err
 
 
-def test_only_the_impressum_is_written_and_it_is_the_frames_page(repository, sections, capsys):
+def test_all_three_pages_are_written_and_the_impressum_is_the_frames_page(repository, sections, apps, capsys):
     assert main([ZONE]) == 0
 
-    assert written_files(repository) == ["impressum.html"]
+    assert written_files(repository) == ["datenschutz.html", "impressum.html", "nutzungsbedingungen.html"]
     assert (repository / BUILT_DIRECTORY / "impressum.html").read_bytes() == (
         SHIPPED_FRAME / "impressum.html"
     ).read_bytes()
     assert capsys.readouterr().err == ""
 
 
-def test_a_page_prints_the_newest_declared_date_of_its_own_sections_in_german(repository, sections):
-    pages = build_pages(read_frame(), read_sections(ZONE))
+def test_a_page_prints_the_newest_declared_date_of_its_sections_and_app_texts_in_german(
+    repository, sections, apps
+):
+    pages = build_pages(read_frame(), read_sections(ZONE) + read_app_texts(ZONE))
 
-    assert "Stand: 27. Oktober 2026" in pages["datenschutz"]
-    assert "Stand: 2. Januar 2026" in pages["nutzungsbedingungen"]
+    assert "Stand: 6. November 2026" in pages["datenschutz"]
+    assert "Stand: 4. November 2026" in pages["nutzungsbedingungen"]
     assert "Stand" not in pages["impressum"]
+
+
+def test_an_app_block_stands_after_the_services_in_the_order_of_its_anchor(repository, sections, apps):
+    page = build_pages(read_frame(), read_sections(ZONE) + read_app_texts(ZONE))["datenschutz"]
+
+    anchors = [page.index(f'id="{anchor}"') for anchor in ("anmeldung", "hopin", "songmaker")]
+    assert anchors == sorted(anchors)
+    assert "text of hopin" in page
+
+
+def test_a_build_without_any_app_text_still_writes_the_pages(repository, sections, capsys):
+    assert main([ZONE]) == 0
 
 
 @pytest.mark.parametrize(
@@ -202,6 +267,96 @@ def test_an_unreadable_section_is_refused_by_name(repository, sections, capsys):
     path.mkdir()
 
     assert refusal_of(repository, capsys).startswith(f"legal: {path.relative_to(repository)}: cannot read it")
+
+
+def app_refusal(repository: Path, capsys) -> str:
+    return refusal_of(repository, capsys).removeprefix("legal: ")
+
+
+@pytest.mark.parametrize("key", ["allgemein", "keycloak", "litellm", "speech-runtime"])
+def test_an_app_key_that_a_section_unit_owns_is_refused_by_name(repository, sections, apps, capsys, key):
+    entries = {**apps, key: {"datenschutz": app_file(repository, key, "datenschutz", app_text(key), date(2026, 1, 1))}}
+    declare_apps(repository, entries)
+
+    message = app_refusal(repository, capsys)
+
+    assert message.startswith(f"{APP_TEXTS_FILE}: [{key}]")
+    assert "one owner" in message
+
+
+def test_an_app_text_without_an_entry_is_refused_by_name(repository, sections, apps, capsys):
+    del apps["hopin"]["nutzungsbedingungen"]
+    declare_apps(repository, apps)
+
+    message = app_refusal(repository, capsys)
+
+    assert message == (
+        f"{APP_TEXTS_DIRECTORY}/hopin/nutzungsbedingungen.html: has no entry in {APP_TEXTS_FILE}\n"
+    )
+
+
+def test_an_app_text_of_an_app_the_list_omits_is_refused_by_name(repository, sections, apps, capsys):
+    app_file(repository, "presentator", "datenschutz", app_text("presentator"), date(2026, 1, 1))
+
+    assert app_refusal(repository, capsys) == (
+        f"{APP_TEXTS_DIRECTORY}/presentator/datenschutz.html: has no entry in {APP_TEXTS_FILE}\n"
+    )
+
+
+def test_an_entry_without_a_file_is_refused_by_name(repository, sections, apps, capsys):
+    (repository / APP_TEXTS_DIRECTORY / "hopin" / "nutzungsbedingungen.html").unlink()
+
+    assert app_refusal(repository, capsys) == (
+        f"{APP_TEXTS_FILE}: [hopin.nutzungsbedingungen] names no file\n"
+    )
+
+
+def test_an_app_without_a_datenschutz_is_refused_by_name(repository, sections, apps, capsys):
+    del apps["songmaker"]["datenschutz"]
+    (repository / APP_TEXTS_DIRECTORY / "songmaker" / "datenschutz.html").unlink()
+    declare_apps(repository, apps)
+
+    assert app_refusal(repository, capsys) == f"{APP_TEXTS_FILE}: [songmaker] has no datenschutz\n"
+
+
+def test_a_stale_app_text_is_refused_and_the_message_prints_the_new_sha256(repository, sections, apps, capsys):
+    edited = app_text("hopin") + "<p>neu</p>\n"
+    (repository / APP_TEXTS_DIRECTORY / "hopin" / "datenschutz.html").write_text(edited)
+
+    message = app_refusal(repository, capsys)
+
+    assert message.startswith(f"{APP_TEXTS_DIRECTORY}/hopin/datenschutz.html: differs")
+    assert message.endswith(f"the file's is {hashlib.sha256(edited.encode()).hexdigest()}\n")
+
+
+def test_an_app_text_that_is_no_page_of_its_app_is_refused_by_name(repository, sections, apps, capsys):
+    (repository / APP_TEXTS_DIRECTORY / "hopin" / "impressum.html").write_text(app_text("hopin"))
+
+    assert app_refusal(repository, capsys).startswith(f"{APP_TEXTS_DIRECTORY}/hopin/impressum.html: is no")
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["not toml", "hopin = 1\n", '[hopin]\ntag = 1\n', '[hopin]\nother = "x"\n', '[hopin.datenschutz]\ndate = 2026-01-01\n'],
+)
+def test_an_app_list_that_is_no_table_of_apps_is_refused(repository, sections, apps, capsys, text):
+    (repository / APP_TEXTS_FILE).write_text(text)
+
+    assert app_refusal(repository, capsys).startswith(f"{APP_TEXTS_FILE}: ")
+
+
+def test_a_missing_app_list_is_refused_by_name(repository, sections, capsys):
+    (repository / APP_TEXTS_FILE).unlink()
+
+    assert app_refusal(repository, capsys) == f"{APP_TEXTS_FILE} is missing; the app list is required\n"
+
+
+def test_an_app_page_that_is_unreadable_is_refused_by_name(repository, sections, apps, capsys):
+    path = repository / APP_TEXTS_DIRECTORY / "hopin" / "datenschutz.html"
+    path.unlink()
+    path.mkdir()
+
+    assert app_refusal(repository, capsys).startswith(f"{APP_TEXTS_DIRECTORY}/hopin/datenschutz.html: cannot read it")
 
 
 def test_a_call_without_exactly_a_zone_prints_the_usage(capsys):
