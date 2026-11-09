@@ -1,7 +1,0 @@
-claim_id = "e7e857009b844883b2416ae91d367ab6"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "42f99139db79f32b17dbce8194745a3a76a3e471"
-branch = "claude/issue-243-p9c-cell-survives-secrets-reconcile"
-scope = ["AGENTS.md", "tests/litellm/keys_table_drives_budgets_and_the_app_key.sh"]
-opened_commit = "c7c9de8e0e6b48cfe34666e713ed658819366728"
