@@ -1,8 +1,0 @@
-claim_id = "52871a012c734a199b2f65dfd8d2a9a4"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "2b930f627ccbf973d5adb8ebacb2bcb0ec2a7b9f"
-branch = "claude/issue-249-prune-keeps-documented-rule"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "docs/app.md", "infrastructure/postgres/backup", "tests/backup"]
-opened_commit = "67d9afdbe46bf4f9ba7e6542f04c8a193d5434b8"
-whole_reason = "One rule, the component that sets it and the cell that reads it from the cluster prove nothing apart."
