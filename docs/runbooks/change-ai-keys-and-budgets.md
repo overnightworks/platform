@@ -26,4 +26,4 @@ Rollback: a pull request that reverts `keys.yaml`, then step 2.
 ## Escalate
 
 `litellm:keys` names a row without a key: step 4 for that app. A failed write names what was made and what was not;
-when its outcome is unknown or a value is refused, stop and ask the operator.
+when its outcome is unknown, a value is refused or Check 2 prints `DIFFERS`, stop and ask the operator.

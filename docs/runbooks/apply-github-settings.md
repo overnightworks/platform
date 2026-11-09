@@ -14,8 +14,8 @@ Impact: the security and merge settings of the managed repositories and the orga
    of that same run.
 2. An agent: `scripts/apply_github_settings.sh`. It exits 0.
 
-Rollback: a pull request that undoes the change, then steps 1 and 2. A removal or a rename, which is a forget and an
-import, follows [the GitHub settings reference](../github-settings.md), since a plan that deletes is refused.
+Rollback: a pull request that undoes the change, then steps 1 and 2. A removal follows
+[the GitHub settings reference](../github-settings.md), since a plan that deletes is refused.
 
 ## Escalate
 

@@ -5,19 +5,21 @@ Impact: who may call the AI gateway. Keycloak's data changes.
 
 ## Check
 
-1. Step 1's own lines: the old group's members are a subset of the new group's, and both groups' member counts.
+1. Fix step 1's own lines: the old group's members are a subset of the new group's, and both groups' member counts.
 
 ## Fix
 
 1. After the operator's yes, an agent: `mise run keycloak:move-group <file>`. It dumps `keycloak` first, then moves
    and verifies.
-2. When the old group is to go, an agent: `mise run keycloak:move-group --delete-old <new file>`.
+2. After the operator's yes that the old group goes, an agent:
+   `mise run keycloak:move-group --delete-old <new file>`.
 
 Rollback: after the operator's yes, an agent: `mise run db:load-dump keycloak <file>`, with step 1's file.
 
 ## Escalate
 
-A failed dump, a failed subset check, or member counts the operator did not expect: stop and ask him.
+A failed dump, a failed subset check, or member counts the operator did not expect: stop and ask him. The runner reads only what the command prints, never the dump or `<file>.dump.log`, since a
+dump holds keys and hashes.
 
 ## Ruled
 

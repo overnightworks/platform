@@ -341,5 +341,5 @@
 
 - `docs/github-settings.md`: read when changing what `src/opentofu/github` declares or how a change reaches GitHub.
 - `docs/operations.md`: read when changing an expiry, the status page, Grafana, a scrape job, the PC's disk bounds or the AI budgets.
-- `docs/runbooks/`: read when installing, changing or removing a part of the PC, or when a host check fails.
+- `docs/runbooks/`: read when installing, changing or removing a part of the PC, when a host check fails, or when restoring a database, applying the GitHub settings, changing AI keys or budgets or moving the AI group.
 - `docs/personal-data.md`: read when changing how long a log, a backup or an AI request is kept, or what the LiteLLM front, its egress or the speech service lets through.

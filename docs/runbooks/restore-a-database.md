@@ -15,16 +15,19 @@ Impact: the namespace's writers stop, and its Flux Kustomization stays suspended
    file that exists.
 2. After the operator's yes to this load, an agent: `mise run db:load-dump --compare <namespace> <file>`. It verifies
    every table against the dump and only then resumes Flux. It refuses a Kustomization that is already suspended.
-3. After a hard kill of step 2, an agent: `mise run db:load-dump --resume <namespace>`. It verifies nothing.
+3. After a hard kill of step 2 and the operator's yes to resuming without a verification, an agent:
+   `mise run db:load-dump --resume <namespace>`. It verifies nothing.
 
 Rollback: a load whose `pg_restore` failed or was interrupted resumes Flux itself once the data reads as before. A
 load that committed is undone only by loading another dump; no command dumps the current state first, so the dump
-that serves is the one fetched before.
+that serves is a dump fetched before the load, other than the one loaded.
 
 ## Escalate
 
 The load reports that whether it changed the data is unknown, that the loaded data is not verified, or a table that
 `DIFFERS`: it stays suspended with its writers at 0 and names `--resume`. The operator decides before anyone resumes it.
+The runner reads only what the command prints, never the dump or `<file>.load.log`, since a COPY error there quotes a
+row.
 
 ## Ruled
 
