@@ -97,7 +97,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, postgres, backup]
+        part: [core, postgres, backup, apps]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -463,8 +463,16 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/grafana/grafana_answers_both_data_sources_without_state_and_only_gatus_reaches_it.sh
 
+      # The cell compares the node's leases, links and sandboxes before and after its lives, so no step of this part that
+      # leaves Pods terminating runs before it.
+      - name: Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind on the node
+        if: matrix.part == 'apps'
+        env:
+          NO_NETWORK_NAMESPACE: no-network
+        run: tests/no_network/pod_loses_its_link_before_the_worker_starts.sh
+
       - name: Assert that songmaker's music and scoring workers are Ready at their full refs, that neither asks for the GPU, and that the scoring worker reaches only its Postgres and Redis
-        if: matrix.part == 'backup'
+        if: matrix.part == 'apps'
         env:
           SONGMAKER_NAMESPACE: songmaker
           CLUSTER_SERVICE: default/kubernetes
@@ -513,13 +521,13 @@ jobs:
         run: tests/litellm/keys_table_drives_budgets_and_the_app_key.sh
 
       - name: Assert that presentator's web passes restricted, its worker baseline without its init's NET_ADMIN, nothing else runs looser, and its RBAC and render hold the contract
-        if: matrix.part == 'postgres'
+        if: matrix.part == 'apps'
         run: |
           kubectl kustomize apps/presentator >"$RUNNER_TEMP/presentator.yaml"
           tests/presentator/pods_stay_within_their_levels.sh "$RUNNER_TEMP/presentator.yaml"
 
       - name: Assert that presentator's Namespace enforces nothing and warns and audits at restricted, and that no Pod template of a layer runs as 61001 or 61002
-        if: matrix.part == 'postgres'
+        if: matrix.part == 'apps'
         run: tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
@@ -528,12 +536,6 @@ jobs:
         env:
           SONGMAKER_NAMESPACE: songmaker
         run: tests/backup/load_replaces_database_and_files_together.sh
-
-      - name: Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind on the node
-        if: matrix.part == 'backup'
-        env:
-          NO_NETWORK_NAMESPACE: no-network
-        run: tests/no_network/pod_loses_its_link_before_the_worker_starts.sh
 
       - name: Assert that the three legal pages and every asset reach a Pod beside cloudflared through Traefik with the committed bytes and headers, /favicon.ico and the asset directories get nginx's 404 and everything else Traefik's
         if: matrix.part == 'core'
