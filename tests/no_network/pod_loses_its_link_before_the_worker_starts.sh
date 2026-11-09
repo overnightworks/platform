@@ -226,17 +226,24 @@ life() {
   case "$kind" in
     hold) filter+=' | .spec.initContainers += [{"name": "hold", "image": strenv(PROBE_IMAGE), "command": ["sleep", "3600"],
       "securityContext": {"runAsNonRoot": true, "runAsUser": 1000, "allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}}}]' ;;
-    crash) filter+=' | .spec.restartPolicy = "Never" | .spec.containers[0].command = ["sh", "-c", "exit 1"]' ;;
+    crash) filter+=' | .spec.restartPolicy = "Never" | .spec.volumes = [{"name": "scratch", "emptyDir": {}}]
+      | .spec.containers[0].volumeMounts = [{"name": "scratch", "mountPath": "/scratch"}]
+      | .spec.containers[0].command = ["sh", "-c", "until [ -e /scratch/go ]; do sleep 1; done; exit 1"]' ;;
   esac
   before_leases="$(leases)" || exit 1
   create_pod "$name" "$mode" "$filter"
   case "$kind" in
     hold) k wait "pod/$name" --timeout=3m \
       --for=jsonpath='{.status.initContainerStatuses[?(@.name=="hold")].state.running.startedAt}' ;;
-    crash) k wait "pod/$name" --for=jsonpath='{.status.phase}'=Failed --timeout=3m ;;
+    crash) k wait "pod/$name" --timeout=3m --for=jsonpath='{.status.containerStatuses[0].state.running.startedAt}' ;;
     *) k wait "pod/$name" --for=condition=Ready --timeout=3m ;;
   esac
   new_lease "$before_leases" || fail "no address lease was taken while $name lived ($mode, $kind)"
+  # A crashed worker ends by itself once the cell, having read the lease in its live sandbox, releases it.
+  if [ "$kind" = crash ]; then
+    k exec "pod/$name" -- touch /scratch/go
+    k wait "pod/$name" --for=jsonpath='{.status.phase}'=Failed --timeout=3m
+  fi
   case "$kind" in
     force) k delete "pod/$name" --force --grace-period=0 ;;
     *) k delete "pod/$name" --wait --timeout=2m ;;
