@@ -1,7 +1,8 @@
 # An app's legal files
 
 For whoever writes an app's legal files. It says what an app ships and the form `mise run legal:check <key> <dir>`
-accepts; the assembled pages and their link targets are not judged yet.
+accepts and how it reaches the pages; `legal:check` judges the files, `mise run legal:build` assembles the pages and judges
+their ids and links.
 
 ## What an app ships
 
@@ -10,6 +11,16 @@ accepts; the assembled pages and their link targets are not judged yet.
 
 Each is a regular file: a link or a directory in its place is refused, and so is a `<dir>` that is no directory.
 `<key>` is the app's key; it is the `h2` id of both files.
+
+## How the text reaches the pages
+
+An app's files are copied byte for byte into platform's `infrastructure/legal/app-texts/<key>/`, with their `date` (the
+commit date of the file at the release) and `sha256` in `infrastructure/legal/app-texts.toml`. The release is the
+version of the app's image under `apps/<key>`, as the tag `v<version>`; an app with no image there names its `tag` in
+the list. After a release that changes a legal file, platform's pull request that bumps the image refreshes the copy
+and its entry; CI names the file and the new sha256 when it does not. A release that leaves the text alone needs no
+edit. An app joins the pages by being listed, so skat is added with its go-live. A page prints the latest date of its
+own sections and app texts as `Stand`.
 
 ## Format
 
