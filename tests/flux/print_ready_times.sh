@@ -4,11 +4,15 @@
 set -uo pipefail
 step_started_at="${1:?the start of the step as epoch seconds}"
 
-# Prefix of every filter: t turns an RFC 3339 time into seconds after the start, dur a Go duration into seconds.
+# Prefix of every filter: t turns an RFC 3339 time into seconds after the start, pull_seconds the duration of the
+# kubelet's own clause " in <duration> (" of a Pulled message into seconds (null without one).
 filter_prelude="$(
   cat <<'JQ'
   def t: if . == null then null else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) - $start end;
-  def dur: [scan("([0-9.]+)(ms|s|m|h)") | (.[0] | tonumber) * ({"ms": 0.001, "s": 1, "m": 60, "h": 3600}[.[1]])] | add // 0;
+  def pull_seconds:
+    (capture(" in (?<d>([0-9]+(\\.[0-9]+)?(ms|s|m|h))+) \\(").d // null)
+    | if . == null then null
+      else [scan("([0-9]+(?:\\.[0-9]+)?)(ms|s|m|h)") | (.[0] | tonumber) * ({"ms": 0.001, "s": 1, "m": 60, "h": 3600}[.[1]])] | add end;
   def seconds: if . == null then "-" else tostring end;
   def sort_nulls_last: sort_by(.[0] // 1e12);
 JQ
@@ -56,9 +60,14 @@ JQ
 )"
 pull_filter="$(
   cat <<'JQ'
-  [.items[] | [((.lastTimestamp // .eventTime // .metadata.creationTimestamp) | t),
-       (.involvedObject.namespace + "/" + .involvedObject.name), .message]]
-  | sort_by(-(.[2] | dur))[] | [(.[0] | seconds), .[1], .[2]] | @tsv
+  [.items[] | (.message // "") as $message
+    | [((.lastTimestamp // .eventTime // .metadata.creationTimestamp) | t), ($message | pull_seconds),
+       ($message | capture("Image size: (?<bytes>[0-9]+) bytes").bytes // null),
+       (.involvedObject.namespace + "/" + .involvedObject.name),
+       ($message | capture("image \\\"(?<image>[^\\\"]+)\\\"").image // "-")]]
+  | sort_by(-(.[1] // -1))[]
+  | [(.[0] | seconds), (.[1] | seconds), (if .[2] then ((.[2] | tonumber) / 100000 | round / 10 | tostring) else "-" end), .[3], .[4]]
+  | @tsv
 JQ
 )"
 
@@ -68,6 +77,6 @@ report "Pods by Ready time, not ready last" $'READY_AT\tCREATED\tPHASE\tNAMESPAC
   pods --all-namespaces
 report "Jobs by start" $'STARTED\tCOMPLETED\tACTIVE\tSUCCEEDED\tNAMESPACE/NAME' "$job_filter" \
   jobs --all-namespaces
-report "Image pulls by duration, slowest first" $'PULLED_AT\tNAMESPACE/POD\tKUBELET MESSAGE' "$pull_filter" \
+report "Image pulls by duration, slowest first" $'PULLED_AT\tSECONDS\tSIZE_MB\tNAMESPACE/POD\tIMAGE' "$pull_filter" \
   events --all-namespaces --field-selector reason=Pulled
 exit 0
