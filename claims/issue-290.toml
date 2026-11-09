@@ -1,0 +1,8 @@
+claim_id = "ff3b830362274d8d81581d50be4bde26"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "3223fb0e83569ca23c30a6ce35190de0764bdc89"
+branch = "claude/issue-290-legal-pages-live"
+scope = [".github/workflows/ci.yml", "docs/personal-data.md", "infrastructure/cloudflared/cloudflared.yaml", "infrastructure/legal/legal.yaml", "tests/cloudflared/ingress_from_pods_built_from_its_template.sh", "tests/legal/appkit_assets_equal_their_release_wheel.sh", "tests/legal/legal_sections_assets_and_headers_equal_hals_at_commit.sh"]
+opened_commit = "8579d34b10f5b5c139e8c11fcb1bb58753acafd0"
+whole_reason = "One public route: the tunnel line, the cell that judges it, and the end of the hal comparison land together, and the live go after them is one hal commit and one apply."
