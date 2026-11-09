@@ -2,6 +2,7 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+step_started_at="$(date +%s)"
 inventory() {
   kubectl -n flux-system get kustomization flux-system \
     -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}'
@@ -28,7 +29,11 @@ assert_job_source() {
 
 kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=3m
 kubectl -n flux-system wait kustomization/flux-system --for=condition=Ready --timeout=5m
-kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=10m
+wait_status=0
+kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=10m ||
+  wait_status=$?
+"$(dirname "${BASH_SOURCE[0]}")/print_ready_times.sh" "$step_started_at"
+[ "$wait_status" -eq 0 ] || exit "$wait_status"
 kubectl -n flux-system get gitrepository flux-system -o yaml
 
 source_revision="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}')"
