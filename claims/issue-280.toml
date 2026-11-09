@@ -1,0 +1,8 @@
+claim_id = "18ef911998c840cf89b99b5e4c037036"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "3c458cf42e2e78cada6aab2a5f85e50bc36f4e75"
+branch = "claude/issue-280-s1b-2-the-prebackuppod-stages-songmaker"
+scope = ["apps/songmaker/audio.yaml", "apps/songmaker/kustomization.yaml", "apps/songmaker/web.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/k8up/values.yaml", "infrastructure/postgres/backup/files/files.yaml", "infrastructure/postgres/backup/files/kustomization.yaml", "infrastructure/postgres/backup/files/scripts/stage.sh", "tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh", "tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh"]
+opened_commit = "a6bf5c5a05181b88769eb74312bebed7114b1763"
+whole_reason = "The annotated claim needs the copy, the manifest and the reading uid together to make a valid second group, so no smaller part leaves a staging snapshot a restore may trust."
