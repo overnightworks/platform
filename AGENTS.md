@@ -213,8 +213,8 @@
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
-  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells" and
-  the step of `tests/no_network/`, the shortest part; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
+  check, the "P7a cells", the steps "songmaker's web" and "songmaker's workers", the "P9c cells", the Alertmanager step and the Grafana step;
+  `backup` holds the "P7d cells", the "P9f cells", the "P9c-2 cells" and the step of `tests/no_network/`; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
   assertion runs in all three, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
@@ -272,7 +272,7 @@
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
   runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request that turns Ready within the minute
   prints no key block.
-  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock`, the renders and the imprint, and fails when git
+  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock`, the renders and the three legal pages, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. Before the reconcile the
   kubelet's configz holds the `container-log-max-files` of `host/k3s/config.yaml`; after a writer pod's log directory
   is deleted on the node, its file is back within 30 seconds and `kubectl logs` shows newer lines; and through two
@@ -407,6 +407,9 @@
   credentials the server answers 401 everywhere, a namespace's credentials reach only its own repository, and a pod in a
   namespace without one gets no answer; deleting the Kustomization `backup` keeps the claim, its repositories list again
   after the root re-creates it; and `backup:fetch` writes the latest dump at 0600 and refuses an existing file.
+  The step "P9f cells" (`tests/prometheus/`) asks Prometheus and creates nothing: `k8up_schedule_created` has a series for
+  each Schedule the cluster holds, and the recording rule of the newest completed Backup has one for each namespace of
+  `$BACKUP_NAMESPACES`.
   The step "P9b cells" plants a backdated and a fresh row in each of the five tables through the Postgres pod and runs a
   Job made from the CronJob: it prints one deletion in each count and leaves the fresh rows and the idle customers
   with a budget or with spend, a second run prints zeros, and the first log holds no planted value; its Pod ran in a
@@ -434,7 +437,7 @@
   front's rules name; `litellm:key hopin` makes the row from a generated value in the Secret `hopin`, a client Pod in
   `hopin`, which reads the header line from a mounted Secret through `curl --header @file`, gets 200 from the front's `GET /v1/models` with it, a second run prints `unchanged`, and a changed
   value, one without `sk-`, a missing key and an app outside the table are refused and change no row; no output holds a
-  value, the master key or the value's sha256. The step "P9c-2 cells" of part `postgres` (`tests/litellm/admin_budget_follows_the_fingerprint_and_keeps_spend.sh`)
+  value, the master key or the value's sha256. The step "P9c-2 cells" of part `backup` (`tests/litellm/admin_budget_follows_the_fingerprint_and_keeps_spend.sh`)
   makes people in the realm and drives `litellm:admin`: an unknown name and a service account are refused with nothing
   changed, no budget and no customer row; a new admin gets a row under the fingerprint, which the cell computes in Python with
   agent-runtime's recipe, on the budget with no limit and `1mo`, and joins the group; a finite admin budget is corrected
@@ -653,23 +656,33 @@
   answer, a failed read-back or a signal after a write names what was written or may have been and says that running it
   again completes it; nothing is rolled back and no output holds an id, the fingerprint or a key. Removing an admin is
   not built.
-- `infrastructure/legal/`: the legal sections and the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
+- `infrastructure/legal/`: the legal sections, the three pages and their assets at `hallucinai.de`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
   is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
-  field. `built/datenschutz.html` and `built/nutzungsbedingungen.html` are the other two pages, not mounted.
+  field. `built/datenschutz.html` and `built/nutzungsbedingungen.html` are the other two pages; all three are mounted.
   `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
   operator's. `stand.toml` holds one table per section path with its `date` (the Stand it prints, `D. Monat YYYY`, a
-  page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand; nothing of
-  them is served yet. `app-texts/<key>/<page>.html` are the apps' own files byte for byte (hopin, presentator and
+  page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand.
+  `app-texts/<key>/<page>.html` are the apps' own files byte for byte (hopin, presentator and
   songmaker; skat joins with its go-live) and `app-texts.toml` holds per app and page their `date` and `sha256` and, for an app with no
   image under `apps/<key>`, its release `tag`; an app with an image has its release from that image, so a `tag` beside
-  one is refused. A bump of an app's image whose release changes its legal text carries the refreshed copy in the same pull request. `default.conf` serves only
-  `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
-  host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
-  only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
-  fonts are not served: its references to them stay. `cluster` reads from a client Pod in `cloudflared` the page's
-  checksum against the committed file, its Content-Security-Policy against `default.conf`, and 404 without nginx's
-  headers for `/` and other paths, and a Pod in another namespace gets no answer from the Service.
+  one is refused. A bump of an app's image whose release changes its legal text carries the refreshed copy in the same pull request. `assets/` mirrors hal's served tree, copied
+  byte for byte and not built: `legal-2.css` is hal's `legal/assets/legal-2.css` and `appkit-<version>/` the files of
+  `appkit/static/` in appkit's release wheel, at the URL and sha256 that hal's `pyproject.toml` pins at `hal_commit`
+  (hal's own copy is git-ignored output of `hal apply`); the version stays the one hal's lock holds until hal no longer
+  serves the apex. The pages, the assets and `default.conf` reach nginx as ConfigMaps whose names carry their hash (a key
+  holds no `/`, so the Deployment's volume maps each key to its path). The Ingress routes the host `hallucinai.de`
+  through Traefik's `web` for `/impressum`, `/datenschutz`, `/nutzungsbedingungen` and `/favicon.ico` (each `Exact`) and
+  the prefix `/_rechtliches/`, the five paths hal's catalog leaves to the origin, so Traefik answers every other path with
+  its 404, and its NetworkPolicy admits only namespace `traefik`. `default.conf` answers the three pages from `built/`,
+  each file under `assets/` at `/_rechtliches/<path>`, and 404 for `/favicon.ico` (hal serves no icon), for
+  `/_rechtliches/`, its directories, a missing file and any path with a segment that starts with a dot (the ConfigMap
+  volume's `..data`), all with hal's four headers. No tunnel line names the host, so hal keeps the public address.
+  `cluster` reads from one client Pod in `cloudflared`, with the host, the three pages and every asset against the
+  checksums of the committed files, taken inside the Pod, the four headers against `default.conf` on every nginx answer,
+  the 404s above with nginx's headers, Traefik's own 404 without them for `/` and other paths and its 400 for an encoded
+  slash, that every `/_rechtliches/` reference of the pages and every `url()` of `appkit.css` names a served file, and a
+  Pod in another namespace gets no answer from the Service.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
   and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at
@@ -736,9 +749,21 @@
   kubelet and cAdvisor at each node's port 10250, verified against the
   ServiceAccount's CA, which signs the kubelet's serving certificate in k3s, with the chart's `get` on `nodes/metrics`
   and never `nodes/proxy`, whose `get` reaches the kubelet's exec; and kube-state-metrics, Flux's controllers on
-  `http-prom` and itself; kube-state-metrics' `customResourceState` makes `gotk_resource_info` for every Kustomization. Retention
+  `http-prom` and itself; kube-state-metrics' `customResourceState` makes `gotk_resource_info` for every Kustomization and, from each k8up Schedule's `creationTimestamp`, `k8up_schedule_created`
+  with its `namespace` and `name` (the chart's role gets `list` and `watch` on `schedules` of `k8up.io`, and still lists no Secret). Retention
   is 30 days and 7GB on one 8Gi claim of the Retain class with the prune annotation. `rules.yaml` holds the rules
-  `TargetDown`, `KustomizationNotReady`, `DeploymentUnavailable`, `PodRestarting` and `DiskLow`, read from `/etc/rules`;
+  `TargetDown`, `KustomizationNotReady`, `DeploymentUnavailable`, `PodRestarting`, `DiskLow`, `ScheduledJobFailed` and
+  `BackupMissing`, with two recording rules, read from `/etc/rules`;
+  `ScheduledJobFailed` fires 15 minutes after the newest finished Job of a CronJob, or of k8up's Backup, Check or Prune in
+  a namespace, failed, and mails `namespace`, `owner_kind` and, for a CronJob, `owner_name`, since k8up's Job names change
+  every run; the next success resolves it, and a Job with no owner is not judged. `BackupMissing` fires 15 minutes after a
+  namespace whose k8up Schedule is older than 8 days has no Backup Job completed in 8 days, so a fresh cluster stays quiet,
+  and mails `namespace`; two Schedules in one namespace count as one, and a stopped Prune or Check alone is not alerted. A k3d
+  run that crosses 05:00Z on the 1st starts a `restore-test` that fails for certain, and one at 04:00Z on the 1st a k8up
+  `check` that may fail, and P7a empties the database, so litellm-expire at 04:00Z daily and, on a Sunday, the Backup at
+  03:00Z and the Prune at 03:30Z could fire too, any of which could fire during the Alertmanager step's count. A Job whose
+  pod never starts has no start time, so `ScheduledJobFailed` does not judge it, and `restore-test` under `Forbid` then
+  stays silent;
   `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` for the devices under `/dev` only, without loop devices
   and `/dev/shm`: a snap's read-only squashfs is always full, and what is not under `/dev` is memory-backed or an
   overlay of the same disk. The job `flux-controllers` keeps only Pods in phase Running, since a finished Pod keeps a target that
@@ -760,8 +785,9 @@
   rendered Prometheus image on `tests/prometheus/rules_test.yml`, which proves each rule's duration, firing and
   resolving; and in k3d its ServiceAccount may get `nodes/metrics` and not `nodes/proxy`, every target is up,
   `gotk_resource_info` exists for every Kustomization, `DiskLow`'s
-  expression without its threshold has a series, a Deployment at a dead image ref and a Kustomization at a missing
-  path make `DeploymentUnavailable` and `KustomizationNotReady` pending, a Pod in namespace `grafana`
+  expression without its threshold has a series, a Deployment at a dead image ref, a Kustomization at a missing
+  path and the Job of a suspended CronJob that exits 1 make `DeploymentUnavailable`, `KustomizationNotReady` and
+  `ScheduledJobFailed` pending, the last with exactly its mailed labels, a Pod in namespace `grafana`
   gets 200 and one in another namespace no answer, the claim is Bound on a Retain volume with prune disabled, and the
   throwaway objects are gone on every exit.
 - `infrastructure/gatus/`: Gatus, the status page, in a Namespace that enforces Pod Security `restricted`: one pod with
@@ -834,9 +860,12 @@
   `tests/legal/app_texts_equal_their_release.sh`, which fetches each listed app's public repository at its release tag
   and fails naming the step when that fails, or when a copy's bytes, its sha256 or its date (the commit date of the file at the tag)
   differ from the list's, a page exists on one side only or a `tag` stands beside an image, and
-  `tests/legal/sections_equal_hals_at_commit.sh`, which fetches hal's public repository at the commit its variable
-  `hal_commit` names and fails naming the step when that fetch fails or `diff -r` finds `infrastructure/legal/sections`
-  unlike hal's `legal/sections`; the pin moves when hal changes `legal/sections` before it leaves.
+  `tests/legal/legal_sections_assets_and_headers_equal_hals_at_commit.sh`, which fetches hal's public repository at the
+  commit its variable `hal_commit` names and fails naming the step when that fetch fails, when `diff -r` finds
+  `infrastructure/legal/sections` unlike hal's `legal/sections`, when `assets/legal-2.css` or the four `add_header` lines
+  of `default.conf` differ from hal's, when the appkit wheel hal pins cannot be fetched or has another sha256, when
+  `assets/appkit-<version>/` differs from the wheel's `appkit/static/` or when `assets/` holds anything else; the pin
+  moves when hal changes any of them before it leaves.
 - `.github/workflows/renovate.yml`: the job `renovate`, daily and on dispatch, runs Renovate's image at a digest by one
   `docker run`, with the job's own token (`contents: read`, `pull-requests: read`, `issues: write`: it can write no
   branch) and `.github/renovate.json5`. The configuration holds custom regex managers over the pin forms under
@@ -857,7 +886,9 @@
   sees as newer than the prefix it would write, so a patch release inside the prefix is not listed; that is accepted,
   since the exact patch moves only when a lane refreshes `mise.lock`. Opening pull requests is not built.
 - `.github/workflows/code-scanning.yml`: CodeQL through quality's `codeql.yml`.
-- `quality/config.toml`: the gate's mandatory jobs; a root entry outside quality's base list is declared here.
+- `quality/config.toml`: the gate's mandatory jobs; a root entry outside quality's base list is declared here, and two
+  `[[layout.allow]]` entries keep the names of the font licence files `open-sans-LICENSE` and `oswald-LICENSE` under
+  `infrastructure/legal/assets/appkit-0.15.0/fonts/`, which the wheel and hal name so.
 - `sonar-project.properties`: the SonarCloud project.
 
 ## Owners
