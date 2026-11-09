@@ -24,7 +24,6 @@ date = 2026-11-08
 sha256 = "94ba94a7cb63bcd358402f31f9875d7d188fe7845be8f27c766c6c30732a0d6c"
 
 [songmaker]
-tag = "v2026.11.09.1"
 
 [songmaker.datenschutz]
 date = 2026-11-09
