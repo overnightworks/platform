@@ -89,7 +89,7 @@ spec:
               command:
                 - sh
                 - -c
-                - umask 077; restic --no-cache dump latest "/$(NAMESPACE)-postgres.dump" >/restore/dump
+                - umask 077; restic --no-cache dump --path "/$(NAMESPACE)-postgres.dump" latest "/$(NAMESPACE)-postgres.dump" >/restore/dump
               env:
                 - name: NAMESPACE
                   valueFrom:

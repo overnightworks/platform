@@ -1,0 +1,29 @@
+# What an app adds to the backup component to back up more than its database: the staging claim and the PreBackupPod
+# that holds the database's dump in it. A layer that includes it lists it after ../postgres/backup, whose patch on the
+# StatefulSet it removes.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - files.yaml
+patches:
+  # The PreBackupPod is the one pod that carries a backup command, so the database's live stream leaves the StatefulSet.
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |
+      - op: remove
+        path: /spec/template/metadata/annotations/k8up.io~1backupcommand
+      - op: remove
+        path: /spec/template/metadata/annotations/k8up.io~1file-extension
+replacements:
+  # The dump is made with the server's own image, so a pg_dump older than its server cannot occur.
+  - source:
+      kind: StatefulSet
+      name: postgres
+      fieldPath: spec.template.spec.containers.[name=postgres].image
+    targets:
+      - select:
+          kind: PreBackupPod
+          name: files
+        fieldPaths:
+          - spec.pod.spec.containers.[name=postgres].image
