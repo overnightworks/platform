@@ -25,6 +25,9 @@ spec:
   prune:
     schedule: "30 3 * * 0"
     retention:
+      # k8up passes --keep-daily 14 when keepDaily is not above 0 and has no field that turns it off; with weekly backups
+      # that keeps 14 snapshots. 1 keeps only the newest snapshot, which keepWeekly keeps anyway.
+      keepDaily: 1
       keepWeekly: 4
       keepMonthly: 3
   check:

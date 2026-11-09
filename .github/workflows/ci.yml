@@ -410,6 +410,7 @@ jobs:
           OUTSIDE_NAMESPACE: hopin
           EMPTY_KEY_TABLE: broker_link
           VENDOR_LIST: infrastructure/admission/image-vendors.yaml
+          BACKUP_COMPONENT: infrastructure/postgres/backup
         run: tests/backup/backup_restores_and_keeps_repositories_apart.sh
       - name: P9b cells
         if: matrix.part == 'core'

@@ -58,6 +58,26 @@ run_restore_test() {
   kubectl --namespace "$namespace" delete job "$job" --cascade=foreground --wait --timeout=2m >/dev/null
 }
 
+# wait_completed <namespace> <backup|prune> <name>: waits for the k8up object's Completed condition and fails unless it succeeded.
+wait_completed() {
+  local namespace="$1" kind="$2" name="$3" deadline=$((SECONDS + 600)) reason
+  while :; do
+    reason="$(kubectl --namespace "$namespace" get "$kind" "$name" \
+      --output jsonpath='{.status.conditions[?(@.type=="Completed")].reason}')"
+    [ -z "$reason" ] || break
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      kubectl --namespace "$namespace" describe "$kind" "$name"
+      kubectl --namespace "$namespace" get jobs,pods
+      fail "the $kind $name of $namespace did not complete within 10 minutes"
+    fi
+    sleep 5
+  done
+  [ "$reason" = Succeeded ] || {
+    kubectl --namespace "$namespace" describe "$kind" "$name"
+    fail "the $kind $name of $namespace ended with reason $reason"
+  }
+}
+
 secret_value() { kubectl --namespace "$1" get secret restic --output json | KEY="$2" yq --output-format json '.data[strenv(KEY)]' | tr -d '"' | base64 --decode; }
 rest_base="$(dirname "$(kubectl --namespace "${BACKUP_NAMESPACES%% *}" get configmap postgres \
   --output jsonpath='{.data.backup-repository}')")"
@@ -128,22 +148,7 @@ for namespace in $BACKUP_NAMESPACES; do
   kubectl --namespace "$namespace" create --filename - <<<"$(yq --output-format json \
     '{ "apiVersion": "k8up.io/v1", "kind": "Backup", "metadata": { "name": "first-backup" },
        "spec": { "backend": .spec.backend, "podConfigRef": .spec.podConfigRef } }' <<<"$schedule")" >/dev/null
-  deadline=$((SECONDS + 600))
-  while :; do
-    reason="$(kubectl --namespace "$namespace" get backup first-backup \
-      --output jsonpath='{.status.conditions[?(@.type=="Completed")].reason}')"
-    [ -z "$reason" ] || break
-    if [ "$SECONDS" -ge "$deadline" ]; then
-      kubectl --namespace "$namespace" describe backup first-backup
-      kubectl --namespace "$namespace" get jobs,pods
-      fail "the Backup of $namespace did not complete within 10 minutes"
-    fi
-    sleep 5
-  done
-  [ "$reason" = Succeeded ] || {
-    kubectl --namespace "$namespace" describe backup first-backup
-    fail "the Backup of $namespace ended with reason $reason"
-  }
+  wait_completed "$namespace" backup first-backup
 
   # k8up's Job pod passed restricted and the image policy, and ran a listed image at a digest.
   job_image="$(kubectl --namespace "$namespace" get jobs --selector k8upjob=true \
@@ -186,6 +191,22 @@ for namespace in $BACKUP_NAMESPACES; do
   run_restore_test "$namespace" restore-test-run
   [ "$status" = passed ] || fail "the restore test of $namespace failed on its snapshot"
   echo "the restore test of $namespace passes on its snapshot"
+
+  # The prune keeps exactly the rule the component declares: k8up adds a daily rule to a Prune that sets none, so the Job's
+  # KEEP_* variables must equal the component's retention and carry nothing more. One Prune, as the Schedule would start it.
+  kubectl --namespace "$namespace" create --filename - <<<"$(yq --output-format json \
+    '{ "apiVersion": "k8up.io/v1", "kind": "Prune", "metadata": { "name": "first-prune" },
+       "spec": { "backend": .spec.backend, "podConfigRef": .spec.podConfigRef, "retention": .spec.prune.retention } }' <<<"$schedule")" >/dev/null
+  wait_completed "$namespace" prune first-prune
+  expected_rule="$(yq 'select(.kind == "Schedule") | .spec.prune.retention | to_entries | .[] |
+    "KEEP_" + (.key | sub("^keep"; "") | upcase) + "=" + (.value | tostring)' "$BACKUP_COMPONENT/backup.yaml" | sort)"
+  [ -n "$expected_rule" ] || fail "$BACKUP_COMPONENT/backup.yaml declares no retention"
+  actual_rule="$(kubectl --namespace "$namespace" get jobs --output json | yq --input-format json \
+    '.items[] | select(.metadata.ownerReferences[].name == "first-prune") | .spec.template.spec.containers[0].env[] |
+     select(.name | test("^KEEP_")) | .name + "=" + .value' | sort)"
+  [ "$actual_rule" = "$expected_rule" ] ||
+    fail "the prune Job of $namespace keeps $(tr '\n' ' ' <<<"$actual_rule"), the component declares $(tr '\n' ' ' <<<"$expected_rule")"
+  echo "the prune Job of $namespace keeps exactly: $(tr '\n' ' ' <<<"$actual_rule")"
 done
 
 # The restore test fails on an empty first key table: the same test, with a key-tables file whose first table the database leaves empty.
