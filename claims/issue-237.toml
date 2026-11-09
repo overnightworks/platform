@@ -3,5 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "76fb340799d14c5a2927e8e3b808a5eb5fc02e36"
 branch = "claude/issue-237-cluster-third-part"
-scope = [".github/workflows/ci.yml", "AGENTS.md"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "tests/backup"]
 opened_commit = "afd933b22635c2c4e109eff681676d1f4b55efae"
+whole_reason = "One move: the third part and the P7d cells that must stand in it on their own state work only together."
