@@ -22,6 +22,15 @@ patches:
         path: /spec/template/metadata/annotations/k8up.io~1backupcommand
       - op: remove
         path: /spec/template/metadata/annotations/k8up.io~1file-extension
+  # The dump is 0640 at group 70, the Postgres image's group: k8up's Job pods read it through a supplemental group, and
+  # their primary group stays, so the cache directory they create stays writable.
+  - target:
+      kind: PodConfig
+      name: postgres-backup
+    patch: |
+      - op: add
+        path: /spec/template/spec/securityContext/supplementalGroups
+        value: [70]
 replacements:
   # The dump is made with the server's own image, so a pg_dump older than its server cannot occur.
   - source:
