@@ -299,6 +299,30 @@ keygen_output="$(age-keygen -o "$key_file" 2>&1)" || { printf '%s\n' "$keygen_ou
 echo "secrets:new-key: $key_file created for the recipient ${keygen_output#Public key: }"
 '''
 
+# GitHub answers an anonymous read with 403 once a runner address used up its hourly limit, so CI sets GITHUB_META_TOKEN to
+# the job's token; unset or empty, the read stays anonymous. The token reaches curl only through its stdin, and tracing ends
+# before it is read.
+[tasks."secrets:github-meta"]
+description = "Print GitHub's meta API reply, authenticated by GITHUB_META_TOKEN when that is set and not empty"
+hide = true
+quiet = true
+run = '''
+#!/usr/bin/env bash
+{ set +x; } 2>/dev/null
+set -euo pipefail
+meta_url="${GITHUB_META_URL?}"
+token="${GITHUB_META_TOKEN-}"
+if [ -z "$token" ]; then
+  exec curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$meta_url"
+fi
+[[ $token =~ ^[A-Za-z0-9._~+/=-]+$ ]] || {
+  echo "secrets:github-meta: GITHUB_META_TOKEN holds a character outside the token alphabet" >&2
+  exit 1
+}
+printf 'header = "Authorization: Bearer %s"\n' "$token" |
+  curl --fail --silent --show-error --proto '=https' --tlsv1.2 --config - "$meta_url"
+'''
+
 # A filter: on stdin one Secret manifest, which holds a private key, so it reaches the readers only through pipes.
 [tasks."secrets:github-host-keys"]
 description = "Pass a Secret manifest on unchanged only when every known_hosts line is a key GitHub's meta API lists"
@@ -315,7 +339,7 @@ IFS= read -r -d '' manifest || true
 known_hosts="$(printf '%s' "$manifest" | yq '.stringData.known_hosts // (.data.known_hosts // "" | @base64d)')" ||
   fail "the Secret's known_hosts cannot be read"
 [ -n "$known_hosts" ] || fail "the Secret's known_hosts is empty"
-github_keys="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$meta_url" | yq -p json '.ssh_keys[]')" ||
+github_keys="$(mise run secrets:github-meta | yq -p json '.ssh_keys[]')" ||
   fail "the ssh_keys of $meta_url cannot be read"
 [ -n "$github_keys" ] || fail "$meta_url lists no ssh_keys"
 
