@@ -255,7 +255,7 @@
   `flux-system` source's ref, in the object applied and in Flux's build: a pull request's ref on a pull request, `main` at the
   run's own commit on a push, so a landing during the run moves nothing. It first fails when the committed root, `tunnel` or `nvidia` carries
   `spec.patches`, which the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
-  Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's and skat's files as dummies
+  Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's, skat's and songmaker's files as dummies
   and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
   printed, each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password,
   and each key a container of a layer in `SECRET_KEY_LAYERS` reads from a Secret, a generated dummy (Alertmanager's
@@ -315,6 +315,12 @@
   The step "songmaker's stores" asserts that Postgres and Redis of namespace `songmaker` are Ready as the image's own
   non-root user, that a Pod there reaches both and one in a throwaway namespace neither, and that a key written to
   Redis is gone once its pod is deleted and Ready again.
+  The step "songmaker's web", in the part `postgres`, asserts that the Deployment `web` is Available with one Ready pod
+  at a full app ref under the candidate's revision and prints the kubelet's pull report and the runner's free disk; that
+  `migrate` ended 0 and `alembic_version` equals the image's head on a Postgres of the major version of the base's
+  image; that a Pod in the namespace gets 200 from `/health` with the public host and an error for an unknown host
+  while a Pod in another namespace gets no answer; that the pod runs as a non-root user on a read-only root and writes to
+  the audio claim and `/tmp`; and that the claim is Bound on the Retain class with prune disabled.
   The nvidia step asserts that the Kustomization `nvidia` is Ready at the candidate with its DaemonSet wanting
   0 pods, that the RuntimeClass `nvidia` has the handler `nvidia`, that Namespace `nvidia` has no Pod Security label and
   holds only that DaemonSet, and that a Pod with the class, uid 1000 and `nvidia.com/gpu: 1` passes server-side dry-run
@@ -448,11 +454,24 @@
   a pull request, pulled through the Secret `ghcr-pull` and started from the files of the Secret `skat` and the
   password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
   container of the same image runs `skat migrate` before `skat serve`. It has no route, NetworkPolicy or tunnel line yet.
-- `apps/songmaker/`: songmaker's stores, no image and no route yet: its Postgres from the base `infrastructure/postgres`,
-  in namespace `songmaker` with `key-tables` `songs generations`, and `redis.yaml`, the queue: one StatefulSet pod at
-  the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a read-only root, persistence
-  off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a NetworkPolicy that admits only the
-  namespace's own pods. The Namespace is in `infrastructure/namespaces/`, not here.
+- `apps/songmaker/`: songmaker's stores and web, no route or login yet: its Postgres from the base
+  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `songs generations`, and `redis.yaml`, the
+  queue: one StatefulSet pod at the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a
+  read-only root, persistence off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a
+  NetworkPolicy that admits only the namespace's own pods. `web.yaml` is the Deployment `web`, one pod with `Recreate`,
+  its image the full app ref of a release that changes only in a pull request, pulled through the Secret `ghcr-pull`;
+  songmaker reads `/run/secrets` as its fixed directory, so that is one `projected` volume of the Secret `songmaker`
+  and the key `password` of the Secret `postgres` as `postgres_password`. The web refuses to start without its OIDC
+  settings, which it asks Keycloak for only at a sign-in, so they stand with a placeholder `oidc_client_secret`
+  until the route sets Keycloak's value. The image's own start runs through `uv`, so the container runs the installed
+  `songmaker` directly. The init container `migrate` runs `alembic upgrade head` with `DATABASE_URL` and the password
+  file alone. The kubelet's probe sends `Host: localhost`, which `ALLOWED_HOSTS` lists beside the public host; the
+  startup probe allows 10 minutes. `/health` answers 200 while the app is degraded, so readiness proves that the process
+  runs and not that its stores are healthy; that is songmaker's to change. No `AGENT__*` setting and no LiteLLM key is set,
+  so the web never calls the gateway. `audio.yaml` is the claim `audiofiles` at `/app/data/audio`, Retain class and the
+  prune annotation, without a k8up annotation; its size is nominal, as local-path enforces none. The web's Service
+  on 8080 admits only the namespace's own pods, and its egress is open. The Namespace is in `infrastructure/namespaces/`,
+  not here.
 - `apps/hopin/`: hopin's Deployment and Service, one pod with `Recreate`, its image the full app ref of a release
   that changes only in a pull request, pulled through the Secret `ghcr-pull` and started from the
   Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`. Its Ingress routes `hopin.hallucinai.de`
