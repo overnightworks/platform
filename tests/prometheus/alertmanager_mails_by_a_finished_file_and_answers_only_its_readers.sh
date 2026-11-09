@@ -69,7 +69,7 @@ echo "Prometheus lists one active Alertmanager"
 in_pod amtool check-config "$finished_file" >/dev/null 2>&1 || fail "amtool refuses the finished file"
 receiver="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "prometheus-alertmanager") | .data["alertmanager.yml"] | from_yaml | .route.receiver' \
   infrastructure/prometheus/rendered.yaml)"
-rule_names="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "prometheus-rules") | .data["rules.yml"] | from_yaml | .groups[].rules[].alert' \
+rule_names="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "prometheus-rules") | .data["rules.yml"] | from_yaml | .groups[].rules[] | select(.alert) | .alert' \
   infrastructure/prometheus/rules.yaml)"
 for rule_name in $rule_names; do
   routed="$(in_pod amtool config routes test --config.file="$finished_file" "alertname=$rule_name" 2>/dev/null)" ||

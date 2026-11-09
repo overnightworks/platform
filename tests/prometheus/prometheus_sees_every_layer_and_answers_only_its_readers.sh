@@ -81,10 +81,31 @@ root_filesystem_is_measured() { [ -n "$(query "$disk_ratio")" ]; }
 until_true 300 "DiskLow's expression without its threshold has a series" root_filesystem_is_measured
 echo "DiskLow's expression has series, by device: $(query "$disk_ratio" | yq -p=json '.metric.device + " " + .value[1]' | paste -sd' ')"
 
-# A Deployment at an image no registry holds and a Kustomization at a missing path make their alerts pending; the
-# durations, firing and resolving are the rules' tests'.
+# A Deployment at an image no registry holds, a Kustomization at a missing path and the failed Job of a suspended CronJob
+# make their alerts pending; the durations, firing and resolving are the rules' tests'.
 kubectl create namespace "$OTHER_NAMESPACE"
 kubectl -n "$OTHER_NAMESPACE" create deployment dead --image "$dead_image"
+kubectl apply -f - <<YAML
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: $FAILING_CRONJOB
+  namespace: $OTHER_NAMESPACE
+spec:
+  schedule: "0 0 1 1 *"
+  suspend: true
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: fail
+              image: $PROBE_IMAGE
+              command: [sh, -c, exit 1]
+YAML
+kubectl -n "$OTHER_NAMESPACE" create job "$FAILING_CRONJOB-run" --from="cronjob/$FAILING_CRONJOB"
 kubectl apply -f - <<YAML
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -104,6 +125,14 @@ alert_is_pending() {
 }
 until_true 360 "DeploymentUnavailable is pending for the dead Deployment" alert_is_pending DeploymentUnavailable deployment dead
 echo "DeploymentUnavailable is pending for a Deployment at a dead image"
+# The labels are the whole set a mail carries: the Job's name and the scrape's labels are not among them.
+failed_job_alert_is_pending_with_its_labels() {
+  [ "$(api alerts | yq -p=json -o=json -I=0 \
+    ".data.alerts[] | select(.state == \"pending\" and .labels.alertname == \"ScheduledJobFailed\" and .labels.owner_name == \"$FAILING_CRONJOB\") | .labels | to_entries | map(.key + \"=\" + .value) | sort | join(\" \")")" \
+    = "\"alertname=ScheduledJobFailed namespace=$OTHER_NAMESPACE owner_kind=CronJob owner_name=$FAILING_CRONJOB\"" ]
+}
+until_true 360 "ScheduledJobFailed is pending with its labels for the failed Job of the CronJob" failed_job_alert_is_pending_with_its_labels
+echo "ScheduledJobFailed is pending for the failed Job of a suspended CronJob, with namespace, owner_kind and owner_name"
 until_true 360 "KustomizationNotReady is pending for the broken Kustomization" alert_is_pending KustomizationNotReady name "$BROKEN_KUSTOMIZATION"
 echo "KustomizationNotReady is pending for a Kustomization at a missing path"
 

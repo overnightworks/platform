@@ -213,8 +213,8 @@
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
-  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells" and
-  the step of `tests/no_network/`, the shortest part; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
+  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells", the "P9f cells"
+  and the step of `tests/no_network/`, the shortest part; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
   assertion runs in all three, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
@@ -407,6 +407,9 @@
   credentials the server answers 401 everywhere, a namespace's credentials reach only its own repository, and a pod in a
   namespace without one gets no answer; deleting the Kustomization `backup` keeps the claim, its repositories list again
   after the root re-creates it; and `backup:fetch` writes the latest dump at 0600 and refuses an existing file.
+  The step "P9f cells" (`tests/prometheus/`) asks Prometheus and creates nothing: `k8up_schedule_created` has a series for
+  each Schedule the cluster holds, and the recording rule of the newest completed Backup has one for each namespace of
+  `$BACKUP_NAMESPACES`.
   The step "P9b cells" plants a backdated and a fresh row in each of the five tables through the Postgres pod and runs a
   Job made from the CronJob: it prints one deletion in each count and leaves the fresh rows and the idle customers
   with a budget or with spend, a second run prints zeros, and the first log holds no planted value; its Pod ran in a
@@ -713,9 +716,21 @@
   kubelet and cAdvisor at each node's port 10250, verified against the
   ServiceAccount's CA, which signs the kubelet's serving certificate in k3s, with the chart's `get` on `nodes/metrics`
   and never `nodes/proxy`, whose `get` reaches the kubelet's exec; and kube-state-metrics, Flux's controllers on
-  `http-prom` and itself; kube-state-metrics' `customResourceState` makes `gotk_resource_info` for every Kustomization. Retention
+  `http-prom` and itself; kube-state-metrics' `customResourceState` makes `gotk_resource_info` for every Kustomization and, from each k8up Schedule's `creationTimestamp`, `k8up_schedule_created`
+  with its `namespace` and `name` (the chart's role gets `list` and `watch` on `schedules` of `k8up.io`, and still lists no Secret). Retention
   is 30 days and 7GB on one 8Gi claim of the Retain class with the prune annotation. `rules.yaml` holds the rules
-  `TargetDown`, `KustomizationNotReady`, `DeploymentUnavailable`, `PodRestarting` and `DiskLow`, read from `/etc/rules`;
+  `TargetDown`, `KustomizationNotReady`, `DeploymentUnavailable`, `PodRestarting`, `DiskLow`, `ScheduledJobFailed` and
+  `BackupMissing`, with two recording rules, read from `/etc/rules`;
+  `ScheduledJobFailed` fires 15 minutes after the newest finished Job of a CronJob, or of k8up's Backup, Check or Prune in
+  a namespace, failed, and mails `namespace`, `owner_kind` and, for a CronJob, `owner_name`, since k8up's Job names change
+  every run; the next success resolves it, and a Job with no owner is not judged. `BackupMissing` fires 15 minutes after a
+  namespace whose k8up Schedule is older than 8 days has no Backup Job completed in 8 days, so a fresh cluster stays quiet,
+  and mails `namespace`; two Schedules in one namespace count as one, and a stopped Prune or Check alone is not alerted. A k3d
+  run that crosses 05:00Z on the 1st starts a `restore-test` that fails for certain, and one at 04:00Z on the 1st a k8up
+  `check` that may fail, and P7a empties the database, so litellm-expire at 04:00Z daily and, on a Sunday, the Backup at
+  03:00Z and the Prune at 03:30Z could fire too, any of which could fire during the Alertmanager step's count. A Job whose
+  pod never starts has no start time, so `ScheduledJobFailed` does not judge it, and `restore-test` under `Forbid` then
+  stays silent;
   `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` for the devices under `/dev` only, without loop devices
   and `/dev/shm`: a snap's read-only squashfs is always full, and what is not under `/dev` is memory-backed or an
   overlay of the same disk. The job `flux-controllers` keeps only Pods in phase Running, since a finished Pod keeps a target that
@@ -737,8 +752,9 @@
   rendered Prometheus image on `tests/prometheus/rules_test.yml`, which proves each rule's duration, firing and
   resolving; and in k3d its ServiceAccount may get `nodes/metrics` and not `nodes/proxy`, every target is up,
   `gotk_resource_info` exists for every Kustomization, `DiskLow`'s
-  expression without its threshold has a series, a Deployment at a dead image ref and a Kustomization at a missing
-  path make `DeploymentUnavailable` and `KustomizationNotReady` pending, a Pod in namespace `grafana`
+  expression without its threshold has a series, a Deployment at a dead image ref, a Kustomization at a missing
+  path and the Job of a suspended CronJob that exits 1 make `DeploymentUnavailable`, `KustomizationNotReady` and
+  `ScheduledJobFailed` pending, the last with exactly its mailed labels, a Pod in namespace `grafana`
   gets 200 and one in another namespace no answer, the claim is Bound on a Retain volume with prune disabled, and the
   throwaway objects are gone on every exit.
 - `infrastructure/gatus/`: Gatus, the status page, in a Namespace that enforces Pod Security `restricted`: one pod with
