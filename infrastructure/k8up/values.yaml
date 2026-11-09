@@ -15,8 +15,9 @@ securityContext:
   capabilities:
     drop: [ALL]
 k8up:
-  # Only a Pod with a backup command is backed up, never a volume: an app says what is saved, and no claim is, since a
-  # claim carries no annotation.
+  # Only a Pod with a backup command and a claim with the annotation k8up.io/backup are backed up: an app says what is
+  # saved. The one annotated claim is a layer's staging claim (infrastructure/postgres/backup/files), which holds the
+  # copy of the claim the layer declares; no app claim carries the annotation.
   skipWithoutAnnotation: true
   # A Snapshot object records the job's expanded RESTIC_REPOSITORY, which for a REST backend holds the user and password
   # in its URL: the snapshot list is read through restic instead.
