@@ -124,6 +124,7 @@ ask() { request "$@" || fail "$failure"; }
 # forwarded_port.
 start_forward() {
   local pid log="$scratch/forward-$2.log"
+  : >"$log"
   timeout 10m kubectl --namespace "$1" port-forward "service/$2" ":$3" >"$log" 2>&1 &
   pid=$!
   forwards+=("$pid")
