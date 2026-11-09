@@ -117,6 +117,215 @@ groups:
   - name: agent-adders
   - name: agent-owners
 clientScopes:
+  # Keycloak's built-in scopes, declared with every mapper as Keycloak ships it because config-cli removes a mapper of a
+  # declared scope that the file leaves out. Only the access and introspection claims are off: no client or service
+  # reads a name or an e-mail from an access token, which goes on to other services (speech), so it holds none of
+  # them (data minimisation). ID token and userinfo carry every claim; "true" turns a claim back on.
+  - name: profile
+    description: "OpenID Connect built-in scope: profile"
+    protocol: openid-connect
+    attributes:
+      consent.screen.text: "${profileScopeConsentText}"
+      display.on.consent.screen: "true"
+      include.in.token.scope: "true"
+    protocolMappers:
+      - name: zoneinfo
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: zoneinfo
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: zoneinfo
+          userinfo.token.claim: "true"
+      - name: picture
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: picture
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: picture
+          userinfo.token.claim: "true"
+      - name: profile
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: profile
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: profile
+          userinfo.token.claim: "true"
+      - name: family name
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: family_name
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: lastName
+          userinfo.token.claim: "true"
+      - name: given name
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: given_name
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: firstName
+          userinfo.token.claim: "true"
+      - name: username
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: preferred_username
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: username
+          userinfo.token.claim: "true"
+      - name: birthdate
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: birthdate
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: birthdate
+          userinfo.token.claim: "true"
+      - name: nickname
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: nickname
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: nickname
+          userinfo.token.claim: "true"
+      - name: gender
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: gender
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: gender
+          userinfo.token.claim: "true"
+      - name: locale
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: locale
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: locale
+          userinfo.token.claim: "true"
+      - name: updated at
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: updated_at
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: long
+          user.attribute: updatedAt
+          userinfo.token.claim: "true"
+      - name: full name
+        protocol: openid-connect
+        protocolMapper: oidc-full-name-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          userinfo.token.claim: "true"
+      - name: website
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: website
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: website
+          userinfo.token.claim: "true"
+      - name: middle name
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: middle_name
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: middleName
+          userinfo.token.claim: "true"
+  - name: email
+    description: "OpenID Connect built-in scope: email"
+    protocol: openid-connect
+    attributes:
+      consent.screen.text: "${emailScopeConsentText}"
+      display.on.consent.screen: "true"
+      include.in.token.scope: "true"
+    protocolMappers:
+      - name: email
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: email
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: String
+          user.attribute: email
+          userinfo.token.claim: "true"
+      - name: email verified
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-property-mapper
+        consentRequired: false
+        config:
+          access.token.claim: "false"
+          claim.name: email_verified
+          id.token.claim: "true"
+          introspection.token.claim: "false"
+          jsonType.label: boolean
+          user.attribute: emailVerified
+          userinfo.token.claim: "true"
   - name: groups
     description: The user's groups as full paths, for example /apps/songmaker
     protocol: openid-connect
