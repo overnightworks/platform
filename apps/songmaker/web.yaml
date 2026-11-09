@@ -1,8 +1,8 @@
 # songmaker's web, pulled from its private package through the Secret ghcr-pull and started from the files of the
 # Secret songmaker and the namespace's Postgres password, both from platform-secrets, which songmaker reads from the
 # fixed directory /run/secrets. The init container migrates the database to the image's head; its first run may find
-# Postgres not ready yet, and the init container's backoff heals that. The image's own start runs through uv, which
-# wants a writable cache, so the container runs the installed program directly.
+# Postgres not ready yet, and the init container's backoff heals that. The image's own start runs through uv; the
+# container runs the installed program directly instead.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

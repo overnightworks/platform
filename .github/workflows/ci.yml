@@ -138,7 +138,7 @@ jobs:
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
       # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
-      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml
+      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml apps/songmaker/music-worker.yaml apps/songmaker/scoring-worker.yaml
       # The Kustomization that serves the Secrets of every namespace, so that no other layer holds one of them.
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
@@ -338,6 +338,14 @@ jobs:
           # The throwaway namespace of the Pod that must get no answer.
           OTHER_NAMESPACE: songmaker-web-client
         run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
+
+      - name: Assert that songmaker's music and scoring workers are Ready at their full refs, that neither asks for the GPU, and that the scoring worker reaches only its Postgres and Redis
+        if: matrix.part == 'postgres'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          CLUSTER_SERVICE: default/kubernetes
+          OUTSIDE_TARGET: github.com:443
+        run: tests/songmaker/workers_are_ready_at_their_full_ref_and_scoring_reaches_only_its_stores.sh
 
       - name: Assert that the layer nvidia is Ready with its DaemonSet scheduled nowhere, offers the RuntimeClass, holds only the plugin in a Namespace without a Pod Security label, and that a restricted Pod with the class passes dry-run
         if: matrix.part == 'core'

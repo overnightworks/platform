@@ -1,0 +1,131 @@
+# songmaker's scoring worker, started like the music worker from the two files of the Secret songmaker it reads and the
+# namespace's Postgres password. Whisper large-v3 and the audio model are baked into its image under HF_HUB_CACHE, which
+# stays unmounted so the weights are not hidden, and HF_HUB_OFFLINE makes a missing model fail at once. It reads the
+# audio claim of the music worker.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scoring-worker
+  namespace: songmaker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scoring-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: scoring-worker
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        # The kubelet verifies the image's numeric USER 1000 as non-root, so no runAsUser repeats it.
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: scoring-worker
+          image: ghcr.io/overnightworks/songmaker/scoring-worker:2026.11.08.1@sha256:7457d1cddc3f33e643187e238aba54b1d774829286e7de6ca39146618a43b2cf
+          args: [songmaker_cli.scoring_worker.ScoringWorkerSettings]
+          env:
+            - name: DATABASE_URL
+              value: postgresql://songmaker@postgres:5432/songmaker
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+            - name: LOG_FORMAT
+              value: json
+            - name: HF_HUB_OFFLINE
+              value: '1'
+          startupProbe:
+            exec:
+              command: &health [/app/.venv/bin/python, /app/scripts/arq_healthcheck.py, scoring]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: *health
+            periodSeconds: 30
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: audio
+              mountPath: /app/data/audio
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: secrets
+          projected:
+            sources:
+              - secret:
+                  name: songmaker
+                  items:
+                    - key: session_secret
+                      path: session_secret
+                    - key: songmaker_internal_token
+                      path: songmaker_internal_token
+              - secret:
+                  name: postgres
+                  items:
+                    - key: password
+                      path: postgres_password
+        - name: audio
+          persistentVolumeClaim:
+            claimName: audiofiles
+        - name: tmp
+          emptyDir: {}
+---
+# Nothing reaches the scoring worker, and it sends only to cluster DNS and the namespace's Postgres and Redis, so
+# neither the API server nor any host outside the cluster is reachable from it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: scoring-worker
+  namespace: songmaker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: scoring-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - port: 6379
+          protocol: TCP

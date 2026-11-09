@@ -1,0 +1,89 @@
+# songmaker's music worker, pulled from the same private package release as the web and started from the two files of
+# the Secret songmaker it reads and the namespace's Postgres password, which songmaker reads from the fixed directory
+# /run/secrets. Its settings refuse any other file there. It has no port; it is ready while arq's health key in Redis
+# is fresh. It calls the GPU worker by the host the database holds, which no workload of this layer serves yet.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: music-worker
+  namespace: songmaker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: music-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: music-worker
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        # The kubelet verifies the image's numeric USER 1000 as non-root, so no runAsUser repeats it.
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: music-worker
+          image: ghcr.io/overnightworks/songmaker/music-worker:2026.11.08.1@sha256:ceb085fed9eab7c9dca3c242c62811def0efae8ed04d3c50ac9e77eae502cdd2
+          args: [songmaker_cli.music_worker.MusicWorkerSettings]
+          env:
+            # The URL names no password: the file in /run/secrets is the password's one owner, the namespace's Postgres.
+            - name: DATABASE_URL
+              value: postgresql://songmaker@postgres:5432/songmaker
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+            - name: LOG_FORMAT
+              value: json
+          # arq writes its health key every 30 seconds, so the first success comes within a minute of the start.
+          startupProbe:
+            exec:
+              command: &health [/app/.venv/bin/python, /app/scripts/arq_healthcheck.py, music]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: *health
+            periodSeconds: 30
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: audio
+              mountPath: /app/data/audio
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: secrets
+          projected:
+            sources:
+              - secret:
+                  name: songmaker
+                  items:
+                    - key: session_secret
+                      path: session_secret
+                    - key: songmaker_internal_token
+                      path: songmaker_internal_token
+              - secret:
+                  name: postgres
+                  items:
+                    - key: password
+                      path: postgres_password
+        - name: audio
+          persistentVolumeClaim:
+            claimName: audiofiles
+        - name: tmp
+          emptyDir:
+            medium: Memory
