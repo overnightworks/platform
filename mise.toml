@@ -90,6 +90,27 @@ state = "running"
 enabled = false
 on_change = "restart"
 
+# The host journal keeps no entry older than 29 days: the drop-in sets the retention and the file span. mise creates no
+# missing parent, and the directory exists only once something has put a drop-in there. systemd-journald.service is a
+# static unit that reads its drop-ins at start, so a restart after a change applies them; `enabled = false` because
+# mise cannot enable a static unit and reports it unknown, and journald runs at every boot anyway.
+[bootstrap.directories."/etc/systemd/journald.conf.d"]
+owner = "root"
+group = "root"
+mode = "0755"
+
+[bootstrap.files."/etc/systemd/journald.conf.d/90-retention.conf"]
+source = "host/journald/90-retention.conf"
+owner = "root"
+group = "root"
+mode = "0644"
+notify = ["systemd-journald"]
+
+[bootstrap.services.systemd-journald]
+state = "running"
+enabled = false
+on_change = "restart"
+
 # The disk's bounds run in the operator's own user manager, with no sudo: Docuum keeps Docker's images within 100 GB, a
 # weekly clean empties uv's cache, a daily tmpfiles clean deletes Codex sessions after 30 days and a daily gtrash
 # prune deletes Trash entries whose .trashinfo date is older than 30 days. mise writes each unit
