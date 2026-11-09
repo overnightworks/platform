@@ -15,18 +15,23 @@ trap remove_source EXIT
 committed="$(kubectl create --dry-run=client -f clusters/pc/flux-system/gotk-sync.yaml -o go-template='{{if eq .kind "GitRepository"}}{{.spec.url}} {{.spec.ref.branch}}{{end}}')"
 read -r url branch <<<"$committed"
 [ -n "$url" ] && [ -n "$branch" ] || fail "the committed root names no GitRepository url and branch"
-kubectl apply --server-side -f - <<YAML
+source_manifest="$(cat <<'YAML'
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
-  name: $source_name
+  name: @NAME@
   namespace: flux-system
 spec:
   interval: 1m0s
-  url: $url
+  url: @URL@
   ref:
-    branch: $branch
+    branch: @BRANCH@
 YAML
+)"
+source_manifest="${source_manifest//@NAME@/${source_name}}"
+source_manifest="${source_manifest//@URL@/${url}}"
+source_manifest="${source_manifest//@BRANCH@/${branch}}"
+printf '%s\n' "$source_manifest" | kubectl apply --server-side -f -
 kubectl -n flux-system wait "gitrepository/$source_name" --for=condition=Ready --timeout=3m ||
   { kubectl -n flux-system get "gitrepository/$source_name" -o yaml; fail "a GitRepository at the committed $url on $branch does not turn Ready"; }
 echo "a GitRepository at the committed $url on $branch is Ready under the candidate's source-controller"
