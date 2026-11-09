@@ -1,8 +1,0 @@
-claim_id = "7afaab0fc9e348da96930bb9c6380bd6"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "207c1ba991751856fcdf7d192ec827a90474b3b9"
-branch = "claude/issue-296-p5-github-settings-reference"
-scope = ["AGENTS.md", "docs/github-settings.md", "src/opentofu/github/tests/organization_rulesets.tftest.hcl", "src/opentofu/github/tests/repository_listing.tftest.hcl", "tests/github/plan_with_a_delete_is_refused.sh"]
-opened_commit = "71c02b83f7b05db600773d0c49c837334cb40df4"
-whole_reason = "One move: the sentences leave AGENTS.md in the commit that writes them into the reference and gives their tests the citations, so no tree state holds a rule twice or nowhere."
