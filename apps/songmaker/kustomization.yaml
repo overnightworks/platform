@@ -8,8 +8,23 @@ resources:
   - web.yaml
   - music-worker.yaml
   - scoring-worker.yaml
+components:
+  - ../../infrastructure/postgres/backup
 configMapGenerator:
   - name: postgres
     behavior: merge
     literals:
-      - key-tables=songs generations
+      # alembic_version, which alembic upgrade fills, comes first: the restore test fails on an empty first table.
+      - key-tables=alembic_version songs generations
+      - backup-repository=http://rest-server.backup.svc.cluster.local:8000/songmaker/
+replacements:
+  - source:
+      kind: ConfigMap
+      name: postgres
+      fieldPath: data.backup-repository
+    targets:
+      - select:
+          kind: Schedule
+          name: postgres
+        fieldPaths:
+          - spec.backend.rest.url
