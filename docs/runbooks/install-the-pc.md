@@ -24,7 +24,7 @@ Impact: the platform does not run on the PC before step 6. hal runs beside it th
 6. The operator: `mise run bootstrap:secrets`.
 7. The operator: `sudo systemctl start pod-logs-clean.service`, once, as the timer first runs at midnight.
 8. The operator: `mise run check:pod-logs`. It passes.
-9. A new pod-log part or inotify limit, the operator: `scripts/bootstrap_pc.sh --only files,services`. For the pod-log
+9. A new pod-log part, inotify limit or journal retention, the operator: `scripts/bootstrap_pc.sh --only files,services`. For the pod-log
    parts, steps 4, 7 and 8 follow.
 10. New disk units, which run in the operator's user manager, which lingers; after step 1, an agent:
     `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`.
