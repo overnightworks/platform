@@ -26,6 +26,17 @@ for manifest in $APP_MANIFESTS; do
   if [ "$replicas" = 0 ]; then
     state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.replicas}|{.spec.strategy.type}')"
     [ "$state" = "|Recreate" ] || fail "the Deployment $deployment reads '$state', not no pod at 0 replicas and Recreate"
+    pods="$(kubectl --namespace "$namespace" get pods -l "app.kubernetes.io/name=$name" -o name)"
+    [ -z "$pods" ] || fail "the Deployment $deployment at 0 replicas has pods: $pods"
+    # The class is applied by another layer, so admission finds it only once that layer has.
+    runtime_class="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.runtimeClassName}')"
+    [ -z "$runtime_class" ] || until_true 180 "the RuntimeClass $runtime_class exists" kubectl get runtimeclass "$runtime_class"
+    # The template is what a go at 1 replica creates, so its Pod meets the Namespace's Pod Security level now.
+    kubectl --namespace "$namespace" get deployment "$name" -o yaml |
+      yq '{"apiVersion": "v1", "kind": "Pod", "metadata": {"name": .metadata.name + "-dry-run", "labels": .spec.template.metadata.labels}, "spec": .spec.template.spec}' |
+      kubectl --namespace "$namespace" create --dry-run=server -f - ||
+      fail "the Pod template of the Deployment $deployment is refused by $namespace's admission"
+    echo "the Deployment $deployment has no pod and its Pod template passes server-side dry-run in $namespace"
   else
     kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
     state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
@@ -34,7 +45,7 @@ for manifest in $APP_MANIFESTS; do
   image="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.containers[*].image}')"
   [[ $image =~ ^ghcr[.]io/${GITHUB_REPOSITORY_OWNER,,}/[^[:space:]:@]+:[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] ||
     fail "the Deployment $deployment runs '$image', not one full app ref"
-  echo "the Deployment $deployment at $replicas replicas has Recreate and runs the full app ref $image"
+  echo "the Deployment $deployment is Available with one Ready pod, Recreate, and runs the full app ref $image"
   # What the image cost the runner: the kubelet's own report of each pull, and the disk after it.
   kubectl --namespace "$namespace" get events --field-selector reason=Pulled \
     -o jsonpath='{range .items[*]}{.message}{"\n"}{end}'

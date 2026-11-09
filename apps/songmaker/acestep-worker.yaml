@@ -64,12 +64,6 @@ spec:
               value: "1"
             - name: HF_HUB_DISABLE_XET
               value: "1"
-            # The root is read-only: the caches that uv, triton and torch write beside the source or under HOME go to
-            # the memory-free scratch volume.
-            - name: HOME
-              value: /tmp
-            - name: UV_CACHE_DIR
-              value: /tmp/uv
           ports:
             - name: http
               containerPort: 8001
@@ -90,7 +84,6 @@ spec:
             timeoutSeconds: 5
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           volumeMounts:
