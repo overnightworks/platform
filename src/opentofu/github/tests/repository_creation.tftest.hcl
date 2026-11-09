@@ -46,8 +46,13 @@ run "a_repository_to_create_is_public_with_issues_and_a_first_commit" {
   }
 
   assert {
-    condition     = github_repository.managed["figure"].has_issues && github_repository.managed["figure"].auto_init
-    error_message = "A created repository must have issues and a first commit."
+    condition = (
+      github_repository.managed["figure"].has_issues &&
+      github_repository.managed["figure"].has_wiki &&
+      github_repository.managed["figure"].has_projects &&
+      github_repository.managed["figure"].auto_init
+    )
+    error_message = "A created repository must have issues, a wiki, projects and a first commit."
   }
 
   assert {
