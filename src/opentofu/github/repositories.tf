@@ -4,6 +4,7 @@ locals {
     "aco",
     "agents",
     "design",
+    "figure",
     "hal",
     "hopin",
     "marketplace",
@@ -22,16 +23,9 @@ locals {
   unmanaged = {
     "ACE-Step-1.5" = "a vendor fork that follows its upstream, not the fleet"
   }
-
-  # Repositories this configuration creates, each with its description; a name moves to managed once it exists.
-  created = {
-    "figure" = "The fleet's VRM 1.0 profile, its check command and a browser library that draws and drives a figure."
-  }
-
-  declared = setunion(local.managed, keys(local.created))
 }
 
-# The importer recovers a lost state; an import of a name that does not exist fails the plan, so a name in managed is never created; only a name in created is.
+# The importer recovers a lost state; an import of a name that does not exist fails the plan, so no repository is created.
 import {
   for_each = local.managed
   to       = github_repository.managed[each.key]
@@ -45,15 +39,9 @@ import {
 }
 
 resource "github_repository" "managed" {
-  for_each = local.declared
+  for_each = local.managed
 
   name                   = each.key
-  description            = lookup(local.created, each.key, null)
-  visibility             = contains(keys(local.created), each.key) ? "public" : null
-  has_issues             = contains(keys(local.created), each.key) ? true : null
-  auto_init              = contains(keys(local.created), each.key) ? true : null
-  has_wiki               = contains(keys(local.created), each.key) ? true : null
-  has_projects           = contains(keys(local.created), each.key) ? true : null
   allow_merge_commit     = false
   allow_squash_merge     = true
   allow_rebase_merge     = false
@@ -115,7 +103,7 @@ resource "github_repository" "managed" {
 }
 
 resource "github_repository_vulnerability_alerts" "managed" {
-  for_each = local.declared
+  for_each = local.managed
 
   repository = github_repository.managed[each.key].name
   enabled    = true
@@ -138,18 +126,16 @@ locals {
   link_header  = join(",", lookup(jsondecode(local.listing_read ? data.github_rest_api.organisation_repositories.headers : "{}"), "Link", []))
 
   listing_judgeable       = local.listing_read && !strcontains(local.link_header, "rel=\"next\"")
-  listed_names            = toset([for repository in local.listing : repository.name])
   listed_active           = toset([for repository in local.listing : repository.name if !repository.archived])
   listed_manageable       = toset([for repository in local.listing : repository.name if !repository.archived && !repository.fork])
   listed_private          = toset([for repository in local.listing : repository.name if repository.private])
-  undeclared_repositories = sort(setsubtract(local.listed_active, setunion(local.declared, keys(local.unmanaged))))
+  undeclared_repositories = sort(setsubtract(local.listed_active, setunion(local.managed, keys(local.unmanaged))))
   unmanageable_names      = sort(setsubtract(local.managed, local.listed_manageable))
-  already_listed_created  = sort(setintersection(keys(local.created), local.listed_names))
 }
 
 # The conditions reference only names and flags, because a failed condition prints every value it references.
 output "managed_repositories" {
-  value = sort(tolist(local.declared))
+  value = sort(tolist(local.managed))
 
   precondition {
     condition     = local.listing_judgeable
@@ -164,10 +150,5 @@ output "managed_repositories" {
   precondition {
     condition     = !local.listing_judgeable || length(local.unmanageable_names) == 0
     error_message = "Managed repositories not listed, archived or a fork: ${join(", ", local.unmanageable_names)}."
-  }
-
-  precondition {
-    condition     = !local.listing_judgeable || length(local.already_listed_created) == 0
-    error_message = "Repositories in created that the listing already holds, so move them to managed: ${join(", ", local.already_listed_created)}."
   }
 }
