@@ -25,3 +25,13 @@ reason = "the files the bootstrap writes onto the host, ruled Q9 on platform#1"
 [[root.allow]]
 entry = "apps/"
 reason = "Flux's documented layout, ruled Q9 on platform#1"
+
+[[layout.allow]]
+path = "infrastructure/legal/assets/appkit-0.15.0/fonts/open-sans-LICENSE"
+rule = "file-suffix"
+reason = "the names are the wheel's and hal's, which the served tree and the equality cell keep byte for byte, so a rename is counterproductive"
+
+[[layout.allow]]
+path = "infrastructure/legal/assets/appkit-0.15.0/fonts/oswald-LICENSE"
+rule = "file-suffix"
+reason = "the names are the wheel's and hal's, which the served tree and the equality cell keep byte for byte, so a rename is counterproductive"
