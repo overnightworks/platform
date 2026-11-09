@@ -558,6 +558,14 @@ cell_rerun_on_a_suspended_kustomization_runs_through() {
   [ "$status" = 0 ] && [[ $flux_calls == *resume* ]] || fail "a re-run on a suspended Kustomization exited $status with '$output'"
 }
 
+cell_failing_rerun_on_a_suspended_kustomization_leaves_it_suspended() {
+  cell=failing-rerun-on-a-suspended-kustomization-leaves-it-suspended
+  make_tree $cell
+  FAKE_CLAIM=audiofiles FAKE_SUSPENDED=true FAKE_FREE_KB=0 run_loader --files "$tree" x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"same command again"* ]] ||
+    fail "a failing re-run on a suspended Kustomization exited $status with '$output' after flux $flux_calls"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 cells=(
   failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
@@ -593,6 +601,7 @@ cells=(
   files-load-that-differs-stays-suspended-naming-the-rerun
   failed-restore-of-files-load-stays-suspended-naming-the-rerun
   rerun-on-a-suspended-kustomization-runs-through
+  failing-rerun-on-a-suspended-kustomization-leaves-it-suspended
 )
 failed=()
 for name in "${cells[@]}"; do

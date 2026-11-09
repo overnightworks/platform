@@ -3,7 +3,7 @@
 # the namespace's claim while rsync replaces its content with the tree's. It prints names, counts, bytes and outcomes,
 # never a file name; rsync's messages go to the log file the caller names.
 # Usage: scripts/load_files.sh check <dir>
-#        scripts/load_files.sh start <namespace> <pod> <dir>
+#        scripts/load_files.sh start <namespace> <pod> <claim> <dir>
 #        scripts/load_files.sh sync <namespace> <pod> <dir> <log>
 #        scripts/load_files.sh verify <namespace> <pod> <dir> <log>
 #        scripts/load_files.sh stop <namespace> <pod>
@@ -20,7 +20,7 @@ count_entries() {
   { find "$directory" -mindepth 1 "$@" -print0 2>/dev/null || true; } | tr -cd '\0' | wc -c
 }
 
-source_bytes() { find "$1" -type f -printf '%s\n' | awk '{ bytes += $1 } END { print bytes + 0 }'; }
+source_bytes() { find "$1" -type f -printf '%s\n' 2>/dev/null | awk '{ bytes += $1 } END { print bytes + 0 }'; }
 
 check() {
   local directory="$1" other unreadable newline_names files
@@ -41,9 +41,7 @@ check() {
 # The Pod is the copy container's image of the namespace's PreBackupPod, the one image the platform runs rsync in, at the
 # reading uid that PreBackupPod sets, with the claim the layer declares writable and no token.
 start() {
-  local namespace="$1" pod="$2" directory="$3" claim manifest free needed
-  claim="$(kubectl --namespace "$namespace" get configmap postgres --output jsonpath='{.data.backup-claim}')" ||
-    fail "cannot read the claim of $namespace; nothing changed"
+  local namespace="$1" pod="$2" claim="$3" directory="$4" manifest free needed
   kubectl --namespace "$namespace" delete pod "$pod" --ignore-not-found --wait >/dev/null ||
     fail "cannot delete an earlier loader Pod $pod in $namespace"
   # shellcheck disable=SC2016 # $uid is yq's variable
@@ -77,9 +75,9 @@ start() {
 rsync_into_pod() {
   local namespace="$1" pod="$2" directory="$3"
   shift 3
-  # The claim's root belongs to the provisioner's user, so the loader cannot set its mode or time; the files below it are
-  # the loader's, with the modes its umask gives.
-  RSH_NAMESPACE="$namespace" RSH_POD="$pod" rsync --rsh="$rsh" -a --no-perms --omit-dir-times --delete "$@" \
+  # The claim's root belongs to the provisioner's user, so the loader cannot set its mode, time or group; the files below
+  # it are the loader's, with the modes its umask gives and its group.
+  RSH_NAMESPACE="$namespace" RSH_POD="$pod" rsync --rsh="$rsh" -a --no-perms --no-group --omit-dir-times --delete "$@" \
     "$directory/" "$pod:/target/"
 }
 
@@ -104,7 +102,7 @@ stop() { kubectl --namespace "$1" delete pod "$2" --ignore-not-found --wait >/de
 
 case "${1:-}" in
   check) check "$2" ;;
-  start) start "$2" "$3" "$4" ;;
+  start) start "$2" "$3" "$4" "$5" ;;
   sync) sync "$2" "$3" "$4" "$5" ;;
   verify) verify "$2" "$3" "$4" "$5" ;;
   stop) stop "$2" "$3" ;;

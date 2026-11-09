@@ -705,7 +705,7 @@ resume() {
   trap - EXIT TERM
   trap '' INT
   wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; the \
-Kustomization stays suspended and the writers at 0: run mise run db:load-dump --resume $namespace once it ended"
+Kustomization stays suspended and the writers at 0: $(way_back)"
   resume_flux
 }
 # The sha256 of the whole database as pg_dump writes it: schema, rows and sequence values. The fixed restrict key
@@ -776,8 +776,9 @@ suspended="$(kubectl --namespace flux-system get kustomization "$namespace" -o j
   fail "the Kustomization $namespace is suspended; nothing changed. After a killed load of this command run mise run \
 db:load-dump --resume $namespace, else ask whoever suspended it"
 # Before the load no session of this run writes to the database, so the resume waits for none. It is armed before the
-# suspension, which a signal can apply before its client returns; the Kustomization was not suspended before.
-trap resume_flux EXIT
+# suspension, which a signal can apply before its client returns. A Kustomization that was suspended already holds a
+# killed load of this command or a foreign suspension, and a failure before the load leaves it suspended.
+if [ "$suspended" = true ]; then trap files_unfinished EXIT; else trap resume_flux EXIT; fi
 trap 'exit 130' INT
 trap 'exit 143' TERM
 flux suspend kustomization "$namespace"
@@ -794,7 +795,7 @@ writers="$(kubectl --namespace "$namespace" get pods -o yaml |
 [ -z "$writers" ] || kubectl --namespace "$namespace" wait $writers --for=delete --timeout=5m
 wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; nothing loaded"
 # Before the load, so a claim that cannot hold the files refuses with the database unchanged.
-[ -z "$files" ] || scripts/load_files.sh start "$namespace" "$loader" "$files"
+[ -z "$files" ] || scripts/load_files.sh start "$namespace" "$loader" "$claim" "$files"
 before_load="$(fingerprint)" || fail "cannot read the database $namespace before the load; nothing loaded"
 
 log="$file.load.log"

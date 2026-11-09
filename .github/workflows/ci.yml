@@ -477,7 +477,6 @@ jobs:
           tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh
           tests/backup/songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh
           tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh
-          tests/backup/load_replaces_database_and_files_together.sh
       - name: P9f cells
         if: matrix.part == 'backup'
         env:
@@ -503,6 +502,13 @@ jobs:
           LITELLM_NAMESPACE: litellm
           APP_NAMESPACE: hopin
         run: tests/litellm/keys_table_drives_budgets_and_the_app_key.sh
+
+      # The step changes songmaker's database and audio claim, which no later step of this part reads.
+      - name: P7f cells
+        if: matrix.part == 'postgres'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+        run: tests/backup/load_replaces_database_and_files_together.sh
 
       - name: Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind on the node
         if: matrix.part == 'backup'

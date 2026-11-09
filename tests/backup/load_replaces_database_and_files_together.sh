@@ -17,6 +17,9 @@ shim="$scratch/shim"
 dump="$scratch/dump"
 output="$scratch/output"
 mkdir -p "$tree/nested" "$shim"
+# A source of the loader's group, as a tree this user created has on a PC whose user is gid 1000: rsync must not try to
+# set the group of the claim's root.
+sudo chgrp "$reading_uid" "$tree" "$tree/nested"
 marker="load-marker-$(openssl rand -hex 4)"
 holder="claim-holder"
 loader_pid=
@@ -72,15 +75,15 @@ loaded_equal() {
     [ "$(suspended)" = false ] && ! kubectl --namespace "$namespace" get pod db-load-files >/dev/null 2>&1
 }
 # kill_during <tool> <pattern> <background>: starts the load with a wrapper of the tool that, at the call matching the
-# pattern, sets a flag and then waits for the kill, running the call beside it when background is true; kills the load's
-# whole session once the flag stands.
+# pattern, sets a flag and then waits for the kill, running the call beside it when background is true (with the wrapper's
+# stdin, which a background command otherwise loses); kills the load's whole session once the flag stands.
 kill_during() {
   local tool="$1" pattern="$2" background="$3" real
   real="$(mise which "$tool" 2>/dev/null || command -v "$tool")"
   cat >"$shim/$tool" <<'WRAPPER'
 #!/usr/bin/env bash
 case "$*" in *"$SHIM_PATTERN"*)
-  [ "$SHIM_BACKGROUND" != true ] || "$SHIM_REAL" "$@" &
+  [ "$SHIM_BACKGROUND" != true ] || "$SHIM_REAL" "$@" <&0 &
   : >"$SHIM_FLAG"
   sleep 600 ;;
 esac
@@ -105,6 +108,9 @@ before_tree="$(tree_listing)"
 # The claim's old content: a file the source lacks, which --delete must remove.
 on_claim 'mkdir -p /claim/old && echo old >/claim/old/extra.ogg'
 
+if mise run db:load-dump --compare "$namespace" "$dump" >"$output" 2>&1; then fail "a load of a claim layer without --files exited 0"; fi
+grep -qF 'nothing changed' "$output" || fail "the refused load did not say that nothing changed"
+[ "$(suspended)" = false ] || fail "the refused load left Flux suspended"
 load || fail "the fresh load exited non-zero"
 loaded_equal || fail "after the fresh load the claim, the database or Flux differs from the source"
 [ -z "$(on_claim 'find /claim ! -user '"$reading_uid"' ! -path /claim | head -n 1')" ] || fail "a file on the claim is not the reading uid's"
@@ -120,6 +126,8 @@ kill_during rsync 'rsh_into_pod' false
 held_back || fail "a kill during rsync left Flux resumed or a writer running"
 if mise run db:load-dump --resume "$namespace" >"$output" 2>&1; then fail "--resume of a claim layer exited 0"; fi
 grep -qF 'same command again' "$output" || fail "--resume did not name the re-run"
+# The claim as the kill may leave it: a file missing and one the source lacks.
+on_claim 'rm "/claim/second take.ogg"; echo partial >/claim/stray'
 load || fail "the re-run after a kill during rsync exited non-zero"
 loaded_equal || fail "the re-run after a kill during rsync did not converge"
 

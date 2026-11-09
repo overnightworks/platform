@@ -18,13 +18,14 @@ Impact: the namespace's writers stop, and its Flux Kustomization stays suspended
 3. For a namespace whose layer declares a claim (songmaker's audio files), step 2 takes `--files <dir>`:
    `mise run db:load-dump --compare --files <dir> <namespace> <file>`. A claim layer refuses a load without it and a
    layer without a claim refuses it, before any change. `<dir>` holds only regular files and directories, at least one
-   file, every entry readable and no name with a newline; it is only read. After the database is verified, `rsync -a
-   --delete` makes the claim equal to `<dir>` and a `--checksum --dry-run` must list no difference, only then does Flux
+   file, every entry readable and no name with a newline; it is only read. After the database is verified, rsync
+   makes the claim equal to `<dir>`, deleting what it lacks, and a `--checksum --dry-run` must list no difference, only then does Flux
    resume; a Kustomization that is already suspended does not stop it. rsync's messages go to `<file>.load.log`. Do not load at Sunday's backup time: a backup that runs during the
    load reads the claim half replaced.
 4. After a hard kill of step 2 and the operator's yes to resuming without a verification, an agent:
    `mise run db:load-dump --resume <namespace>`. It verifies nothing. A load with `--files` has no resume: it stays
-   suspended with its writers at 0 and the same command, run again, converges.
+   suspended with its writers at 0 and the same command, run again, converges. When the source itself cannot converge (a
+   bad dump), the operator's yes to resuming without it is `flux resume kustomization <namespace>` by hand.
 
 Rollback: a load whose `pg_restore` failed or was interrupted resumes Flux itself once the data reads as before, except
 a load with `--files`, which stays suspended for its re-run. A
