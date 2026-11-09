@@ -1,7 +1,0 @@
-claim_id = "8061c5bc72d54278ac599461380b49b6"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "cf37ca78cc07dcdddc8e3ea90e34b4ba6a32498e"
-branch = "claude/issue-335-code-scanning-import-blocks"
-scope = ["src/opentofu/github/organization.tf", "src/opentofu/github/tests/organization_rulesets.tftest.hcl"]
-opened_commit = "c83160a4b8cfe93f5e20ed84ba3e8ae5df2ec24f"
