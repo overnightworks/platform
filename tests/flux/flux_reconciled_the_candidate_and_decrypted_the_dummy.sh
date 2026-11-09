@@ -2,6 +2,7 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+step_started_at="$(date +%s)"
 inventory() {
   kubectl -n flux-system get kustomization flux-system \
     -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}'
@@ -25,10 +26,27 @@ assert_job_source() {
   [ "$value" = "$(<"$DUMMY_FILE")" ] || fail "the Secret $PROOF_SECRET_NAME does not hold the dummy"
   echo "the Secret $PROOF_SECRET_NAME, decrypted by Flux, holds the dummy the job generated"
 }
+# kustomize drops a patch whose target matches nothing without an error, so the render must differ from the generated file.
+assert_controller_arguments() {
+  local expression='select(.kind == "Deployment" and .metadata.name == "kustomize-controller")
+    | .spec.template.spec.containers[] | select(.name == "manager") | .args[]'
+  local rendered generated live
+  rendered="$(kubectl kustomize clusters/pc/flux-system | yq "$expression")"
+  generated="$(yq "$expression" clusters/pc/flux-system/gotk-components.yaml)"
+  live="$(kubectl -n flux-system get deployment kustomize-controller \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="manager")].args[*]}' | tr ' ' '\n')"
+  [ "$rendered" != "$generated" ] || fail "the render of clusters/pc/flux-system sets the controller's arguments as the generated file does"
+  [ "$live" = "$rendered" ] || fail "the live kustomize-controller arguments differ from the render of clusters/pc/flux-system"
+  echo "the live kustomize-controller arguments equal the render and differ from the generated file's"
+}
 
 kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=3m
 kubectl -n flux-system wait kustomization/flux-system --for=condition=Ready --timeout=5m
-kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=10m
+wait_status=0
+kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=10m ||
+  wait_status=$?
+"$(dirname "${BASH_SOURCE[0]}")/print_ready_times.sh" "$step_started_at"
+[ "$wait_status" -eq 0 ] || exit "$wait_status"
 kubectl -n flux-system get gitrepository flux-system -o yaml
 
 source_revision="$(kubectl -n flux-system get gitrepository flux-system -o jsonpath='{.status.artifact.revision}')"
@@ -79,6 +97,7 @@ fi
 sed 's/^/the root health-checks: /' <<<"$health_check_ids"
 
 assert_job_source
+assert_controller_arguments
 
 # allow-scraping only admits metrics scrapes; deleting allow-egress would cut the controllers off each other.
 kubectl -n flux-system delete networkpolicy allow-scraping

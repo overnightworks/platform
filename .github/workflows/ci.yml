@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# A run on main gets a group of its own, so it neither waits for nor is cancelled by another run: every landing is proven to its end.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -209,7 +214,11 @@ jobs:
 
       - name: Apply the Flux controllers from the committed components
         run: |
-          kubectl apply --server-side -f clusters/pc/flux-system/gotk-components.yaml
+          # The directory's render, as the PC applies it, so the controller starts with its patched arguments; its
+          # GitRepository and root Kustomization are the candidate overlay's to apply.
+          kubectl kustomize clusters/pc/flux-system |
+            yq 'select(.kind != "GitRepository" and .kind != "Kustomization")' |
+            kubectl apply --server-side -f -
           kubectl -n flux-system wait deployment --all --for=condition=Available --timeout=3m
 
       # flux install writes a binding subject for every controller, omitted ones included.
