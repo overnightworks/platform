@@ -1,0 +1,8 @@
+claim_id = "51f2feeb2052421eab636566106b6b71"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "0bf0c46559a5a8611dffae6ca3a845f0913e66e8"
+branch = "claude/issue-291-skat-runs-release-2026-11-09-1-after-a-b"
+scope = ["apps/skat/skat.yaml", "infrastructure/legal/app-texts", "infrastructure/legal/app-texts.toml", "infrastructure/legal/built"]
+opened_commit = "299e8a42aaf769b721adf55613086af86d254482"
+whole_reason = "One release bump: the image and the release's own legal texts with the pages built from them are one published state, which the app-texts check holds equal."
