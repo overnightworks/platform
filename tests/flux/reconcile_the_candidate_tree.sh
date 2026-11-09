@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # The job root is the PC's own clusters/pc/flux-system as a kustomize base, no file copied. The overlay adds
-# only Flux's spec.patches on the root and the source's ref, which pins the run's candidate.
+# only Flux's spec.patches on the root and the source's url and ref, which serve the run's candidate.
 overlay="$RUNNER_TEMP/candidate-root"
 mkdir "$overlay"
 printf 'resources:\n  - %s\n' "$(realpath --relative-to="$overlay" clusters/pc/flux-system)" \
@@ -55,19 +55,18 @@ patches:
                         path: /spec/template/spec/nodeSelector
                         value: {nvidia.com/gpu.present: "true"}
 YAML
-# The source stays on the run's own candidate in the object applied here and in Flux's build: a pull request
-# follows its head, a push to main pins its commit on the branch, so a later landing never moves the job.
-if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-  candidate_ref="{name: ${PULL_REQUEST_REF}}"
-else
-  candidate_ref="{branch: main, commit: ${CANDIDATE_REVISION}}"
-fi
+# The source is the job's own repository, which holds the run's commit on one branch: Flux reads that commit and
+# nothing a landing or a push moves. It stays so in the object applied here and in Flux's build.
+candidate_ref="{branch: ${CANDIDATE_BRANCH}, commit: ${CANDIDATE_REVISION}}"
 candidate_patches="$(cat <<'YAML'
   - target: {group: source.toolkit.fluxcd.io, kind: GitRepository, name: flux-system}
     patch: |
       - op: replace
         path: /spec/ref
         value: @CANDIDATE_REF@
+      - op: replace
+        path: /spec/url
+        value: @CANDIDATE_URL@
   - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: flux-system}
     patch: |
       - op: add
@@ -78,8 +77,12 @@ candidate_patches="$(cat <<'YAML'
             - op: replace
               path: /spec/ref
               value: @CANDIDATE_REF@
+            - op: replace
+              path: /spec/url
+              value: @CANDIDATE_URL@
 YAML
 )"
-printf '%s\n' "${candidate_patches//@CANDIDATE_REF@/${candidate_ref}}" >> "$overlay/kustomization.yaml"
+candidate_patches="${candidate_patches//@CANDIDATE_REF@/${candidate_ref}}"
+printf '%s\n' "${candidate_patches//@CANDIDATE_URL@/${CANDIDATE_SOURCE_URL}}" >> "$overlay/kustomization.yaml"
 kubectl apply --server-side -k "$overlay"
 kubectl -n flux-system get kustomization flux-system -o yaml
