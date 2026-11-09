@@ -21,9 +21,42 @@ for manifest in $APP_MANIFESTS; do
     fail "the Namespace $namespace reads '$markers', not Pod Security restricted and prune disabled"
   echo "the Namespace $namespace enforces restricted, and Flux never prunes it"
 
-  kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
-  state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
-  [ "$state" = "1|Recreate" ] || fail "the Deployment $deployment reads '$state', not one Ready pod and Recreate"
+  # A Deployment at 0 replicas has no pod to be Available; its strategy and image are still judged.
+  replicas="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.replicas}')"
+  if [ "$replicas" = 0 ]; then
+    state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.replicas}|{.spec.strategy.type}')"
+    [ "$state" = "|Recreate" ] || fail "the Deployment $deployment reads '$state', not no pod at 0 replicas and Recreate"
+    pods="$(kubectl --namespace "$namespace" get pods -l "app.kubernetes.io/name=$name" -o name)"
+    [ -z "$pods" ] || fail "the Deployment $deployment at 0 replicas has pods: $pods"
+    # The class is applied by another layer, so admission finds it only once that layer has.
+    runtime_class="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.runtimeClassName}')"
+    [ -z "$runtime_class" ] || until_true 180 "the RuntimeClass $runtime_class exists" kubectl get runtimeclass "$runtime_class"
+    # The template is what a go at 1 replica creates, so its Pod meets the Namespace's Pod Security level now.
+    kubectl --namespace "$namespace" get deployment "$name" -o yaml |
+      yq '{"apiVersion": "v1", "kind": "Pod", "metadata": {"name": .metadata.name + "-dry-run", "labels": .spec.template.metadata.labels}, "spec": .spec.template.spec}' |
+      kubectl --namespace "$namespace" create --dry-run=server -f - ||
+      fail "the Pod template of the Deployment $deployment is refused by $namespace's admission"
+    echo "the Deployment $deployment has no pod and its Pod template passes server-side dry-run in $namespace"
+    # The worker's reach, read from the applied policy: each rule as its sources and ports, sorted.
+    sources='(.from // .to) | map((.namespaceSelector.matchLabels["kubernetes.io/metadata.name"] // "") + "/" + (.podSelector.matchLabels | to_entries | .[0].value)) | sort | join(",")'
+    ports='[.ports[] | (.port | tostring) + "/" + .protocol] | sort | join(",")'
+    rules='map((('"$sources"') + " -> " + ('"$ports"'))) | sort | join(";")'
+    policy="$(kubectl --namespace "$namespace" get networkpolicy "$name" -o yaml)"
+    for direction in ingress:"/music-worker,/web -> 8001/TCP" \
+      egress:"/redis -> 6379/TCP;/web -> 8080/TCP;kube-system/kube-dns -> 53/TCP,53/UDP"; do
+      expected="${direction#*:}"
+      actual="$(yq ".spec.${direction%%:*} | $rules" <<<"$policy")"
+      [ "$actual" = "$expected" ] ||
+        fail "the NetworkPolicy $namespace/$name reads '$actual' for ${direction%%:*}, not '$expected'"
+    done
+    [ "$(yq '.spec.policyTypes | sort | join(",")' <<<"$policy")" = "Egress,Ingress" ] ||
+      fail "the NetworkPolicy $namespace/$name does not govern exactly Ingress and Egress"
+    echo "the NetworkPolicy $namespace/$name admits only music-worker and web to 8001 and sends only to DNS, Redis and web"
+  else
+    kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
+    state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
+    [ "$state" = "1|Recreate" ] || fail "the Deployment $deployment reads '$state', not one Ready pod and Recreate"
+  fi
   image="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.containers[*].image}')"
   [[ $image =~ ^ghcr[.]io/${GITHUB_REPOSITORY_OWNER,,}/[^[:space:]:@]+:[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] ||
     fail "the Deployment $deployment runs '$image', not one full app ref"
