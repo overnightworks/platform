@@ -6,6 +6,7 @@
 # table is read and a value with a newline are refused before any write; and neither a key's value, the master key nor
 # the value's sha256 reaches an argument or any output, tracing included, while the value does reach curl's stdin.
 # Usage: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
+# Proves docs/commands.md KEYS-2, KEY-1, KEY-2.
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -4,6 +4,7 @@
 # the cluster proofs can arrange on demand. The fakes run the remote commands locally, with the ConfigMap postgres's
 # table-digests.sh, so the task compares the fake dump with the fake database as in the container.
 # Usage: mise exec -- tests/postgres/load_dump.sh
+# Proves docs/commands.md LOAD-1, LOAD-2, LOAD-3, LOAD-5, LOAD-6.
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

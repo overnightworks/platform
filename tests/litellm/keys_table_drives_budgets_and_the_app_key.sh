@@ -9,6 +9,7 @@
 # rows carry the models LiteLLM lists and the routes the front's rules name, read from their owners.
 # The Kustomizations litellm and platform-secrets are suspended meanwhile, so that neither restores the table or the
 # Secret hopin, and resumed on every exit.
+# Proves docs/commands.md KEYS-2, KEY-1.
 set -euo pipefail
 # No value of this cell reaches a trace.
 { set +x; } 2>/dev/null

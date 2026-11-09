@@ -4,6 +4,7 @@
 # key block, so a request that turns Ready within the minute prints none, and one that never does prints it only after
 # the reads that sufficed for the first.
 # Usage: mise exec -- tests/secrets/bootstrap_secrets.sh
+# Proves docs/commands.md BSEC-2, BSEC-3.
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

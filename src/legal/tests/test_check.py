@@ -1,4 +1,5 @@
 """`legal:check` over an app's directory: which files it reads, what it refuses and how it answers."""
+# Proves docs/commands.md LCHECK-1, LCHECK-2.
 
 from pathlib import Path
 

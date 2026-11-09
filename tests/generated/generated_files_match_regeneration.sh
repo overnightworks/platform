@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Proves docs/commands.md FLUX-1, CHARTS-1, LBUILD-1.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"

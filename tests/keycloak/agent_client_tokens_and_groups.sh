@@ -4,6 +4,7 @@
 # cannot read or write agent_owner, and a switch-off in the console stops new tokens and survives a config-cli re-run.
 # AGENT_GROUPS is the allowlist of the service account's rights, space-separated. Prints names, counts and outcomes,
 # never a token or a secret; every throwaway user and client is deleted on every exit.
+# Proves docs/commands.md OWNER-1, OWNER-2, OWNER-3.
 set -euo pipefail
 umask 077
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"

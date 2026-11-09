@@ -11,6 +11,7 @@
 # probe decides, and a writer that ended with a failure fails the script, since the loader then never got the dump.
 # When no probe sees the blocked state in 300 seconds, it prints what the restore was doing: the database's other
 # sessions by state and wait event, the container's process states and the loader's local processes, never a row.
+# Proves docs/commands.md LOAD-1, LOAD-4, LOAD-6.
 set -euo pipefail
 namespace="$1" dump="$2" signal="$3"
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"

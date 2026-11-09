@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Proves docs/commands.md LOAD-1, LOAD-2, LOAD-3, LOAD-4, LOAD-5, LOAD-7.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"

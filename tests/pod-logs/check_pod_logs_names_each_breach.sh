@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Proves docs/commands.md PODLOGS-1, PODLOGS-2.
 set -eo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"

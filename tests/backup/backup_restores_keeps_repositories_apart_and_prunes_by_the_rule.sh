@@ -3,6 +3,7 @@ set -euo pipefail
 # shellcheck source=../client_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 # The backup's proofs on the cluster, each with its positive control; no secret is printed.
+# Proves docs/commands.md FETCH-1.
 export KUBECONFIG="$HOME/.kube/config"
 
 # run_restic <namespace> <name> <shell script>: a Pod built from the restore test's own init container, so it holds the

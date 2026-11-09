@@ -1,4 +1,5 @@
 """`legal:build` over a repository's frame and sections: what it writes, what it refuses and how it answers."""
+# Proves docs/commands.md LBUILD-1.
 
 import hashlib
 import shutil

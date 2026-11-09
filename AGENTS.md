@@ -1,146 +1,29 @@
 # AGENTS.md
 
+What each task does, refuses and prints: `docs/commands.md`. What an app relies on and offers: `docs/app.md`.
+
 ## Commands
 
 - `quality check` runs the repository rules of quality at the release `.github/workflows/ci.yml` pins and must exit 0 and print a `✓ clean · <n> areas` line. Install it as
   quality's README says, at that release.
-- `scripts/bootstrap_pc.sh --only tools` installs the mise its header pins, checks its sha256 and installs the
-  tools `mise.lock` holds; a tool without a lock entry is an error. A fresh machine first needs `git`, `curl` and
-  `sha256sum` (on Ubuntu, `apt-get install ca-certificates curl git`); the script names the first one missing and
-  installs nothing. Change a tool with `mise lock` after editing
-  `mise.toml`, never by hand.
-- `mise run flux:export` regenerates `clusters/pc/flux-system/gotk-components.yaml` from the locked flux2.
-- `mise run charts:render` regenerates each `infrastructure/<component>/rendered.yaml` with the locked helm from the
-  chart the task pins (traefik and loki by digest, k8up by the sha256 of its tgz), the `values.yaml` beside it and `K3S_VERSION`,
-  without CRDs and tests, and `infrastructure/k8up/crds.yaml` from k8up's release asset at its pinned sha256. It writes
-  nothing for a chart that cannot be fetched or rendered, whose pin does not match or whose render holds a helm hook,
-  which it names; each output is replaced alone, so such a failure can follow an earlier chart's written render (k8up's
-  chart is rendered with `--no-hooks`: its one hook is a cleanup Job for Helm upgrades). helm runs only here, never on
-  the PC.
-- `mise run secrets:age-secret <key file>` creates the Secret `sops-age` in flux-system, the age key Flux decrypts
-  `platform-secrets` with, from the given file; it has no default path. The PC calls it only through
-  `bootstrap:secrets`, since a bare run talks to `~/.kube/config`.
-- `mise run secrets:new-key` is the operator's: it creates the age key once in the file sops reads, `SOPS_AGE_KEY_FILE`
-  if set and non-empty, else `${XDG_CONFIG_HOME:-~/.config}/sops/age/keys.txt` (mode 600 in a directory at 700), and
-  prints only its recipient. It refuses, changing nothing, an existing key file, an existing directory (or a link's
-  target) at another mode, a key directory a file blocks and a `<key file>.drill`. The PC's key lives in that file, and
-  its one copy in the operator's password manager.
-- `scripts/apply_github_settings.sh` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
-  login, on any commit and without writing state (exit 0 no change, 2 changes, 1 failure). `--apply` applies that
-  run's own plan, only from a clean `origin/main`. A plan with a `delete` action, a replacement included, fails with
-  exit 1 on both runs, names each address and applies nothing; a deliberate removal is a `removed` block with
-  `lifecycle { destroy = false }`, which plans a forget.
-- `mise run github:test` checks that root: format, init against the committed lock, validate, the mocked tests and
-  `tests/github/plan_with_a_delete_is_refused.sh`, which drives the script against a fake tofu and gh.
-- `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
-  which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
-  names and times only, and fails on any; it passes with no pod logs yet while `/var/log/pods` does not exist, and
-  fails when it cannot list the directory. It reads the clean's last start (the later of the service's and the timer's
-  last trigger, which a reboot keeps) and result, whoever started it, so a failed or never-run clean keeps failing the
-  check until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
-- `mise run check:secrets-expiry` runs on the PC through k3s's own kubeconfig, without sudo, and reads only metadata: it
-  names, by namespace, name and date, every Secret whose annotation `platform.hallucinai.de/expires-on: YYYY-MM-DD` lies
-  within 30 days or in the past, and each whose value is no such date, and fails on any or when the listing fails; it
-  passes with no annotated Secret.
-- `mise run backup:fetch <namespace> <file>` writes the latest dump of the namespace's k8up repository to a new file at
-  0600, through a Pod built from the restore test's init container, the file it refuses to overwrite; `db:load-dump
-  <namespace> <file>` then restores it. It prints only names and sizes, since a dump holds keys and hashes.
-- `mise run disk` runs without sudo and prints what fills the disk of the home directory by size and name (named
-  directories of `$HOME`, the rest of `$HOME`, and what lies outside it, which is Docker's `/var/lib/docker` and the
-  system, since only root reads that), then Docker's own count when the daemon answers within 2 minutes, else one line
-  saying it does not answer in time; from 85 % use it first prints a `WARNING` line on stderr, and it still exits 0. A directory du cannot
-  read marks its row incomplete and prints the remainders as `?`, never as a number.
-- `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
-  it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
-  Deployments at 0 and its Flux Jobs deleted, waiting for the deletion of the Pods a ReplicaSet owns except those in phase
-  `Failed` or `Succeeded` none of whose containers or init containers reports `running` (an evicted Pod stays and holds
-  no session; a Pod marked `Failed` from outside can still run, and one with no readable phase is waited for), in one `pg_restore` transaction whose messages go to `<file>.load.log`
-  at 0600, verifies each table `key-tables` names (all tables and their sorted rows' sha256 with `--compare`) and only
-  then resumes Flux and waits for the namespace to converge. It refuses a suspended Kustomization. Another session
-  that holds the database before the load, a database it cannot read then, or an INT before the load costs at most one
-  wait of 2 minutes and one line, loads nothing and resumes. A restore that fails or is interrupted reports the data
-  unchanged and resumes once no session and no `pg_restore` process remains in the database's Postgres, it holds no
-  materialized view or extension table, whose rows `pg_dump` does not write, and the sha256 of its whole `pg_dump`
-  equals the one taken before the load. Otherwise, a TERM during that check included, it reports the outcome unknown
-  and, like a differing load or one that ends before the comparison did, stays suspended with its writers at 0, naming
-  `--resume`. After a hard kill, `mise run db:load-dump --resume <namespace>` resumes once no other session and no
-  `pg_restore` process holds the database, stops at once when the Kustomization does not exist, and verifies nothing.
-  It prints names, counts and outcomes, never a row, since a dump holds keys and hashes.
-  `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>` interrupts a load inside its transaction and asserts
-  that recovery, writers included. `tests/postgres/load_dump.sh` drives the task and that script against fake commands
+- Generated files are never edited by hand; regenerate and commit them, since `cluster` fails on a difference:
+  `mise lock` after editing `mise.toml`, `mise run flux:export`, `mise run charts:render`, `mise run legal:build`.
+- helm runs only in `charts:render`, never on the PC.
+- `mise run github:test` checks `src/opentofu/github`; `mise run legal:test` the legal project.
+- `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>` interrupts a load inside its transaction and asserts
+  that recovery, writers included. `tests/postgres/load_dump.sh` drives `db:load-dump` and that script against fake commands
   for the outcomes the cluster cannot arrange: a failed `flux resume`, an unreadable suspension (also after a kill), a
   signal during the comparison, an evicted Pod beside a running one, which alone is waited for, and one alone, which costs
   no wait, a `Failed` Pod that reports a running container, which is waited for, a table only the database holds, a database it cannot read before or after the load,
   a materialized view, a `pg_restore` that outlives its status while its backend commits, a TERM during the check
   after a failed restore, and an INT after the commit, whose outcome reaches the operator and not the load log.
-- `mise run legal:check <key> <dir>` checks an app's `<dir>/legal/datenschutz.html` and, if present,
-  `<dir>/legal/nutzungsbedingungen.html` with the section validator of `src/legal/` (grammar and format in
-  `docs/legal-sections.md`): it prints `legal:check: <key> valid: <pages>` and exits 0, or prints `legal: <file>: line N:
-  <rule>`, never the text, and exits non-zero. It refuses a link or directory in place of a file, a missing
-  `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
-  `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
-  with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads, from this checkout's root, the frame of
-  `infrastructure/legal/frame/`, the sections of `infrastructure/legal/sections/` and their `stand.toml`, the app texts of
-  `infrastructure/legal/app-texts/` and their list `app-texts.toml`, builds the three pages with
-  `src/legal/src/legal/pages.py`, which checks their ids and links, and writes all three to `infrastructure/legal/built/`; it needs no
-  network, prints `legal:build: wrote <file>` per page and exits 0, or prints `legal: <file> is missing; the frame is required`
-  (or the failed check's line, which names a directory under `sections/` that is neither `allgemein` nor one of `keycloak`,
-  `litellm` or `speech-runtime`, a section with no `stand.toml` entry, an entry without a file or a section whose sha256
-  differs from its entry, printing the file's, and the same for an app text and `app-texts.toml`, an app with no
-  `datenschutz` and an app key that is `allgemein` or a service's) and exits non-zero, writing nothing. It reads the `zone` as `legal:check`
-  does. All three run through `uv` (locked in `mise.toml`),
-  which fetches Python 3.14 on first use and keeps its environment under `~/.cache/platform/legal`.
-- `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
-  to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
-  per host and hal's console answers on another port of `localhost`.
-- `mise run gatus:open` forwards `127.0.0.1` at a free local port kubectl chooses to the port of Gatus's Service and prints
-  the address of the status page once kubectl listens, none when the forward fails, which exits non-zero; the page has no
-  other way in.
-- `mise run grafana:open` does the same for Grafana's Service, through the one hidden task `page:forward` that
-  `gatus:open` shares.
-- `mise run keycloak:agent-owner [--adder] <client> <username>` runs through kcadm in Keycloak's
-  container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
-  `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
-  attributes, and adds the person to `/agent-owners`, with `--adder` also to `/agent-adders`. It refuses another
-  client, a username that no person carries, which Keycloak's user search finds without service accounts and
-  matches by the lowercase username, so a service account's name in any case is refused with the rest, and an
-  `agent_owner` naming someone else; before its first write a refusal ends in `nothing changed`, after one it names what was written or may
-  have been and says that running it again completes it. It reads everything back, prints names and member counts and
-  prints `nothing changed` on a second run.
-- `mise run keycloak:move-group [--delete-old] <file>` is for the rename of the AI group: it creates
-  the new file at 0600 (and refuses one that exists), dumps `keycloak` into it with the messages of `pg_dump` and
-  `pg_restore --list` in `<file>.dump.log` at 0600, whose path and line count it prints, deletes only its own file
-  after a failed dump, adds every member of `/services/agent-service/api` to `/services/litellm` through kcadm in
-  Keycloak's container, signed in as config-cli, verifies the old members are a subset and prints the two groups'
-  member counts; only `--delete-old` deletes the old group. `db:load-dump keycloak <file>` rolls it back.
-- `mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump>` runs on the PC after
-  `db:load-dump keycloak <dump>` converged, through k3s's own kubeconfig, without sudo or a fetched secret: it fails
-  unless config-cli's Job completed within its `backoffLimit`, no client or user carries Keycloak's
-  `is_temporary_admin`, the realm's key ids equal those of the public issuer, and the rows of `user_entity`,
-  `credential`, `user_group_membership` and `user_attribute` equal the dump's by count and the sha256 of their sorted
-  lines, except the rows of the service accounts that clients declared in `realm.yaml` gained since the dump, whose
-  count its "added" line prints. It prints names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`. Each database
-  step runs under a statement and lock timeout and a 2-minute local deadline; pg_dump and pg_restore also run under
-  the container's own 100-second timeout, so no database session outlives the check. Either deadline's end fails it
-  naming the step and which deadline.
-- `mise run bootstrap:k3s` installs k3s at `K3S_VERSION` on the PC from k3s's `install.sh` at that tag, only after its
-  pinned sha256 matched, with k3s's own containerd and no `kubectl`, `crictl` or `ctr` link. With that version
-  installed, it restarts `k3s.service` when `/etc/rancher/k3s/config.yaml` changed after k3s's last start and else
-  changes nothing; it stops when that file is missing or differs from `host/k3s/config.yaml`. Then it waits for the
-  node. `mise run bootstrap:flux` applies Flux from `clusters/pc/flux-system` through k3s's own kubeconfig and waits
-  for its controllers. `mise run bootstrap:secrets` is the operator's, since it reads the age key file: through k3s's
-  own kubeconfig it creates `sops-age` from that file and the deploy-key Secret `platform-secrets`, each only when
-  missing, and passes the deploy key only once GitHub's meta API lists every host key it holds, a check an existing
-  one passes on every run. It then requests a reconcile of the source `platform-secrets`, and only when that is not
-  Ready within a minute prints the public key to add once, read-only, in GitHub's web form, requesting a reconcile
-  every 30 seconds for up to 15 minutes; then it waits for the Kustomization. Its lines name each object as `<Kind>
-  <name>`; the `secrets:` tasks it calls print only their refusals, under their own prefix. A refusal reads `<task>:
-  <condition>; <the way back>`, except the host-key filter's `; nothing passed on`, after which `bootstrap:secrets`
-  names the way back. `mise run bootstrap` runs the three in order, as a full `mise bootstrap` does after its
-  declarative parts.
 
 ## The PC's host step
 
+- The operator's: `mise run secrets:new-key`; `mise run bootstrap:secrets`, since it reads the age key file;
+  `mise run check:pod-logs`, since it runs through sudo; `mise run keycloak:admin`.
+- On the PC, `secrets:age-secret` runs only through `bootstrap:secrets`, since a bare run talks to
+  `~/.kube/config`.
 - It runs from a checkout, in this order: `scripts/bootstrap_pc.sh --only tools`; `scripts/bootstrap_pc.sh plan
   --detailed-exitcode` (the script sets `LC_ALL=C`, which mise needs to read a localized ufw), which must list only
   the entry state's changes; `scripts/bootstrap_pc.sh --only files,firewall,services`, which writes
@@ -176,8 +59,6 @@
   exists; then deletes the timer's entry, which a plan reports unknown once its file is gone, declares the four files
   `state = "absent"` and applies `--only files`; then drops the `kubelet-arg` and runs `mise run bootstrap:k3s`.
   Deleted logs stay deleted.
-  `check-pod-logs` never reads Loki's copy of the lines, whose bound `infrastructure/loki/` sets; the `cluster` cell on
-  Loki's running configuration is the only check of it.
 - The inotify limits (`host/sysctl/inotify.conf`: 512 instances and 524288 watches per user, so root's inotify instances
   suffice for the kubelet's log follows and for hal's containers beside k3s) go to `/etc/sysctl.d/90-inotify.conf` by
   `scripts/bootstrap_pc.sh --only files,services`, whose file entry notifies `systemd-sysctl.service`, which the services
@@ -495,13 +376,9 @@
   links, the Namespace's sandboxes and the CNI rules of `iptables-save` (read from a listing that holds kube-proxy's
   `KUBE-SERVICES`) equal their state before, each life having taken
   a new lease while it lived, with the same lives without the init container first as the control.
-  `mise exec -- tests/no_network/pod_on_the_pc_holds_only_lo.sh` runs on the PC through k3s's own kubeconfig, without
-  sudo: a Pod of the shape in a throwaway Namespace without a Pod Security label holds `lo` alone and reaches neither
-  the API's Service, cluster DNS nor the node, a default Pod beside it holds `eth0` and reaches them, and every
-  throwaway object is gone on every exit; it prints names and counts and changes nothing on the host.
 - `clusters/pc/flux-system/`: Flux's own components and its sync to this repository. `gotk-components.yaml` is
   generated by `mise run flux:export` for the components `FLUX_COMPONENTS` in `mise.toml` lists, which hold no Helm reconciler
-  (every chart is rendered into Git); it is not edited by hand, and `cluster` fails when a regeneration differs.
+  (every chart is rendered into Git).
   The root Kustomization `flux-system` health-checks only its controller Deployments and its own GitRepository, so a
   failing layer reports itself; a regeneration that adds, renames or removes a controller changes those
   `healthChecks` with it, and `cluster` fails when they differ from the root's inventory.
@@ -572,11 +449,8 @@
   and the plugin drops every capability. There is no time-slicing or sharing configuration, since the card belongs to
   songmaker's music. `host/k3s/config.yaml` keeps `runtimes` disabled: k3s adds containerd's `nvidia` runtime only when
   it starts with the NVIDIA container toolkit present, and if the plugin's Pod events name a missing runtime handler the
-  operator runs `sudo systemctl restart k3s` once, which does not touch Docker. `mise exec --
-  tests/nvidia/restricted_pod_lists_the_card.sh` runs on the PC through k3s's own kubeconfig, without sudo: it fails
-  unless the node offers `nvidia.com/gpu` 1 and a Pod in a throwaway Namespace enforcing `restricted`, at uid 1000 with the
-  class and the limit, lists exactly one card; it prints counts and names, and every throwaway object is gone on every
-  exit. A Pod naming the class without the limit might reach the card; the first workload that requests it decides on
+  operator runs `sudo systemctl restart k3s` once, which does not touch Docker.
+  A Pod naming the class without the limit might reach the card; the first workload that requests it decides on
   an admission rule.
 - `infrastructure/storage/`: local-path-provisioner from upstream's manifest, vendored verbatim under a header naming
   its URL and sha256, and patched to one default class with `reclaimPolicy: Retain` and the path
@@ -600,7 +474,7 @@
   05:00 UTC, bounded to an hour, and fails without a snapshot or on an empty first key table. The Secret `restic` from `platform-secrets` holds the namespace's
   `username`, `password` and `repository-password`.
 - `infrastructure/k8up/`: the k8up operator in `k8up-system`, `rendered.yaml` and `crds.yaml` generated by
-  `mise run charts:render`, not edited by hand; `cluster` fails when a regeneration differs. `skipSnapshotSync` keeps
+  `mise run charts:render`. `skipSnapshotSync` keeps
   k8up from writing Snapshot objects, which would record the REST repository URL with its password, and
   `skipWithoutAnnotation` makes a backup hold only what a Pod's `k8up.io/backupcommand` streams;
   a claim without k8up's backup annotation is skipped.
@@ -646,36 +520,7 @@
   layer's Postgres, which a replacement copies, and it prints the five counts by name, never a row; a first `select 1`,
   tried up to 30 times a second apart inside the Pod since a fresh Pod can be refused until the NetworkPolicy controller admits
   its address, shows psql's stderr, so a failed connection names itself in the log, while the statement's stderr is discarded because
-  psql quotes row values. `mise exec -- tests/litellm/key_list_count_equals_key_table_rows.sh <namespace>`
-  reads the master key from the cluster's Secret: through the PC's k3s and a port-forward it prints the keys LiteLLM's `/key/list` counts and the
-  key table's rows, those of the dashboard's UI session (which `/key/list` omits) and the rest, then `equal` or `DIFFERS`
-  for the count against the rest; each step runs under a deadline and names itself when it fails.
-  `keys.yaml` is the table of the person budget and each app's budget and parallel limit; the ConfigMap `litellm-keys`
-  carries it, without a hash suffix, as no pod reads it. `mise run litellm:keys [--plan]` makes the person budget (the id
-  of `max_end_user_budget_id`) and each row's key equal to it, sending only the fields that differ, so a pure budget
-  change keeps the period's reset; it prints the revision Flux applied to the table it read, which it refuses when absent or changed during the read, one
-  line per field with old and new, and a count; it refuses a table whose person budget or a row's budget or parallel
-  limit is no number, naming the row; a row without a key is named with `run litellm:key <app>` and ends 1 after the
-  rest; a failed write stops the rest and names what was made, the failed write, whose outcome is unknown when its
-  answer was lost, and what was not made; `--plan` writes nothing and exits 0 with no change, 2 with changes, 1 on a
-  failure. `mise run litellm:key <app>` registers key `litellm_key` of Secret `<app>` in namespace `<app>` (one printable
-  line without a trailing newline, `sk-` and at least 16 characters) as the row's key, prints `unchanged` when the stored hash equals the value's,
-  and refuses another value under the alias, changing nothing; a key's new value goes to `platform-secrets` first. Both
-  run through `scripts/litellm_keys.sh` with a port-forward and the master key: a value and the master key travel from
-  kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
-  never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body. The
-  rpm and tpm limits are not in the table and stay as they are.
-  `mise run litellm:admin <username>` is the unlimited AI budget of one admin, through the same script: it reads the person
-  as `keycloak:agent-owner` does (`scripts/keycloak_kcadm.sh`, which both tasks source, and whose kcadm diagnostics this
-  command discards, since they can quote a URL with the person's id), the realm's issuer from the public discovery
-  document and the group `/services/litellm/admin`, and LiteLLM's budget `litellm-admin` and customer row, all before
-  the first write; it then writes and reads back, in this order, the budget (no limit, `1mo`, created or corrected), the membership and the
-  customer row, which is `/customer/new` under agent-runtime's `person_fingerprint` of issuer and person id or
-  `/customer/update` of `budget_id` alone, so spend and other fields stay. A second run prints `<username> unchanged`, and a finished run prints what it wrote.
-  A missing argument, a name no person carries and a service account's name end in `nothing changed`; a failure, a lost
-  answer, a failed read-back or a signal after a write names what was written or may have been and says that running it
-  again completes it; nothing is rolled back and no output holds an id, the fingerprint or a key. Removing an admin is
-  not built.
+  psql quotes row values.
 - `infrastructure/legal/`: the legal sections, the three pages and their assets at `hallucinai.de`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
   is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
@@ -721,7 +566,7 @@
   the two differ.
 - `infrastructure/traefik/`: Traefik, the cluster's ingress for Kubernetes Ingress objects, in a Namespace that
   enforces Pod Security `restricted`. `values.yaml` is its hand-written source; `rendered.yaml` is generated by
-  `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A chart or image bump
+  `mise run charts:render`. A chart or image bump
   changes the task's chart version and digest, `image.digest` and `versionOverride` together and regenerates, in a pull
   request started from the Dependency Dashboard that `renovate` keeps, and the `images:` entry of
   `infrastructure/litellm/kustomization.yaml`, the image of the Deployments `litellm-front` and `agent-egress`, with
@@ -735,8 +580,7 @@
   five-character version reach Keycloak, `/` redirects to the account page, and every other path is 404.
 - `infrastructure/loki/`: Loki in monolithic mode, one pod with replication factor 1 and the filesystem store, in a
   Namespace that enforces Pod Security `restricted`; gateway, canary, caches and minio are off. `values.yaml` is its
-  hand-written source; `rendered.yaml` is generated by `mise run charts:render`, not edited by hand, and `cluster` fails
-  when a regeneration differs. A chart or image bump changes the task's chart version and digest and `loki.image.tag` and
+  hand-written source; `rendered.yaml` is generated by `mise run charts:render`. A chart or image bump changes the task's chart version and digest and `loki.image.tag` and
   `loki.image.digest` together and regenerates, in a pull request started from the Dependency Dashboard that `renovate`
   keeps. `limits_config.retention_period` of 28 days
   with the compactor's retention on is the one rule for Loki's copy of every line, which the privacy texts promise gone
@@ -763,7 +607,7 @@
 - `infrastructure/prometheus/`: Prometheus with kube-state-metrics and Alertmanager in a Namespace that enforces Pod
   Security `restricted`, which stands in `infrastructure/namespaces/` since a Namespace never moves between
   Kustomizations; node-exporter and the pushgateway are off. `values.yaml` is its hand-written source; `rendered.yaml`
-  is generated by `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A
+  is generated by `mise run charts:render`. A
   chart or image bump changes the task's chart version and digest and each image's tag and digest in `values.yaml`
   together and regenerates, in a pull request started from the Dependency Dashboard that `renovate` keeps. It scrapes the
   kubelet and cAdvisor at each node's port 10250, verified against the
@@ -834,8 +678,7 @@
   in another namespace gets no answer from Gatus.
 - `infrastructure/grafana/`: Grafana for Loki and Prometheus, in the Namespace `grafana` the layer owns, which enforces
   Pod Security `restricted`: one pod, its image `docker.io/grafana/grafana` at a digest, and no claim, Secret, Role or
-  hook. `values.yaml` is its hand-written source; `rendered.yaml` is generated by `mise run charts:render`, not edited by
-  hand, and `cluster` fails when a regeneration differs. A chart or image bump changes the task's chart version and digest
+  hook. `values.yaml` is its hand-written source; `rendered.yaml` is generated by `mise run charts:render`. A chart or image bump changes the task's chart version and digest
   and `image.tag`, which holds the digest, together and regenerates, in a pull request started from the Dependency Dashboard
   that `renovate` keeps. Its data directory is an `emptyDir`, so a restart forgets what a person built in the page; the
   data sources Loki (no tenant header) and Prometheus are provisioned from `values.yaml` and no dashboard exists.
@@ -860,8 +703,7 @@
   the pod-log parts with `pod-logs-clean.timer` as a running, enabled service, which each unit file notifies,
   the inotify limits file with `systemd-sysctl` as a running service it notifies,
   and the ufw rule `k3s-cni`, with `k3s-pods` and `k3s-services` declared absent, which deletes them from a host whose mise
-  state holds them) and the tasks. `mise.lock` is generated by `mise lock`, not edited by hand, and `cluster`
-  fails when a regeneration differs.
+  state holds them) and the tasks. `mise.lock` is generated by `mise lock`.
 - `src/opentofu/github/`: the security and merge settings of the managed fleet repositories and, in the child module
   `organization/`, the organisation's three rulesets (`main: PR only`, `quality / verdict required`, `release tags are
   immutable`, each with `prevent_destroy`, no bypass actor and enforcement `active`) and the schema of the property
@@ -923,7 +765,9 @@
 
 ## Owners
 
-- A GitHub setting `src/opentofu/github` holds changes only through that root and the command, never by hand.
+- A GitHub setting `src/opentofu/github` holds changes only through that root and
+  `scripts/apply_github_settings.sh`, never by hand; a deliberate removal is a `removed` block with
+  `lifecycle { destroy = false }`.
 - `infrastructure/admission/image-vendors.yaml` is the one vendor list, which `images` and the admission layer read;
   platform's head owns it. An entry changes only when a vendor is added or removed, with its first or last ref, in a
   pull request; its review checks the vendor's page and that the repository is no app of ours.

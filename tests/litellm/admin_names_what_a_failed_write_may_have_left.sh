@@ -7,6 +7,7 @@
 # attempted write names it and exits non-zero; and no output holds the person's id, the fingerprint, a key or a reply
 # body.
 # Usage: mise exec -- tests/litellm/admin_names_what_a_failed_write_may_have_left.sh
+# Proves docs/commands.md ADMIN-1, ADMIN-2, ADMIN-3.
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -6,6 +6,7 @@
 # that fails names what was written (after the owner's write or alone) and does not claim that nothing changed, and a
 # line its caller wrote to the same file before the task survives.
 # Usage: mise exec -- tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
+# Proves docs/commands.md OWNER-2.
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

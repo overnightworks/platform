@@ -1,6 +1,6 @@
 # platform
 
-This repository builds nothing a maintained tool already does. It is the one description of the platform, the k3s and Flux configuration in Git, plus the few tools no tool covers: legal pages, person export and erasure, AI keys and budgets, the restore test and the secret checks.
+This repository builds nothing a maintained tool already does. It is the one description of the platform, the k3s and Flux configuration in Git, plus the few tools no tool covers: legal pages, AI keys and budgets, the restore test and the secret checks.
 
 The platform of the overnightworks apps: k3s on one machine, with Flux reconciling its whole state from Git.
 
@@ -9,6 +9,9 @@ The GitHub security and merge settings of the fleet's repositories live here as 
 It is not an application and holds no app code or libraries. Libraries release through their own CI-gated GitHub
 releases.
 
-An app that runs on the platform follows [docs/app.md](docs/app.md).
+## Documentation
 
-The plan and the target picture are in [overnightworks/platform#1](https://github.com/overnightworks/platform/issues/1).
+- [docs/commands.md](docs/commands.md): what each task and each proof on the PC does, refuses and prints.
+- [docs/app.md](docs/app.md): what an app on the platform relies on and offers.
+- [docs/legal-sections.md](docs/legal-sections.md): an app's legal files and the form `legal:check` accepts.
+- [AGENTS.md](AGENTS.md): what an agent working here must know.

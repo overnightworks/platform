@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Proves docs/commands.md DISK-1, DISK-2.
 set -eo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"

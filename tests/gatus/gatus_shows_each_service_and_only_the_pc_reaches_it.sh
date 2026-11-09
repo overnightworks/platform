@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Proves docs/commands.md GATUS-1.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
