@@ -1,0 +1,7 @@
+claim_id = "f5a7efbc0e614ab99b77607d3e82ab2d"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "3223fb0e83569ca23c30a6ce35190de0764bdc89"
+branch = "fix/codeql-ruleset-proof"
+scope = ["src/legal/codeql_ruleset_proof.py"]
+opened_commit = "61e72f93013b549c777ebdda12b1041ccd671c1a"
