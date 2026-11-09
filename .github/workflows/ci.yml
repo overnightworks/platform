@@ -582,8 +582,9 @@ jobs:
       contents: read
       packages: read
     env:
-      # The image the render runs in without network; flux2 is a static binary, mounted from the lock.
-      RENDER_IMAGE: ubuntu:26.04
+      # The image the render runs in without network, by the digest of its multi-arch index; flux2 is a static binary,
+      # mounted from the lock and run as the container's entrypoint.
+      RENDER_IMAGE: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Check out

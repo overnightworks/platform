@@ -1,0 +1,3 @@
+images: gap G2: Kustomization/flux-system/secret-beside-inline substitutes from Secret/flux-system/images, which CI does not read: its variables render empty, at their defaults, or literal
+images: gap G2: Kustomization/flux-system/secret-alone substitutes from Secret/flux-system/images, which CI does not read: its variables render empty, at their defaults, or literal
+images: gap G2: Kustomization/flux-system/secret-with-default substitutes from Secret/flux-system/images, which CI does not read: its variables render empty, at their defaults, or literal
