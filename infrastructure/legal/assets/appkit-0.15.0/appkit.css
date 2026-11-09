@@ -1,0 +1,200 @@
+/* appkit family tokens and fonts: what every overnightworks product shares.
+   With no theme choice the page follows the device (light, or dark under
+   prefers-color-scheme); data-theme='light' and data-theme='dark' force a
+   theme, and each theme sets color-scheme. The state set (--ok, --busy, --fail
+   and their -soft partners) is shared; the app colour (--primary, --accent,
+   --on-accent) and everything domain-specific stay with the app; the
+   sign-in grid value is computed by the SignInPage component. Only the latin
+   and latin-ext subsets, woff2 only. The classes as-typed and legal are the
+   only rules outside the tokens and fonts; legal is the legal row of
+   LegalLinks and of a page that cannot render Svelte. */
+
+@font-face {
+	font-family: 'Oswald';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 400;
+	src: url('fonts/oswald-latin-400-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: 'Oswald';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 400;
+	src: url('fonts/oswald-latin-ext-400-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+
+@font-face {
+	font-family: 'Oswald';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 700;
+	src: url('fonts/oswald-latin-700-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: 'Oswald';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 700;
+	src: url('fonts/oswald-latin-ext-700-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+
+@font-face {
+	font-family: 'Open Sans';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 400;
+	src: url('fonts/open-sans-latin-400-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: 'Open Sans';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 400;
+	src: url('fonts/open-sans-latin-ext-400-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+
+@font-face {
+	font-family: 'Open Sans';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 600;
+	src: url('fonts/open-sans-latin-600-normal.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+		U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: 'Open Sans';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 600;
+	src: url('fonts/open-sans-latin-ext-600-normal.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+		U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+		U+A720-A7FF;
+}
+
+:root {
+	--bg: #f4f4f6;
+	--bg-deep: #e8e8ec;
+	--surface: #ffffff;
+	--surface-hover: #ebebed;
+	--border: #d0d0d4;
+	--text: #1a1a1e;
+	--text-muted: #555;
+	--card-bg: rgba(255, 255, 255, 0.9);
+	--header-bg: #f0f0f2;
+	--ok: #1e7a1e;
+	--ok-soft: #e0f5e0;
+	--busy: #9a6200;
+	--busy-soft: #fef3e0;
+	--fail: #c02020;
+	--fail-soft: #fde8e8;
+	color-scheme: light;
+	--font-display: 'Oswald', Impact, sans-serif;
+	--font-body: 'Open Sans', Arial, sans-serif;
+}
+
+:root[data-theme='dark'] {
+	--bg: #0d0d0d;
+	--bg-deep: #050508;
+	--surface: #111;
+	--surface-hover: #1a1a1a;
+	--border: #333;
+	--text: #e0e0e0;
+	--text-muted: #888;
+	--card-bg: rgba(13, 13, 13, 0.85);
+	--header-bg: #0a0a0a;
+	--ok: #44aa44;
+	--ok-soft: #1a3a1a;
+	--busy: #f0a030;
+	--busy-soft: #2a1f10;
+	--fail: #ff4444;
+	--fail-soft: #3a1a1a;
+	color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--bg: #0d0d0d;
+		--bg-deep: #050508;
+		--surface: #111;
+		--surface-hover: #1a1a1a;
+		--border: #333;
+		--text: #e0e0e0;
+		--text-muted: #888;
+		--card-bg: rgba(13, 13, 13, 0.85);
+		--header-bg: #0a0a0a;
+		--ok: #44aa44;
+		--ok-soft: #1a3a1a;
+		--busy: #f0a030;
+		--busy-soft: #2a1f10;
+		--fail: #ff4444;
+		--fail-soft: #3a1a1a;
+		color-scheme: dark;
+	}
+}
+
+.as-typed {
+	text-transform: none;
+	letter-spacing: normal;
+}
+
+.legal {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 4px 16px;
+	font-size: 12px;
+}
+.legal a {
+	color: var(--text-muted);
+	text-decoration: none;
+	border-bottom: 1px solid var(--border);
+}
+.legal a:hover {
+	color: var(--text);
+	border-bottom-color: currentColor;
+}
+.legal.menu {
+	justify-content: flex-start;
+	gap: 2px 12px;
+	padding: 8px 14px 6px;
+	border-top: 1px solid var(--border);
+	font-size: 11.5px;
+}
+.legal.menu a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 24px;
+	border-bottom: none;
+}
