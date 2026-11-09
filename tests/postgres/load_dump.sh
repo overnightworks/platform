@@ -39,6 +39,14 @@ case "$*" in
     listings="$(wc -l <"$FAKE_DIR/listings")"
     [ "$listings" -gt 2 ] || exit 1
     [ "$listings" != 3 ] || : >"$FAKE_DIR/committing" ;;
+  *"get configmap"*)
+    # The ConfigMap postgres's backup-claim; FAKE_CLAIM names the claim a layer with files declares.
+    [ -z "${FAKE_CLAIM_READ_FAILS:-}" ] || { echo "fake kubectl: the server is unreachable" >&2; exit 1; }
+    printf '%s' "${FAKE_CLAIM:-}" ;;
+  *"get prebackuppod"*)
+    echo '{"spec":{"pod":{"spec":{"securityContext":{"runAsUser":1000},"containers":[{"name":"copy","image":"rsync-image"}]}}}}' ;;
+  *" create "*) cat >/dev/null ;;
+  *"delete pod"*) echo "$*" >>"$FAKE_DIR/deleted" ;;
   *"get pods"*)
     # FAKE_PODS names a file holding the namespace's Pod list; without it the namespace has no Pod.
     if [ -n "${FAKE_PODS:-}" ]; then cat "$FAKE_PODS"; else echo "items: []"; fi ;;
@@ -48,6 +56,9 @@ case "$*" in
     while [ "$1" != -- ]; do shift; done
     shift
     case "$*" in
+      df*)
+        echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+        echo "claim 0 0 ${FAKE_FREE_KB:-1000000} 0% /target" ;;
       *check-key-tables.sh*)
         : >"$FAKE_DIR/verifying"
         [ -z "${FAKE_VERIFY_HANGS:-}" ] || sleep 60
@@ -99,6 +110,14 @@ cat >"$fake_bin/chmod" <<'FAKE'
 #!/usr/bin/env bash
 [ -z "${FAKE_DIR:-}" ] || echo "$(stat -c %a "$2")" >>"$FAKE_DIR/created-at"
 exec /bin/chmod "$@"
+FAKE
+# FAKE_RSYNC_DIFFERS: the checksum comparison finds a difference.
+cat >"$fake_bin/rsync" <<'FAKE'
+#!/usr/bin/env bash
+echo "$*" >>"$FAKE_DIR/rsync.log"
+case "$*" in
+  *--dry-run*) [ -z "${FAKE_RSYNC_DIFFERS:-}" ] || echo ">fc....... a-file" ;;
+esac
 FAKE
 chmod +x "$fake_bin"/*
 export FAKE_CHECKS="$work_directory/postgres-checks"
@@ -443,6 +462,102 @@ FAKE
     fail "interrupt_load.sh exited $never_status with '$never_output' for a restore that never blocked"
 }
 
+# make_tree <name>: a source tree <name> under the work directory, with one file.
+make_tree() {
+  tree="$work_directory/$1"
+  mkdir -p "$tree/nested"
+  printf 'audio' >"$tree/nested/first take.ogg"
+}
+
+cell_claim_layer_without_files_is_refused_and_flux_untouched() {
+  cell=claim-layer-without-files-is-refused-and-flux-untouched
+  FAKE_CLAIM=audiofiles run_loader x "$dump"
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"--files"* ]] ||
+    fail "a claim layer's load without --files exited $status with '$output' after flux $flux_calls"
+}
+
+cell_files_on_layer_without_claim_is_refused_and_flux_untouched() {
+  cell=files-on-layer-without-claim-is-refused-and-flux-untouched
+  make_tree $cell
+  run_loader --files "$tree" x "$dump"
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"declares no claim"* ]] ||
+    fail "--files on a layer with no claim exited $status with '$output' after flux $flux_calls"
+}
+
+cell_unreadable_claim_declaration_is_refused_and_flux_untouched() {
+  cell=unreadable-claim-declaration-is-refused-and-flux-untouched
+  FAKE_CLAIM_READ_FAILS=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] || fail "a load with an unreadable claim key exited $status after flux $flux_calls"
+}
+
+cell_resume_of_claim_layer_is_refused_naming_the_rerun() {
+  cell=resume-of-claim-layer-is-refused-naming-the-rerun
+  FAKE_CLAIM=audiofiles run_loader --resume x
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"same command again"* ]] ||
+    fail "--resume of a claim layer exited $status with '$output' after flux $flux_calls"
+}
+
+# Each source the load refuses, before any change and without a file name in the output.
+cell_unfit_source_is_refused_before_any_change() {
+  local kind
+  for kind in symlink fifo empty-tree unreadable newline-name; do
+    cell="unfit-source-$kind"
+    make_tree "$cell"
+    case "$kind" in
+      symlink) ln -s nested/ROW-MARKER "$tree/link" ;;
+      fifo) mkfifo "$tree/ROW-MARKER" ;;
+      empty-tree) rm -r "$tree/nested"; mkdir "$tree/ROW-MARKER" ;;
+      unreadable) : >"$tree/ROW-MARKER"; /bin/chmod 000 "$tree/ROW-MARKER" ;;
+      newline-name) : >"$tree/$(printf 'ROW-MARKER\nsplit')" ;;
+    esac
+    FAKE_CLAIM=audiofiles run_loader --files "$tree" x "$dump"
+    /bin/chmod -R u+rwX "$tree"
+    [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] && [[ $output != *ROW-MARKER* ]] ||
+      fail "a $kind source exited $status with '$output' after flux $flux_calls"
+  done
+}
+
+cell_source_larger_than_free_space_is_refused_and_flux_resumes() {
+  cell=source-larger-than-free-space-is-refused-and-flux-resumes
+  make_tree $cell
+  FAKE_CLAIM=audiofiles FAKE_FREE_KB=0 run_loader --files "$tree" x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls == *resume* ]] && [ ! -e "$FAKE_DIR/restored" ] && [[ $output == *"bytes free"* ]] ||
+    fail "a source larger than the free space exited $status with '$output' after flux $flux_calls"
+}
+
+cell_equal_files_load_resumes_flux_and_deletes_the_loader() {
+  cell=equal-files-load-resumes-flux-and-deletes-the-loader
+  make_tree $cell
+  mv "$tree/nested/first take.ogg" "$tree/nested/ROW-MARKER.ogg"
+  FAKE_CLAIM=audiofiles run_loader --files "$tree" x "$dump"
+  [ "$status" = 0 ] && [[ $flux_calls == "suspend resume " ]] && [[ $output == *"0 differing entries"* ]] &&
+    [[ $output != *ROW-MARKER* ]] && grep -q -- '--checksum --dry-run' "$FAKE_DIR/rsync.log" &&
+    [ "$(grep -c 'delete pod' "$FAKE_DIR/deleted")" -ge 2 ] || fail "an equal files load exited $status with '$output' after flux $flux_calls"
+}
+
+cell_files_load_that_differs_stays_suspended_naming_the_rerun() {
+  cell=files-load-that-differs-stays-suspended-naming-the-rerun
+  make_tree $cell
+  FAKE_CLAIM=audiofiles FAKE_RSYNC_DIFFERS=1 run_loader --files "$tree" x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"same command again"* ]] &&
+    [[ $output != *a-file* ]] || fail "a differing files load exited $status with '$output' after flux $flux_calls"
+}
+
+cell_failed_restore_of_files_load_stays_suspended_naming_the_rerun() {
+  cell=failed-restore-of-files-load-stays-suspended-naming-the-rerun
+  make_tree $cell
+  FAKE_CLAIM=audiofiles FAKE_RESTORE_FAILS=1 run_loader --files "$tree" x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"same command again"* ]] &&
+    [ ! -e "$FAKE_DIR/rsync.log" ] || fail "a files load whose restore failed exited $status with '$output' after flux $flux_calls"
+}
+
+cell_rerun_on_a_suspended_kustomization_runs_through() {
+  cell=rerun-on-a-suspended-kustomization-runs-through
+  make_tree $cell
+  FAKE_CLAIM=audiofiles FAKE_SUSPENDED=true run_loader --files "$tree" x "$dump"
+  [ "$status" = 0 ] && [[ $flux_calls == *resume* ]] || fail "a re-run on a suspended Kustomization exited $status with '$output'"
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 cells=(
   failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
@@ -468,6 +583,16 @@ cells=(
   failed-pod-with-a-running-container-is-waited-for
   term-during-recovery-is-unknown-and-stays-suspended
   interrupt-after-commit-reports-unknown-to-the-operator-not-the-log
+  claim-layer-without-files-is-refused-and-flux-untouched
+  files-on-layer-without-claim-is-refused-and-flux-untouched
+  unreadable-claim-declaration-is-refused-and-flux-untouched
+  resume-of-claim-layer-is-refused-naming-the-rerun
+  unfit-source-is-refused-before-any-change
+  source-larger-than-free-space-is-refused-and-flux-resumes
+  equal-files-load-resumes-flux-and-deletes-the-loader
+  files-load-that-differs-stays-suspended-naming-the-rerun
+  failed-restore-of-files-load-stays-suspended-naming-the-rerun
+  rerun-on-a-suspended-kustomization-runs-through
 )
 failed=()
 for name in "${cells[@]}"; do

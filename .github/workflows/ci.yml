@@ -477,6 +477,7 @@ jobs:
           tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh
           tests/backup/songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh
           tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh
+          tests/backup/load_replaces_database_and_files_together.sh
       - name: P9f cells
         if: matrix.part == 'backup'
         env:
