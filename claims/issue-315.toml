@@ -3,5 +3,5 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "11d9311533d66a992d50fb332ef0979cd2ef86ae"
 branch = "claude/issue-315-cluster-sources-name-addresses"
-scope = ["tests/flux/serve_the_candidate_commit.sh", "tests/secrets/serve_encrypted_secrets_as_platform_secrets.sh"]
+scope = [".github/workflows/ci.yml", "tests/flux/serve_the_candidate_commit.sh", "tests/secrets/serve_encrypted_secrets_as_platform_secrets.sh"]
 opened_commit = "590ebce5630c08f6f00641ba86836fd9a6279ef1"
