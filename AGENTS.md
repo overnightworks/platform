@@ -15,31 +15,6 @@
   which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
   names and times only, and fails on any; it passes with no pod logs yet while `/var/log/pods` does not exist, and
   fails when it cannot list the directory.
-- `mise run backup:fetch <namespace> <file>` writes the latest dump of the namespace's k8up repository to a new file at
-  0600, through a Pod built from the restore test's init container, the file it refuses to overwrite; `db:load-dump
-  <namespace> <file>` then restores it. It prints only names and sizes, since a dump holds keys and hashes.
-- `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
-  it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
-  Deployments at 0 and its Flux Jobs deleted, waiting for the deletion of the Pods a ReplicaSet owns except those in phase
-  `Failed` or `Succeeded` none of whose containers or init containers reports `running` (an evicted Pod stays and holds
-  no session; a Pod marked `Failed` from outside can still run, and one with no readable phase is waited for), in one `pg_restore` transaction whose messages go to `<file>.load.log`
-  at 0600, verifies each table `key-tables` names (all tables and their sorted rows' sha256 with `--compare`) and only
-  then resumes Flux and waits for the namespace to converge. After a hard kill, `mise run db:load-dump --resume <namespace>` resumes once no other session and no
-  `pg_restore` process holds the database, stops at once when the Kustomization does not exist, and verifies nothing.
-  It prints names, counts and outcomes, never a row, since a dump holds keys and hashes.
-- `mise run keycloak:move-group [--delete-old] <file>` is for the rename of the AI group: it creates
-  the new file at 0600 (and refuses one that exists), dumps `keycloak` into it with the messages of `pg_dump` and
-  `pg_restore --list` in `<file>.dump.log` at 0600, whose path and line count it prints, deletes only its own file
-  after a failed dump, adds every member of `/services/agent-service/api` to `/services/litellm` through kcadm in
-  Keycloak's container, signed in as config-cli, verifies the old members are a subset and prints the two groups'
-  member counts; only `--delete-old` deletes the old group. `db:load-dump keycloak <file>` rolls it back.
-- `mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump>` runs on the PC after
-  `db:load-dump keycloak <dump>` converged, through k3s's own kubeconfig, without sudo or a fetched secret: it fails
-  unless config-cli's Job completed within its `backoffLimit`, no client or user carries Keycloak's
-  `is_temporary_admin`, the realm's key ids equal those of the public issuer, and the rows of `user_entity`,
-  `credential`, `user_group_membership` and `user_attribute` equal the dump's by count and the sha256 of their sorted
-  lines, except the rows of the service accounts that clients declared in `realm.yaml` gained since the dump, whose
-  count its "added" line prints. It prints names, counts, key ids and `equal` or `DIFFERS`, never a row or a message of `pg_restore` or `psql`.
 - `mise run bootstrap:secrets` is the operator's, since it reads the age key file: through k3s's
   own kubeconfig it creates `sops-age` from that file and the deploy-key Secret `platform-secrets`, each only when
   missing, and passes the deploy key only once GitHub's meta API lists every host key it holds, a check an existing
@@ -220,9 +195,7 @@
   readable and writable only by an administrator) and the agent objects: the groups `/agents`, `/agent-adders` and
   `/agent-owners`, the scope `agent-identity`, the client `agent-mozart` and its service account's groups; who owns or
   adds an agent is console data set by `keycloak:agent-owner`.
-- `mise run litellm:key <app>` registers key `litellm_key` of Secret `<app>` in namespace `<app>` (one printable
-  line without a trailing newline, `sk-` and at least 16 characters) as the row's key, prints `unchanged` when the stored hash equals the value's,
-  and refuses another value under the alias, changing nothing; a key's new value goes to `platform-secrets` first. Both
+- Both
   run through `scripts/litellm_keys.sh` with a port-forward and the master key: a value and the master key travel from
   kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
   never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body.
@@ -368,5 +341,5 @@
 
 - `docs/github-settings.md`: read when changing what `src/opentofu/github` declares or how a change reaches GitHub.
 - `docs/operations.md`: read when changing an expiry, the status page, Grafana, a scrape job, the PC's disk bounds or the AI budgets.
-- `docs/runbooks/`: read when installing, changing or removing a part of the PC, or when a host check fails.
+- `docs/runbooks/`: read when installing, changing or removing a part of the PC, when a host check fails, or when restoring a database, applying the GitHub settings, changing AI keys or budgets or moving the AI group.
 - `docs/personal-data.md`: read when changing how long a log, a backup or an AI request is kept, or what the LiteLLM front, its egress or the speech service lets through.

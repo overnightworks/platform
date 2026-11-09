@@ -20,5 +20,9 @@ Each runbook is one task with its commands and how to see it worked. A new PC st
 - [Uninstall k3s](docs/runbooks/uninstall-k3s.md): k3s leaves the PC.
 - [`check:pod-logs` fails](docs/runbooks/pod-logs-check-fails.md): a pod log past its bound or a clean that did not run.
 - [GPU runtime handler missing](docs/runbooks/gpu-runtime-handler-missing.md): the card's runtime is missing.
+- [Restore a database](docs/runbooks/restore-a-database.md): a namespace's Postgres from its latest backup.
+- [Apply the GitHub settings](docs/runbooks/apply-github-settings.md): plan and apply `src/opentofu/github`.
+- [Change AI keys and budgets](docs/runbooks/change-ai-keys-and-budgets.md): budgets, an app's key, an admin's budget.
+- [Move the AI group](docs/runbooks/move-the-ai-group.md): the AI group's members move at the live switch.
 
 The plan and the target picture are in [overnightworks/platform#1](https://github.com/overnightworks/platform/issues/1).
