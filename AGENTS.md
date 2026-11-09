@@ -426,13 +426,6 @@
   credentials the server answers 401 everywhere, a namespace's credentials reach only its own repository, and a pod in a
   namespace without one gets no answer; deleting the Kustomization `backup` keeps the claim, its repositories list again
   after the root re-creates it; and `backup:fetch` writes the latest dump at 0600 and refuses an existing file.
-  `tests/backup/songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh` then shows, in
-  songmaker: `backup-staging` is Bound on a Retain volume with prune disabled and its binder Job completed; a Pod made
-  from the PreBackupPod's spec turns Ready on a finished dump whose table digests equal the live database's, through
-  `table-digests.sh`; no StatefulSet there carries a backup command, while the other namespaces' do, and during one
-  Backup at most one pod of the namespace carries one, which one does at some look; the Backup leaves one more snapshot,
-  whose only path is `/songmaker-postgres.dump`, in custom format; and every namespace's restore test reads its dump with
-  `--path` and passes.
   The step "P9f cells" (`tests/prometheus/`) asks Prometheus and creates nothing: `k8up_schedule_created` has a series for
   each Schedule the cluster holds, and the recording rule of the newest completed Backup has one for each namespace of
   `$BACKUP_NAMESPACES`.
@@ -514,7 +507,7 @@
   failing layer reports itself; a regeneration that adds, renames or removes a controller changes those
   `healthChecks` with it, and `cluster` fails when they differ from the root's inventory.
 - `clusters/pc/infrastructure.yaml`: one Flux Kustomization per directory under `infrastructure/`, each with
-  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm`, `apps/skat` and `apps/songmaker` include (its subdirectory `backup/` is a component `keycloak`, `litellm`, `apps/skat` and `apps/songmaker` include, and its subdirectory `backup/files/` one `apps/songmaker` includes). `namespaces`, then
+  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm`, `apps/skat` and `apps/songmaker` include (its subdirectory `backup/` is a component `keycloak`, `litellm`, `apps/skat` and `apps/songmaker` include). `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
   `keycloak` and `litellm` also on `platform-secrets`, `storage` and `k8up`, `backup` on `platform-secrets` and `storage`,
@@ -534,7 +527,7 @@
   through Traefik's `web`; its NetworkPolicy admits only namespace `traefik` to its port, so skat trusts the forwarded
   addresses of the pod network in `SKAT_TRUSTED_PROXIES` only behind that policy, and `cloudflared` carries its line.
 - `apps/songmaker/`: songmaker's stores, web and workers, no route or login yet: its Postgres from the base
-  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `alembic_version songs generations`, backed up like skat's through the component `infrastructure/postgres/backup`
+  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `alembic_version songs generations`, backed up through the component `infrastructure/postgres/backup`
   with the repository `songmaker` on the rest server, and `redis.yaml`, the
   queue: one StatefulSet pod at the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a
   read-only root, persistence off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a
@@ -549,8 +542,7 @@
   startup probe allows 10 minutes. `/health` answers 200 while the app is degraded, so readiness proves that the process
   runs and not that its stores are healthy; that is songmaker's to change. No `AGENT__*` setting and no LiteLLM key is set,
   so the web never calls the gateway. `audio.yaml` is the claim `audiofiles` at `/app/data/audio`, Retain class and the
-  prune annotation, without a k8up annotation; its size is nominal, as local-path enforces none. Its dump comes from
-  the PreBackupPod of the component `infrastructure/postgres/backup/files`, which the layer includes. The web's Service
+  prune annotation, without a k8up annotation; its size is nominal, as local-path enforces none. The web's Service
   on 8080 admits only the namespace's own pods, and its egress is open.
   `music-worker.yaml` and `scoring-worker.yaml` are the Deployments `music-worker` and `scoring-worker`, each one pod
   with `Recreate`, an image of the web's release with its own digest, started like the web but from a projected volume
@@ -605,21 +597,11 @@
   keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
 - `infrastructure/postgres/backup/`: the component a Postgres layer includes to be backed up; `infrastructure/keycloak/`,
   `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` do. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
-  4 weekly and 3 monthly, a monthly `check`) of the Postgres pod's `pg_dump --format=custom` into `backup-repository`,
+  4 weekly and 3 monthly, a monthly `check`) of `pg_dump --format=custom` into `backup-repository`,
   the URL the including layer sets in the ConfigMap `postgres`; a PodConfig gives k8up's Job pods the fields `restricted`
   requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month, on the 1st at
   05:00 UTC, bounded to an hour, and fails without a snapshot or on an empty first key table. The Secret `restic` from `platform-secrets` holds the namespace's
-  `username`, `password` and `repository-password`. The restore test reads its dump with `restic dump --path
-  /<namespace>-postgres.dump`, so every snapshot it can take holds that path. `infrastructure/postgres/backup/files/` is
-  the component a layer includes after it to take the dump from a k8up PreBackupPod: it removes the StatefulSet's
-  `k8up.io/backupcommand`, so the PreBackupPod `files` is the one pod with a backup command. Its container `postgres`
-  (the StatefulSet's image, no service account token, the staging claim and the password file mounted) writes
-  `pg_dump --format=custom` over the Service to a temporary file in the claim `backup-staging` at start, renames it to
-  `postgres.dump` and is Ready on that file; a failed dump leaves no `postgres.dump` and no Ready pod, and the Backup
-  fails at k8up's readiness deadline of 600 s with nothing committed. The backup command `cat`s the file, so the
-  snapshot keeps `/<namespace>-postgres.dump`. `backup-staging` is on the Retain class with the prune annotation, and
-  the Job `backup-staging-binder` mounts it once and ends 0, since local-path binds a claim only for its first consumer
-  and Flux's wait keeps an unbound claim in progress. The claim carries no k8up annotation yet, so no Backup holds a volume.
+  `username`, `password` and `repository-password`.
 - `infrastructure/k8up/`: the k8up operator in `k8up-system`, `rendered.yaml` and `crds.yaml` generated by
   `mise run charts:render`, not edited by hand; `cluster` fails when a regeneration differs. `skipSnapshotSync` keeps
   k8up from writing Snapshot objects, which would record the REST repository URL with its password, and
