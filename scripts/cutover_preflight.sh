@@ -117,10 +117,10 @@ http_get() {
 }
 # unreachable <curl status>: the host refused or did not answer, which is a fact about the host and no failed reader.
 unreachable() { [ "$1" = 7 ] || [ "$1" = 28 ] || [ "$1" = 124 ]; }
-# answered <curl status> <fact when refused>: records a failure when curl read no answer; true when one was read.
+# answered <curl status> <fact when refused> [<subject>]: records a failure when curl read no answer; true when one was read.
 answered() {
   if unreachable "$1"; then bad "$2"
-  elif [ "$1" != 0 ]; then doubt "curl could not run"
+  elif [ "$1" != 0 ]; then doubt "curl could not run${3:+ for $3}"
   else return 0; fi
   return 1
 }
@@ -365,7 +365,7 @@ check_H2() {
       status=0
       http_get --output /dev/null --header "Host: $fqdn" "$target$ready" || status=$?
       checked=$((checked + 1))
-      if ! answered "$status" "$fqdn is refused or times out"; then :
+      if ! answered "$status" "$fqdn is refused or times out" "$fqdn"; then :
       elif [[ ! $http_status =~ ^2 ]]; then
         bad "$fqdn answers $http_status"
       fi
@@ -497,7 +497,7 @@ check_B1() {
 
 check_B2() {
   begin B2 "hal's head"
-  local lock="$edge_state/backup.lock" identity locks entries line unit state now next
+  local lock="$edge_state/backup.lock" identity locks entries line unit properties load state now next
   if [ -e "$lock" ]; then
     if ! fetch identity stat -c '%i %Hd:%Ld' "$lock" ||
       ! fetch locks lslocks --json --output PID,INODE,MAJ:MIN,BLOCKER; then
@@ -513,10 +513,16 @@ check_B2() {
     fi
   fi
   for unit in hal-backup.service hal-backup-restore-test.service; do
-    if ! fetch state systemctl --user show "$unit" --property=ActiveState --value; then
+    if ! fetch properties systemctl --user show "$unit" --property=ActiveState --property=LoadState; then
       doubt "systemctl could not read $unit"
-    elif [ "$state" = active ] || [ "$state" = activating ]; then
-      bad "$unit is $state"
+    else
+      load="$(sed -n 's/^LoadState=//p' <<<"$properties")"
+      state="$(sed -n 's/^ActiveState=//p' <<<"$properties")"
+      if [ "$load" = not-found ]; then
+        doubt "$unit is not loaded"
+      elif [ "$state" = active ] || [ "$state" = activating ]; then
+        bad "$unit is $state"
+      fi
     fi
   done
   now="$(date +%s)"
@@ -546,12 +552,14 @@ check_L1() {
   local redirect_uri line port="" status=0 page theme stylesheet
   redirect_uri="$(CLIENT=hopin yq '.clients[] | select(.clientId == strenv(CLIENT)) | .redirectUris[0]' "$root/infrastructure/keycloak/realm.yaml")"
   coproc FORWARD { exec kubectl --namespace keycloak port-forward --address 127.0.0.1 service/keycloak :http 2>/dev/null; }
-  forward_pid="$FORWARD_PID"
-  while IFS= read -r -t 20 -u "${FORWARD[0]}" line; do
-    [[ $line =~ 127\.0\.0\.1:([0-9]+) ]] && { port="${BASH_REMATCH[1]}"; break; }
-  done
+  forward_pid="${FORWARD_PID:-}"
+  if [ -n "$forward_pid" ] && [ -n "${FORWARD[0]:-}" ]; then
+    while IFS= read -r -t 20 -u "${FORWARD[0]}" line; do
+      [[ $line =~ 127\.0\.0\.1:([0-9]+) ]] && { port="${BASH_REMATCH[1]}"; break; }
+    done
+  fi
   if [ -z "$port" ]; then
-    doubt "the port-forward to Keycloak did not start"
+    doubt "the port-forward to Keycloak did not start or ended at once"
   else
     http_get --get --data-urlencode "client_id=hopin" --data-urlencode "redirect_uri=$redirect_uri" \
       --data response_type=code --data scope=openid --data code_challenge_method=S256 \

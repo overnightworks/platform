@@ -143,7 +143,8 @@ FAKE
 
 write_fake systemctl <<'FAKE'
 case "$*" in
-  "--user show hal-backup.service --property=ActiveState --value" | "--user show hal-backup-restore-test.service --property=ActiveState --value" | \
+  "--user show hal-backup.service --property=ActiveState --property=LoadState" | \
+    "--user show hal-backup-restore-test.service --property=ActiveState --property=LoadState" | \
     "--user show hal-backup.timer --property=NextElapseUSecRealtime --value --timestamp=unix" | \
     "--user show hal-backup-restore-test.timer --property=NextElapseUSecRealtime --value --timestamp=unix")
     failing systemctl; cat "$scenario/systemctl/$3" ;;
@@ -263,7 +264,7 @@ build_base() {
   echo abc123container >"$base/docker-ps.out"
   echo 1000000000 >"$base/database-size.out"
   printf '        Avail Use%% Mounted on\n100000000000 40%% /\n100000000000 40%% /opt\n' >"$base/df.out"
-  for unit in hal-backup.service hal-backup-restore-test.service; do echo inactive >"$base/systemctl/$unit"; done
+  for unit in hal-backup.service hal-backup-restore-test.service; do printf "ActiveState=inactive\nLoadState=loaded\n" >"$base/systemctl/$unit"; done
   for unit in hal-backup.timer hal-backup-restore-test.timer; do echo "@$(($(date +%s) + 100000))" >"$base/systemctl/$unit"; done
   echo '{"locks": []}' >"$base/lslocks.json"
   serve auth.$zone "http://127.0.0.1:8081$discovery_path" 200 application/json <<<"$discovery_body"
@@ -293,7 +294,7 @@ build_home() {
   : >"$base/home/.local/state/edge/backup.lock"
   "$real_git" -C "$hal" init --quiet --initial-branch=main
   "$real_git" -C "$hal" remote add origin https://github.com/overnightworks/hal.git
-  "$real_git" -C "$hal" -c user.name=cell -c user.email=cell@example.invalid commit --quiet --allow-empty --message hal
+  "$real_git" -C "$hal" -c user.name=cell -c user.email=cell@example.invalid commit --quiet --no-verify --allow-empty --message hal
   echo fleet.yaml >"$hal/.git/info/exclude"
   sed -e "s/ZONE/$zone/" -e "s/REALM/$realm/" >"$hal/fleet.yaml" <<'YAML'
 cloudflare: {zone: ZONE}
@@ -464,6 +465,11 @@ run_case
 expect_status 3
 expect_line '^UNKNOWN H2: '
 expect_no_line '^ok H2:'
+new_case l1-forward-ends-at-once
+unknown_L1
+run_case --live
+expect_status 3
+expect_line '^UNKNOWN L1: the port-forward to Keycloak did not start or ended at once'
 new_case d1-df-prints-one-line
 printf '        Avail Use%% Mounted on\n100000000000 40%% /\n' >"$case_directory/df.out"
 run_case
@@ -502,10 +508,32 @@ new_case lock-waited
 hold_lock 4243 4242
 run_case
 expect_line '^FAIL B2: pid 4243 waits for the lock'
+new_case curl-cannot-run-names-the-host
+serve presentator.$zone http://127.0.0.1:8081/health 000 "" "" 6 </dev/null
+run_case
+expect_line "^UNKNOWN H2: curl could not run for presentator\\.$zone"
 new_case lock-absent
 rm "$lock_file"
 run_case
 expect_line '^ok B2: '
+for unit in hal-backup.service hal-backup-restore-test.service; do
+  for state in active activating; do
+    new_case "unit-$unit-$state"
+    printf 'ActiveState=%s\nLoadState=loaded\n' "$state" >"$case_directory/systemctl/$unit"
+    run_case
+    expect_line "^FAIL B2: $unit is $state"
+  done
+  new_case "unit-$unit-not-found"
+  printf 'ActiveState=inactive\nLoadState=not-found\n' >"$case_directory/systemctl/$unit"
+  run_case
+  expect_line "^UNKNOWN B2: $unit is not loaded"
+done
+for unit in hal-backup.timer hal-backup-restore-test.timer; do
+  new_case "timer-$unit-due"
+  echo "@$(($(date +%s) + 60))" >"$case_directory/systemctl/$unit"
+  run_case
+  expect_line "^FAIL B2: $unit fires at .*, inside the window of "
+done
 
 # ------------------------------------------------------ case 9: I1 by namespace/name over normalised .spec
 new_case policy-missing
@@ -525,6 +553,10 @@ fail_I1
 run_case
 expect_line '^FAIL I1: missing hopin/http-from-traefik-only;'
 expect_no_line 'keycloak/http-from-traefik-only;'
+new_case policy-empty-list-is-no-field
+edit networkpolicies-hopin.json '.items[0].spec.egress = []'
+run_case
+expect_line '^ok I1: '
 new_case policy-crd
 echo customresourcedefinition.apiextensions.k8s.io/adminnetworkpolicies.policy.networking.k8s.io >"$case_directory/crds.out"
 run_case
