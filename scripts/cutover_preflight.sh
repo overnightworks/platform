@@ -49,7 +49,7 @@ if [ -n "$evidence" ]; then
 fi
 
 oks=0 fails=0 unknowns=0
-declare -A verdict_of
+declare -A verdict_of=()
 current_id="" current_owner=""
 problems=() problem_owners=() doubts=() doubt_owners=()
 join_by() {
@@ -127,7 +127,7 @@ github_head() {
   fetch github_sha gh api "repos/$1/commits/$2" --jq .sha && [[ $github_sha =~ ^[0-9a-f]{40}$ ]]
 }
 
-declare -A source_commit source_repository kustomization_path kustomization_revision
+declare -A source_commit=() source_repository=() kustomization_path=() kustomization_revision=()
 
 check_N1() {
   begin N1 platform
@@ -219,7 +219,7 @@ check_N3() {
 platform_commit=""
 check_N4() {
   begin N4 platform
-  local tree head applied="${kustomization_revision[flux-system/flux-system]:-}"
+  local tree="" head="" applied="${kustomization_revision[flux-system/flux-system]:-}"
   if ! fetch tree git -C "$root" --no-optional-locks status --porcelain || ! fetch head git -C "$root" rev-parse HEAD; then
     doubt "git could not read this checkout"
   elif [ -z "$applied" ]; then
