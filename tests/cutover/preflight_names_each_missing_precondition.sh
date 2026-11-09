@@ -18,7 +18,7 @@ head_sha="$("$real_git" -C "$repository_root" rev-parse HEAD)"
 other_sha="$(printf 'b%.0s' {1..40})"
 secrets_sha="$(printf 'c%.0s' {1..40})"
 work_directory="$(mktemp -d)"
-trap 'rm -rf "$work_directory"' EXIT
+trap '[ -n "${KEEP-}" ] || rm -rf "$work_directory"' EXIT
 fake_bin="$work_directory/bin"
 base="$work_directory/base"
 mkdir "$fake_bin" "$base"
