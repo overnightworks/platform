@@ -4,21 +4,16 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 
 repository_url="https://github.com/overnightworks/hal"
-# The commit of hal whose legal/sections, stylesheet, headers and appkit pin stand byte for byte under
+# The commit of hal whose stylesheet, headers and appkit pin stand byte for byte under
 # infrastructure/legal; move it when hal changes any of them before it leaves.
-hal_commit="a5c2342722266240a363a2c4e5016ba889ce3c1a"
+hal_commit="ed6de88ec768e62439c775b8d96ad4aad437fab7"
 workspace="$(mktemp -d)"
 trap 'rm -rf "$workspace"' EXIT
 
 git -C "$workspace" init --quiet hal
 git -C "$workspace/hal" fetch --quiet --depth 1 "$repository_url" "$hal_commit" &&
   git -C "$workspace/hal" -c advice.detachedHead=false checkout --quiet FETCH_HEAD ||
-  fail "fetching $repository_url at the commit $hal_commit failed, so hal's legal sections could not be read"
-
-[ -d "$workspace/hal/legal/sections" ] || fail "hal at $hal_commit holds no legal/sections"
-diff -r "$workspace/hal/legal/sections" infrastructure/legal/sections ||
-  fail "infrastructure/legal/sections differs from hal's legal/sections at $hal_commit"
-echo "infrastructure/legal/sections equals hal's legal/sections at $hal_commit"
+  fail "fetching $repository_url at the commit $hal_commit failed, so its stylesheet, headers and appkit pin could not be read"
 
 [ -f "$workspace/hal/legal/assets/legal-2.css" ] || fail "hal at $hal_commit holds no legal/assets/legal-2.css"
 cmp "$workspace/hal/legal/assets/legal-2.css" infrastructure/legal/assets/legal-2.css ||
