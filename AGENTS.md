@@ -80,12 +80,14 @@
   `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
   `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
   with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads, from this checkout's root, the frame of
-  `infrastructure/legal/frame/`, the sections of `infrastructure/legal/sections/` and their `stand.toml`, builds the three
-  pages with `src/legal/src/legal/pages.py`, which checks their ids and links, and writes only `infrastructure/legal/built/impressum.html`, the other two pages staying in memory; it needs no
-  network, prints `legal:build: wrote <file>` and exits 0, or prints `legal: <file> is missing; the frame is required`
+  `infrastructure/legal/frame/`, the sections of `infrastructure/legal/sections/` and their `stand.toml`, the app texts of
+  `infrastructure/legal/app-texts/` and their list `app-texts.toml`, builds the three pages with
+  `src/legal/src/legal/pages.py`, which checks their ids and links, and writes all three to `infrastructure/legal/built/`; it needs no
+  network, prints `legal:build: wrote <file>` per page and exits 0, or prints `legal: <file> is missing; the frame is required`
   (or the failed check's line, which names a directory under `sections/` that is neither `allgemein` nor one of `keycloak`,
   `litellm` or `speech-runtime`, a section with no `stand.toml` entry, an entry without a file or a section whose sha256
-  differs from its entry, printing the file's) and exits non-zero, writing nothing. It reads the `zone` as `legal:check`
+  differs from its entry, printing the file's, and the same for an app text and `app-texts.toml`, an app with no
+  `datenschutz` and an app key that is `allgemein` or a service's) and exits non-zero, writing nothing. It reads the `zone` as `legal:check`
   does. All three run through `uv` (locked in `mise.toml`),
   which fetches Python 3.14 on first use and keeps its environment under `~/.cache/platform/legal`.
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
@@ -211,9 +213,9 @@
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
-  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells" and the "P9f cells"; `core`
-  every other cell and the checks that need no cluster. The setup through the reconcile's assertion runs in all three,
-  and a new cell joins the part with more room.
+  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells", the "P9f cells"
+  and the step of `tests/no_network/`, the shortest part; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
+  assertion runs in all three, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
   `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
@@ -322,6 +324,11 @@
   image; that a Pod in the namespace gets 200 from `/health` with the public host and an error for an unknown host
   while a Pod in another namespace gets no answer; that the pod runs as a non-root user on a read-only root and writes to
   the audio claim and `/tmp`; and that the claim is Bound on the Retain class with prune disabled.
+  The step "songmaker's workers", in the part `postgres`, asserts that the Deployments `music-worker` and `scoring-worker`
+  are Available with one Ready pod at a full app ref under the candidate's revision and ask for no GPU, and prints the
+  kubelet's pull report and the runner's free disk; and that a Pod with the scoring worker's labels reaches the
+  namespace's Postgres and Redis and neither the Service `kubernetes` nor github.com, while one without them reaches all
+  four.
   The nvidia step asserts that the Kustomization `nvidia` is Ready at the candidate with its DaemonSet wanting
   0 pods, that the RuntimeClass `nvidia` has the handler `nvidia`, that Namespace `nvidia` has no Pod Security label and
   holds only that DaemonSet, and that a Pod with the class, uid 1000 and `nvidia.com/gpu: 1` passes server-side dry-run
@@ -410,7 +417,7 @@
   kube-router has its rules) where one without them reaches all three, and a Pending Pod of flux-system with the port `http-prom` is a dropped target
   of `flux-controllers` with no `up` series. k3d proves neither a delivery nor the resolved mail, which Alertmanager
   attempts only after a firing mail succeeded; the PC's synthetic alert proves one firing and one resolved mail.
-  The step "P9c cells", in the part `postgres`, suspends the Kustomization `litellm` and resumes it on every exit, removing
+  The step "P9c cells", in the part `postgres`, suspends the Kustomizations `litellm` and `platform-secrets`, so that no reconcile undoes its write to the Secret `hopin`, and resumes both on every exit, removing
   its keys, person budget and Secret key: `mise run litellm:keys --plan` lists the differences between the table and two
   keys made with the master key, exits 2 and changes no row; the run sets the numbers, a second run prints 0 changes and a
   raised budget changes that field alone and keeps `budget_reset_at`; the person budget takes the table's number; a row
@@ -424,6 +431,31 @@
   a table without a number for the person budget or a row's limits, an absent revision, one that changes while the table
   is read and a value with a newline are refused before any write; and the value reaches curl's stdin and no argument
   or output, a run under `bash -x` included.
+  The step "Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind
+  on the node", in the part `backup`, runs `tests/no_network/pod_loses_its_link_before_the_worker_starts.sh` in Namespaces
+  without a Pod Security label that it creates and deletes: its own and one fresh for each mode of the lives. `tests/no_network/pod.sh` renders the shape
+  a worker Pod takes: the init container `remove-link` (the busybox of `PROBE_IMAGE`, uid 0, only `NET_ADMIN`, read-only
+  root, no token or volume), which runs `remove_link.sh`, the one program, before a non-root worker at `restricted`'s
+  fields. The program ends 0 with `lo` alone or once it deleted `eth0` and read `lo` alone, and non-zero on a failed
+  read, another link or a failed delete, and it reads the links as plain assignments, since busybox sh ignores `set -e`
+  inside a command substitution; `remove_link_branches.sh` runs it in the init container's own shell, the busybox of
+  `PROBE_IMAGE` in a throwaway `docker run` without network, against a fake `ip` function for each branch (a read that
+  fails, one that prints `lo` and then fails, an empty one, a failed delete among them), first in the cell. The cell proves that the worker's `ip -o link`, `ip -o addr` and routes of both families hold `lo` alone
+  with 127.0.0.1/8 and ::1/128, an inspection that fails failing the cell; that it reaches neither the API's ClusterIP,
+  cluster DNS, the node's address, the node's `cni0` fe80 address (scope `lo`, the only one a Pod has) nor 1.1.1.1 while a listener
+  on 127.0.0.1 answers; that the same Pod without the init container holds `eth0` and a default route and reaches the
+  API, DNS and the node; an exec probe, a log line, an `emptyDir` and a ConfigMap; the program run by two init containers; a
+  worker that never starts without `NET_ADMIN` or beside a second link; a worker restarted in its sandbox with `lo`
+  alone, and a sandbox of the Pod's own, found by its pod-name label and removed on the node through the node's `crictl stopp` and `rmp`, that is recreated with the init
+  container run again; and, over twelve lives (normal, force-deleted, deleted while an init container runs, crashed),
+  that the lease files of the one directory under `/var/lib/cni/networks` the cell reads from the node, the node's veth
+  links, the Namespace's sandboxes and the CNI rules of `iptables-save` (read from a listing that holds kube-proxy's
+  `KUBE-SERVICES`) equal their state before, each life having taken
+  a new lease while it lived, with the same lives without the init container first as the control.
+  `mise exec -- tests/no_network/pod_on_the_pc_holds_only_lo.sh` runs on the PC through k3s's own kubeconfig, without
+  sudo: a Pod of the shape in a throwaway Namespace without a Pod Security label holds `lo` alone and reaches neither
+  the API's Service, cluster DNS nor the node, a default Pod beside it holds `eth0` and reaches them, and every
+  throwaway object is gone on every exit; it prints names and counts and changes nothing on the host.
 - `clusters/pc/flux-system/`: Flux's own components and its sync to this repository. `gotk-components.yaml` is
   generated by `mise run flux:export` for the components `FLUX_COMPONENTS` in `mise.toml` lists, which hold no Helm reconciler
   (every chart is rendered into Git); it is not edited by hand, and `cluster` fails when a regeneration differs.
@@ -448,7 +480,7 @@
   a pull request, pulled through the Secret `ghcr-pull` and started from the files of the Secret `skat` and the
   password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
   container of the same image runs `skat migrate` before `skat serve`. It has no route, NetworkPolicy or tunnel line yet.
-- `apps/songmaker/`: songmaker's stores and web, no route or login yet: its Postgres from the base
+- `apps/songmaker/`: songmaker's stores, web and workers, no route or login yet: its Postgres from the base
   `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `songs generations`, and `redis.yaml`, the
   queue: one StatefulSet pod at the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a
   read-only root, persistence off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a
@@ -457,15 +489,24 @@
   songmaker reads `/run/secrets` as its fixed directory, so that is one `projected` volume of the Secret `songmaker`
   and the key `password` of the Secret `postgres` as `postgres_password`. The web refuses to start without its OIDC
   settings, which it asks Keycloak for only at a sign-in, so they stand with a placeholder `oidc_client_secret`
-  until the route sets Keycloak's value. The image's own start runs through `uv`, so the container runs the installed
-  `songmaker` directly. The init container `migrate` runs `alembic upgrade head` with `DATABASE_URL` and the password
+  until the route sets Keycloak's value. The image's own start runs through `uv`; the container runs the installed
+  `songmaker` directly instead. The init container `migrate` runs `alembic upgrade head` with `DATABASE_URL` and the password
   file alone. The kubelet's probe sends `Host: localhost`, which `ALLOWED_HOSTS` lists beside the public host; the
   startup probe allows 10 minutes. `/health` answers 200 while the app is degraded, so readiness proves that the process
   runs and not that its stores are healthy; that is songmaker's to change. No `AGENT__*` setting and no LiteLLM key is set,
   so the web never calls the gateway. `audio.yaml` is the claim `audiofiles` at `/app/data/audio`, Retain class and the
   prune annotation, without a k8up annotation; its size is nominal, as local-path enforces none. The web's Service
-  on 8080 admits only the namespace's own pods, and its egress is open. The Namespace is in `infrastructure/namespaces/`,
-  not here.
+  on 8080 admits only the namespace's own pods, and its egress is open.
+  `music-worker.yaml` and `scoring-worker.yaml` are the Deployments `music-worker` and `scoring-worker`, each one pod
+  with `Recreate`, an image of the web's release with its own digest, started like the web but from a projected volume
+  of only the files their settings read, which refuse any other: `session_secret` and `songmaker_internal_token` of the
+  Secret `songmaker` and the Postgres password. Neither has a port or asks for the GPU. Each is ready by an exec probe of
+  arq's health key in Redis, with a startup window of 10 minutes. The music worker writes the audio claim and a
+  memory-backed `/tmp`, and its egress is open. The scoring worker reads the audio claim, runs with `HF_HUB_OFFLINE=1`
+  and its image's baked models, and its NetworkPolicy admits nobody and lets it send only to cluster DNS and the
+  namespace's Postgres and Redis. A Ready scoring pod does not prove that a read-only root lets it read the model cache
+  or that it needs no write access to the audio claim; the first real scoring job does. The Namespace is in
+  `infrastructure/namespaces/`, not here.
 - `apps/hopin/`: hopin's Deployment and Service, one pod with `Recreate`, its image the full app ref of a release
   that changes only in a pull request, pulled through the Secret `ghcr-pull` and started from the
   Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`. Its Ingress routes `hopin.hallucinai.de`
@@ -578,10 +619,14 @@
 - `infrastructure/legal/`: the legal sections and the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
   is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
-  field. `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
+  field. `built/datenschutz.html` and `built/nutzungsbedingungen.html` are the other two pages, not mounted.
+  `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
   operator's. `stand.toml` holds one table per section path with its `date` (the Stand it prints, `D. Monat YYYY`, a
   page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand; nothing of
-  them is served yet. `default.conf` serves only
+  them is served yet. `app-texts/<key>/<page>.html` are the apps' own files byte for byte (hopin, presentator and
+  songmaker; skat joins with its go-live) and `app-texts.toml` holds per app and page their `date` and `sha256` and, for an app with no
+  image under `apps/<key>`, its release `tag`; an app with an image has its release from that image, so a `tag` beside
+  one is refused. A bump of an app's image whose release changes its legal text carries the refreshed copy in the same pull request. `default.conf` serves only
   `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
   host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
   only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
@@ -759,6 +804,9 @@
   as artifact `coverage`, which the `quality` job passes as `coverage-artifact`, and runs
   `tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh`, which reads hopin's public repository at the tag of
   the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails, and
+  `tests/legal/app_texts_equal_their_release.sh`, which fetches each listed app's public repository at its release tag
+  and fails naming the step when that fails, or when a copy's bytes, its sha256 or its date (the commit date of the file at the tag)
+  differ from the list's, a page exists on one side only or a `tag` stands beside an image, and
   `tests/legal/sections_equal_hals_at_commit.sh`, which fetches hal's public repository at the commit its variable
   `hal_commit` names and fails naming the step when that fetch fails or `diff -r` finds `infrastructure/legal/sections`
   unlike hal's `legal/sections`; the pin moves when hal changes `legal/sections` before it leaves.
