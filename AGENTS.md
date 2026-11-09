@@ -18,17 +18,9 @@
   fails when it cannot list the directory. It reads the clean's last start (the later of the service's and the timer's
   last trigger, which a reboot keeps) and result, whoever started it, so a failed or never-run clean keeps failing the
   check until `sudo systemctl start pod-logs-clean.service` has run, then `mise run check:pod-logs`.
-- `mise run check:secrets-expiry` runs on the PC through k3s's own kubeconfig, without sudo, and reads only metadata: it
-  names, by namespace, name and date, every Secret whose annotation `platform.hallucinai.de/expires-on: YYYY-MM-DD` lies
-  within 30 days or in the past, and each whose value is no such date, and fails on any or when the listing fails; it
-  passes with no annotated Secret.
 - `mise run backup:fetch <namespace> <file>` writes the latest dump of the namespace's k8up repository to a new file at
   0600, through a Pod built from the restore test's init container, the file it refuses to overwrite; `db:load-dump
   <namespace> <file>` then restores it. It prints only names and sizes, since a dump holds keys and hashes.
-- `mise run disk` runs without sudo and prints what fills the disk of the home directory by size and name (named
-  directories of `$HOME`, the rest of `$HOME`, and what lies outside it, which is Docker's `/var/lib/docker` and the
-  system, since only root reads that), then Docker's own count when the daemon answers within 2 minutes, else one line
-  saying it does not answer in time; from 85 % use it first prints a `WARNING` line on stderr, and it still exits 0.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
   Deployments at 0 and its Flux Jobs deleted, waiting for the deletion of the Pods a ReplicaSet owns except those in phase
@@ -38,9 +30,6 @@
   then resumes Flux and waits for the namespace to converge. After a hard kill, `mise run db:load-dump --resume <namespace>` resumes once no other session and no
   `pg_restore` process holds the database, stops at once when the Kustomization does not exist, and verifies nothing.
   It prints names, counts and outcomes, never a row, since a dump holds keys and hashes.
-- `mise run gatus:open` forwards `127.0.0.1` at a free local port kubectl chooses to the port of Gatus's Service and prints
-  the address of the status page once kubectl listens, none when the forward fails, which exits non-zero; the page has no
-  other way in.
 - `mise run keycloak:move-group [--delete-old] <file>` is for the rename of the AI group: it creates
   the new file at 0600 (and refuses one that exists), dumps `keycloak` into it with the messages of `pg_dump` and
   `pg_restore --list` in `<file>.dump.log` at 0600, whose path and line count it prints, deletes only its own file
@@ -115,15 +104,8 @@
   --only tools` (the units' binaries must exist first), `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`
   writes `~/.config/user-tmpfiles.d/disk.conf` from `host/disk/` and the units `dev.mise.docuum.service`,
   `dev.mise.uv-cache-clean-weekly.timer`, `dev.mise.user-tmpfiles-clean-daily.timer` and
-  `dev.mise.trash-prune-daily.timer` with their services, from `mise.toml`, and restarts Docuum. Docuum keeps `docker system df`'s Images line, which counts a shared layer once,
-  at 100 GB, deleting images least recently used first, never one younger than a day, one a container uses, one tagged
-  `previous`, a `-base` image or one of the vendor repositories its `--keep` flags name; its state is
-  `~/.local/share/docuum/state.yml`, and an image it has never seen counts as last used at its creation. uv's cache
-  is emptied weekly without `--force`. The tmpfiles line deletes a Codex session 30 days after the newest of its
-  timestamps. `gtrash prune --day 30`, restricted to `~/.local/share/Trash`, deletes daily each Trash entry whose
-  `.trashinfo` deletion date is older than 30 days, with that file, and leaves an entry without a `.trashinfo`, one
-  whose `.trashinfo` it cannot read and the Trash of other mounts; the unit creates the home Trash first, since gtrash
-  fails on a missing one. Claude's sessions, Docker's volumes and its build cache (hal's) are never cleaned here. Undo: declare the
+  `dev.mise.trash-prune-daily.timer` with their services, from `mise.toml`, and restarts Docuum. uv's cache
+  is emptied weekly without `--force`. Undo: declare the
   units, the Trash's included, `state = "absent"` and apply the same parts; `~/.config/user-tmpfiles.d/disk.conf` and
   `~/.local/share/docuum/state.yml` stay and are inert without the units.
 - The PC runs only the bootstrap parts and sub-tasks a slice names, never a full `mise bootstrap` or
@@ -323,27 +305,13 @@
   `expire.sql` (a ConfigMap), the daily person, tool and label rows dated more than 90 days before the database's UTC
   day, the tool rows last used before the moment 90 days before now, or created before it when never used, and the customer rows without a budget, without spend and without a
   daily row inside the period; the period is no setting, as the privacy text states it.
-  `keys.yaml` is the table of the person budget and each app's budget and parallel limit; the ConfigMap `litellm-keys`
-  carries it, without a hash suffix, as no pod reads it. `mise run litellm:keys [--plan]` makes the person budget (the id
-  of `max_end_user_budget_id`) and each row's key equal to it, sending only the fields that differ, so a pure budget
-  change keeps the period's reset; it prints the revision Flux applied to the table it read, which it refuses when absent or changed during the read, one
-  line per field with old and new, and a count; it refuses a table whose person budget or a row's budget or parallel
-  limit is no number, naming the row; a row without a key is named with `run litellm:key <app>` and ends 1 after the
-  rest; a failed write stops the rest and names what was made, the failed write, whose outcome is unknown when its
-  answer was lost, and what was not made; `--plan` writes nothing and exits 0 with no change, 2 with changes, 1 on a
-  failure. `mise run litellm:key <app>` registers key `litellm_key` of Secret `<app>` in namespace `<app>` (one printable
+  `mise run litellm:key <app>` registers key `litellm_key` of Secret `<app>` in namespace `<app>` (one printable
   line without a trailing newline, `sk-` and at least 16 characters) as the row's key, prints `unchanged` when the stored hash equals the value's,
   and refuses another value under the alias, changing nothing; a key's new value goes to `platform-secrets` first. Both
   run through `scripts/litellm_keys.sh` with a port-forward and the master key: a value and the master key travel from
   kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
   never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body.
-  `mise run litellm:admin <username>` is the unlimited AI budget of one admin, through the same script: it reads the person
-  as `keycloak:agent-owner` does (`scripts/keycloak_kcadm.sh`, which both tasks source, and whose kcadm diagnostics this
-  command discards, since they can quote a URL with the person's id), the realm's issuer from the public discovery
-  document and the group `/services/litellm/admin`, and LiteLLM's budget `litellm-admin` and customer row, all before
-  the first write; it then writes and reads back, in this order, the budget (no limit, `1mo`, created or corrected), the membership and the
-  customer row, which is `/customer/new` under agent-runtime's `person_fingerprint` of issuer and person id or
-  `/customer/update` of `budget_id` alone, so spend and other fields stay. Removing an admin is
+  Removing an admin is
   not built.
 - `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
   operator's. A bump of an app's image whose release changes its legal text carries the refreshed copy in the same pull request. The Ingress routes the host `hallucinai.de`
@@ -414,8 +382,7 @@
   any CronJob reports the zone `local`;
   `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` for the devices under `/dev` only, without loop devices
   and `/dev/shm`: a snap's read-only squashfs is always full, and what is not under `/dev` is memory-backed or an
-  overlay of the same disk. The job `flux-controllers` keeps only Pods in phase Running, since a finished Pod keeps a target that
-  reads down, and a static job `alertmanager` scrapes Alertmanager, so `TargetDown` covers it.
+  overlay of the same disk.
   Alertmanager, the chart's subchart and a vendor image at a digest in `image.tag`, mails one alert per mail through
   `email_configs`: one receiver `mail`, every label a grouping label, `send_resolved`, plain text, and a repeat
   interval and a `data.retention` of a year, so an alert that fires for a whole year is mailed again and none sooner. The route stands in `values.yaml`
@@ -431,19 +398,13 @@
   own namespace to kube-state-metrics' 8080.
 - The
   NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus, Alertmanager, Grafana and the front admit the namespace `gatus` on the port
-  its request uses; hopin, skat and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
-  Service at a free port and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
+  its request uses; hopin, skat and Keycloak stay closed to it. A Gatus pod is a sender Traefik's `web` trusts forwarded
   headers from; it sends only the requests of its configuration.
-- `infrastructure/grafana/`: Grafana for Loki and Prometheus, in the Namespace `grafana` the layer owns, which enforces
-  Pod Security `restricted`: one pod, its image `docker.io/grafana/grafana` at a digest, and no claim, Secret, Role or
-  hook. `values.yaml` is its hand-written source; `rendered.yaml` is generated by `mise run charts:render`, not edited by
+- `values.yaml` is its hand-written source; `rendered.yaml` is generated by `mise run charts:render`, not edited by
   hand, and `cluster` fails when a regeneration differs. A chart or image bump changes the task's chart version and digest
   and `image.tag`, which holds the digest, together and regenerates, in a pull request started from the Dependency Dashboard
   that `renovate` keeps.
-  The page has no login: anonymous access at the role Editor, the lowest that runs Explore, the login form and the initial admin off, since only
-  `mise run grafana:open` opens it, which forwards `127.0.0.1` to the Service; so whoever can start that forward reads
-  every line Loki holds. Update checks, analytics, the preinstall of plugins from grafana.com and Grafana's own alerting are off, so
-  Alertmanager stays the one alert channel. Its NetworkPolicy admits only the namespace `gatus` to port 3000 and lets it send only to cluster DNS,
+  Its NetworkPolicy admits only the namespace `gatus` to port 3000 and lets it send only to cluster DNS,
   Loki's 3100 and Prometheus's 9090. Gaps of the page's reach, accepted since the forward's port is random, on loopback and open only while the forward runs:
   Prometheus keeps its lifecycle endpoints, which its reloader needs, so the page can still make it quit or reload, a restart; a GET on Loki's `/ingester/shutdown` through the page stops new lines being stored until the pod is restarted, and no stored line is lost; the pod holds no claim and only `emptyDir`, ConfigMap and projected volumes; the layer renders no Role,
   ClusterRole or hook; a Pod in `gatus` gets 200 for `/api/health` and one in another namespace no answer; a Pod in
@@ -487,3 +448,4 @@
 ## Documents
 
 - `docs/github-settings.md`: read when changing what `src/opentofu/github` declares or how a change reaches GitHub.
+- `docs/operations.md`: read when changing an expiry, the status page, Grafana, a scrape job, the PC's disk bounds or the AI budgets.

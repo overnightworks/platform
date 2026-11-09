@@ -6,6 +6,7 @@
 # with its spend and alias unchanged; an admin budget with a finite limit is corrected to no limit and to its monthly
 # period while another admin's row stays as it was; a second run prints unchanged; a call past the person budget is
 # refused by the person limit for the ordinary person and passes for the admin; and no output holds a person's id, a fingerprint or a key.
+# Proves docs/operations.md OPS-15.
 set -euo pipefail
 # No value of this cell reaches a trace.
 { set +x; } 2>/dev/null
