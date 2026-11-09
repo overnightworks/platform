@@ -69,8 +69,8 @@ jobs:
       - name: Check that the app texts under infrastructure/legal equal their apps' files and dates at the release each names
         run: mise exec -- tests/legal/app_texts_equal_their_release.sh
 
-      - name: Check that the legal sections equal hal's legal/sections at the pinned commit
-        run: tests/legal/sections_equal_hals_at_commit.sh
+      - name: Check that the legal sections, stylesheet, headers and appkit files equal hal's and appkit's at the pinned commit
+        run: tests/legal/legal_sections_assets_and_headers_equal_hals_at_commit.sh
 
       - name: Check that a failed LiteLLM write stops the rest and names what was made, and that no key value reaches an argument or an output
         run: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
@@ -437,14 +437,14 @@ jobs:
           NO_NETWORK_NAMESPACE: no-network
         run: tests/no_network/pod_loses_its_link_before_the_worker_starts.sh
 
-      - name: Assert that /impressum reaches a Pod beside cloudflared through Traefik with the committed bytes and header and everything else gets 404
+      - name: Assert that the three legal pages and every asset reach a Pod beside cloudflared through Traefik with the committed bytes and headers, /favicon.ico and the asset directories get nginx's 404 and everything else Traefik's
         if: matrix.part == 'core'
         env:
           LEGAL_NAMESPACE: legal
           LEGAL_LAYER_DIRECTORY: infrastructure/legal
           LEGAL_HOST: hallucinai.de
           OTHER_NAMESPACE: legal-client
-        run: tests/legal/impressum_through_traefik.sh
+        run: tests/legal/five_paths_through_traefik.sh
 
       - name: Assert that Loki keeps a pushed line for LogQL, deletes after at most 28 days, answers only its two namespaces and keeps its claim
         if: matrix.part == 'core'
