@@ -213,8 +213,8 @@
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
-  check, the "P7a cells", the steps "songmaker's web" and "songmaker's workers" and the "P9c cells";
-  `backup` holds the Alertmanager step, the Grafana step, the "P7d cells", the "P9f cells", the "P9c-2 cells" and the step of `tests/no_network/`; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
+  check, the "P7a cells", the step "songmaker's web" and the "P9c cells";
+  `backup` holds the Alertmanager step, the Grafana step, the step "songmaker's workers", the "P7d cells", the "P9f cells", the "P9c-2 cells" and the step of `tests/no_network/`; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
   assertion runs in all three, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
@@ -326,7 +326,7 @@
   image; that a Pod in the namespace gets 200 from `/health` with the public host and an error for an unknown host
   while a Pod in another namespace gets no answer; that the pod runs as a non-root user on a read-only root and writes to
   the audio claim and `/tmp`; and that the claim is Bound on the Retain class with prune disabled.
-  The step "songmaker's workers", in the part `postgres`, asserts that the Deployments `music-worker` and `scoring-worker`
+  The step "songmaker's workers", in the part `backup`, asserts that the Deployments `music-worker` and `scoring-worker`
   are Available with one Ready pod at a full app ref under the candidate's revision and ask for no GPU, and prints the
   kubelet's pull report and the runner's free disk; and that a Pod with the scoring worker's labels reaches the
   namespace's Postgres and Redis and neither the Service `kubernetes` nor github.com, while one without them reaches all
