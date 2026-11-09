@@ -1,8 +1,0 @@
-claim_id = "2fb692e9c828405e89207c044535c233"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "949677a236cce433a514c1d1d3b8a1f3b16122c4"
-branch = "claude/issue-240-speech-token-minimisation"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/keycloak/realm.yaml", "tests/keycloak"]
-opened_commit = "609db0ee614031fdc4b452248225e09859fac54c"
-whole_reason = "One claim set: the realm's two scopes and the cell that reads every client's tokens prove the minimisation only together."
