@@ -66,9 +66,14 @@ spec:
               value: json
             - name: HOST
               value: 0.0.0.0
-            # The Host check admits the public host and localhost, the host of the kubelet's probe.
+            # The Host check admits the public host, localhost, the host of the kubelet's probe, and web, the name the
+            # GPU worker sends with its control-plane URL.
             - name: ALLOWED_HOSTS
-              value: songmaker.hallucinai.de,localhost
+              value: songmaker.hallucinai.de,web,localhost
+            # The pod network, where Traefik's pods change address on every restart; the NetworkPolicy below admits
+            # only Traefik's pods and the namespace's own.
+            - name: TRUSTED_PROXIES
+              value: 10.42.0.0/16
             # The web refuses to start without its sign-in settings, though it asks Keycloak only at a sign-in.
             - name: OIDC_ISSUER
               value: https://auth.hallucinai.de/realms/hallucinai
@@ -152,7 +157,29 @@ spec:
       port: 8080
       targetPort: http
 ---
-# Only the namespace's own pods reach the web; the route's senders join with the route.
+# Cloudflare terminates TLS, so the route is plain HTTP on Traefik's web port, and it names its host, so every other
+# host keeps Traefik's 404.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: songmaker
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: songmaker.hallucinai.de
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 8080
+---
+# Traefik's pods and the namespace's own reach the web; the kubelet's probe comes from the node, which a NetworkPolicy
+# never blocks.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -167,6 +194,9 @@ spec:
   ingress:
     - from:
         - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
       ports:
         - port: http
           protocol: TCP
