@@ -1,7 +1,0 @@
-claim_id = "9dfd04ca6f554212a035e29153cba494"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "95c909e5ba9ff314d6dc74f598429008b87a04e2"
-branch = "claude/issue-336-songmaker-gateway"
-scope = ["apps/songmaker/web.yaml", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
-opened_commit = "88d5e49aa5b01a01622e15a242ab3147bb458e6b"
