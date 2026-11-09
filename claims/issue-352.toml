@@ -1,7 +1,0 @@
-claim_id = "49653182b51b45548fa30a02c875a931"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "cf37ca78cc07dcdddc8e3ea90e34b4ba6a32498e"
-branch = "claude/issue-352-ci-cancel-superseded-runs"
-scope = [".github/workflows/ci.yml"]
-opened_commit = "90b30c8dc8b7b03ecca99260ae252da4ab1b62df"
