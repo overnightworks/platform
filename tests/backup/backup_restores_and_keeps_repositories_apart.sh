@@ -101,6 +101,27 @@ for namespace in $BACKUP_NAMESPACES; do
 done
 echo "the restore test of each namespace fails on its repository without a snapshot"
 
+# LiteLLM's first key table needs a row for its restore test to pass; the master key, through a port-forward, makes the
+# key by LiteLLM's own API, so the cell relies on no other cell. The key stays, like the backups below, until the
+# namespace goes. The master key travels from kubectl's stdout through shell variables to curl's stdin, never in an
+# argument; the reply is read only for the key's presence and goes nowhere else.
+kubectl --namespace "$LITELLM_NAMESPACE" rollout status deployment/litellm --timeout=5m
+master_key="$(kubectl --namespace "$LITELLM_NAMESPACE" get secret litellm --output jsonpath='{.data.master_key}' | base64 --decode)"
+echo "::add-mask::$master_key"
+litellm_port="$(kubectl --namespace "$LITELLM_NAMESPACE" get service litellm --output jsonpath='{.spec.ports[0].port}')"
+forward_log="$RUNNER_TEMP/litellm-port-forward.log"
+kubectl --namespace "$LITELLM_NAMESPACE" port-forward service/litellm ":$litellm_port" > "$forward_log" 2>&1 &
+forward=$!
+trap 'kill "$forward" 2>/dev/null || true' EXIT
+for _ in $(seq 30); do grep -q '^Forwarding from 127.0.0.1:' "$forward_log" && break; sleep 1; done
+local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$forward_log" | head -n 1)"
+[ -n "$local_port" ] || fail "kubectl port-forward to the Service litellm did not start"
+key_made="$(printf '%s\n' "header = \"Authorization: Bearer $master_key\"" 'header = "Content-Type: application/json"' 'data = "{}"' |
+  curl --silent --show-error --fail-with-body --max-time 30 --config - "http://127.0.0.1:$local_port/key/generate")"
+[ "$(yq --input-format json '.key | length > 0' <<<"$key_made")" = true ] || fail "the master key made no key in LiteLLM"
+kill "$forward"
+echo "the master key made the key that LiteLLM's first key table holds for its restore test"
+
 for namespace in $BACKUP_NAMESPACES; do
   # One backup, as the Schedule would start it.
   schedule="$(kubectl --namespace "$namespace" get schedule postgres --output json)"
