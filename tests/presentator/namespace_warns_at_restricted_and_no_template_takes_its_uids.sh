@@ -15,6 +15,7 @@ markers="$(yq --no-doc 'select(.kind == "Namespace" and .metadata.name == "prese
 echo "the Namespace presentator enforces no level, warns and audits at restricted, and is never pruned"
 # The build and wire uids of presentator's image; a template that names either shares its RLIMIT_NPROC count.
 census() {
+  # shellcheck disable=SC2016 # $spec is yq's variable.
   yq --no-doc '(.spec.template.spec // .spec.jobTemplate.spec.template.spec // (select(.kind == "Pod") | .spec)) as $spec
     | select($spec != null)
     | select(($spec | [.securityContext.runAsUser, .securityContext.runAsGroup, ((.initContainers[], .containers[]) | (.securityContext.runAsUser, .securityContext.runAsGroup))]
@@ -22,6 +23,7 @@ census() {
     | .kind + "/" + .metadata.name' "$@"
 }
 layers="$(mktemp -d)"
+trap 'rm -rf "$layers"' EXIT
 kubectl kustomize apps/presentator >"$layers/presentator.yaml"
 for path in $(yq --no-doc 'select(.kind == "Kustomization" and (.apiVersion | test("^kustomize[.]toolkit[.]fluxcd[.]io/"))) | .spec.path' clusters/pc/apps.yaml clusters/pc/infrastructure.yaml | grep -E '^[.]/(apps|infrastructure)/'); do
   if [ -f "$path/kustomization.yaml" ]; then
