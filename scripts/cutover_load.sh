@@ -70,8 +70,9 @@ read_evidence() {
 # stdout without connecting. It prints no-realm, then the console-made objects as `object <kind> <name>`, then no-profile
 # or the realm's stored user profile between profile-begin and profile-end. Keycloak 26 stores the profile as one
 # component of the realm with exactly one config value kc.user.profile.config (DeclarativeUserProfileProvider's
-# UP_COMPONENT_CONFIG_KEY); its migration to 23 merges the older config-piece-<n> values into it. Any other state, a
-# second component or value, or a leftover piece, is no readable profile. It buffers the rows it needs, so the order of
+# UP_COMPONENT_CONFIG_KEY); its migration to 23 merges the older config-piece-<n> values into it only for a realm whose
+# user profile was enabled, so pieces can remain. Any other state, a second component or value, or a leftover piece, is
+# no readable profile. It buffers the rows it needs, so the order of
 # the tables in the dump does not matter, and it holds component_config's other values, among them the realm keys'
 # private parts, without printing any.
 gate_program='function unescape(text,   result, position, character) {
@@ -181,7 +182,7 @@ run_step() {
   local what="$1" step_status=0 line
   shift
   step_output=""
-  "$@" 2>&1 | while IFS= read -r line; do printf '%s\n' "$line"; step_output+="$line"$'\n'; done || step_status=$?
+  "$@" 2>&1 | while IFS= read -r line || [ -n "$line" ]; do printf '%s\n' "$line"; step_output+="$line"$'\n'; done || step_status=$?
   [ "$step_status" = 0 ] || fail "$what exited $step_status"
 }
 

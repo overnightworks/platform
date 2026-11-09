@@ -143,7 +143,8 @@ case "$*" in
     ! loaded || refuse "a second load in one run"
     if [ -e "$scenario/fail/mise-load" ]; then echo "db:load-dump: the load failed" >&2; exit 1; fi
     touch "$state/loaded"
-    echo "db:load-dump: keycloak loaded; every table equal" ;;
+    echo "db:load-dump: keycloak loaded; every table equal"
+    ! [ -e "$scenario/no-newline" ] || printf 'db:load-dump: a last line without a newline' ;;
   "run keycloak:move-group $FAKE_EVIDENCE_DIRECTORY/keycloak-before-move-group-"*".dump")
     loaded || refuse "the move before the load"
     file="$3"
@@ -456,6 +457,13 @@ run_load
 expect_status 0
 second_file="$(grep -o 'keycloak-before-move-group-[0-9TZ]*\.dump' "$case_directory/log/mise")"
 [ -n "$first_file" ] && [ "$first_file" != "$second_file" ] || fail "healthy: a rerun used the same move-group file: $first_file, $second_file"
+
+new_case last-line-without-newline
+serve_copy
+touch "$case_directory/no-newline"
+run_load
+expect_status 0
+expect_line '^db:load-dump: a last line without a newline$'
 
 # ------------------------------------------------------ case 2: the profile, each difference named alone
 # profile_case <name> <jq program on the stored profile> <the one finding>
