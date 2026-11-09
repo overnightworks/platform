@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, postgres]
+        part: [core, postgres, backup]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -390,11 +390,12 @@ jobs:
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
       - name: P7d cells
-        if: matrix.part == 'core'
+        if: matrix.part == 'backup'
         env:
           # The Kustomization and Namespace of the rest-server, a namespace with no repository, which gets no answer, and a
           # Keycloak table its realm leaves empty.
           BACKUP_LAYER: backup
+          LITELLM_NAMESPACE: litellm
           OUTSIDE_NAMESPACE: hopin
           EMPTY_KEY_TABLE: broker_link
           VENDOR_LIST: infrastructure/admission/image-vendors.yaml
