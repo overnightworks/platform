@@ -213,8 +213,8 @@
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
-  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells", the "P9f cells"
-  and the step of `tests/no_network/`, the shortest part; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
+  check, the "P7a cells", the steps "songmaker's web" and "songmaker's workers", the "P9c cells", the Alertmanager step and the Grafana step;
+  `backup` holds the "P7d cells", the "P9f cells", the "P9c-2 cells" and the step of `tests/no_network/`; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
   assertion runs in all three, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
@@ -420,9 +420,10 @@
   each Schedule the cluster holds, and the recording rule of the newest completed Backup has one for each namespace of
   `$BACKUP_NAMESPACES`.
   The step "P9b cells" plants a backdated and a fresh row in each of the five tables through the Postgres pod and runs a
-  Job made from the CronJob: it prints one deletion in each count and leaves the fresh rows and the idle customers
-  with a budget or with spend, a second run prints zeros, and the first log holds no planted value; its Pod ran in a
-  Namespace enforcing `restricted` with its Postgres's image.
+  Job made from the CronJob, with `litellm-expire`'s own schedule held off and restored on every exit: it prints one
+  deletion in each count and leaves the fresh rows and the idle customers with a budget or with spend, a second run
+  prints zeros, and the first log holds no planted value; its Pod ran in a Namespace enforcing `restricted` with its
+  Postgres's image.
   The part `postgres` also runs `tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh`,
   which prints names, counts and verdicts, never a Secret value, the finished file or Alertmanager's status API: the
   StatefulSet is Ready as a non-root user on a Bound Retain claim with prune disabled, Prometheus lists one active
@@ -446,7 +447,19 @@
   front's rules name; `litellm:key hopin` makes the row from a generated value in the Secret `hopin`, a client Pod in
   `hopin`, which reads the header line from a mounted Secret through `curl --header @file`, gets 200 from the front's `GET /v1/models` with it, a second run prints `unchanged`, and a changed
   value, one without `sk-`, a missing key and an app outside the table are refused and change no row; no output holds a
-  value, the master key or the value's sha256. The job `checks` runs `tests/litellm/failed_write_names_what_is_done.sh`
+  value, the master key or the value's sha256. The step "P9c-2 cells" of part `backup` (`tests/litellm/admin_budget_follows_the_fingerprint_and_keeps_spend.sh`)
+  makes people in the realm and drives `litellm:admin`: an unknown name and a service account are refused with nothing
+  changed, no budget and no customer row; a new admin gets a row under the fingerprint, which the cell computes in Python with
+  agent-runtime's recipe, on the budget with no limit and `1mo`, and joins the group; a finite admin budget is corrected
+  while another admin's row stays; a row on the person budget and one with no budget move with spend and alias
+  unchanged; a mocked call past the person budget is refused for an ordinary person by the person limit (the error's type and the
+  start of its message, never printed) and passes for the admin; the cell first asserts the starting budgets, the moved row on the person budget and the other on none; a second
+  run prints `unchanged`, and no output holds an id, a fingerprint or a key. The job `checks` runs
+  `tests/litellm/admin_names_what_a_failed_write_may_have_left.sh` against a fake kubectl, kcadm and curl: a missing
+  argument is refused with no call, the writes come in order, a finished run says what it wrote and a second run sends
+  none, a customer row that cannot be read before the first write ends the run with nothing written, a failure or a lost
+  answer at each of the five writes, a failed read-back after each of three, an INT or a TERM name what may be written
+  and a rerun completes it with the spend kept, and no output holds an id, even when kcadm's diagnostic quotes one. It also runs `tests/litellm/failed_write_names_what_is_done.sh`
   against a fake kubectl and curl: a write that fails midway stops the rest, names what was made, the one that failed,
   also when its answer was lost, and what was not made, and prints no reply body; a budget-only change sends no period;
   a table without a number for the person budget or a row's limits, an absent revision, one that changes while the table
@@ -574,8 +587,8 @@
   `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` do. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
   4 weekly and 3 monthly, a monthly `check`) of the Postgres pod's `pg_dump --format=custom` into `backup-repository`,
   the URL the including layer sets in the ConfigMap `postgres`; a PodConfig gives k8up's Job pods the fields `restricted`
-  requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month and fails
-  without a snapshot or on an empty first key table. The Secret `restic` from `platform-secrets` holds the namespace's
+  requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month, on the 1st at
+  05:00 UTC, bounded to an hour, and fails without a snapshot or on an empty first key table. The Secret `restic` from `platform-secrets` holds the namespace's
   `username`, `password` and `repository-password`.
 - `infrastructure/k8up/`: the k8up operator in `k8up-system`, `rendered.yaml` and `crds.yaml` generated by
   `mise run charts:render`, not edited by hand; `cluster` fails when a regeneration differs. `skipSnapshotSync` keeps
@@ -617,7 +630,7 @@
   and passes only `POST /v1/chat/completions`, `POST /v1/images/generations` and `GET /v1/models` without a query
   string. agent-egress, a Traefik on 443 that admits only LiteLLM, passes TLS
   only for the SNIs of `egress-allowed.yml` and sends only to cluster DNS, so nothing the copy of hal's data holds
-  leaves the cluster. The CronJob `litellm-expire` runs at 04:00 with `Forbid`, `backoffLimit` 0 and deletes in one statement,
+  leaves the cluster. The CronJob `litellm-expire` runs at 04:00 UTC with `Forbid`, `backoffLimit` 0 and deletes in one statement,
   `expire.sql` (a ConfigMap), the daily person, tool and label rows dated more than 90 days before the database's UTC
   day, the tool rows last used before the moment 90 days before now, or created before it when never used, and the customer rows without a budget, without spend and without a
   daily row inside the period; the period is no setting, as the privacy text states it. Its `psql` is the image of the
@@ -643,6 +656,17 @@
   kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
   never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body. The
   rpm and tpm limits are not in the table and stay as they are.
+  `mise run litellm:admin <username>` is the unlimited AI budget of one admin, through the same script: it reads the person
+  as `keycloak:agent-owner` does (`scripts/keycloak_kcadm.sh`, which both tasks source, and whose kcadm diagnostics this
+  command discards, since they can quote a URL with the person's id), the realm's issuer from the public discovery
+  document and the group `/services/litellm/admin`, and LiteLLM's budget `litellm-admin` and customer row, all before
+  the first write; it then writes and reads back, in this order, the budget (no limit, `1mo`, created or corrected), the membership and the
+  customer row, which is `/customer/new` under agent-runtime's `person_fingerprint` of issuer and person id or
+  `/customer/update` of `budget_id` alone, so spend and other fields stay. A second run prints `<username> unchanged`, and a finished run prints what it wrote.
+  A missing argument, a name no person carries and a service account's name end in `nothing changed`; a failure, a lost
+  answer, a failed read-back or a signal after a write names what was written or may have been and says that running it
+  again completes it; nothing is rolled back and no output holds an id, the fingerprint or a key. Removing an admin is
+  not built.
 - `infrastructure/legal/`: the legal sections, the three pages and their assets at `hallucinai.de`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
   is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
@@ -739,8 +763,8 @@
   `http-prom` and itself; kube-state-metrics' `customResourceState` makes `gotk_resource_info` for every Kustomization and, from each k8up Schedule's `creationTimestamp`, `k8up_schedule_created`
   with its `namespace` and `name` (the chart's role gets `list` and `watch` on `schedules` of `k8up.io`, and still lists no Secret). Retention
   is 30 days and 7GB on one 8Gi claim of the Retain class with the prune annotation. `rules.yaml` holds the rules
-  `TargetDown`, `KustomizationNotReady`, `DeploymentUnavailable`, `PodRestarting`, `DiskLow`, `ScheduledJobFailed` and
-  `BackupMissing`, with two recording rules, read from `/etc/rules`;
+  `TargetDown`, `KustomizationNotReady`, `DeploymentUnavailable`, `PodRestarting`, `DiskLow`, `ScheduledJobFailed`,
+  `BackupMissing` and `ScheduledJobMissed`, with two recording rules, read from `/etc/rules`;
   `ScheduledJobFailed` fires 15 minutes after the newest finished Job of a CronJob, or of k8up's Backup, Check or Prune in
   a namespace, failed, and mails `namespace`, `owner_kind` and, for a CronJob, `owner_name`, since k8up's Job names change
   every run; the next success resolves it, and a Job with no owner is not judged. `BackupMissing` fires 15 minutes after a
@@ -748,9 +772,17 @@
   and mails `namespace`; two Schedules in one namespace count as one, and a stopped Prune or Check alone is not alerted. A k3d
   run that crosses 05:00Z on the 1st starts a `restore-test` that fails for certain, and one at 04:00Z on the 1st a k8up
   `check` that may fail, and P7a empties the database, so litellm-expire at 04:00Z daily and, on a Sunday, the Backup at
-  03:00Z and the Prune at 03:30Z could fire too, any of which could fire during the Alertmanager step's count. A Job whose
-  pod never starts has no start time, so `ScheduledJobFailed` does not judge it, and `restore-test` under `Forbid` then
-  stays silent;
+  03:00Z and the Prune at 03:30Z could fire too, any of which could fire during the Alertmanager step's count. A Job gets
+  its start time when the Job controller first syncs it, whether or not its pod starts, so `activeDeadlineSeconds` fails a
+  Job whose pod never starts and `ScheduledJobFailed` mails it; `restore-test` carries 3600 as `litellm-expire` does, so a
+  hung restore test ends as a failed Job within an hour. `ScheduledJobMissed` fires 15 minutes after a CronJob's next time
+  in kube-state-metrics lies more than an hour in the past, and mails `namespace` and `cronjob`: a Job the API server
+  refuses to create, an unknown `timeZone`, a stuck controller and a `Forbid` skip behind an unfinished Job. It does not see
+  a suspended CronJob, which has no next time, k8up's Schedules, which are no CronJobs, or a Job that starts and fails;
+  the hour is the grace for the controller's catch-up after a boot, and no CronJob sets `startingDeadlineSeconds`, since a
+  skipped monthly run would then alert for most of a month. Both CronJobs set `timeZone: UTC`: kube-state-metrics reads a
+  schedule without a zone in its own zone and the controller in the host's, which differ on the PC, and the cell fails when
+  any CronJob reports the zone `local`;
   `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` for the devices under `/dev` only, without loop devices
   and `/dev/shm`: a snap's read-only squashfs is always full, and what is not under `/dev` is memory-backed or an
   overlay of the same disk. The job `flux-controllers` keeps only Pods in phase Running, since a finished Pod keeps a target that
@@ -772,7 +804,8 @@
   rendered Prometheus image on `tests/prometheus/rules_test.yml`, which proves each rule's duration, firing and
   resolving; and in k3d its ServiceAccount may get `nodes/metrics` and not `nodes/proxy`, every target is up,
   `gotk_resource_info` exists for every Kustomization, `DiskLow`'s
-  expression without its threshold has a series, a Deployment at a dead image ref, a Kustomization at a missing
+  expression without its threshold has a series, no CronJob has the zone `local` and `ScheduledJobMissed`'s expression
+  without its threshold has a series for `litellm-expire`, a Deployment at a dead image ref, a Kustomization at a missing
   path and the Job of a suspended CronJob that exits 1 make `DeploymentUnavailable`, `KustomizationNotReady` and
   `ScheduledJobFailed` pending, the last with exactly its mailed labels, a Pod in namespace `grafana`
   gets 200 and one in another namespace no answer, the claim is Bound on a Retain volume with prune disabled, and the

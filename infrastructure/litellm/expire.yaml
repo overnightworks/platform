@@ -9,6 +9,7 @@ metadata:
   name: litellm-expire
 spec:
   schedule: "0 4 * * *"
+  timeZone: UTC
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:

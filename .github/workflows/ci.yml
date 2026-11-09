@@ -75,6 +75,9 @@ jobs:
       - name: Check that a failed LiteLLM write stops the rest and names what was made, and that no key value reaches an argument or an output
         run: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
 
+      - name: Check that a failed or lost write of the admin budget, its group or its customer row names what may be written and a rerun completes it
+        run: mise exec -- tests/litellm/admin_names_what_a_failed_write_may_have_left.sh
+
       - name: Check that the Renovate report check fails naming a missing report, a report with no dependency and each missing or skipped pin
         run: tests/renovate/report_check_names_each_missing_pin.sh
 
@@ -427,6 +430,13 @@ jobs:
         env:
           PROMETHEUS_NAMESPACE: prometheus
         run: tests/prometheus/backup_alerts_read_every_schedule_and_namespace.sh
+      - name: P9c-2 cells
+        if: matrix.part == 'backup'
+        env:
+          LITELLM_NAMESPACE: litellm
+          KEYCLOAK_NAMESPACE: keycloak
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+        run: tests/litellm/admin_budget_follows_the_fingerprint_and_keeps_spend.sh
       - name: P9b cells
         if: matrix.part == 'core'
         env:
@@ -547,6 +557,9 @@ jobs:
     steps:
       - name: Install the first-run prerequisites
         run: |
+          # One setting for every apt call of the job, the tests' installs included: archive.ubuntu.com
+          # sometimes refuses a connection, and a failed download is retried 5 times before apt fails.
+          echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
           apt-get update
           apt-get install --yes --no-install-recommends ca-certificates curl git
 

@@ -879,6 +879,11 @@ description = "Register the litellm_key of Secret <app> as the key of the row <a
 quiet = true
 run = "scripts/litellm_keys.sh key"
 
+[tasks."litellm:admin"]
+description = "Put a person on LiteLLM's unlimited admin budget and into /services/litellm/admin"
+quiet = true
+run = "scripts/litellm_keys.sh admin"
+
 # The one owner of the loopback forward to a Service's page, which a page the operator opens only at the PC shares.
 [tasks."page:forward"]
 description = "Forward a Service to this PC's loopback at a free port and print the address once kubectl listens"
@@ -1018,24 +1023,12 @@ fail() {
   else echo "keycloak:agent-owner: $1; written or possibly written: ${attempted[*]}; run again to complete it" >&2; fi
   exit 1
 }
-# kcadm signs in once as config-cli with the secret in Keycloak's environment variable KC_CLI_CLIENT_SECRET, never in an
-# argument list that another host user could read, and keeps its token in a private file of the container that goes at
-# the end, on every exit.
-kcadm_path=/opt/keycloak/bin/kcadm.sh
-config_file="/tmp/kcadm-$(</proc/sys/kernel/random/uuid).config"
-keycloak_exec() { kubectl --namespace keycloak exec "$@"; }
-remove_config() {
-  keycloak_exec deployment/keycloak --container keycloak -- rm -f -- "$config_file" ||
-    echo "keycloak:agent-owner: could not remove $config_file in Keycloak's container" >&2
-}
+task_name=keycloak:agent-owner
+# shellcheck source=scripts/keycloak_kcadm.sh
+source scripts/keycloak_kcadm.sh
 trap remove_config EXIT
 trap 'exit 143' TERM INT
-keycloak_exec deployment/keycloak --container keycloak -- bash -c 'umask 077 && : >"$0" &&
-  KC_CLI_CLIENT_SECRET="$KC_BOOTSTRAP_ADMIN_CLIENT_SECRET" exec '"$kcadm_path"' config credentials --config "$0" \
-    --server http://localhost:8080 --realm master --client "$KC_BOOTSTRAP_ADMIN_CLIENT_ID"' "$config_file" >/dev/null ||
-  fail "Keycloak cannot be signed in to"
-kcadm() { keycloak_exec --stdin deployment/keycloak --container keycloak -- "$kcadm_path" "$@" --config "$config_file"; }
-unreadable="Keycloak cannot be read"
+sign_in_kcadm
 
 CLIENT="$client" yq --exit-status '.clients[] | select(.clientId == strenv(CLIENT) and .serviceAccountsEnabled == true
   and (.defaultClientScopes // [] | contains(["agent-identity"])))' "$realm_file" >/dev/null 2>&1 ||
@@ -1043,51 +1036,20 @@ CLIENT="$client" yq --exit-status '.clients[] | select(.clientId == strenv(CLIEN
 client_id="$(kcadm get clients --target-realm "$realm" --query "clientId=$client" --fields id --format csv --noquotes)" ||
   fail "$unreadable"
 [ -n "$client_id" ] || fail "$realm holds no client $client"
-# Keycloak's search leaves out service accounts, and a value in quotes matches a username, email or name exactly, so
-# only the entries whose username is the requested one, which Keycloak stores in lowercase, are the person. Another
-# user's email or name can match too and a page holds at most 100, so every page is read until a short one.
-wanted_username="${username,,}" person_ids="" offset=0
-while :; do
-  page="$(kcadm get users --target-realm "$realm" --query "search=\"$username\"" --offset "$offset" --limit 100)" ||
-    fail "$unreadable"
-  matched="$(WANTED="$wanted_username" yq -p json -r '.[] | select(.username == strenv(WANTED)) | .id' <<<"$page")" ||
-    fail "$unreadable"
-  [ -z "$matched" ] || person_ids+="$matched"$'\n'
-  [ "$(yq -p json 'length' <<<"$page")" -ge 100 ] || break
-  offset=$((offset + 100))
-done
-person_count="$(grep -c . <<<"$person_ids" || true)"
-[ "$person_count" -gt 0 ] || fail "no person named $username in $realm"
-[ "$person_count" = 1 ] || fail "Keycloak returned $person_count users named $username"
-person_id="${person_ids%$'\n'}"
+find_person "$username"
 account_id="$(kcadm get "clients/$client_id/service-account-user" --target-realm "$realm" --fields id --format csv --noquotes)" ||
   fail "$unreadable"
 account="$(kcadm get "users/$account_id" --target-realm "$realm")" || fail "$unreadable"
 owner="$(yq -p json '.attributes.agent_owner // [] | join(",")' <<<"$account")"
 [ -z "$owner" ] || [ "$owner" = "$person_id" ] || fail "$client's agent_owner names someone else"
 
-changed=false
 if [ -z "$owner" ]; then
   attempted+=("agent_owner of $client")
   # The whole representation goes back, so what this run does not set stays as it is.
   USER_ID="$person_id" yq -p json -o json '.attributes.agent_owner = [strenv(USER_ID)]' <<<"$account" |
     kcadm update "users/$account_id" --target-realm "$realm" --file - --no-merge ||
     fail "$client's agent_owner could not be written"
-  changed=true
 fi
-# ensure_member <group path>: adds the person unless already a member.
-ensure_member() {
-  local group_id member_of
-  group_id="$(kcadm get "group-by-path$1" --target-realm "$realm" --fields id --format csv --noquotes)" ||
-    fail "$realm holds no $1 or Keycloak cannot be read"
-  member_of="$(kcadm get "users/$person_id/groups" --target-realm "$realm" --fields id --format csv --noquotes)" ||
-    fail "$unreadable"
-  ! grep -qxF "$group_id" <<<"$member_of" || return 0
-  attempted+=("$username in $1")
-  kcadm update "users/$person_id/groups/$group_id" --target-realm "$realm" --set "realm=$realm" \
-    --set "userId=$person_id" --set "groupId=$group_id" --no-merge || fail "$username could not join $1"
-  changed=true
-}
 groups=("$owners_group")
 [ "${usage_adder:-false}" != true ] || groups+=("$adders_group")
 for group in "${groups[@]}"; do ensure_member "$group"; done
@@ -1116,5 +1078,5 @@ member_count() {
 owners_count="$(member_count "$owners_group")" || fail "$unreadable"
 adders_count="$(member_count "$adders_group")" || fail "$unreadable"
 say "$client's agent_owner is $username; $username is in ${groups[*]}; $owners_group has $owners_count members, $adders_group $adders_count"
-[ "$changed" = true ] || say "nothing changed"
+[ -n "${attempted[*]:-}" ] || say "nothing changed"
 '''
