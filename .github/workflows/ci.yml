@@ -361,14 +361,6 @@ jobs:
           OTHER_NAMESPACE: songmaker-web-client
         run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
 
-      - name: Assert that songmaker's music and scoring workers are Ready at their full refs, that neither asks for the GPU, and that the scoring worker reaches only its Postgres and Redis
-        if: matrix.part == 'postgres'
-        env:
-          SONGMAKER_NAMESPACE: songmaker
-          CLUSTER_SERVICE: default/kubernetes
-          OUTSIDE_TARGET: github.com:443
-        run: tests/songmaker/workers_are_ready_at_their_full_ref_and_scoring_reaches_only_its_stores.sh
-
       - name: Assert that the layer nvidia is Ready with its DaemonSet scheduled nowhere, offers the RuntimeClass, holds only the plugin in a Namespace without a Pod Security label, and that a restricted Pod with the class passes dry-run
         if: matrix.part == 'core'
         env:
@@ -419,6 +411,37 @@ jobs:
           OTHER_NAMESPACE: litellm-client
           THIRD_SNI: third.invalid
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
+
+      - name: Assert that Alertmanager runs on a finished file, is found by Prometheus, refuses bad values, makes at most one send per flush of a fired alert, answers only its readers and Prometheus drops a Flux Pod that is not running
+        if: matrix.part == 'backup'
+        env:
+          PROMETHEUS_NAMESPACE: prometheus
+          # The namespace of the readers the policy admits, and the throwaway one of the stranger.
+          READER_NAMESPACE: gatus
+          OTHER_NAMESPACE: alertmanager-client
+        run: tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh
+
+      - name: Assert that Grafana answers a query through both data sources at the address grafana:open printed, holds no state and answers only Gatus's pods
+        if: matrix.part == 'backup'
+        env:
+          GRAFANA_NAMESPACE: grafana
+          LOKI_NAMESPACE: loki
+          PROMETHEUS_NAMESPACE: prometheus
+          # Grafana's one admitted sender, the throwaway namespace of a Pod that is not, a Service every other Pod
+          # reaches and a host outside the cluster.
+          GATUS_NAMESPACE: gatus
+          OTHER_NAMESPACE: grafana-client
+          CLUSTER_SERVICE: default/kubernetes
+          OUTSIDE_TARGET: github.com:443
+        run: tests/grafana/grafana_answers_both_data_sources_without_state_and_only_gatus_reaches_it.sh
+
+      - name: Assert that songmaker's music and scoring workers are Ready at their full refs, that neither asks for the GPU, and that the scoring worker reaches only its Postgres and Redis
+        if: matrix.part == 'backup'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          CLUSTER_SERVICE: default/kubernetes
+          OUTSIDE_TARGET: github.com:443
+        run: tests/songmaker/workers_are_ready_at_their_full_ref_and_scoring_reaches_only_its_stores.sh
 
       - name: P7d cells
         if: matrix.part == 'backup'
@@ -515,29 +538,6 @@ jobs:
           # The suspended CronJob in that namespace whose Job exits 1.
           FAILING_CRONJOB: prometheus-probe
         run: tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh
-
-      - name: Assert that Alertmanager runs on a finished file, is found by Prometheus, refuses bad values, makes at most one send per flush of a fired alert, answers only its readers and Prometheus drops a Flux Pod that is not running
-        if: matrix.part == 'postgres'
-        env:
-          PROMETHEUS_NAMESPACE: prometheus
-          # The namespace of the readers the policy admits, and the throwaway one of the stranger.
-          READER_NAMESPACE: gatus
-          OTHER_NAMESPACE: alertmanager-client
-        run: tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh
-
-      - name: Assert that Grafana answers a query through both data sources at the address grafana:open printed, holds no state and answers only Gatus's pods
-        if: matrix.part == 'postgres'
-        env:
-          GRAFANA_NAMESPACE: grafana
-          LOKI_NAMESPACE: loki
-          PROMETHEUS_NAMESPACE: prometheus
-          # Grafana's one admitted sender, the throwaway namespace of a Pod that is not, a Service every other Pod
-          # reaches and a host outside the cluster.
-          GATUS_NAMESPACE: gatus
-          OTHER_NAMESPACE: grafana-client
-          CLUSTER_SERVICE: default/kubernetes
-          OUTSIDE_TARGET: github.com:443
-        run: tests/grafana/grafana_answers_both_data_sources_without_state_and_only_gatus_reaches_it.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'

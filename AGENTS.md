@@ -213,8 +213,8 @@
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
   `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
-  check, the "P7a cells", the steps "songmaker's web" and "songmaker's workers", the "P9c cells", the Alertmanager step and the Grafana step;
-  `backup` holds the "P7d cells", the "P9f cells", the "P9c-2 cells" and the step of `tests/no_network/`; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
+  check, the "P7a cells", the step "songmaker's web" and the "P9c cells";
+  `backup` holds the Alertmanager step, the Grafana step, the step "songmaker's workers", the "P7d cells", the "P9f cells", the "P9c-2 cells" and the step of `tests/no_network/`; `core` every other cell and the checks that need no cluster. The setup through the reconcile's
   assertion runs in all three, and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
@@ -342,7 +342,7 @@
   image; that a Pod in the namespace gets 200 from `/health` with the public host and an error for an unknown host
   while a Pod in another namespace gets no answer; that the pod runs as a non-root user on a read-only root and writes to
   the audio claim and `/tmp`; and that the claim is Bound on the Retain class with prune disabled.
-  The step "songmaker's workers", in the part `postgres`, asserts that the Deployments `music-worker` and `scoring-worker`
+  The step "songmaker's workers", in the part `backup`, asserts that the Deployments `music-worker` and `scoring-worker`
   are Available with one Ready pod at a full app ref under the candidate's revision and ask for no GPU, and prints the
   kubelet's pull report and the runner's free disk; and that a Pod with the scoring worker's labels reaches the
   namespace's Postgres and Redis and neither the Service `kubernetes` nor github.com, while one without them reaches all
@@ -433,7 +433,7 @@
   deletion in each count and leaves the fresh rows and the idle customers with a budget or with spend, a second run
   prints zeros, and the first log holds no planted value; its Pod ran in a Namespace enforcing `restricted` with its
   Postgres's image.
-  The part `postgres` also runs `tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh`,
+  The Alertmanager step, first in the part `backup`, runs `tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh`,
   which prints names, counts and verdicts, never a Secret value, the finished file or Alertmanager's status API: the
   StatefulSet is Ready as a non-root user on a Bound Retain claim with prune disabled, Prometheus lists one active
   Alertmanager, `amtool` accepts the finished file and routes an alert of each rule to the receiver, an init container
@@ -780,8 +780,9 @@
   namespace whose k8up Schedule is older than 8 days has no Backup Job completed in 8 days, so a fresh cluster stays quiet,
   and mails `namespace`; two Schedules in one namespace count as one, and a stopped Prune or Check alone is not alerted. A k3d
   run that crosses 05:00Z on the 1st starts a `restore-test` that fails for certain, and one at 04:00Z on the 1st a k8up
-  `check` that may fail, and P7a empties the database, so litellm-expire at 04:00Z daily and, on a Sunday, the Backup at
-  03:00Z and the Prune at 03:30Z could fire too, any of which could fire during the Alertmanager step's count. A Job gets
+  `check` that may fail, so litellm-expire at 04:00Z daily and, on a Sunday, the Backup at
+  03:00Z and the Prune at 03:30Z could fire too, any of which could fire during the Alertmanager step's count in the part
+  `backup`, which runs it before P7d, whose restore tests fail on purpose. A Job gets
   its start time when the Job controller first syncs it, whether or not its pod starts, so `activeDeadlineSeconds` fails a
   Job whose pod never starts and `ScheduledJobFailed` mails it; `restore-test` carries 3600 as `litellm-expire` does, so a
   hung restore test ends as a failed Job within an hour. `ScheduledJobMissed` fires 15 minutes after a CronJob's next time
