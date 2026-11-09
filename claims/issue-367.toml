@@ -1,7 +1,0 @@
-claim_id = "2a2a70df932c46cbadc1a1075867f8d0"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "45984503339793a804427685c5f185a374f004f2"
-branch = "claude/issue-367-scratch-landing-drive-unmanaged"
-scope = ["src/opentofu/github/repositories.tf", "src/opentofu/github/tests/repository_listing.tftest.hcl"]
-opened_commit = "8ab2844800136452fd956acda490aece0f7a5650"
