@@ -355,6 +355,16 @@
   for `agent_owner` while `firstName` alone gets 204 and the metadata hides it; a person's token carries both groups;
   and a disabled client or service account gets 401, a state a config-cli re-run keeps together with every service
   account's groups, one extra group the console gave the agent's, `agent_owner` and both groups' members.
+  `tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh` then lets a throwaway person with every profile field
+  set, in every `/apps/<app>` group and `/services/speech-service`, sign in to each client of the file with the standard
+  flow (authorization code with PKCE through curl and a cookie jar, the consent of a client that asks for one accepted),
+  asking for `openid` and the client's default and optional scopes, and make a refresh grant where a refresh token
+  comes. It first fails unless the live scopes `profile` and `email` hold as many mappers as the file declares. No
+  access token holds a claim that a live mapper of the two scopes names; every ID token holds `groups`, and
+  `preferred_username` where the client has `profile`; for hopin and presentator both access tokens hold
+  `speech-service` in `aud`, the person's `sub`, the client as `azp` and the person's groups, and the client-credentials
+  grant with the scope gives the workload role, `client_id` and that audience. It prints claim names and outcomes, never
+  a token, a claim value or a secret, and deletes the person on every exit.
   `tests/keycloak/agent_owner_names_what_a_failed_write_left.sh` runs `keycloak:agent-owner` against a fake kubectl: a
   name no person carries, a service account's name in any case and a name only another user's email carries are
   refused with `nothing changed`, and a membership write that fails, after the owner's write or alone, prints what was
@@ -528,7 +538,11 @@
   database Keycloak creates config-cli's client from `KC_BOOTSTRAP_ADMIN_CLIENT_ID`; a restored one keeps its own.
   `KC_HOSTNAME_ADMIN` in `keycloak.yaml` is the one owner of the admin front end, which `kustomization.yaml` copies
   to the Job. The Secret `keycloak` from `platform-secrets` holds config-cli's secret, each app client's and the agent
-  client's (`client-agent-mozart`). The realm file holds the user profile (Keycloak's default with `agent_owner`,
+  client's (`client-agent-mozart`). The realm file declares Keycloak's built-in client scopes `profile` and `email`
+  with all 16 mappers as Keycloak 26.8.1 ships them, since config-cli removes a mapper of a declared scope that the file
+  omits, and with `access.token.claim` and `introspection.token.claim` off on each: no access token carries a name or an
+  e-mail address, which no app reads there and the speech service has no use for, while ID token and userinfo keep them.
+  Turning it back is a commit setting them to `"true"`, since client scopes are `no-delete`. The realm file holds the user profile (Keycloak's default with `agent_owner`,
   readable and writable only by an administrator) and the agent objects: the groups `/agents`, `/agent-adders` and
   `/agent-owners`, the scope `agent-identity`, the client `agent-mozart` and its service account's groups; who owns or
   adds an agent is console data set by `keycloak:agent-owner`. The realm sets theme `hallucinai`, which Keycloak replaces with its own until an image carries it.

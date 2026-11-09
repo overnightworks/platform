@@ -377,6 +377,7 @@ jobs:
         run: |
           tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
           tests/keycloak/agent_client_tokens_and_groups.sh
+          tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh
 
       - name: P7c cells
         if: matrix.part == 'core'
