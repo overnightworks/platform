@@ -4,6 +4,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=../client_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
+# shellcheck source=prometheus_api.sh
+source "$(dirname "${BASH_SOURCE[0]}")/prometheus_api.sh"
 # No line of this cell prints the Secret alertmanager's values, the finished file or Alertmanager's status API, which
 # shows the address: every command that reads them discards its output and the cell reports names, counts and verdicts.
 pod=prometheus-alertmanager-0
@@ -25,17 +27,6 @@ remove_probes() {
 }
 trap remove_probes EXIT
 
-# until_true <seconds> <description> <command>...: the command passes within the time, tried every 5 seconds.
-until_true() {
-  local deadline=$((SECONDS + $1)) description="$2"
-  shift 2
-  until "$@"; do
-    [ "$SECONDS" -lt "$deadline" ] || fail "within the time: $description"
-    sleep 5
-  done
-}
-# api <path>: Prometheus' answer through the API server's proxy, which no NetworkPolicy of the pod network stops.
-api() { kubectl get --raw "/api/v1/namespaces/$PROMETHEUS_NAMESPACE/services/prometheus-server:80/proxy/api/v1/$1"; }
 # in_pod <command>...: runs in Alertmanager's container.
 in_pod() { kubectl -n "$PROMETHEUS_NAMESPACE" exec "$pod" -c alertmanager -- "$@"; }
 # metric <series selector>: the value of one of Alertmanager's own series, 0 while it has none.

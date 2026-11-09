@@ -37,16 +37,6 @@ address="http://127.0.0.1:$local_port"
   fail "$address/api/health did not answer 200"
 echo "Grafana's page answers 200 for /api/health through the address grafana:open printed"
 
-# until_true <seconds> <description> <command>...: the command passes within the time, tried every 10 seconds.
-until_true() {
-  local deadline=$((SECONDS + $1)) description="$2"
-  shift 2
-  until "$@"; do
-    [ "$SECONDS" -lt "$deadline" ] || fail "within the time: $description"
-    sleep 10
-  done
-}
-
 # Each provisioned data source reports OK and answers a query without any credential: PromQL's up has series, and
 # the LogQL selector of Loki's own namespace, whose pod Alloy ships, returns a stream.
 datasources="infrastructure/grafana/values.yaml"

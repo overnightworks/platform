@@ -51,12 +51,13 @@ set_suspend true
 echo "the CronJob $cronjob is held (suspend was '${prior_suspend:-unset}'); the managers of spec.suspend now:"
 kubectl --namespace "$namespace" get cronjob "$cronjob" -o json --show-managed-fields |
   jq -r '.metadata.managedFields[] | select(.fieldsV1."f:spec"."f:suspend") | "\(.manager) \(.operation)"'
-for _ in $(seq 150); do
-  [ -z "$(kubectl --namespace "$namespace" get cronjob "$cronjob" -o jsonpath='{.status.active[*].name}')" ] && break
-  sleep 2
-done
-[ -z "$(kubectl --namespace "$namespace" get cronjob "$cronjob" -o jsonpath='{.status.active[*].name}')" ] ||
-  fail "the CronJob $cronjob still has an active Job after 5 minutes"
+cronjob_has_no_active_job() {
+  local active
+  active="$(kubectl --namespace "$namespace" get cronjob "$cronjob" -o jsonpath='{.status.active[*].name}')" ||
+    fail "the CronJob $cronjob could not be read"
+  [ -z "$active" ]
+}
+until_true 300 "the CronJob $cronjob has no active Job" cronjob_has_no_active_job
 # Days relative to the database's own UTC day. One backdated and one fresh row per table; the customers are the
 # backdated one (idle), the fresh one (a daily row inside the period), one linked to its own budget and one with
 # spend, both idle.
