@@ -280,7 +280,8 @@ def test_an_app_key_that_a_section_unit_owns_is_refused_by_name(repository, sect
 
     message = app_refusal(repository, capsys)
 
-    assert message.startswith(f"{APP_TEXTS_FILE}: [{key}]") and "one owner" in message
+    assert message.startswith(f"{APP_TEXTS_FILE}: [{key}]")
+    assert "one owner" in message
 
 
 def test_an_app_text_without_an_entry_is_refused_by_name(repository, sections, apps, capsys):
