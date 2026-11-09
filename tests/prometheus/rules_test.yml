@@ -66,7 +66,7 @@ tests:
           - exp_labels: {namespace: app, pod: web-0, container: web}
             exp_annotations: {summary: The container app/web-0/web restarted more than 3 times in an hour}
   - interval: 1m
-    name: a disk above 85 percent for ten minutes fires DiskLow and neither a full memory mount nor a half full disk does
+    name: a disk above 85 percent for ten minutes fires DiskLow and neither a full loop device, memory mount or run mount nor a half full disk does
     input_series:
       - series: container_fs_usage_bytes{id="/", device="/dev/disk1", instance="pc"}
         values: "90x15 50x5"
@@ -75,6 +75,14 @@ tests:
       - series: container_fs_usage_bytes{id="/", device="/dev/shm", instance="pc"}
         values: "100x20"
       - series: container_fs_limit_bytes{id="/", device="/dev/shm", instance="pc"}
+        values: "100x20"
+      - series: container_fs_usage_bytes{id="/", device="/dev/loop3", instance="pc"}
+        values: "100x20"
+      - series: container_fs_limit_bytes{id="/", device="/dev/loop3", instance="pc"}
+        values: "100x20"
+      - series: container_fs_usage_bytes{id="/", device="/run/user/1000", instance="pc"}
+        values: "100x20"
+      - series: container_fs_limit_bytes{id="/", device="/run/user/1000", instance="pc"}
         values: "100x20"
       - series: container_fs_usage_bytes{id="/", device="/dev/disk2", instance="pc"}
         values: "50x20"
