@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rows 11 and 13 of presentator's table read this repository's own files, which
+# The Namespace and the uid census read this repository's own files, which
 # pods_stay_within_their_levels.sh, called by presentator at a pinned commit, does not see: the Namespace presentator
 # enforces nothing and warns and audits at restricted, and no Pod template of a layer names the build or wire uid.
 set -euo pipefail
@@ -25,7 +25,9 @@ census() {
 layers="$(mktemp -d)"
 trap 'rm -rf "$layers"' EXIT
 kubectl kustomize apps/presentator >"$layers/presentator.yaml"
-for path in $(yq --no-doc 'select(.kind == "Kustomization" and (.apiVersion | test("^kustomize[.]toolkit[.]fluxcd[.]io/"))) | .spec.path' clusters/pc/apps.yaml clusters/pc/infrastructure.yaml | grep -E '^[.]/(apps|infrastructure)/'); do
+layer_paths="$(yq --no-doc 'select(.kind == "Kustomization" and (.apiVersion | test("^kustomize[.]toolkit[.]fluxcd[.]io/"))) | .spec.path' clusters/pc/apps.yaml clusters/pc/infrastructure.yaml | grep -E '^[.]/(apps|infrastructure)/')"
+[ -n "$layer_paths" ] || fail "clusters/pc/apps.yaml and infrastructure.yaml name no layer path"
+for path in $layer_paths; do
   if [ -f "$path/kustomization.yaml" ]; then
     kubectl kustomize "$path" >"$layers/$(tr '/' '_' <<<"${path#./}").yaml"
   else

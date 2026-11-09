@@ -31,7 +31,7 @@ jobs:
         # pipefail: a find or yq that fails after printing its names must fail the step, not pass the comparison.
         shell: bash
         run: |
-          # presentator's manifests stand unwired until the wiring slice of #322, which removes this exception.
+          # presentator's manifests stand unwired until its wiring, which removes this exception.
           directories="$(find apps -mindepth 1 -maxdepth 1 -type d -not -name presentator -printf '%f\n' | sort)"
           kustomizations="$(yq --no-doc 'select(.kind == "Kustomization" and .spec.path == "./apps/" + .metadata.name) | .metadata.name' clusters/pc/apps.yaml | sort)"
           every="$(yq --no-doc 'select(.kind == "Kustomization") | .metadata.name' clusters/pc/apps.yaml | sort)"

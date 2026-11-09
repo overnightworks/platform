@@ -6,8 +6,7 @@ resources:
   - rbac.yaml
   - web.yaml
   - worker.yaml
-# The image of the web and the worker, the release presentator#865's proof runs against; a bump changes tag and digest
-# together, in a pull request.
+# The image of the web and the worker, a placeholder release; a bump changes tag and digest together, in a pull request.
 images:
   - name: ghcr.io/overnightworks/presentator
     newTag: 2026.11.09.4
