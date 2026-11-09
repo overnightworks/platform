@@ -1,8 +1,0 @@
-claim_id = "d259589013ae4f06bf2e64a7598ffc0f"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "6dda56bdedfb68abd0577600556d418eb7c6aeec"
-branch = "claude/issue-250-songmaker-backup"
-scope = ["AGENTS.md", "apps/songmaker/kustomization.yaml", "clusters/pc/apps.yaml", "docs/app.md", "infrastructure/backup/rest-server.yaml", "infrastructure/postgres/backup/kustomization.yaml"]
-opened_commit = "ee53c77dec8053967271ae0b3b8a154a53e1dc74"
-whole_reason = "One join: the layer, its dependency, the server's admission and the docs that name the including layers prove nothing apart."
