@@ -415,7 +415,7 @@ jobs:
         run: tests/litellm/keys_table_drives_budgets_and_the_app_key.sh
 
       - name: Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind on the node
-        if: matrix.part == 'postgres'
+        if: matrix.part == 'backup'
         env:
           NO_NETWORK_NAMESPACE: no-network
         run: tests/no_network/pod_loses_its_link_before_the_worker_starts.sh
