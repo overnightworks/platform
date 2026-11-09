@@ -11,7 +11,7 @@ namespace="$KEYCLOAK_NAMESPACE"
 # shellcheck source=admin_api.sh
 source "$(dirname "${BASH_SOURCE[0]}")/admin_api.sh"
 
-person=token-claims-person
+person="token-claims-person"
 scratch="$(mktemp -d "$RUNNER_TEMP/token-claims-cells.XXXXXX")"
 password_file="$scratch/password"
 secret_file="$scratch/client-secret"
