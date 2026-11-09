@@ -3,7 +3,8 @@
 # cluster cannot arrange: a name no person carries, a service account's name (in any case) and a name that only
 # another user's email carries are refused with nothing changed, a person whose username starts like a service
 # account's is taken, the secret stands in no argument and the sign-in file goes on every exit, and a membership write
-# that fails names what was written (after the owner's write or alone) and does not claim that nothing changed.
+# that fails names what was written (after the owner's write or alone) and does not claim that nothing changed, and a
+# line its caller wrote to the same file before the task survives.
 # Usage: mise exec -- tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
 set -euo pipefail
 
@@ -74,7 +75,10 @@ run_task() {
   mkdir "$FAKE_STATE"
   output_file="$work_directory/output-$1"
   status=0
-  (cd "$repository_root" && mise run keycloak:agent-owner agent-mozart "$2") >"$output_file" 2>&1 || status=$?
+  { echo "line before the task"; (cd "$repository_root" && mise run keycloak:agent-owner agent-mozart "$2") || status=$?; } \
+    >"$output_file" 2>&1
+  [ "$(head -n 1 "$output_file")" = "line before the task" ] ||
+    { show_output; fail "$1: the task overwrote what its caller had written to the same file"; }
   [ -e "$FAKE_STATE/signed-in" ] || { show_output; fail "$1: the task never signed in"; }
   [ -e "$FAKE_STATE/config-removed" ] || { show_output; fail "$1: the sign-in file was not removed"; }
 }
