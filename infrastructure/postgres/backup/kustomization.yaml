@@ -1,4 +1,4 @@
-# The backup of the Postgres base, a component so a layer opts in: keycloak, litellm and skat include it beside ../postgres.
+# The backup of the Postgres base, a component so a layer opts in: keycloak, litellm, skat and songmaker include it beside ../postgres.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 resources:

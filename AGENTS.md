@@ -272,7 +272,7 @@
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
   runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request that turns Ready within the minute
   prints no key block.
-  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock`, the renders and the imprint, and fails when git
+  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock`, the renders and the three legal pages, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. Before the reconcile the
   kubelet's configz holds the `container-log-max-files` of `host/k3s/config.yaml`; after a writer pod's log directory
   is deleted on the node, its file is back within 30 seconds and `kubectl logs` shows newer lines; and through two
@@ -475,14 +475,14 @@
   failing layer reports itself; a regeneration that adds, renames or removes a controller changes those
   `healthChecks` with it, and `cluster` fails when they differ from the root's inventory.
 - `clusters/pc/infrastructure.yaml`: one Flux Kustomization per directory under `infrastructure/`, each with
-  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include (its subdirectory `backup/` is a component `keycloak`, `litellm` and `apps/skat` include). `namespaces`, then
+  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm`, `apps/skat` and `apps/songmaker` include (its subdirectory `backup/` is a component `keycloak`, `litellm`, `apps/skat` and `apps/songmaker` include). `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
   `keycloak` and `litellm` also on `platform-secrets`, `storage` and `k8up`, `backup` on `platform-secrets` and `storage`,
   `prometheus` on `platform-secrets` and `storage`, and `loki` on `storage`. No layer depends on `nvidia`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` and `songmaker` also
-  on `storage`, and `skat` also on `k8up`.
+  on `storage`, and `skat` and `songmaker` also on `k8up`.
 - `apps/skat/`: skat's Postgres from the base `infrastructure/postgres`, in namespace `skat` with `key-tables`
   `alembic_version tables chairs receipts` (the restore test fails on an empty first table, and `alembic_version`, which
   `skat migrate` writes, is the one a migrated database always fills), backed up like keycloak's and litellm's through
@@ -493,7 +493,8 @@
   password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
   container of the same image runs `skat migrate` before `skat serve`. It has no route, NetworkPolicy or tunnel line yet.
 - `apps/songmaker/`: songmaker's stores, web and workers, no route or login yet: its Postgres from the base
-  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `songs generations`, and `redis.yaml`, the
+  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `alembic_version songs generations`, backed up like skat's through the component `infrastructure/postgres/backup`
+  with the repository `songmaker` on the rest server, and `redis.yaml`, the
   queue: one StatefulSet pod at the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a
   read-only root, persistence off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a
   NetworkPolicy that admits only the namespace's own pods. `web.yaml` is the Deployment `web`, one pod with `Recreate`,
@@ -561,7 +562,7 @@
   including layer's `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` include it;
   keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
 - `infrastructure/postgres/backup/`: the component a Postgres layer includes to be backed up; `infrastructure/keycloak/`,
-  `infrastructure/litellm/` and `apps/skat/` do. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
+  `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` do. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
   4 weekly and 3 monthly, a monthly `check`) of the Postgres pod's `pg_dump --format=custom` into `backup-repository`,
   the URL the including layer sets in the ConfigMap `postgres`; a PodConfig gives k8up's Job pods the fields `restricted`
   requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month, on the 1st at
@@ -633,23 +634,33 @@
   kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
   never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body. The
   rpm and tpm limits are not in the table and stay as they are.
-- `infrastructure/legal/`: the legal sections and the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
+- `infrastructure/legal/`: the legal sections, the three pages and their assets at `hallucinai.de`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
   is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
-  field. `built/datenschutz.html` and `built/nutzungsbedingungen.html` are the other two pages, not mounted.
+  field. `built/datenschutz.html` and `built/nutzungsbedingungen.html` are the other two pages; all three are mounted.
   `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
   operator's. `stand.toml` holds one table per section path with its `date` (the Stand it prints, `D. Monat YYYY`, a
-  page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand; nothing of
-  them is served yet. `app-texts/<key>/<page>.html` are the apps' own files byte for byte (hopin, presentator and
+  page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand.
+  `app-texts/<key>/<page>.html` are the apps' own files byte for byte (hopin, presentator and
   songmaker; skat joins with its go-live) and `app-texts.toml` holds per app and page their `date` and `sha256` and, for an app with no
   image under `apps/<key>`, its release `tag`; an app with an image has its release from that image, so a `tag` beside
-  one is refused. A bump of an app's image whose release changes its legal text carries the refreshed copy in the same pull request. `default.conf` serves only
-  `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
-  host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
-  only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
-  fonts are not served: its references to them stay. `cluster` reads from a client Pod in `cloudflared` the page's
-  checksum against the committed file, its Content-Security-Policy against `default.conf`, and 404 without nginx's
-  headers for `/` and other paths, and a Pod in another namespace gets no answer from the Service.
+  one is refused. A bump of an app's image whose release changes its legal text carries the refreshed copy in the same pull request. `assets/` mirrors hal's served tree, copied
+  byte for byte and not built: `legal-2.css` is hal's `legal/assets/legal-2.css` and `appkit-<version>/` the files of
+  `appkit/static/` in appkit's release wheel, at the URL and sha256 that hal's `pyproject.toml` pins at `hal_commit`
+  (hal's own copy is git-ignored output of `hal apply`); the version stays the one hal's lock holds until hal no longer
+  serves the apex. The pages, the assets and `default.conf` reach nginx as ConfigMaps whose names carry their hash (a key
+  holds no `/`, so the Deployment's volume maps each key to its path). The Ingress routes the host `hallucinai.de`
+  through Traefik's `web` for `/impressum`, `/datenschutz`, `/nutzungsbedingungen` and `/favicon.ico` (each `Exact`) and
+  the prefix `/_rechtliches/`, the five paths hal's catalog leaves to the origin, so Traefik answers every other path with
+  its 404, and its NetworkPolicy admits only namespace `traefik`. `default.conf` answers the three pages from `built/`,
+  each file under `assets/` at `/_rechtliches/<path>`, and 404 for `/favicon.ico` (hal serves no icon), for
+  `/_rechtliches/`, its directories, a missing file and any path with a segment that starts with a dot (the ConfigMap
+  volume's `..data`), all with hal's four headers. No tunnel line names the host, so hal keeps the public address.
+  `cluster` reads from one client Pod in `cloudflared`, with the host, the three pages and every asset against the
+  checksums of the committed files, taken inside the Pod, the four headers against `default.conf` on every nginx answer,
+  the 404s above with nginx's headers, Traefik's own 404 without them for `/` and other paths and its 400 for an encoded
+  slash, that every `/_rechtliches/` reference of the pages and every `url()` of `appkit.css` names a served file, and a
+  Pod in another namespace gets no answer from the Service.
 - `infrastructure/admission/`: the vendor list and the ValidatingAdmissionPolicy `app-and-vendor-images`, whose
   binding reads the list as its parameter and denies without it. Outside kube-system and flux-system, on every create
   and every change of a Pod spec, each image of a Pod or workload kind is a listed repository with an optional tag at
@@ -836,9 +847,12 @@
   `tests/legal/app_texts_equal_their_release.sh`, which fetches each listed app's public repository at its release tag
   and fails naming the step when that fails, or when a copy's bytes, its sha256 or its date (the commit date of the file at the tag)
   differ from the list's, a page exists on one side only or a `tag` stands beside an image, and
-  `tests/legal/sections_equal_hals_at_commit.sh`, which fetches hal's public repository at the commit its variable
-  `hal_commit` names and fails naming the step when that fetch fails or `diff -r` finds `infrastructure/legal/sections`
-  unlike hal's `legal/sections`; the pin moves when hal changes `legal/sections` before it leaves.
+  `tests/legal/legal_sections_assets_and_headers_equal_hals_at_commit.sh`, which fetches hal's public repository at the
+  commit its variable `hal_commit` names and fails naming the step when that fetch fails, when `diff -r` finds
+  `infrastructure/legal/sections` unlike hal's `legal/sections`, when `assets/legal-2.css` or the four `add_header` lines
+  of `default.conf` differ from hal's, when the appkit wheel hal pins cannot be fetched or has another sha256, when
+  `assets/appkit-<version>/` differs from the wheel's `appkit/static/` or when `assets/` holds anything else; the pin
+  moves when hal changes any of them before it leaves.
 - `.github/workflows/renovate.yml`: the job `renovate`, daily and on dispatch, runs Renovate's image at a digest by one
   `docker run`, with the job's own token (`contents: read`, `pull-requests: read`, `issues: write`: it can write no
   branch) and `.github/renovate.json5`. The configuration holds custom regex managers over the pin forms under
@@ -859,7 +873,9 @@
   sees as newer than the prefix it would write, so a patch release inside the prefix is not listed; that is accepted,
   since the exact patch moves only when a lane refreshes `mise.lock`. Opening pull requests is not built.
 - `.github/workflows/code-scanning.yml`: CodeQL through quality's `codeql.yml`.
-- `quality/config.toml`: the gate's mandatory jobs; a root entry outside quality's base list is declared here.
+- `quality/config.toml`: the gate's mandatory jobs; a root entry outside quality's base list is declared here, and two
+  `[[layout.allow]]` entries keep the names of the font licence files `open-sans-LICENSE` and `oswald-LICENSE` under
+  `infrastructure/legal/assets/appkit-0.15.0/fonts/`, which the wheel and hal name so.
 - `sonar-project.properties`: the SonarCloud project.
 
 ## Owners
