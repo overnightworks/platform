@@ -1,0 +1,2 @@
+red: infrastructure/admission/image-vendors.yaml: '': the vendor list is missing
+red: infrastructure/admission/image-vendors.yaml: '': a symlink, which source-controller leaves out of the artifact and the render follows

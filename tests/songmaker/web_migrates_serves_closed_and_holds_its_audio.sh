@@ -4,7 +4,10 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 web() { kubectl --namespace "$SONGMAKER_NAMESPACE" exec "$web_pod" --container web -- "$@"; }
 
-cleanup() { kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"; }
+cleanup() {
+  kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod own-client unknown-host-client --ignore-not-found --wait --timeout=2m
+  kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
+}
 trap cleanup EXIT
 kubectl create namespace "$OTHER_NAMESPACE"
 

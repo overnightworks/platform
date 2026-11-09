@@ -15,8 +15,11 @@ applied_revision="$(kubectl -n flux-system get kustomization legal -o jsonpath='
 kubectl -n "$LEGAL_NAMESPACE" wait deployment/legal --for=condition=Available --timeout=3m
 echo "the Kustomization legal applied the candidate, and the Deployment legal is Available"
 
+ready_pods=()
+trap 'kubectl -n "$TUNNEL_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m "${ready_pods[@]}" asset-sweep' EXIT
 # Traefik answers 404 until it has read the Ingress, a moment after the Deployment is Available.
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  ready_pods+=("impressum-ready-$attempt")
   request "$TUNNEL_NAMESPACE" "impressum-ready-$attempt" "$LEGAL_HOST" "$traefik_url/impressum"
   [ "$status" != 404 ] && break
 done
@@ -75,11 +78,10 @@ for path in "$@"; do
     "$base$path")"
   printf "%s|%s|%s\n" "$path" "$(sha256sum </tmp/body | cut -d" " -f1)" "$answer"
 done'
-sweep_pod="$(CLIENT_NAME=asset-sweep CLIENT_IMAGE_REF="$CLIENT_IMAGE" SWEEP_SCRIPT="$sweep_script" SWEEP_ARGUMENTS="$(printf '%s\n' sh "$LEGAL_HOST" "$traefik_url" "${paths[@]}")" \
-  yq '.metadata.name = strenv(CLIENT_NAME) | .spec.containers[0].image = strenv(CLIENT_IMAGE_REF)
-    | .spec.containers[0].command = ["sh", "-c"]
-    | .spec.containers[0].args = [strenv(SWEEP_SCRIPT)] + (strenv(SWEEP_ARGUMENTS) | split("\n"))' <<<"${CLIENT_POD//@NAME@/asset-sweep}")"
-trap 'kubectl -n "$TUNNEL_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m asset-sweep' EXIT
+client_pod_template="${CLIENT_POD//@IMAGE@/$CLIENT_IMAGE}"
+sweep_pod="$(SWEEP_SCRIPT="$sweep_script" SWEEP_ARGUMENTS="$(printf '%s\n' sh "$LEGAL_HOST" "$traefik_url" "${paths[@]}")" \
+  yq '.spec.containers[0].command = ["sh", "-c"]
+    | .spec.containers[0].args = [strenv(SWEEP_SCRIPT)] + (strenv(SWEEP_ARGUMENTS) | split("\n"))' <<<"${client_pod_template//@NAME@/asset-sweep}")"
 printf '%s\n' "$sweep_pod" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
 kubectl -n "$TUNNEL_NAMESPACE" wait pod/asset-sweep --timeout=3m \
   --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' || {
@@ -132,7 +134,7 @@ done
 
 # A Pod beside no route gets no answer from the Service: a refused connection (7) or no reply in time (28).
 kubectl create namespace "$OTHER_NAMESPACE"
-trap 'kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"; kubectl -n "$TUNNEL_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m asset-sweep' EXIT
+trap 'kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"; kubectl -n "$TUNNEL_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m "${ready_pods[@]}" asset-sweep' EXIT
 request "$OTHER_NAMESPACE" denied-request "$LEGAL_HOST" "http://legal.$LEGAL_NAMESPACE.svc:8080/impressum"
 [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
   fail "a Pod in $OTHER_NAMESPACE got the status $status from the Service legal, curl exit code $exit_code"

@@ -6,6 +6,8 @@ resources:
   - redis.yaml
   - audio.yaml
   - web.yaml
+  - music-worker.yaml
+  - scoring-worker.yaml
 configMapGenerator:
   - name: postgres
     behavior: merge
