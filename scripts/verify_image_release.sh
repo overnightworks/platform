@@ -52,7 +52,8 @@ KUSTOMIZATION='(.kind == "Kustomization" and ((.apiVersion // "") | test("^kusto
 POD_SPEC_PATH='({"v1 Pod": ".spec", "v1 PodTemplate": ".template.spec", "v1 ReplicationController": ".spec.template.spec",
   "apps/v1 ReplicaSet": ".spec.template.spec", "apps/v1 Deployment": ".spec.template.spec",
   "apps/v1 StatefulSet": ".spec.template.spec", "apps/v1 DaemonSet": ".spec.template.spec",
-  "batch/v1 Job": ".spec.template.spec", "batch/v1 CronJob": ".spec.jobTemplate.spec.template.spec"}
+  "batch/v1 Job": ".spec.template.spec", "batch/v1 CronJob": ".spec.jobTemplate.spec.template.spec",
+  "k8up.io/v1 PreBackupPod": ".spec.pod.spec"}
   [(.apiVersion // "") + " " + (.kind // "")])'
 # Object, namespace, field path, image.
 POD_IMAGES="${POD_SPEC_PATH} as \$at | select(\$at != null) | ${OBJECT} as \$object | (.metadata.namespace // \"\") as \$namespace
