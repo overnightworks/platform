@@ -403,7 +403,7 @@
   stays; a Backup yields
   one snapshot holding the custom-format dump alone, by a Job pod at a listed digest that Pod Security `restricted`
   admits; neither the Job's log nor a Snapshot object holds the repository's credentials; the restore test passes on
-  the snapshot; a Prune made from the Schedule's retention runs a Job whose `KEEP_*` variables equal that retention and
+  the snapshot; a Prune made from the Schedule's retention runs a Job whose `KEEP_*` variables equal the component's retention and
   carry nothing more, since k8up adds `KEEP_DAILY=14` to a Prune that sets no `keepDaily`, which the component sets to 1,
   the newest snapshot that `keepWeekly` keeps anyway; without
   credentials the server answers 401 everywhere, a namespace's credentials reach only its own repository, and a pod in a

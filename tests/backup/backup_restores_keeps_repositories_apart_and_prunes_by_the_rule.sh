@@ -178,7 +178,8 @@ for namespace in $BACKUP_NAMESPACES; do
   run_restic "$namespace" snapshot-listing '
     restic --no-cache snapshots --json | jq length
     restic --no-cache ls --json latest | jq --raw-output "select(.type == \"file\") | .path"
-    restic --no-cache dump latest "/$(NAMESPACE)-postgres.dump" | head -c 5'
+    # An early exit of head kills restic by SIGPIPE while it holds its read lock, which k8up prune then waits out; draining ends it.
+    restic --no-cache dump latest "/$(NAMESPACE)-postgres.dump" | { head -c 5; cat >/dev/null; }'
   [ "$restic_exit" = 0 ] || fail "the snapshot of $namespace cannot be read (exit $restic_exit)"
   mapfile -t listing <<<"$restic_output"
   [ "${listing[0]}" = 1 ] || fail "the repository of $namespace holds ${listing[0]} snapshots, not 1"
@@ -199,8 +200,8 @@ for namespace in $BACKUP_NAMESPACES; do
        "spec": { "backend": .spec.backend, "podConfigRef": .spec.podConfigRef, "retention": .spec.prune.retention } }' <<<"$schedule")" >/dev/null
   wait_completed "$namespace" prune first-prune
   expected_rule="$(yq 'select(.kind == "Schedule") | .spec.prune.retention | to_entries | .[] |
-    "KEEP_" + (.key | sub("^keep"; "") | upcase) + "=" + (.value | tostring)' "$BACKUP_COMPONENT/backup.yaml" | sort)"
-  [ -n "$expected_rule" ] || fail "$BACKUP_COMPONENT/backup.yaml declares no retention"
+    "KEEP_" + (.key | sub("^keep"; "") | upcase) + "=" + (.value | tostring)' "$POSTGRES_BACKUP_COMPONENT/backup.yaml" | sort)"
+  [ -n "$expected_rule" ] || fail "$POSTGRES_BACKUP_COMPONENT/backup.yaml declares no retention"
   actual_rule="$(kubectl --namespace "$namespace" get jobs --output json | yq --input-format json \
     '.items[] | select(.metadata.ownerReferences[].name == "first-prune") | .spec.template.spec.containers[0].env[] |
      select(.name | test("^KEEP_")) | .name + "=" + .value' | sort)"
