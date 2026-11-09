@@ -1,8 +1,0 @@
-claim_id = "b2dd4a62191444ed91fc4b865dd0ee78"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "0bf0c46559a5a8611dffae6ca3a845f0913e66e8"
-branch = "claude/issue-279-songmaker-dump-from-prebackuppod"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/songmaker/kustomization.yaml", "infrastructure/postgres/backup/backup.yaml", "infrastructure/postgres/backup/files/files.yaml", "infrastructure/postgres/backup/files/kustomization.yaml", "infrastructure/postgres/backup/kustomization.yaml", "scripts/verify_image_release.sh", "tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh", "tests/backup/restic_pod.sh", "tests/backup/songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh", "tests/images/app-refs-in-every-pod-template-and-transformer-are-red/clusters/pc/workloads.yaml", "tests/images/app-refs-in-every-pod-template-and-transformer-are-red/expected-red.txt"]
-opened_commit = "6aac6ddec8c830504617067b7b5fc01ff3b9c071"
-whole_reason = "One producer swap: the PreBackupPod's dump replaces the StatefulSet's stream and --path lands with it, so the restore tests never see a state where the stream and the path disagree; S1b-2 is the cut that remains."
