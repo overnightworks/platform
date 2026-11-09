@@ -296,11 +296,12 @@
   reads Traefik from the cluster: its Service is ClusterIP with the one port `web`, whose trusted senders hold the nodes' pod
   CIDRs; a client Pod in namespace `cloudflared` gets 404 for an unrouted host and 400 for `/a%2Fb` on a host a
   throwaway Ingress routes, and one in another namespace gets no answer; and no Service of type NodePort or LoadBalancer
-  and no Pod on a host port or the host network exists in the cluster. The route of hopin's Ingress gets that client Pod
+  and no Pod on a host port or the host network exists in the cluster. The route cell proves the same for hopin's Ingress and for skat's, each with its own
+  trusted-proxies setting: the route of hopin's Ingress gets that client Pod
   200 for hopin's readiness path with hopin's host, and 429 for one sign-in start more than hopin's budget from one
   forwarded address but not for the next from another; that Pod gets no answer from Traefik's probe port, it and one in
   another namespace none from hopin's Service, and every Traefik pod's address lies in a CIDR of hopin's
-  `HOPIN_TRUSTED_PROXIES`. A Kustomization that never becomes Ready fails the job naming its reason, with each unready
+  `HOPIN_TRUSTED_PROXIES` (skat's `SKAT_TRUSTED_PROXIES` for skat). A Kustomization that never becomes Ready fails the job naming its reason, with each unready
   pod's waiting state and last log lines. Every app's Deployment, applied by its own Kustomization after its Secrets, is
   Available with one Ready pod and `Recreate` at a full app ref in a Namespace that enforces `restricted` (the step
   prints the kubelet's pull report and the runner's free disk); a client Pod in `hopin` gets 200 from speech-runtime's
@@ -522,7 +523,9 @@
   skat's Deployment and Service: one pod with `Recreate`, its image the full app ref of a release that changes only in
   a pull request, pulled through the Secret `ghcr-pull` and started from the files of the Secret `skat` and the
   password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
-  container of the same image runs `skat migrate` before `skat serve`. It has no route, NetworkPolicy or tunnel line yet.
+  container of the same image runs `skat migrate` before `skat serve`. Its Ingress routes `skat.hallucinai.de`
+  through Traefik's `web`; its NetworkPolicy admits only namespace `traefik` to its port, so skat trusts the forwarded
+  addresses of the pod network in `SKAT_TRUSTED_PROXIES` only behind that policy, and `cloudflared` carries its line.
 - `apps/songmaker/`: songmaker's stores, web and workers, no route or login yet: its Postgres from the base
   `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `alembic_version songs generations`, backed up like skat's through the component `infrastructure/postgres/backup`
   with the repository `songmaker` on the rest server, and `redis.yaml`, the
@@ -823,11 +826,11 @@
 - `infrastructure/gatus/`: Gatus, the status page, in a Namespace that enforces Pod Security `restricted`: one pod with
   `Recreate`, storage `memory` (a restart forgets the history; nothing is backed up) and metrics off. Its configuration
   is a generated ConfigMap whose name carries its content's hash, so a change rolls the pod. Every 60 seconds it asks
-  hopin's `/health` and Keycloak's discovery of the realm `hallucinai` through Traefik's `web` with each app's Host
-  header, speech-runtime's `/health`, skat's `/health`, Loki's `/ready`, Prometheus's `/-/ready`, Alertmanager's `/-/ready` and Grafana's `/api/health` directly at each
+  hopin's and skat's `/health` and Keycloak's discovery of the realm `hallucinai` through Traefik's `web` with each app's
+  Host header, speech-runtime's `/health`, Loki's `/ready`, Prometheus's `/-/ready`, Alertmanager's `/-/ready` and Grafana's `/api/health` directly at each
   Service, and LiteLLM's front for `GET /v1/models` without a key, which must answer 401 since Gatus holds no key. The
   NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus, Alertmanager, Grafana and the front admit the namespace `gatus` on the port
-  its request uses; hopin and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
+  its request uses; hopin, skat and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
   Service at a free port and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
   headers from; it sends only the requests of its configuration. In k3d, through the address `mise run gatus:open` prints, every endpoint of the
   configuration is healthy, speech-runtime at scale 0 turns unhealthy and, restored and Ready, healthy again, and a Pod
