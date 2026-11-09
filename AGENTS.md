@@ -296,11 +296,12 @@
   reads Traefik from the cluster: its Service is ClusterIP with the one port `web`, whose trusted senders hold the nodes' pod
   CIDRs; a client Pod in namespace `cloudflared` gets 404 for an unrouted host and 400 for `/a%2Fb` on a host a
   throwaway Ingress routes, and one in another namespace gets no answer; and no Service of type NodePort or LoadBalancer
-  and no Pod on a host port or the host network exists in the cluster. The route of hopin's Ingress gets that client Pod
+  and no Pod on a host port or the host network exists in the cluster. The route cell proves the same for hopin's Ingress and for skat's, each with its own
+  trusted-proxies setting: the route of hopin's Ingress gets that client Pod
   200 for hopin's readiness path with hopin's host, and 429 for one sign-in start more than hopin's budget from one
   forwarded address but not for the next from another; that Pod gets no answer from Traefik's probe port, it and one in
   another namespace none from hopin's Service, and every Traefik pod's address lies in a CIDR of hopin's
-  `HOPIN_TRUSTED_PROXIES`. A Kustomization that never becomes Ready fails the job naming its reason, with each unready
+  `HOPIN_TRUSTED_PROXIES` (skat's `SKAT_TRUSTED_PROXIES` for skat). A Kustomization that never becomes Ready fails the job naming its reason, with each unready
   pod's waiting state and last log lines. Every app's Deployment, applied by its own Kustomization after its Secrets, is
   Available with one Ready pod and `Recreate` at a full app ref in a Namespace that enforces `restricted` (the step
   prints the kubelet's pull report and the runner's free disk); a client Pod in `hopin` gets 200 from speech-runtime's
