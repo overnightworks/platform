@@ -1,7 +1,0 @@
-claim_id = "d45ea4968d834789b9adac124ae7c756"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "cf37ca78cc07dcdddc8e3ea90e34b4ba6a32498e"
-branch = "claude/issue-349-cluster-fourth-part-apps"
-scope = [".github/workflows/ci.yml"]
-opened_commit = "8a02c7c9585a2f0ac2f671877e8428cfd42162a8"
