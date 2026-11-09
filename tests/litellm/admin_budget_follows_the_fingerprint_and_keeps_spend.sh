@@ -68,7 +68,7 @@ litellm_forward=$!
 for _ in $(seq 30); do grep -q '^Forwarding from 127.0.0.1:' "$litellm_log" && break; sleep 1; done
 litellm_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$litellm_log" | head -n 1)"
 [ -n "$litellm_port" ] || fail "kubectl port-forward to the Service litellm did not start"
-# The empty copy of a fresh claim: LiteLLM migrates when it starts, so the budget list answers once it has.
+# LiteLLM migrates when it starts, so the budget list answers once it has.
 for _ in $(seq 60); do litellm /budget/list >/dev/null 2>&1 && break; sleep 2; done
 
 config_map="$(kubectl --namespace "$litellm_namespace" get deployment litellm \
