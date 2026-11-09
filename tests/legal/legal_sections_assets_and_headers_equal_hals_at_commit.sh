@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 repository_url="https://github.com/overnightworks/hal"
 # The commit of hal whose legal/sections, stylesheet, headers and appkit pin stand byte for byte under
 # infrastructure/legal; move it when hal changes any of them before it leaves.
-hal_commit="a5c2342722266240a363a2c4e5016ba889ce3c1a"
+hal_commit="ed6de88ec768e62439c775b8d96ad4aad437fab7"
 workspace="$(mktemp -d)"
 trap 'rm -rf "$workspace"' EXIT
 
