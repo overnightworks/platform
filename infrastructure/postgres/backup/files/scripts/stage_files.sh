@@ -155,7 +155,11 @@ case "${1:-}" in
     serve dump dump
     idle
     ;;
-  manifest) manifest ;;
+  manifest)
+    # A manifest that its time budget stops must exit non-zero, so it keeps the default action of TERM.
+    trap - TERM
+    manifest
+    ;;
   *)
     echo "usage: sh stage_files.sh stager|copy|dump" >&2
     exit 2
