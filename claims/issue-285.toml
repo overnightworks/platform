@@ -3,6 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "b88a74d4b31bcab026bb71aab8a4a94bea696993"
 branch = "claude/issue-285-journal-retention"
-scope = [".github/workflows/ci.yml", "host/journald/90-retention.conf", "mise.toml", "tests/journald/retention_drop_in_keeps_every_entry_under_30_days.sh"]
+scope = [".github/workflows/ci.yml", "README.md", "docs/runbooks/install-the-pc.md", "docs/runbooks/remove-a-host-part.md", "host/journald/90-retention.conf", "mise.toml", "tests/journald/retention_drop_in_keeps_every_entry_under_30_days.sh"]
 opened_commit = "0be5d24ecd9bc5c8aca4deb44b4c3d44a16597f1"
 whole_reason = "One retention setting: the drop-in, its mise.toml entries and the bootstrap cell that proves it."
