@@ -3,6 +3,6 @@ agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
 role = "builder"
 base = "6dda56bdedfb68abd0577600556d418eb7c6aeec"
 branch = "claude/issue-248-p9a4b-legal-pages-and-assets"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/legal", "tests/legal"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "infrastructure/legal", "quality/config.toml", "tests/legal"]
 opened_commit = "ba5ec4828586a11b567edbd101f1f492133e0263"
 whole_reason = "One move: the assets, the routes and mounts that serve them and the two pages, and the two cells that prove them equal to hal and answered prove nothing apart."
