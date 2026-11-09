@@ -1,8 +1,0 @@
-claim_id = "3566f7f7e8bf4228a8137b72a7b3e4be"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "3a8245e9ad53317eeba4c3ce4f4eb678463ef676"
-branch = "claude/issue-327-songmaker-route"
-scope = [".github/workflows/ci.yml", "apps/songmaker/web.yaml", "infrastructure/cloudflared/cloudflared.yaml", "tests/songmaker/route_reaches_the_web.sh"]
-opened_commit = "446dbe73b2d2a526c3782c7595987bf1f7276cf3"
-whole_reason = "A route without its tunnel line or its proof is not a route."
