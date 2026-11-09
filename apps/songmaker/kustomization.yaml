@@ -4,6 +4,8 @@ namespace: songmaker
 resources:
   - ../../infrastructure/postgres
   - redis.yaml
+  - audio.yaml
+  - web.yaml
 configMapGenerator:
   - name: postgres
     behavior: merge
