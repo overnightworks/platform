@@ -78,6 +78,9 @@ jobs:
       - name: Check that a failed or lost write of the admin budget, its group or its customer row names what may be written and a rerun completes it
         run: mise exec -- tests/litellm/admin_names_what_a_failed_write_may_have_left.sh
 
+      - name: Check that GITHUB_META_TOKEN reaches only curl's stdin, stays anonymous when unset and is refused outside the token alphabet
+        run: mise exec -- tests/secrets/github_meta_token_is_refused_or_reaches_only_curls_stdin.sh
+
       - name: Check that the Renovate report check fails naming a missing report, a report with no dependency and each missing or skipped pin
         run: tests/renovate/report_check_names_each_missing_pin.sh
 
@@ -206,6 +209,9 @@ jobs:
 
       - name: Check that secrets:github-host-keys passes only GitHub's own keys under github.com
         if: matrix.part == 'core'
+        env:
+          # GitHub answers 403 to anonymous meta reads once a runner address used up its hourly limit.
+          GITHUB_META_TOKEN: ${{ github.token }}
         run: tests/secrets/github_host_keys_pass_only_githubs_own.sh
 
       - name: Check that secrets:new-key refuses a key directory not at 700, a present drill file and a regular file in the key path, and accepts a symlinked 700 key directory

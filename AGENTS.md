@@ -268,7 +268,14 @@
   namespace whose layer includes the backup component its Secret `restic`, and the Secret `rest-users` holds their
   passwords.
   It also proves that `secrets:github-host-keys` passes flux's real export of a throwaway deploy key unchanged and
-  refuses host keys GitHub does not list for `github.com`, and that `secrets:new-key` refuses a key directory not at
+  refuses host keys GitHub does not list for `github.com`, reading GitHub's meta API with the job's token as
+  `GITHUB_META_TOKEN`, since a runner address's anonymous reads end in 403 at GitHub's hourly limit
+  (`scripts/github_meta.sh` owns the read and both callers run it directly, so a failed read on the PC prints only curl's line,
+  the task's refusal and mise's own error line: with the token set and not empty it reaches curl through its stdin and no argument, file or log line, and a
+  token outside the token alphabet is refused by the variable's name before curl starts; unset, the read is anonymous, as
+  on the PC; the step's `env:` holds the token for that step's processes; `checks` runs
+  `tests/secrets/github_meta_token_is_refused_or_reaches_only_curls_stdin.sh` against a fake
+  curl, trace included), and that `secrets:new-key` refuses a key directory not at
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
   runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request that turns Ready within the minute
   prints no key block.

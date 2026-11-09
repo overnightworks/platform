@@ -315,7 +315,7 @@ IFS= read -r -d '' manifest || true
 known_hosts="$(printf '%s' "$manifest" | yq '.stringData.known_hosts // (.data.known_hosts // "" | @base64d)')" ||
   fail "the Secret's known_hosts cannot be read"
 [ -n "$known_hosts" ] || fail "the Secret's known_hosts is empty"
-github_keys="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$meta_url" | yq -p json '.ssh_keys[]')" ||
+github_keys="$(scripts/github_meta.sh | yq -p json '.ssh_keys[]')" ||
   fail "the ssh_keys of $meta_url cannot be read"
 [ -n "$github_keys" ] || fail "$meta_url lists no ssh_keys"
 

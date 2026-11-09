@@ -31,7 +31,7 @@ if grep --quiet 'PRIVATE KEY' "$proof_dir/stderr"; then fail "the checks' log wo
 cat "$proof_dir/stderr"
 [ "$passes_status" = 0 ] || fail "flux's export did not pass secrets:github-host-keys unchanged"
 
-github_ed25519="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 "$GITHUB_META_URL" |
+github_ed25519="$(scripts/github_meta.sh |
   yq -p json '.ssh_keys[] | select(test("^ssh-ed25519 "))')"
 [ -n "$github_ed25519" ] || fail "$GITHUB_META_URL lists no ssh-ed25519 key"
 check_refuses() {
