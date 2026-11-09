@@ -1,0 +1,129 @@
+# The staging claim holds the finished dump that k8up streams. local-path binds a claim only for its first consumer,
+# so the Job below mounts it once; a claim that stays Pending keeps the including Kustomization from turning Ready.
+# The class retains the volume and the annotation keeps a prune from taking the claim.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-staging
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Binds backup-staging: mounts it, writes nothing and ends 0. Flux recreates the Job when its template changes.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backup-staging-binder
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bind
+          image: docker.io/library/busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
+          command: ["true"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: staging
+              mountPath: /staging
+              readOnly: true
+      volumes:
+        - name: staging
+          persistentVolumeClaim:
+            claimName: backup-staging
+---
+# k8up starts this pod at the start of a Backup and removes it at the end. The container dumps the database over the
+# Service into a temporary file in the staging claim and renames it to postgres.dump, so the file k8up streams is
+# always a finished dump; it is Ready only on that file, and a failed dump leaves no postgres.dump and no Ready pod.
+# The image is the StatefulSet's, set by the replacement in kustomization.yaml. The password reaches pg_dump only in its
+# environment. The pod mounts no claim but the staging one.
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: files
+spec:
+  # k8up reuses an existing Deployment of this pod when its delete failed after the last Backup, and that pod dumped only
+  # at its start and still holds last run's file; a dump older than 60 minutes fails the Backup, which mails, instead of
+  # becoming a snapshot of old data. find prints the name only for a file younger than that, so a find without -mmin fails too.
+  # k8up runs the command without a shell, split on spaces and tabs with quoted chunks kept whole and unquoted, so it is
+  # one line `sh -c '<script>'` with double quotes only inside the script.
+  backupCommand: |-
+    sh -c 'test -n "$(find /staging/postgres.dump -mmin -60)" || { echo "the dump is older than 60 minutes or missing" >&2; exit 1; }; cat /staging/postgres.dump'
+  fileExtension: .dump
+  pod:
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        # The container's name decides the file name in the snapshot: /<namespace>-<container>.dump.
+        - name: postgres
+          image: postgres
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              umask 077
+              rm -f /staging/postgres.dump /staging/postgres.dump.tmp
+              PGPASSWORD="$(cat /run/secrets/postgres/password)" pg_dump --format=custom --file=/staging/postgres.dump.tmp
+              mv /staging/postgres.dump.tmp /staging/postgres.dump
+              exec tail -f /dev/null
+          env:
+            - name: PGHOST
+              value: postgres
+            - name: PGUSER
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: PGDATABASE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          readinessProbe:
+            exec:
+              command: [test, -s, /staging/postgres.dump]
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: staging
+              mountPath: /staging
+            - name: password
+              mountPath: /run/secrets/postgres
+              readOnly: true
+      volumes:
+        - name: staging
+          persistentVolumeClaim:
+            claimName: backup-staging
+        - name: password
+          secret:
+            secretName: postgres

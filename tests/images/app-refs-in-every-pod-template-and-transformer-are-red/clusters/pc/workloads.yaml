@@ -24,3 +24,13 @@ metadata: {name: debug, namespace: default}
 spec:
   ephemeralContainers:
     - {name: shell, image: "ghcr.io/overnightworks/hopin:2026.11.1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+---
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata: {name: files, namespace: default}
+spec:
+  backupCommand: cat /staging/postgres.dump
+  pod:
+    spec:
+      containers:
+        - {name: postgres, image: "ghcr.io/overnightworks/hopin:2026.11.2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}

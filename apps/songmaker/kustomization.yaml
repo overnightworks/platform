@@ -10,6 +10,7 @@ resources:
   - scoring-worker.yaml
 components:
   - ../../infrastructure/postgres/backup
+  - ../../infrastructure/postgres/backup/files
 configMapGenerator:
   - name: postgres
     behavior: merge

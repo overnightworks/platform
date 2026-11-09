@@ -4,59 +4,17 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 # The backup's proofs on the cluster, each with its positive control; no secret is printed.
 export KUBECONFIG="$HOME/.kube/config"
+# shellcheck source=restic_pod.sh
+source "$(dirname "${BASH_SOURCE[0]}")/restic_pod.sh"
 
-# run_restic <namespace> <name> <shell script>: a Pod built from the restore test's own init container, so it holds the
-# namespace's repository credentials as the test does and nothing more; runs the script, sets its output (what it writes to
-# stdout) and exit code. Its stderr goes to the container's termination message, since `kubectl logs` merges the two
-# streams, and reaches this script's stderr when the script fails; a script that wants an error text in its output
-# redirects 2>&1 itself.
-# shellcheck disable=SC2034 # restic_output and restic_exit are this function's results for the cells below.
-run_restic() {
-  local namespace="$1" name="$2" script="$3" manifest
-  manifest="$(kubectl --namespace "$namespace" get cronjob restore-test --output json |
-    NAME="$name" SCRIPT="$script" yq --output-format json \
-      '.spec.jobTemplate.spec.template.spec as $spec | $spec.initContainers[0] as $dump |
-       { "apiVersion": "v1", "kind": "Pod", "metadata": { "name": strenv(NAME) }, "spec": ($spec | del(.initContainers) |
-           .volumes |= map(select(.name == "restore")) |
-           .containers = [$dump | .name = "restic" | .command = ["sh", "-c", "exec 2>/dev/termination-log\n" + strenv(SCRIPT)]]) }')"
-  kubectl --namespace "$namespace" create --filename - <<<"$manifest" >/dev/null
-  kubectl --namespace "$namespace" wait "pod/$name" --timeout=5m \
-    --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}'
-  restic_exit="$(kubectl --namespace "$namespace" get "pod/$name" \
-    --output jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
-  restic_output="$(kubectl --namespace "$namespace" logs "pod/$name")"
-  if [ "$restic_exit" != 0 ]; then
-    kubectl --namespace "$namespace" get "pod/$name" \
-      --output jsonpath='{.status.containerStatuses[0].state.terminated.message}' >&2
-  fi
-  kubectl --namespace "$namespace" delete pod "$name" --wait --timeout=2m >/dev/null
+forward=
+cleanup() {
+  local cell_status=$?
+  [ -z "$forward" ] || kill "$forward" 2>/dev/null || true
+  delete_restic_objects
+  end_deletions "$cell_status"
 }
-# job_ended <namespace> <job>: waits for the Job's end; 0 when it completed, 1 when it failed.
-job_ended() {
-  local namespace="$1" job="$2" deadline=$((SECONDS + 600)) state
-  while [ "$SECONDS" -lt "$deadline" ]; do
-    state="$(kubectl --namespace "$namespace" get job "$job" \
-      --output jsonpath='{.status.conditions[?(@.status=="True")].type}')"
-    case "$state" in
-      *Complete*) return 0 ;;
-      *Failed*) return 1 ;;
-    esac
-    sleep 5
-  done
-  fail "the Job $namespace/$job did not end within 10 minutes"
-}
-# run_restore_test <namespace> <job> [<configmap>]: runs the CronJob as it is, or with another ConfigMap as its checks.
-run_restore_test() {
-  local namespace="$1" job="$2" checks="${3:-}" job_manifest
-  job_manifest="$(kubectl --namespace "$namespace" create job "$job" --from=cronjob/restore-test --dry-run=client --output json)"
-  if [ -n "$checks" ]; then
-    job_manifest="$(CHECKS="$checks" yq --output-format json \
-      '(.spec.template.spec.volumes[] | select(.name == "checks") | .configMap.name) = strenv(CHECKS)' <<<"$job_manifest")"
-  fi
-  kubectl --namespace "$namespace" create --filename - <<<"$job_manifest" >/dev/null
-  if job_ended "$namespace" "$job"; then status=passed; else status=failed; fi
-  kubectl --namespace "$namespace" delete job "$job" --cascade=foreground --wait --timeout=2m >/dev/null
-}
+trap cleanup EXIT
 
 # wait_completed <namespace> <backup|prune> <name>: waits for the k8up object's Completed condition and fails unless it succeeded.
 wait_completed() {
@@ -132,7 +90,6 @@ litellm_port="$(kubectl --namespace "$LITELLM_NAMESPACE" get service litellm --o
 forward_log="$RUNNER_TEMP/litellm-port-forward.log"
 kubectl --namespace "$LITELLM_NAMESPACE" port-forward service/litellm ":$litellm_port" > "$forward_log" 2>&1 &
 forward=$!
-trap 'kill "$forward" 2>/dev/null || true' EXIT
 for _ in $(seq 30); do grep -q '^Forwarding from 127.0.0.1:' "$forward_log" && break; sleep 1; done
 local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$forward_log" | head -n 1)"
 [ -n "$local_port" ] || fail "kubectl port-forward to the Service litellm did not start"

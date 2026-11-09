@@ -527,7 +527,7 @@
   through Traefik's `web`; its NetworkPolicy admits only namespace `traefik` to its port, so skat trusts the forwarded
   addresses of the pod network in `SKAT_TRUSTED_PROXIES` only behind that policy, and `cloudflared` carries its line.
 - `apps/songmaker/`: songmaker's stores, web and workers, no route or login yet: its Postgres from the base
-  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `alembic_version songs generations`, backed up like skat's through the component `infrastructure/postgres/backup`
+  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `alembic_version songs generations`, backed up through the component `infrastructure/postgres/backup`
   with the repository `songmaker` on the rest server, and `redis.yaml`, the
   queue: one StatefulSet pod at the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a
   read-only root, persistence off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a
@@ -597,7 +597,7 @@
   keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
 - `infrastructure/postgres/backup/`: the component a Postgres layer includes to be backed up; `infrastructure/keycloak/`,
   `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` do. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
-  4 weekly and 3 monthly, a monthly `check`) of the Postgres pod's `pg_dump --format=custom` into `backup-repository`,
+  4 weekly and 3 monthly, a monthly `check`) of `pg_dump --format=custom` into `backup-repository`,
   the URL the including layer sets in the ConfigMap `postgres`; a PodConfig gives k8up's Job pods the fields `restricted`
   requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month, on the 1st at
   05:00 UTC, bounded to an hour, and fails without a snapshot or on an empty first key table. The Secret `restic` from `platform-secrets` holds the namespace's
