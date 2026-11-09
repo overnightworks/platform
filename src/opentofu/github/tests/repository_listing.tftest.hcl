@@ -1,4 +1,5 @@
 # tofu test cannot run import blocks, so each run plans only the listing and the conditions on it.
+# Proves docs/github-settings.md GH-1.
 mock_provider "github" {}
 
 run "a_listing_that_agrees_with_the_declarations_passes" {

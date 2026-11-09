@@ -2,6 +2,7 @@
 # Drive scripts/apply_github_settings.sh against a fake mise, tofu and gh on plans that delete, replace, forget or
 # change nothing: a delete or replacement fails naming its address and applies nothing, a forget passes.
 # Usage: tests/github/plan_with_a_delete_is_refused.sh
+# Proves docs/github-settings.md GH-1, GH-5, GH-6.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
