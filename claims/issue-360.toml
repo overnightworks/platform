@@ -1,0 +1,7 @@
+claim_id = "b325ef7b2bdc4f1d9fa11732b320d375"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "cd1c82f815e0b02f7c5db9ea1bd7e786aa058bc7"
+branch = "claude/issue-360-failed-pod-logs"
+scope = ["tests/flux/print_ready_times.sh"]
+opened_commit = "60999dbfba98fce969195c9ca31e5cfce6c9721a"
