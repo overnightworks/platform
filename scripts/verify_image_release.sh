@@ -8,6 +8,7 @@
 # GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_REPOSITORY_OWNER, DEFAULT_BRANCH, RENDER_IMAGE, the image the render
 # runs in, and FLUX_COMPONENTS, which mise.toml sets; gh reads GH_TOKEN or its own login, and reads the registry through
 # Docker's login to ghcr.io.
+# RENDER_TIMEOUT_SECONDS, if set, replaces the render's default bound.
 # Exit: 0 nothing is red, 1 after at least one red record, 2 on any other failure.
 set -Eeuo pipefail
 trap 'echo "verify_image_release: line ${LINENO} failed: ${BASH_COMMAND}" >&2; exit 2' ERR
@@ -21,6 +22,8 @@ VENDOR_LIST_NAME="image-vendors"
 VENDOR_LIST_NAMESPACE="admission"
 # The PC-only source, rendered empty since CI holds no key for it; the cluster job's overlay swaps the same source.
 PC_ONLY_SOURCE="GitRepository/flux-system/platform-secrets"
+# The render of the real tree ends in about 2 seconds; a Kustomization whose path is its own ancestor never ends.
+RENDER_TIMEOUT_SECONDS_DEFAULT=120
 # An app's release: its image is built and attested by quality's reusable workflow from the app's main, and the
 # signer's commit must lie on quality's main.
 SIGNER_REPOSITORY_NAME="quality"
@@ -176,6 +179,10 @@ in_app_namespace() {
 
 load_vendor_list() {
   local entry_key repository index
+  if [ ! -e "${VENDOR_LIST}" ]; then
+    report_red "${VENDOR_LIST}" "" "the vendor list is missing"
+    return
+  fi
   if ! read_records "${VENDOR_LIST_SHAPE}" "${VENDOR_LIST}" 2>/dev/null; then
     report_red "${VENDOR_LIST}" "" "yq cannot read the vendor list"
     return
@@ -211,12 +218,14 @@ read_root() {
 # Renders the tree into the file rendered; a failed render is red with flux's message, and the run stops there.
 render() {
   local flux_binary status=0 empty_source="${work_directory}/empty-source"
+  local render_timeout="${RENDER_TIMEOUT_SECONDS:-${RENDER_TIMEOUT_SECONDS_DEFAULT}}" container="images-probe-render-$$"
   flux_binary="$(readlink -f "$(command -v flux)")"
   mkdir "${empty_source}"
   docker image inspect "${RENDER_IMAGE}" >/dev/null 2>&1 || docker pull --quiet "${RENDER_IMAGE}" >/dev/null
-  docker run --rm --pull never --network none --user "$(id -u):$(id -g)" --workdir /tree \
+  timeout --kill-after=10 "${render_timeout}" docker run --rm --pull never --network none --user "$(id -u):$(id -g)" \
+    --name "${container}" --workdir /tree --entrypoint /usr/local/bin/flux \
     --volume "${tree}:/tree:ro" --volume "${flux_binary}:/usr/local/bin/flux:ro" --volume "${empty_source}:/empty:ro" \
-    "${RENDER_IMAGE}" flux build kustomization "${root_name}" --namespace "${root_namespace}" --path "${root_path}" \
+    "${RENDER_IMAGE}" build kustomization "${root_name}" --namespace "${root_namespace}" --path "${root_path}" \
     --kustomization-file "${ROOT_SYNC_FILE}" --dry-run --in-memory-build --recursive \
     --local-sources "${root_source}=.,${PC_ONLY_SOURCE}=/empty" >"${rendered}" 2>"${work_directory}/render-errors" ||
     status=$?
@@ -224,6 +233,13 @@ render() {
     0) ;;
     1)
       report_red "${root_object}" "$(cat "${work_directory}/render-errors")" "the render failed"
+      echo "images: ${red_count} red"
+      exit 1
+      ;;
+    124 | 137)
+      # timeout stops the docker client, not the container it started.
+      docker rm --force "${container}" >/dev/null 2>&1 || true
+      report_red "${root_object}" "" "the render did not end within ${render_timeout} seconds, a Kustomization path that contains itself being the usual cause"
       echo "images: ${red_count} red"
       exit 1
       ;;

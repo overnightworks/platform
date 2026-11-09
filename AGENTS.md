@@ -216,7 +216,8 @@
   and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
-  `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
+  `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container of an image pinned by its index digest, without network, ending red
+  when it runs past 2 minutes).
   It judges every image of every rendered Pod template, image volumes included, and every host-qualified value of every
   `env` map in this workflow, the workflow's, each job's and each step's: a vendor ref passes only as a repository of
   the vendor list at a sha256 digest, an app ref under `ghcr.io/<owner>/` passes only through its release checks (its
@@ -250,7 +251,8 @@
   `cluster` reconciles `clusters/pc` in k3d, with `host/k3s/config.yaml` mounted alone and read-only at
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
-  each PC-only source swapped for one the job serves; a new PC-only source joins that list; `tunnel` given its own
+  each PC-only source swapped for one the job serves; a new PC-only source joins that list and `PC_ONLY_SOURCE` in `scripts/verify_image_release.sh`, since a source
+  that script does not map fails the images render; `tunnel` given its own
   `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token; `nvidia` given its
   own, which only give the device plugin's DaemonSet a node selector no k3d node carries, as k3d holds no card) and the
   `flux-system` source's ref, in the object applied and in Flux's build: a pull request's ref on a pull request, `main` at the
