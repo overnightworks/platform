@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Proves docs/operations.md OPS-4, OPS-5.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"

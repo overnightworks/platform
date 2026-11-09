@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Drive scripts/check_secrets_expiry.sh against a fake kubectl and a fake clock first on PATH.
 # Usage: tests/secrets/expiry_check_names_each_breach.sh
+# Proves docs/operations.md OPS-1.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"

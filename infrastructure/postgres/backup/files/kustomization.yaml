@@ -1,0 +1,68 @@
+# What an app adds to the backup component to back up one of its claims beside its database: the staging claim and the
+# PreBackupPod that stages the claim's copy and the database's dump in it. A layer that includes it lists it after
+# ../postgres/backup, whose patch on the StatefulSet it removes, declares the claim as backup-claim in its ConfigMap
+# postgres, and copies its app's runAsUser into the PreBackupPod, the group of its copy container and the PodConfig
+# postgres-backup by a replacement.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - files.yaml
+configMapGenerator:
+  - name: backup-stage
+    files:
+      - scripts/stage_files.sh
+    options:
+      disableNameSuffixHash: true
+patches:
+  # The PreBackupPod is the one pod that carries a backup command, so the database's live stream leaves the StatefulSet.
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |
+      - op: remove
+        path: /spec/template/metadata/annotations/k8up.io~1backupcommand
+      - op: remove
+        path: /spec/template/metadata/annotations/k8up.io~1file-extension
+  # The dump is 0640 at group 70, the Postgres image's group: k8up's Job pods read it through a supplemental group, and
+  # their primary group stays, so the cache directory they create stays writable.
+  - target:
+      kind: PodConfig
+      name: postgres-backup
+    patch: |
+      - op: add
+        path: /spec/template/spec/securityContext/supplementalGroups
+        value: [70]
+replacements:
+  # The dump is made with the server's own image, so a pg_dump older than its server cannot occur.
+  - source:
+      kind: StatefulSet
+      name: postgres
+      fieldPath: spec.template.spec.containers.[name=postgres].image
+    targets:
+      - select:
+          kind: PreBackupPod
+          name: files
+        fieldPaths:
+          - spec.pod.spec.containers.[name=postgres].image
+  # The stager runs k8up's own image, the one the restore test reads the repository with.
+  - source:
+      kind: CronJob
+      name: restore-test
+      fieldPath: spec.jobTemplate.spec.template.spec.initContainers.[name=restic-dump].image
+    targets:
+      - select:
+          kind: PreBackupPod
+          name: files
+        fieldPaths:
+          - spec.pod.spec.containers.[name=stager].image
+  # The claim the layer declares is the one the copy reads.
+  - source:
+      kind: ConfigMap
+      name: postgres
+      fieldPath: data.backup-claim
+    targets:
+      - select:
+          kind: PreBackupPod
+          name: files
+        fieldPaths:
+          - spec.pod.spec.volumes.[name=source].persistentVolumeClaim.claimName

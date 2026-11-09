@@ -1,4 +1,5 @@
 # tofu test cannot plan a resource an import block names, so each run plans the module that holds the resources.
+# Proves docs/github-settings.md GH-1, GH-2.
 mock_provider "github" {}
 
 run "the_quality_ruleset_requires_the_exact_check_pinned_to_github_actions" {
