@@ -1,7 +1,0 @@
-claim_id = "bcf03bb824de4f85a2c724235f9e8cfa"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "aa9098a9eb378f27428f0e905d9a8a043553c0fb"
-branch = "claude/issue-254-bootstrap-apt-retries"
-scope = [".github/workflows/ci.yml", "AGENTS.md"]
-opened_commit = "4fe2f971d6cce7caa212a0d1ddf88fb6863d6a23"
