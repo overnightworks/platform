@@ -1,5 +1,5 @@
 # tofu test cannot plan a resource an import block names, so each run plans the module that holds the resources.
-# Proves docs/github-settings.md GH-1, GH-2.
+# Proves docs/github-settings.md GH-1, GH-2, GH-7.
 mock_provider "github" {}
 
 run "the_quality_ruleset_requires_the_exact_check_pinned_to_github_actions" {
@@ -91,6 +91,7 @@ run "no_organisation_ruleset_has_a_bypass_actor" {
         github_organization_ruleset.main_pull_request_only,
         github_organization_ruleset.quality_verdict_required,
         github_organization_ruleset.release_tags_immutable,
+        github_organization_ruleset.code_scanning_required,
       ] : ruleset.bypass_actors == null || length(ruleset.bypass_actors) == 0
     ])
     error_message = "A ruleset must have an empty bypass list."
@@ -110,6 +111,7 @@ run "every_organisation_ruleset_is_enforced" {
         github_organization_ruleset.main_pull_request_only,
         github_organization_ruleset.quality_verdict_required,
         github_organization_ruleset.release_tags_immutable,
+        github_organization_ruleset.code_scanning_required,
       ] : ruleset.enforcement == "active"
     ])
     error_message = "Every ruleset must be active."
@@ -126,5 +128,46 @@ run "the_pull_request_ruleset_requires_no_approving_review" {
   assert {
     condition     = github_organization_ruleset.main_pull_request_only.rules[0].pull_request[0].required_approving_review_count == 0
     error_message = "The approval count must stay 0: provider 6.13.0 cannot carry require_extra_approval_for_unattributed_changes, which GitHub holds as true and which takes effect only at a non-zero count."
+  }
+}
+
+run "the_code_scanning_ruleset_blocks_high_codeql_alerts_on_quality_gate_repositories_but_the_exempt" {
+  command = plan
+
+  module {
+    source = "./organization"
+  }
+
+  assert {
+    condition = (
+      one(github_organization_ruleset.code_scanning_required.rules[0].required_code_scanning[0].required_code_scanning_tool).tool == "CodeQL"
+      && one(github_organization_ruleset.code_scanning_required.rules[0].required_code_scanning[0].required_code_scanning_tool).security_alerts_threshold == "high_or_higher"
+      && one(github_organization_ruleset.code_scanning_required.rules[0].required_code_scanning[0].required_code_scanning_tool).alerts_threshold == "none"
+    )
+    error_message = "The rule must require CodeQL at high_or_higher with no threshold on other alerts."
+  }
+
+  assert {
+    condition     = github_organization_ruleset.code_scanning_required.conditions[0].repository_property[0].include == github_organization_ruleset.quality_verdict_required.conditions[0].repository_property[0].include
+    error_message = "The rule must reach exactly the repositories the quality ruleset reaches."
+  }
+
+  assert {
+    condition = (
+      length(github_organization_ruleset.code_scanning_required.conditions[0].repository_property[0].exclude) == 1
+      && github_organization_ruleset.code_scanning_required.conditions[0].repository_property[0].exclude[0].name == github_repository_custom_property.platform_secrets_code_scanning_exempt.property_name
+      && github_organization_ruleset.code_scanning_required.conditions[0].repository_property[0].exclude[0].property_values == tolist(github_repository_custom_property.platform_secrets_code_scanning_exempt.property_value)
+    )
+    error_message = "The one exclusion must be the value platform-secrets carries."
+  }
+
+  assert {
+    condition     = github_repository_custom_property.platform_secrets_code_scanning_exempt.repository == "platform-secrets"
+    error_message = "Only platform-secrets is exempt."
+  }
+
+  assert {
+    condition     = github_organization_custom_properties.code_scanning_exempt.values_editable_by == "org_actors"
+    error_message = "Only organisation actors may set the exemption."
   }
 }
