@@ -1,0 +1,8 @@
+claim_id = "9c4182eff72f460eb9556e545c7bfaca"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "b88a74d4b31bcab026bb71aab8a4a94bea696993"
+branch = "claude/issue-297-runbooks-restore-github-ai-group"
+scope = ["AGENTS.md", "README.md", "docs/runbooks/apply-github-settings.md", "docs/runbooks/change-ai-keys-and-budgets.md", "docs/runbooks/move-the-ai-group.md", "docs/runbooks/restore-a-database.md"]
+opened_commit = "7fdece3956eb5e7b55bd38802258ef45566e33c1"
+whole_reason = "One move: the four procedures leave AGENTS.md in the commit that writes their runbooks and lists them in the README, so no state holds a procedure twice or nowhere."
