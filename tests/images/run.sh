@@ -79,5 +79,19 @@ for case_directory in "${cases_directory}"/*/; do
     cat "${expected_gaps}"
   fi
 done
+# A render image that is no digest ref is refused before any render, without printing its value.
+tree="${work_directory}/unpinned-render-image"
+mkdir "${tree}"
+cp -R "${cases_directory}/base/." "${tree}"
+status=0
+RENDER_IMAGE=docker.io/library/unpinned:1 "${verify}" "${tree}" >"${tree}.log" 2>&1 || status=$?
+if [ "${status}" = 2 ] && grep -q 'RENDER_IMAGE is not a reference at a sha256 digest' "${tree}.log" &&
+  ! grep -q 'unpinned' "${tree}.log"; then
+  echo "images case render-image-without-a-digest-is-refused: holds"
+else
+  failed=1
+  echo "images case render-image-without-a-digest-is-refused: exit ${status}, expected 2; its log:"
+  cat "${tree}.log"
+fi
 [ "${case_count}" -gt 0 ] || { echo "images: no case under ${cases_directory}" && exit 1; }
 exit "${failed}"

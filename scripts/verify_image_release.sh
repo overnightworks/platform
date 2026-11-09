@@ -217,12 +217,15 @@ read_root() {
 
 # Renders the tree into the file rendered; a failed render is red with flux's message, and the run stops there.
 render() {
-  local flux_binary status=0 empty_source="${work_directory}/empty-source"
+  local flux_binary status=0 started empty_source="${work_directory}/empty-source"
   local render_timeout="${RENDER_TIMEOUT_SECONDS:-${RENDER_TIMEOUT_SECONDS_DEFAULT}}" container="images-probe-render-$$"
+  [[ ${RENDER_IMAGE} =~ @sha256:[0-9a-f]{64}$ ]] || fail "RENDER_IMAGE is not a reference at a sha256 digest"
   flux_binary="$(readlink -f "$(command -v flux)")"
   mkdir "${empty_source}"
   docker image inspect "${RENDER_IMAGE}" >/dev/null 2>&1 || docker pull --quiet "${RENDER_IMAGE}" >/dev/null
-  timeout --kill-after=10 "${render_timeout}" docker run --rm --pull never --network none --user "$(id -u):$(id -g)" \
+  started="${SECONDS}"
+  # --foreground keeps timeout in the terminal's process group, so Ctrl-C reaches the docker client.
+  timeout --foreground --kill-after=10 "${render_timeout}" docker run --rm --pull never --network none --user "$(id -u):$(id -g)" \
     --name "${container}" --workdir /tree --entrypoint /usr/local/bin/flux \
     --volume "${tree}:/tree:ro" --volume "${flux_binary}:/usr/local/bin/flux:ro" --volume "${empty_source}:/empty:ro" \
     "${RENDER_IMAGE}" build kustomization "${root_name}" --namespace "${root_namespace}" --path "${root_path}" \
@@ -239,6 +242,10 @@ render() {
     124 | 137)
       # timeout stops the docker client, not the container it started.
       docker rm --force "${container}" >/dev/null 2>&1 || true
+      # 137 is the timeout's kill only when the render ran for the whole bound.
+      if [ "${status}" = 137 ] && [ $((SECONDS - started)) -lt "${render_timeout}" ]; then
+        fail "the render container was killed before the bound of ${render_timeout} seconds: $(cat "${work_directory}/render-errors")"
+      fi
       report_red "${root_object}" "" "the render did not end within ${render_timeout} seconds, a Kustomization path that contains itself being the usual cause"
       echo "images: ${red_count} red"
       exit 1

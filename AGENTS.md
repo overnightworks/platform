@@ -251,7 +251,7 @@
   `cluster` reconciles `clusters/pc` in k3d, with `host/k3s/config.yaml` mounted alone and read-only at
   `/etc/rancher/k3s/config.yaml` on its one server, in both modes through an overlay whose one base is the PC's own
   `clusters/pc/flux-system`. The overlay adds only the root's `spec.patches` (the committed self-Kustomization dropped,
-  each PC-only source swapped for one the job serves; a new PC-only source joins that list and `PC_ONLY_SOURCE` in `scripts/verify_image_release.sh`, since a source
+  each PC-only source swapped for one the job serves; a new PC-only source joins that list and, since `PC_ONLY_SOURCE` in `scripts/verify_image_release.sh` holds one source, that script too; a source
   that script does not map fails the images render; `tunnel` given its own
   `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token; `nvidia` given its
   own, which only give the device plugin's DaemonSet a node selector no k3d node carries, as k3d holds no card) and the
