@@ -1,7 +1,0 @@
-claim_id = "f663ece86f8749bd96b5406ee8344587"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "95c909e5ba9ff314d6dc74f598429008b87a04e2"
-branch = "claude/issue-318-legal-release-from-images"
-scope = ["infrastructure/legal/app-texts.toml", "tests/legal/app_texts_equal_their_release.sh"]
-opened_commit = "1ca0e86faa64e6c828b638cc35715444384d5483"
