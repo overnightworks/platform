@@ -1,8 +1,0 @@
-claim_id = "8d976320db7545938ee3bafc4a214461"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "1ed0cec6053530be6d88c8ad7bec4f3489602054"
-branch = "claude/issue-293-p6-pc-runbooks"
-scope = ["AGENTS.md", "README.md", "docs/runbooks/gpu-runtime-handler-missing.md", "docs/runbooks/install-the-pc.md", "docs/runbooks/pod-logs-check-fails.md", "docs/runbooks/remove-a-host-part.md", "docs/runbooks/uninstall-k3s.md"]
-opened_commit = "03141fe62738df0d945ef3c538c25ef3e47cc06e"
-whole_reason = "One move: the host step's procedures leave AGENTS.md in the commit that writes their runbooks and lists them in the README, so no state holds a procedure twice or nowhere."
