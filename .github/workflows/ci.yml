@@ -629,6 +629,9 @@ jobs:
       - name: Check that mise run disk names its table and warns at 85 % and not at 84 %
         run: tests/disk/mise_disk_warns_from_85_percent.sh
 
+      - name: Check that the journal's drop-in is read by systemd, its limits add up to under 30 days and its notification names a declared service
+        run: tests/journald/retention_drop_in_keeps_every_entry_under_30_days.sh
+
   opentofu:
     runs-on: ubuntu-latest
     timeout-minutes: 10

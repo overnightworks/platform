@@ -2,8 +2,8 @@ locals {
   # Every non-archived non-fork repository of the organisation.
   managed = toset([
     "aco",
-    "agent-runtime",
-    "appkit",
+    "agents",
+    "design",
     "hal",
     "hopin",
     "marketplace",
@@ -14,7 +14,7 @@ locals {
     "quality",
     "skat",
     "songmaker",
-    "speech-runtime",
+    "speech",
     "webauth",
   ])
 
