@@ -1,8 +1,0 @@
-claim_id = "35b9876320114d2c9a5f27de58c196ee"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "e375b80aaed69c123a5f14f572ad5aacad4b1454"
-branch = "claude/issue-286-cutover-load-and-check"
-scope = [".github/workflows/ci.yml", "mise.toml", "scripts/cutover_load.sh", "scripts/keycloak_kcadm.sh", "tests/cutover/load_and_check_name_each_difference_and_print_no_value.sh", "tests/cutover/load_refuses_a_real_keycloak_dump_naming_its_platform_objects.sh", "tests/keycloak/restored_copy_keeps_its_keys_and_people.sh"]
-opened_commit = "f0bfb6a661409d7a30901fca8c20e9933a24975e"
-whole_reason = "One exit contract and one output owner cover the gate, the load and the checks: a load without its gate would load an unchecked dump during the outage, and cutover:check shares the evidence reader; restored_copy is the copy check the load calls, and the cell and its ci.yml step prove the contract."
