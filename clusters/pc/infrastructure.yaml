@@ -109,9 +109,10 @@ metadata:
   name: prometheus
   namespace: flux-system
 spec:
-  # storage for the claim, admission for the workloads.
+  # storage for the claims, admission for the workloads, platform-secrets for the Secret alertmanager.
   dependsOn:
     - name: admission
+    - name: platform-secrets
     - name: storage
   interval: 10m0s
   path: ./infrastructure/prometheus
@@ -269,6 +270,24 @@ spec:
     - name: admission
   interval: 10m0s
   path: ./infrastructure/gatus
+  prune: true
+  wait: true
+  timeout: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+# After admission, which judges the workload's image; Grafana holds no Secret and no claim.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grafana
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+  interval: 10m0s
+  path: ./infrastructure/grafana
   prune: true
   wait: true
   timeout: 5m0s

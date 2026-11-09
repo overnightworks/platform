@@ -227,6 +227,8 @@ prometheus_chart=oci://ghcr.io/prometheus-community/charts/prometheus:29.45.1@sh
 render prometheus "$prometheus_chart" prometheus "$prometheus_chart"
 loki_chart=oci://ghcr.io/grafana/helm-charts/loki:7.5.0@sha256:6006cfff9edd0d5c70449cb89510c1c3c2142c11caacf66d6aac83fc0517f07d
 render loki "$loki_chart" loki "$loki_chart"
+grafana_chart=oci://ghcr.io/grafana-community/helm-charts/grafana:14.4.0@sha256:2d5174fe147de178bb47e8b696b16ac3a614c83e31afb8c74e28684e04118002
+render grafana "$grafana_chart" grafana "$grafana_chart"
 
 k8up_release=https://github.com/k8up-io/k8up/releases/download
 k8up_chart="$k8up_release/k8up-4.10.1/k8up-4.10.1.tgz"
@@ -882,14 +884,21 @@ description = "Put a person on LiteLLM's unlimited admin budget and into /servic
 quiet = true
 run = "scripts/litellm_keys.sh admin"
 
-[tasks."gatus:open"]
-description = "Forward Gatus's status page to this PC's loopback and print its address"
+# The one owner of the loopback forward to a Service's page, which a page the operator opens only at the PC shares.
+[tasks."page:forward"]
+description = "Forward a Service to this PC's loopback at a free port and print the address once kubectl listens"
+hide = true
+usage = '''
+arg "<namespace>" help="The Service's namespace, also the name of the Service"
+arg "<caller>" help="The task name that prefixes the printed line"
+'''
 quiet = true
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-port="$(kubectl --namespace gatus get service gatus -o jsonpath='{.spec.ports[0].port}')"
+namespace="${usage_namespace?}" caller="${usage_caller?}"
+port="$(kubectl --namespace "$namespace" get service "$namespace" -o jsonpath='{.spec.ports[0].port}')"
 # kubectl runs in the foreground, so Ctrl-C reaches it and ends it; the reader on its stdout prints the address once
 # kubectl says it listens, and a forward that fails prints none.
 announce() {
@@ -897,12 +906,22 @@ announce() {
   while IFS= read -r line; do
     local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) ->.*/\1/p' <<<"$line")"
     if [ -n "$local_port" ]; then
-      echo "gatus:open: open http://127.0.0.1:$local_port/; Ctrl-C ends the forward"
+      echo "$caller: open http://127.0.0.1:$local_port/; Ctrl-C ends the forward"
     fi
   done
 }
-kubectl --namespace gatus port-forward --address 127.0.0.1 service/gatus ":$port" > >(announce)
+kubectl --namespace "$namespace" port-forward --address 127.0.0.1 "service/$namespace" ":$port" > >(announce)
 '''
+
+[tasks."gatus:open"]
+description = "Forward Gatus's status page to this PC's loopback and print its address"
+quiet = true
+run = "mise run page:forward gatus gatus:open"
+
+[tasks."grafana:open"]
+description = "Forward Grafana's page to this PC's loopback and print its address"
+quiet = true
+run = "mise run page:forward grafana grafana:open"
 
 # kcadm runs in Keycloak's own container and signs in as config-cli with the secret that container holds, so no
 # secret reaches this shell; every line is a name, a count or an outcome.
