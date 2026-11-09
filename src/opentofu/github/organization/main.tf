@@ -126,3 +126,70 @@ resource "github_organization_ruleset" "release_tags_immutable" {
     destroy         = false
   }
 }
+
+# Only platform-secrets carries the value: it holds encrypted files and no code to scan, and private code scanning is paid.
+# Without a value a repository does not match the exclusion, so no default is declared (provider 6.13.0 reads none for
+# a true_false property); only organisation actors edit a value, so no repository admin can exempt a repository.
+resource "github_organization_custom_properties" "code_scanning_exempt" {
+  property_name      = "code_scanning_exempt"
+  value_type         = "true_false"
+  required           = false
+  description        = "true: the repository holds no code to scan and is outside the ruleset code scanning: high or higher blocks the merge."
+  values_editable_by = "org_actors"
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+resource "github_repository_custom_property" "platform_secrets_code_scanning_exempt" {
+  repository     = "platform-secrets"
+  property_name  = github_organization_custom_properties.code_scanning_exempt.property_name
+  property_type  = github_organization_custom_properties.code_scanning_exempt.value_type
+  property_value = ["true"]
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+resource "github_organization_ruleset" "code_scanning_required" {
+  name        = "code scanning: high or higher blocks the merge"
+  target      = "branch"
+  enforcement = "active"
+
+  conditions {
+    ref_name {
+      include = ["~DEFAULT_BRANCH"]
+      exclude = []
+    }
+    repository_property {
+      include = [{
+        name            = github_organization_custom_properties.quality_gate.property_name
+        source          = "custom"
+        property_values = ["true"]
+      }]
+      # The value is referenced, not the schema, so the ruleset is created only after platform-secrets carries it.
+      exclude = [{
+        name            = github_repository_custom_property.platform_secrets_code_scanning_exempt.property_name
+        source          = "custom"
+        property_values = tolist(github_repository_custom_property.platform_secrets_code_scanning_exempt.property_value)
+      }]
+    }
+  }
+
+  rules {
+    required_code_scanning {
+      required_code_scanning_tool {
+        tool                      = "CodeQL"
+        security_alerts_threshold = "high_or_higher"
+        alerts_threshold          = "none"
+      }
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    destroy         = false
+  }
+}
