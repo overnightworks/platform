@@ -94,8 +94,9 @@ metadata:
   name: files
 spec:
   # k8up reuses an existing Deployment of this pod when its delete failed after the last Backup, and that pod staged
-  # only at its start and still holds last run's file; a dump older than 60 minutes fails the Backup, which mails, instead of
-  # becoming a snapshot of old data. find prints the name only for a file younger than that, so a find without -mmin fails too.
+  # only at its start and still holds last run's tree; k8up starts the file Job beside the prebackup Job, so that
+  # self-consistent old tree can be committed under a new snapshot time while a dump older than 60 minutes fails the
+  # Backup, which mails. find prints the name only for a file younger than that, so a find without -mmin fails too.
   # k8up runs the command without a shell, split on spaces and tabs with quoted chunks kept whole and unquoted, so it is
   # one line `sh -c '<script>'` with double quotes only inside the script.
   backupCommand: |-
@@ -120,6 +121,7 @@ spec:
         - name: postgres
           image: postgres
           command: [sh, /etc/stage/stage_files.sh, dump]
+          # The dump is the database's own data: it stays uid 70's, whatever uid the pod reads the app's files as.
           env:
             - name: PGHOST
               value: postgres
@@ -136,6 +138,7 @@ spec:
               command: [test, -e, /scratch/ready]
             periodSeconds: 2
           securityContext:
+            runAsUser: 70
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:

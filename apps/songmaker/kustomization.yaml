@@ -49,3 +49,13 @@ replacements:
           - spec.template.spec.securityContext.runAsUser
         options:
           create: true
+patches:
+  # The staged dump is 0640 at group 70, the Postgres image's group, so the Job pods read it through a supplemental
+  # group; their primary group stays, so the cache directory they create stays writable.
+  - target:
+      kind: PodConfig
+      name: postgres-backup
+    patch: |
+      - op: add
+        path: /spec/template/spec/securityContext/supplementalGroups
+        value: [70]

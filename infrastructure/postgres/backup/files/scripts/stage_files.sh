@@ -25,10 +25,12 @@ idle() {
   exit 0
 }
 
-# serve <step> <command>...: waits for the step's request, runs the command and records its exit status.
+# serve <step> <command>...: waits for the step's request, runs the command and records its exit status. A restarted
+# container finds the step's exit status in /scratch and does not run it again.
 serve() {
   step="$1"
   shift
+  [ ! -e "$scratch/$step.exit" ] || return 0
   until [ -e "$scratch/$step.request" ]; do sleep 1; done
   status=0
   "$@" || status=$?
@@ -138,7 +140,8 @@ case "${1:-}" in
     idle
     ;;
   dump)
-    umask 077
+    # 0640 at the pod's group 70, which k8up's Job pods read through their supplemental group.
+    umask 027
     serve dump dump
     idle
     ;;

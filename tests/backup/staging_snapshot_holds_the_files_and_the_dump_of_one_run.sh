@@ -36,6 +36,9 @@ cleanup() {
   for name in "${deployments[@]}"; do
     delete_object --namespace "$namespace" delete deployment "$name" --ignore-not-found --wait --timeout=2m
   done
+  # The planted audio leaves the declared claim on every exit; its own Pod is deleted by run_files or here.
+  (run_files remove-planted-audio "$declared_claim" false "rm -rf '/files/$cell_directory'") ||
+    { delete_object --namespace "$namespace" delete pod remove-planted-audio --ignore-not-found --wait --timeout=2m; deletion_failures=$((deletion_failures + 1)); }
   for name in prune-as-reading-uid check-as-reading-uid; do
     delete_object --namespace "$namespace" delete "${name%%-*}" "$name" --ignore-not-found --wait --timeout=2m
   done
@@ -215,6 +218,10 @@ manifest_dump="$(value manifest-dump)"
 [ "$(value names)" = equal ] || fail "the staging snapshot's files/ differ by name from its MANIFEST"
 echo "one Backup left /$namespace-postgres.dump and $staging with files/, postgres.dump and MANIFEST; both dumps equal the MANIFEST's sha256"
 echo "files/ equals $declared_claim by name, size and mtime: $(value listing | cut -d' ' -f2) files"
+run_files staged-dump-owner "backup-staging" true "stat -c 'dump %u:%g %a' /files/postgres.dump"
+[ "$(sed -n 's/^dump //p' <<<"$files_output")" = "70:70 640" ] ||
+  fail "the staged dump of $namespace is owned and moded $(sed -n 's/^dump //p' <<<"$files_output"), not 70:70 640"
+echo "the staged dump is owned by 70:70 at mode 640"
 run_files claim-after-first "$declared_claim" true "$claim_digests"
 [ "$files_output" = "$claim_before" ] || fail "the Backup changed the files of $declared_claim"
 source_mounts="$(jq --raw-output --arg claim "$declared_claim" '
