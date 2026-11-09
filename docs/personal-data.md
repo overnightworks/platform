@@ -15,7 +15,7 @@ none and a copy's creation time is younger than its lines; `pod-logs-clean.timer
 compressing a rotated file. (PD-1)
 The promise: [allgemein](../infrastructure/legal/sections/allgemein/datenschutz.html#server-protokolle),
 [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung),
-[speech-runtime](../infrastructure/legal/sections/speech-runtime/datenschutz.html#sprachdienst),
+[speech](../infrastructure/legal/sections/speech/datenschutz.html#sprachdienst),
 [hopin](../infrastructure/legal/app-texts/hopin/datenschutz.html#hopin-protokolle),
 [skat](../infrastructure/legal/app-texts/skat/datenschutz.html#skat-protokolle).
 
@@ -26,7 +26,7 @@ line, which the privacy texts promise gone before 30 days; the compactor runs at
 shortly after its next start. (PD-2)
 The promise: [allgemein](../infrastructure/legal/sections/allgemein/datenschutz.html#server-protokolle),
 [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung),
-[speech-runtime](../infrastructure/legal/sections/speech-runtime/datenschutz.html#sprachdienst).
+[speech](../infrastructure/legal/sections/speech/datenschutz.html#sprachdienst).
 
 ## The backup component (`infrastructure/postgres/backup/`)
 
@@ -66,4 +66,4 @@ The promise: [litellm](../infrastructure/legal/sections/litellm/datenschutz.html
 
 `apps/speech-runtime/`: speech-runtime's Deployment, Service, caller table (a ConfigMap) and NetworkPolicy, which admits
 port 8080 only from the namespaces `hopin`, `presentator` and `gatus`. (PD-8)
-The promise: [speech-runtime](../infrastructure/legal/sections/speech-runtime/datenschutz.html#sprachdienst).
+The promise: [speech](../infrastructure/legal/sections/speech/datenschutz.html#sprachdienst).

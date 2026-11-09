@@ -32,7 +32,7 @@ SECTION_PAGES = ("datenschutz", "nutzungsbedingungen")
 SERVICE_ANCHORS = {
     "keycloak": "anmeldung",
     "litellm": "agent-dienst",
-    "speech-runtime": "sprachdienst",
+    "speech": "sprachdienst",
 }
 
 Stand = dict[str, tuple[date, str]]  # the declared date and sha256 by section path under the sections
