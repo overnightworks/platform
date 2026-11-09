@@ -162,6 +162,16 @@ run "the_code_scanning_ruleset_blocks_high_codeql_alerts_on_quality_gate_reposit
   }
 
   assert {
+    condition     = github_organization_ruleset.code_scanning_required.conditions[0].repository_property[0].exclude[0].source == github_organization_ruleset.code_scanning_required.conditions[0].repository_property[0].include[0].source
+    error_message = "The exclusion must name the same kind of property as the inclusion."
+  }
+
+  assert {
+    condition     = github_organization_ruleset.code_scanning_required.conditions[0].ref_name[0].include == github_organization_ruleset.quality_verdict_required.conditions[0].ref_name[0].include
+    error_message = "The rule must reach the same refs as the quality ruleset: the default branch."
+  }
+
+  assert {
     condition     = github_repository_custom_property.platform_secrets_code_scanning_exempt.repository == "platform-secrets"
     error_message = "Only platform-secrets is exempt."
   }
