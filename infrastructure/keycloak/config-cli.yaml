@@ -33,10 +33,13 @@ spec:
               value: "true"
             - name: KEYCLOAK_AVAILABILITYCHECK_TIMEOUT
               value: 180s
-            # Logger names are case sensitive and an environment name binds lower case only, so the exact class goes
-            # through Spring's JSON property source.
-            - name: SPRING_APPLICATION_JSON
-              value: '{"logging.level.de.adorsys.keycloak.config.provider.KeycloakProvider":"debug"}'
+            # keycloak-config-cli 6.5.1 hands the client `Duration.get(ChronoUnit.NANOS)`, which is only the
+            # sub-second part: a whole-second timeout, the default 10s included, reaches the client as 0, no timeout,
+            # and the first connection, opened while the Service has no endpoint, hangs in the kernel's connect
+            # give-up of about 135 s. A value below one second survives that, and a dropped SYN retries after the
+            # check's 2 s.
+            - name: KEYCLOAK_CONNECTTIMEOUT
+              value: 900ms
             - name: KEYCLOAK_GRANTTYPE
               value: client_credentials
             - name: KEYCLOAK_CLIENTID
