@@ -10,6 +10,7 @@ from legal.section import (
     LegalError,
     Link,
     parse_fragment,
+    parse_general,
 )
 
 PATH = "legal/sections/hopin/datenschutz.html"
@@ -316,6 +317,52 @@ def test_a_refusal_never_quotes_the_text():
         in_paragraph(f"<p class={marker}>"),
     ):
         assert marker not in refusal(text)
+
+
+GENERAL = (
+    '<h2 id="verantwortlicher">Verantwortlicher</h2>\n'
+    "<p>Felix<br>Erlangen</p>\n"
+    '<h2 id="rechte">Ihre Rechte</h2>\n'
+    "<p>Sie haben Rechte:</p>\n"
+    "<ul><li>Auskunft</li></ul>\n"
+)
+
+
+def general(text: str):
+    return parse_general("legal/sections/allgemein/datenschutz.html", text.encode(), ZONE)
+
+
+def test_the_general_part_reads_several_headings_in_the_files_order():
+    """L14."""
+    parsed = general(GENERAL)
+
+    assert [heading.id for heading in parsed.headings] == ["verantwortlicher", "rechte"]
+    assert [heading.title for heading in parsed.headings] == ["Verantwortlicher", "Ihre Rechte"]
+    assert parsed.headings[0].content == "\n<p>Felix<br>Erlangen</p>\n"
+    assert parsed.headings[1].content == "\n<p>Sie haben Rechte:</p>\n<ul><li>Auskunft</li></ul>\n"
+    assert parsed.subsections == ()
+
+
+@pytest.mark.parametrize(
+    ("text", "rule"),
+    [
+        ("", "has no <h2>"),
+        ('<h2 id="a">A</h2>\n', "<h2> needs a paragraph or list"),
+        ('<h2 id="a">A</h2>\n<h2 id="b">B</h2>\n<p>b</p>\n', "<h2> needs a paragraph or list"),
+        ('<h2 id="Big">A</h2>\n<p>a</p>\n', "the h2 id is not lowercase words"),
+        ('<h2 id="a_b">A</h2>\n<p>a</p>\n', "the h2 id is not lowercase words"),
+        ('<h2 id="a">A</h2>\n<section id="a-b">\n<h3>B</h3>\n<p>b</p>\n</section>\n', "<section>"),
+        ('<h2 id="a">A</h2>\n<h3>x</h3>\n', "<h3> is not allowed here"),
+        ('<h2 id="a">A</h2>\n<p>a</p>\n<img src="x">\n', "<img> is not allowed"),
+        ('<h2 id="a">A</h2>\n<p>a<br/></p>\n', CANONICAL_RULE),
+    ],
+)
+def test_the_general_part_is_refused_by_its_own_grammar(text, rule):
+    """L7."""
+    with pytest.raises(LegalError) as refused:
+        general(text)
+
+    assert rule in str(refused.value)
 
 
 def test_a_heading_title_keeps_its_escaped_bytes_so_no_markup_can_come_of_it():

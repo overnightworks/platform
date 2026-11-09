@@ -4,8 +4,23 @@ namespace: skat
 resources:
   - ../../infrastructure/postgres
   - skat.yaml
+components:
+  - ../../infrastructure/postgres/backup
 configMapGenerator:
   - name: postgres
     behavior: merge
     literals:
-      - key-tables=tables chairs receipts
+      # alembic_version, which skat migrate fills, comes first: the restore test fails on an empty first table.
+      - key-tables=alembic_version tables chairs receipts
+      - backup-repository=http://rest-server.backup.svc.cluster.local:8000/skat/
+replacements:
+  - source:
+      kind: ConfigMap
+      name: postgres
+      fieldPath: data.backup-repository
+    targets:
+      - select:
+          kind: Schedule
+          name: postgres
+        fieldPaths:
+          - spec.backend.rest.url

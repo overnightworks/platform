@@ -66,6 +66,9 @@ jobs:
       - name: Check that legal:check passes hopin's legal files at the tag it runs, names file and line of a broken one and quotes no text
         run: mise exec -- tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh
 
+      - name: Check that the legal sections equal hal's legal/sections at the pinned commit
+        run: tests/legal/sections_equal_hals_at_commit.sh
+
       - name: Check that a failed LiteLLM write stops the rest and names what was made, and that no key value reaches an argument or an output
         run: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
 
@@ -225,7 +228,7 @@ jobs:
           PULL_USER: ${{ github.actor }}
           PULL_TOKEN: ${{ github.token }}
           # The layers whose containers read Secrets by key, each of which gets a dummy per key.
-          SECRET_KEY_LAYERS: infrastructure/keycloak infrastructure/litellm
+          SECRET_KEY_LAYERS: infrastructure/keycloak infrastructure/litellm infrastructure/prometheus
         run: tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh
 
       - name: Push the encrypted Secrets and serve them as the job's platform-secrets source
@@ -452,6 +455,15 @@ jobs:
           OTHER_NAMESPACE: prometheus-probe
           BROKEN_KUSTOMIZATION: prometheus-probe
         run: tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh
+
+      - name: Assert that Alertmanager runs on a finished file, is found by Prometheus, refuses bad values, makes at most one send per flush of a fired alert, answers only its readers and Prometheus drops a Flux Pod that is not running
+        if: matrix.part == 'postgres'
+        env:
+          PROMETHEUS_NAMESPACE: prometheus
+          # The namespace of the readers the policy admits, and the throwaway one of the stranger.
+          READER_NAMESPACE: gatus
+          OTHER_NAMESPACE: alertmanager-client
+        run: tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh
 
       - name: Assert that Grafana answers a query through both data sources at the address grafana:open printed, holds no state and answers only Gatus's pods
         if: matrix.part == 'postgres'

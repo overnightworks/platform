@@ -27,8 +27,11 @@
   its one copy in the operator's password manager.
 - `scripts/apply_github_settings.sh` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
   login, on any commit and without writing state (exit 0 no change, 2 changes, 1 failure). `--apply` applies that
-  run's own plan, only from a clean `origin/main`.
-- `mise run github:test` checks that root: format, init against the committed lock, validate and the mocked tests.
+  run's own plan, only from a clean `origin/main`. A plan with a `delete` action, a replacement included, fails with
+  exit 1 on both runs, names each address and applies nothing; a deliberate removal is a `removed` block with
+  `lifecycle { destroy = false }`, which plans a forget.
+- `mise run github:test` checks that root: format, init against the committed lock, validate, the mocked tests and
+  `tests/github/plan_with_a_delete_is_refused.sh`, which drives the script against a fake tofu and gh.
 - `mise run check:pod-logs` is the operator's, since it runs through sudo: it runs the installed `check-pod-logs`,
   which names every pod log file past its bound and a daily clean that has not run within 25 hours or failed, by file
   names and times only, and fails on any; it passes with no pod logs yet while `/var/log/pods` does not exist, and
@@ -49,7 +52,9 @@
   read marks its row incomplete and prints the remainders as `?`, never as a number.
 - `mise run db:load-dump [--compare] <namespace> <file>` is the platform's restore command:
   it loads a custom-format dump into the namespace's Postgres with Flux's Kustomization of that name suspended, its
-  Deployments at 0 and its Flux Jobs deleted, in one `pg_restore` transaction whose messages go to `<file>.load.log`
+  Deployments at 0 and its Flux Jobs deleted, waiting for the deletion of the Pods a ReplicaSet owns except those in phase
+  `Failed` or `Succeeded` none of whose containers or init containers reports `running` (an evicted Pod stays and holds
+  no session; a Pod marked `Failed` from outside can still run, and one with no readable phase is waited for), in one `pg_restore` transaction whose messages go to `<file>.load.log`
   at 0600, verifies each table `key-tables` names (all tables and their sorted rows' sha256 with `--compare`) and only
   then resumes Flux and waits for the namespace to converge. It refuses a suspended Kustomization. Another session
   that holds the database before the load, a database it cannot read then, or an INT before the load costs at most one
@@ -64,7 +69,8 @@
   `tests/postgres/interrupt_load.sh <namespace> <dump> <INT|KILL>` interrupts a load inside its transaction and asserts
   that recovery, writers included. `tests/postgres/load_dump.sh` drives the task and that script against fake commands
   for the outcomes the cluster cannot arrange: a failed `flux resume`, an unreadable suspension (also after a kill), a
-  signal during the comparison, a table only the database holds, a database it cannot read before or after the load,
+  signal during the comparison, an evicted Pod beside a running one, which alone is waited for, and one alone, which costs
+  no wait, a `Failed` Pod that reports a running container, which is waited for, a table only the database holds, a database it cannot read before or after the load,
   a materialized view, a `pg_restore` that outlives its status while its backend commits, a TERM during the check
   after a failed restore, and an INT after the commit, whose outcome reaches the operator and not the load log.
 - `mise run legal:check <key> <dir>` checks an app's `<dir>/legal/datenschutz.html` and, if present,
@@ -73,7 +79,14 @@
   <rule>`, never the text, and exits non-zero. It refuses a link or directory in place of a file, a missing
   `datenschutz.html` and a `<dir>` that is none; a relative `<dir>` is read from this checkout; it writes nothing. The
   `zone` is the host of the Ingress in `infrastructure/legal/legal.yaml`. `mise run legal:test` runs the project's tests
-  with branch coverage at 100 % and writes `src/legal/coverage.xml`. Both run through `uv` (locked in `mise.toml`),
+  with branch coverage at 100 % and writes `src/legal/coverage.xml`. `mise run legal:build` reads, from this checkout's root, the frame of
+  `infrastructure/legal/frame/`, the sections of `infrastructure/legal/sections/` and their `stand.toml`, builds the three
+  pages with `src/legal/src/legal/pages.py`, which checks their ids and links, and writes only `infrastructure/legal/built/impressum.html`, the other two pages staying in memory; it needs no
+  network, prints `legal:build: wrote <file>` and exits 0, or prints `legal: <file> is missing; the frame is required`
+  (or the failed check's line, which names a directory under `sections/` that is neither `allgemein` nor one of `keycloak`,
+  `litellm` or `speech-runtime`, a section with no `stand.toml` entry, an entry without a file or a section whose sha256
+  differs from its entry, printing the file's) and exits non-zero, writing nothing. It reads the `zone` as `legal:check`
+  does. All three run through `uv` (locked in `mise.toml`),
   which fetches Python 3.14 on first use and keeps its environment under `~/.cache/platform/legal`.
 - `mise run keycloak:admin` is the operator's: it forwards `127.0.0.1` at the port of Keycloak's `KC_HOSTNAME_ADMIN`
   to Keycloak's Service and prints the console's address, to open in a private window, since a browser keeps cookies
@@ -245,14 +258,16 @@
   Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's and skat's files as dummies
   and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
   printed, each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password,
-  and each key a container of a layer in `SECRET_KEY_LAYERS` reads from a Secret, a generated dummy; each namespace
-  whose layer includes the backup component its Secret `restic`, and the Secret `rest-users` holds their passwords.
+  and each key a container of a layer in `SECRET_KEY_LAYERS` reads from a Secret, a generated dummy (Alertmanager's
+  smarthost, username and recipient in the forms its init container accepts, on a name that never resolves); each
+  namespace whose layer includes the backup component its Secret `restic`, and the Secret `rest-users` holds their
+  passwords.
   It also proves that `secrets:github-host-keys` passes flux's real export of a throwaway deploy key unchanged and
   refuses host keys GitHub does not list for `github.com`, and that `secrets:new-key` refuses a key directory not at
   700, a drill file and a regular file in the key path, and accepts a symlinked 700 key directory. `tests/secrets/`
   runs `bootstrap:secrets` against a fake kubectl: a handled Ready=False request that turns Ready within the minute
   prints no key block.
-  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock` and the renders, and fails when git
+  Before the cluster starts, it regenerates `gotk-components.yaml`, `mise.lock`, the renders and the imprint, and fails when git
   status over them and `infrastructure/` is not empty or git ignores one of those files. Before the reconcile the
   kubelet's configz holds the `container-log-max-files` of `host/k3s/config.yaml`; after a writer pod's log directory
   is deleted on the node, its file is back within 30 seconds and `kubectl logs` shows newer lines; and through two
@@ -368,6 +383,21 @@
   Job made from the CronJob: it prints one deletion in each count and leaves the fresh rows and the idle customers
   with a budget or with spend, a second run prints zeros, and the first log holds no planted value; its Pod ran in a
   Namespace enforcing `restricted` with its Postgres's image.
+  The part `postgres` also runs `tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh`,
+  which prints names, counts and verdicts, never a Secret value, the finished file or Alertmanager's status API: the
+  StatefulSet is Ready as a non-root user on a Bound Retain claim with prune disabled, Prometheus lists one active
+  Alertmanager, `amtool` accepts the finished file and routes an alert of each rule to the receiver, an init container
+  built from the StatefulSet's refuses an empty smarthost, one that is not one host and one numeric port, an empty or
+  malformed username, an empty recipient and an empty password, naming only the key, a synthetic alert posted from a
+  Pod in `prometheus` is listed as active and makes sends that fail at the unresolvable smarthost and stay within one
+  per flush of the time since it was posted (Alertmanager's counter of flushes, which retries do not raise and a firing
+  rule of the cluster would raise too), and the same alert with an end resolves, a Pod in `prometheus` and one in
+  `gatus` get 200 for `/-/ready` and one in a third namespace no answer, a Pod with Alertmanager's labels reaches
+  neither the Service `kubernetes`, github.com nor a throwaway listener on port 587 in the pod network (each tried
+  again for up to 60 seconds until closed, and then closed on three more tries, since a new Pod is judged only once
+  kube-router has its rules) where one without them reaches all three, and a Pending Pod of flux-system with the port `http-prom` is a dropped target
+  of `flux-controllers` with no `up` series. k3d proves neither a delivery nor the resolved mail, which Alertmanager
+  attempts only after a firing mail succeeded; the PC's synthetic alert proves one firing and one resolved mail.
   The step "P9c cells", in the part `postgres`, suspends the Kustomization `litellm` and resumes it on every exit, removing
   its keys, person budget and Secret key: `mise run litellm:keys --plan` lists the differences between the table and two
   keys made with the master key, exits 2 and changes no row; the run sets the numbers, a second run prints 0 changes and a
@@ -389,16 +419,19 @@
   failing layer reports itself; a regeneration that adds, renames or removes a controller changes those
   `healthChecks` with it, and `cluster` fails when they differ from the root's inventory.
 - `clusters/pc/infrastructure.yaml`: one Flux Kustomization per directory under `infrastructure/`, each with
-  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include (its subdirectory `backup/` is a component only `keycloak` and `litellm` include). `namespaces`, then
+  `wait: true` and a `timeout`, except `postgres/`, the base `keycloak`, `litellm` and `apps/skat` include (its subdirectory `backup/` is a component `keycloak`, `litellm` and `apps/skat` include). `namespaces`, then
   `platform-secrets` (in `clusters/pc/secrets.yaml`), then `tunnel` apply in that order through `dependsOn`;
   `admission` depends on `namespaces`, every layer that runs a workload, `tunnel` included, on `admission`, and
   `keycloak` and `litellm` also on `platform-secrets`, `storage` and `k8up`, `backup` on `platform-secrets` and `storage`,
-  and `loki` and `prometheus` on `storage`. No layer depends on `nvidia`.
+  `prometheus` on `platform-secrets` and `storage`, and `loki` on `storage`. No layer depends on `nvidia`.
 - `clusters/pc/apps.yaml`: one Kustomization per directory under `apps/`, named like it and like the app's namespace, over
   `./apps/<app>`, with `wait: true` and a `timeout`, depending on `platform-secrets` and `admission`, and `skat` and `songmaker` also
-  on `storage`.
-- `apps/skat/`: skat's Postgres from the base `infrastructure/postgres`, in namespace `skat` with `key-tables` `tables
-  chairs receipts`; the Namespace is in `infrastructure/namespaces/`, not here.
+  on `storage`, and `skat` also on `k8up`.
+- `apps/skat/`: skat's Postgres from the base `infrastructure/postgres`, in namespace `skat` with `key-tables`
+  `alembic_version tables chairs receipts` (the restore test fails on an empty first table, and `alembic_version`, which
+  `skat migrate` writes, is the one a migrated database always fills), backed up like keycloak's and litellm's through
+  the component `infrastructure/postgres/backup`, whose repository is `skat` on the rest server; the Namespace is in
+  `infrastructure/namespaces/`, not here.
   skat's Deployment and Service: one pod with `Recreate`, its image the full app ref of a release that changes only in
   a pull request, pulled through the Secret `ghcr-pull` and started from the files of the Secret `skat` and the
   password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
@@ -449,8 +482,8 @@
   digest of a table's sorted rows, which `db:load-dump --compare` and B4's check run inside the container, and the
   including layer's `key-tables`. `infrastructure/keycloak/`, `infrastructure/litellm/`, `apps/skat/` and `apps/songmaker/` include it;
   keycloak's NetworkPolicy `keycloak-egress` lets Keycloak's pods send only to cluster DNS and their Postgres.
-- `infrastructure/postgres/backup/`: the component a Postgres layer includes to be backed up, so `apps/skat` stays
-  out until it has its credentials and its restore drill. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
+- `infrastructure/postgres/backup/`: the component a Postgres layer includes to be backed up; `infrastructure/keycloak/`,
+  `infrastructure/litellm/` and `apps/skat/` do. Its Schedule runs a weekly backup (Sunday 03:00, prune keeping
   4 weekly and 3 monthly, a monthly `check`) of the Postgres pod's `pg_dump --format=custom` into `backup-repository`,
   the URL the including layer sets in the ConfigMap `postgres`; a PodConfig gives k8up's Job pods the fields `restricted`
   requires; and the CronJob `restore-test` restores the latest snapshot into a throwaway server each month and fails
@@ -465,7 +498,9 @@
   repository per namespace, its htpasswd built by an initContainer from the Secret `rest-users` (one file per user,
   from `platform-secrets`); the user equals the namespace, since `--private-repos` admits a user only to the path of its
   own name and the repository's path is the namespace; its claim retained and never pruned. Its NetworkPolicy admits only
-  the namespaces that hold a repository; a new one joins that list together with its component and `rest-users` entry.
+  the namespaces that hold a repository; a new one joins that list together with its component and `rest-users` entry. The server builds its users once, at its
+  start, and a changed `rest-users` rolls nothing, so a new entry takes effect after `kubectl -n backup rollout restart
+  deployment/rest-server`.
 - `infrastructure/keycloak/`: Keycloak, one pod with `Recreate`, on its Postgres, its routes Traefik's file provider and
   its admin console only `keycloak:admin`; its NetworkPolicy `keycloak-ingress` admits only namespace `traefik` and
   its own. `realm.yaml` and `master.yaml` are hal's realms and the Job `config-cli` applies them with every managed
@@ -515,9 +550,13 @@
   kubectl's stdout through shell variables to curl's stdin, never in an argument, a file or a child's environment, and are
   never printed; the reply of `/key/generate` goes nowhere; a failure names the step and the status, never a body. The
   rpm and tpm limits are not in the table and stay as they are.
-- `infrastructure/legal/`: the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
+- `infrastructure/legal/`: the legal sections and the imprint at `hallucinai.de/impressum`, nginx's unprivileged image (a vendor entry) in a
   Namespace that enforces Pod Security `restricted`, one pod with `Recreate` and a read-only root. `built/impressum.html`
-  is hal's `legal/frame/impressum.html` byte for byte, which holds no template field, and `default.conf` serves only
+  is `mise run legal:build`'s output from `frame/impressum.html`, hal's frame byte for byte, which holds no template
+  field. `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
+  operator's. `stand.toml` holds one table per section path with its `date` (the Stand it prints, `D. Monat YYYY`, a
+  page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand; nothing of
+  them is served yet. `default.conf` serves only
   `/impressum` with hal's headers; both reach nginx as ConfigMaps whose names carry their hash. The Ingress routes that
   host and path through Traefik's `web`, so Traefik answers every other path with its 404, and its NetworkPolicy admits
   only namespace `traefik`. No tunnel line names the host, so hal keeps the public address. The page's stylesheet and
@@ -581,9 +620,9 @@
   the Namespace enforces `restricted` and no Alloy pod mounts a host path; the render and the cluster each hold one
   ClusterRole of Alloy's with exactly those rules and no other binding of its ServiceAccount; a Pod in a throwaway
   namespace gets no answer from its port; the throwaway objects are gone on every exit.
-- `infrastructure/prometheus/`: Prometheus with kube-state-metrics in a Namespace that enforces Pod Security
-  `restricted`, which stands in `infrastructure/namespaces/` since a Namespace never moves between Kustomizations;
-  alertmanager, node-exporter and the pushgateway are off. `values.yaml` is its hand-written source; `rendered.yaml`
+- `infrastructure/prometheus/`: Prometheus with kube-state-metrics and Alertmanager in a Namespace that enforces Pod
+  Security `restricted`, which stands in `infrastructure/namespaces/` since a Namespace never moves between
+  Kustomizations; node-exporter and the pushgateway are off. `values.yaml` is its hand-written source; `rendered.yaml`
   is generated by `mise run charts:render`, not edited by hand, and `cluster` fails when a regeneration differs. A
   chart or image bump changes the task's chart version and digest and each image's tag and digest in `values.yaml`
   together and regenerates, in a pull request started from the Dependency Dashboard that `renovate` keeps. It scrapes the
@@ -593,8 +632,23 @@
   `http-prom` and itself; kube-state-metrics' `customResourceState` makes `gotk_resource_info` for every Kustomization. Retention
   is 30 days and 7GB on one 8Gi claim of the Retain class with the prune annotation. `rules.yaml` holds the rules
   `TargetDown`, `KustomizationNotReady`, `DeploymentUnavailable`, `PodRestarting` and `DiskLow`, read from `/etc/rules`;
-  `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` per device, without the memory-backed mounts and overlay
-  snapshots. The NetworkPolicy admits only the namespaces `grafana`, `gatus` and its own to port 9090, and only its
+  `DiskLow` reads cAdvisor's `container_fs_*` at `id="/"` for the devices under `/dev` only, without loop devices
+  and `/dev/shm`: a snap's read-only squashfs is always full, and what is not under `/dev` is memory-backed or an
+  overlay of the same disk. The job `flux-controllers` keeps only Pods in phase Running, since a finished Pod keeps a target that
+  reads down, and a static job `alertmanager` scrapes Alertmanager, so `TargetDown` covers it.
+  Alertmanager, the chart's subchart and a vendor image at a digest in `image.tag`, mails one alert per mail through
+  `email_configs`: one receiver `mail`, every label a grouping label, `send_resolved`, plain text, and a repeat
+  interval and a `data.retention` of a year, so an alert that fires for a whole year is mailed again and none sooner. The route stands in `values.yaml`
+  as a template; the Secret `alertmanager` of `platform-secrets` (keys `smarthost` as `host:port`, `username`, also the
+  sender, `to` and `password`) holds the only address and provider, which an init container reads through
+  `secretKeyRef` and writes, finished, into a memory-backed `emptyDir` that only Alertmanager's user reads; it refuses
+  an empty or malformed value naming only its key, and the layer waits for `platform-secrets`. Its claim of 100Mi is on
+  the Retain class with the prune annotation, so a restart keeps the notification log. Its NetworkPolicy `alertmanager`
+  admits only the namespaces `prometheus` and `gatus` to port 9093 and sends only to cluster DNS and TCP 465 and 587
+  outside the pod and service networks. A failed or lost send shows only in Alertmanager's counters and log, which
+  names the smarthost and no username, recipient or password; a resolved alert is mailed only after its firing mail
+  was. A changed Secret does not roll the pod, so a rotated password is read only after the next restart, and a
+  SIGKILL shortly after a firing mail can mail it once more, which a SIGTERM restart did not. The NetworkPolicy admits only the namespaces `grafana`, `gatus` and its own to port 9090, and only its
   own namespace to kube-state-metrics' 8080. `cluster` runs `promtool check rules` and `promtool test rules` from the
   rendered Prometheus image on `tests/prometheus/rules_test.yml`, which proves each rule's duration, firing and
   resolving; and in k3d its ServiceAccount may get `nodes/metrics` and not `nodes/proxy`, every target is up,
@@ -607,9 +661,9 @@
   `Recreate`, storage `memory` (a restart forgets the history; nothing is backed up) and metrics off. Its configuration
   is a generated ConfigMap whose name carries its content's hash, so a change rolls the pod. Every 60 seconds it asks
   hopin's `/health` and Keycloak's discovery of the realm `hallucinai` through Traefik's `web` with each app's Host
-  header, speech-runtime's `/health`, skat's `/health`, Loki's `/ready`, Prometheus's `/-/ready` and Grafana's `/api/health` directly at each
+  header, speech-runtime's `/health`, skat's `/health`, Loki's `/ready`, Prometheus's `/-/ready`, Alertmanager's `/-/ready` and Grafana's `/api/health` directly at each
   Service, and LiteLLM's front for `GET /v1/models` without a key, which must answer 401 since Gatus holds no key. The
-  NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus, Grafana and the front admit the namespace `gatus` on the port
+  NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus, Alertmanager, Grafana and the front admit the namespace `gatus` on the port
   its request uses; hopin and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
   Service at a free port and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
   headers from; it sends only the requests of its configuration. In k3d, through the address `mise run gatus:open` prints, every endpoint of the
@@ -645,16 +699,34 @@
   and the ufw rule `k3s-cni`, with `k3s-pods` and `k3s-services` declared absent, which deletes them from a host whose mise
   state holds them) and the tasks. `mise.lock` is generated by `mise lock`, not edited by hand, and `cluster`
   fails when a regeneration differs.
-- `src/opentofu/github/`: the security and merge settings of the managed fleet repositories. `.terraform.lock.hcl` is
+- `src/opentofu/github/`: the security and merge settings of the managed fleet repositories and, in the child module
+  `organization/`, the organisation's three rulesets (`main: PR only`, `quality / verdict required`, `release tags are
+  immutable`, each with `prevent_destroy`, no bypass actor and enforcement `active`) and the schema of the property
+  `quality_gate`, every resource also `destroy = false`; `organization.tf` holds the module call and the `import` blocks
+  by id. The ruleset `quality / verdict required` reaches a repository only through `quality_gate=true`, requires the
+  check `quality / verdict` pinned to GitHub Actions (`integration_id` 15368) and is quality's contract; the property's
+  values are quality's merge command's and never declared, and the schema's `role` stays as set on GitHub. Two limits of
+  provider 6.13.0: it cannot carry `require_extra_approval_for_unattributed_changes` (true on
+  `main: PR only`, which takes effect only at a non-zero approval count), so the count stays 0 and a test holds it
+  there, and a later update of that ruleset sends the field not at all, with GitHub's answer unknown; and it returns no
+  default for a `true_false` property, so the default `false` is undeclared, a later update of the schema sends an empty
+  one, with GitHub's answer unknown, and drift detection does not see it. `tofu test` cannot plan an import, so
+  `tests/organization_rulesets.tftest.hcl` plans the module and judges its resources. `.terraform.lock.hcl` is
   generated by `tofu providers lock -platform=linux_amd64`; the job `opentofu` runs `mise run github:test`. The state
   lives at `${XDG_STATE_HOME:-~/.local/state}/platform/opentofu/github.tfstate` and the working files (lock, provider,
   kept plan `last.tfplan`) under `${XDG_CACHE_HOME:-~/.cache}/platform/opentofu/github/`, both outside the checkout.
+  An imported object's state carries no `skip_destroy` until an apply writes it, so removing a block can plan a delete;
+  the command refuses any such plan, which closes it for every object of the root.
 - `src/legal/`: the Python project of the legal validator, standard library only, with `uv.lock` and its own tests; there
   is no root `pyproject.toml`, which would make `tests/` a judged tree. `src/legal/src/legal/section.py` is hal's
-  `legal_section.py` without `parse_general`; `check.py` is the program. `checks` runs `legal:test`, uploads the report
+  `legal_section.py`; `check.py` is the program of `legal:check`; `pages.py` is hal's assembler of the three pages
+  (`legal_pages.py` without its fingerprints, plans and records) and `build.py` the program of `legal:build`. `checks` runs `legal:test`, uploads the report
   as artifact `coverage`, which the `quality` job passes as `coverage-artifact`, and runs
   `tests/legal/legal_check_names_file_and_line_and_quotes_no_text.sh`, which reads hopin's public repository at the tag of
-  the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails.
+  the image in `apps/hopin/hopin.yaml` and fails naming the step when that fetch fails, and
+  `tests/legal/sections_equal_hals_at_commit.sh`, which fetches hal's public repository at the commit its variable
+  `hal_commit` names and fails naming the step when that fetch fails or `diff -r` finds `infrastructure/legal/sections`
+  unlike hal's `legal/sections`; the pin moves when hal changes `legal/sections` before it leaves.
 - `.github/workflows/renovate.yml`: the job `renovate`, daily and on dispatch, runs Renovate's image at a digest by one
   `docker run`, with the job's own token (`contents: read`, `pull-requests: read`, `issues: write`: it can write no
   branch) and `.github/renovate.json5`. The configuration holds custom regex managers over the pin forms under

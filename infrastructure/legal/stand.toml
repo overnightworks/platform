@@ -1,0 +1,19 @@
+["allgemein/datenschutz.html"]
+date = 2026-11-05
+sha256 = "6f6f841d13b8250c41a57289af4c2d3d92c1960d0f0d3f890b397597b0eb1521"
+
+["allgemein/nutzungsbedingungen.html"]
+date = 2026-11-05
+sha256 = "a60eb9a2b6d750055cde90483b79eb7a212cd2f0c59673fedebdb628b2834160"
+
+["keycloak/datenschutz.html"]
+date = 2026-11-07
+sha256 = "73a3516a84f67e6e7b05e686452cb87024e9357591703c7f843bef3990d813b4"
+
+["litellm/datenschutz.html"]
+date = 2026-11-07
+sha256 = "cdca4b272864b064f5f0d731f9dcf269d08711137183b924b9598d42b8126d38"
+
+["speech-runtime/datenschutz.html"]
+date = 2026-11-08
+sha256 = "0b610c0ddf4a576dcc1538dc4500e4f495c8f185d20078c219e43d2feb545c30"
