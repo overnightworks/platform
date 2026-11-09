@@ -1,0 +1,7 @@
+claim_id = "1f8b30322e4d41479b43edea07be045d"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "ffdf5855f3f37b6a82ba698ef52c320e83f6ef99"
+branch = "claude/issue-262-postgres-part-regains-room"
+scope = [".github/workflows/ci.yml", "AGENTS.md"]
+opened_commit = "8efa0cdefdbe012f4742d81ecbb7750d5205265d"
