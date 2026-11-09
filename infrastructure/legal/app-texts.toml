@@ -37,8 +37,8 @@ sha256 = "a65fe491b90c5f647165565723914d7daa85f6fc82c8bbcf05fda8c71e432c34"
 [skat]
 
 [skat.datenschutz]
-date = 2026-11-07
-sha256 = "9b0267050a2fb0a2a6f9002d3345735da56ca5f967282e6056be1691afc343c2"
+date = 2026-11-09
+sha256 = "6c910deabe92b42a16c6ef2ff1eeb680f8f38728397fb8a994c9c4cf5ebaf67a"
 
 [skat.nutzungsbedingungen]
 date = 2026-11-07
