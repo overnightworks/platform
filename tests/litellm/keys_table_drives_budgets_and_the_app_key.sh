@@ -45,7 +45,7 @@ set_table() {
     --patch "$(TABLE="$1" yq --null-input --output-format json --indent 0 '{"data": {"keys.yaml": strenv(TABLE)}}')" >/dev/null
 }
 # Removes what the cell added on every exit: its keys, the person budget, the Secret's key and the table, then stops the
-# port-forward the deletions need and resumes the Kustomization, which restores what Flux owns.
+# port-forward the deletions need and resumes both Kustomizations, which restore what Flux owns.
 cleanup() {
   local cell_status=$? alias
   delete_object --namespace "$app_namespace" delete pod keys-client --ignore-not-found --wait --timeout=2m
