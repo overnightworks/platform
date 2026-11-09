@@ -1,0 +1,7 @@
+claim_id = "2b5097a9b303487c9a98100430d09ccd"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "cd1c82f815e0b02f7c5db9ea1bd7e786aa058bc7"
+branch = "claude/issue-361-controller-poll-and-workers"
+scope = [".github/workflows/ci.yml", "clusters/pc/flux-system/kustomization.yaml", "tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh"]
+opened_commit = "de73963a4415d50dbbda6ec13c88f4dd64fb71fb"
