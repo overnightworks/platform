@@ -1,0 +1,8 @@
+claim_id = "1d83bde0f8224e0e876104bb3cc0d3af"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "afadcee5c6aa41368699e7bc45717f644848441b"
+branch = "claude/issue-289-legal-sections-owner"
+scope = [".github/workflows/ci.yml", "infrastructure/legal/built/datenschutz.html", "infrastructure/legal/sections/allgemein/datenschutz.html", "infrastructure/legal/sections/speech-runtime/datenschutz.html", "infrastructure/legal/stand.toml", "src/legal/src/legal/pages.py", "src/legal/tests/test_pages.py", "tests/legal/legal_sections_assets_and_headers_equal_hals_at_commit.sh"]
+opened_commit = "5e2b766b6f57830b11079fd923f2ac05022c7973"
+whole_reason = "One owner change: hal's last ruled sentence, the general part's 30-day sentence with its Stand and stable id, and the end of the sections comparison are one published state of the sections."
