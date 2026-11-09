@@ -24,27 +24,53 @@ trap remove_objects EXIT
 "$(dirname "${BASH_SOURCE[0]}")/remove_link_branches.sh"
 
 node() { docker exec "$server" "$@"; }
-crictl() { node k3s crictl "$@"; }
+crictl() { node crictl "$@"; }
 k() { kubectl -n "$namespace" "$@"; }
 grace='.spec.terminationGracePeriodSeconds = 2'
 
 # The node's state that a leaked network would change. The lease directory is read from the node and must be there,
-# so that a wrong path cannot make the comparison pass.
+# so that a wrong path cannot make the comparison pass. A reader that fails ends the cell naming itself; callers read it
+# with a plain assignment followed by `|| exit 1`, since a failing substitution inside another command is not an error.
 lease_directory="$(node sh -c 'ls -d /var/lib/cni/networks/*/')" ||
   fail "the node holds no address lease directory under /var/lib/cni/networks"
 [ "$(wc -l <<<"$lease_directory")" = 1 ] || fail "the node holds several lease directories: $(tr '\n' ' ' <<<"$lease_directory")"
+reader_failed() { fail "the reader '$1' of the node's state failed" >&2; }
 leases() {
-  node ls -1A "$lease_directory" | { grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || [ $? = 1 ]; } | sort
+  local listing
+  listing="$(node ls -1A "$lease_directory" | { grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || [ $? = 1 ]; } | sort)" || reader_failed leases
+  [ -z "$listing" ] || printf '%s\n' "$listing"
 }
-veths() { node ip -o link | sed -n 's/^[0-9]*: \(veth[^:@ ]*\).*/\1/p' | sort; }
-sandboxes() { crictl pods --namespace "$namespace" -q | sort; }
+veths() {
+  local listing
+  listing="$(node ip -o link | sed -n 's/^[0-9]*: \(veth[^:@ ]*\).*/\1/p' | sort)" || reader_failed veths
+  [ -z "$listing" ] || printf '%s\n' "$listing"
+}
+sandboxes() {
+  local listing
+  listing="$(crictl pods --namespace "$namespace" -q | sort)" || reader_failed sandboxes
+  [ -z "$listing" ] || printf '%s\n' "$listing"
+}
 cni_rules() {
-  node sh -c 'PATH="$PATH:/var/lib/rancher/k3s/data/current/bin/aux:/var/lib/rancher/k3s/data/current/bin"
-    iptables-save' | { grep -F 'CNI-' || [ $? = 1 ]; } | sort
+  local listing
+  listing="$(node sh -c 'PATH="$PATH:/var/lib/rancher/k3s/data/current/bin/aux:/var/lib/rancher/k3s/data/current/bin"
+    iptables-save' | { grep -F 'CNI-' || [ $? = 1 ]; } | sort)" || reader_failed cni_rules
+  [ -z "$listing" ] || printf '%s\n' "$listing"
 }
-node_state() { printf 'leases:\n%s\nveths:\n%s\nsandboxes:\n%s\nrules:\n%s\n' "$(leases)" "$(veths)" "$(sandboxes)" "$(cni_rules)"; }
-[ -n "$(leases)" ] || fail "the lease directory $lease_directory holds no lease although pods run on the node"
-cni_rules >/dev/null
+node_state() {
+  local lease_list veth_list sandbox_list rule_list
+  lease_list="$(leases)" || exit 1
+  veth_list="$(veths)" || exit 1
+  sandbox_list="$(sandboxes)" || exit 1
+  rule_list="$(cni_rules)" || exit 1
+  printf 'leases:\n%s\nveths:\n%s\nsandboxes:\n%s\nrules:\n%s\n' "$lease_list" "$veth_list" "$sandbox_list" "$rule_list"
+}
+current_leases="$(leases)" || exit 1
+[ -n "$current_leases" ] || fail "the lease directory $lease_directory holds no lease although pods run on the node"
+# Sandboxes of running pods exist on the node (kube-system's), so a listing that works shows at least one.
+running_sandboxes="$(crictl pods --state ready -q)" || fail "the node's crictl cannot list sandboxes"
+[ -n "$running_sandboxes" ] || fail "the node lists no ready sandbox although pods run on it"
+sandboxes >/dev/null || exit 1
+cni_rules >/dev/null || exit 1
 
 # wait_for <description> <command>...: retries the command for 2 minutes.
 wait_for() {
@@ -56,7 +82,11 @@ wait_for() {
   done
   fail "$description did not happen within 2 minutes"
 }
-no_sandbox_of_the_namespace() { [ -z "$(sandboxes)" ]; }
+no_sandbox_of_the_namespace() {
+  local listing
+  listing="$(sandboxes)" || exit 1
+  [ -z "$listing" ]
+}
 delete_pods() {
   k delete pod --all --wait --timeout=2m
   wait_for "the removal of the namespace's sandboxes" no_sandbox_of_the_namespace
@@ -152,11 +182,12 @@ delete_pods
 create_pod restarting init "$grace | $worker_works | .spec.containers[0].command = [\"sh\", \"-c\",
   \"if [ -e /scratch/seen ]; then exec sleep 3600; fi; touch /scratch/seen; sleep 3\"]"
 k wait pod/restarting --for=condition=Ready --timeout=3m
-sandbox_before="$(sandboxes)"
+sandbox_before="$(sandboxes)" || exit 1
 init_before="$(status_of restarting '{.status.initContainerStatuses[0].containerID}')"
 k wait pod/restarting --for=jsonpath='{.status.containerStatuses[0].restartCount}'=1 --timeout=3m
 k wait pod/restarting --for=condition=Ready --timeout=3m
-[ "$(sandboxes)" = "$sandbox_before" ] || fail "the restarted worker is in another sandbox"
+sandbox_now="$(sandboxes)" || exit 1
+[ "$sandbox_now" = "$sandbox_before" ] || fail "the restarted worker is in another sandbox"
 [ "$(status_of restarting '{.status.initContainerStatuses[0].containerID}')" = "$init_before" ] ||
   fail "the init container ran again for a restart in the same sandbox"
 [ "$(link_names restarting)" = lo ] || fail "the restarted worker does not hold lo alone"
@@ -165,13 +196,15 @@ delete_pods
 
 create_pod recreated init "$grace"
 k wait pod/recreated --for=condition=Ready --timeout=3m
-old_sandbox="$(sandboxes)"
+old_sandbox="$(sandboxes)" || exit 1
 [ -n "$old_sandbox" ] && [ "$(wc -l <<<"$old_sandbox")" = 1 ] || fail "the Pod holds no single sandbox: '$old_sandbox'"
 old_init="$(status_of recreated '{.status.initContainerStatuses[0].containerID}')"
 crictl stopp "$old_sandbox"
 crictl rmp "$old_sandbox"
 sandbox_recreated() {
-  [ "$(sandboxes)" != "$old_sandbox" ] && [ -n "$(sandboxes)" ] &&
+  local listing
+  listing="$(sandboxes)" || exit 1
+  [ "$listing" != "$old_sandbox" ] && [ -n "$listing" ] &&
     [ "$(status_of recreated '{.status.initContainerStatuses[0].containerID}')" != "$old_init" ] &&
     [ "$(status_of recreated '{.status.containerStatuses[0].ready}')" = true ]
 }
@@ -183,7 +216,11 @@ echo "a removed sandbox was recreated, the init container ran again and the work
 delete_pods
 
 # Cell 8: twelve lives; the control first, so that the comparison is shown to see a Pod that lives.
-new_lease() { [ -n "$(comm -13 <(printf '%s\n' "$1") <(leases))" ]; }
+new_lease() {
+  local now
+  now="$(leases)" || exit 1
+  [ -n "$(comm -13 <(printf '%s\n' "$1") <(printf '%s\n' "$now"))" ]
+}
 life() {
   local mode="$1" kind="$2" name="$3" filter="$grace" before_leases
   case "$kind" in
@@ -191,7 +228,7 @@ life() {
       "securityContext": {"runAsNonRoot": true, "runAsUser": 1000, "allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}}}]' ;;
     crash) filter+=' | .spec.restartPolicy = "Never" | .spec.containers[0].command = ["sh", "-c", "exit 1"]' ;;
   esac
-  before_leases="$(leases)"
+  before_leases="$(leases)" || exit 1
   create_pod "$name" "$mode" "$filter"
   case "$kind" in
     hold) k wait "pod/$name" --timeout=3m \
@@ -207,14 +244,14 @@ life() {
 }
 lives() {
   local mode="$1" before after
-  before="$(node_state)"
+  before="$(node_state)" || exit 1
   for kind in normal normal normal normal force force force hold hold hold crash crash; do
     lives_made=$((lives_made + 1))
     life "$mode" "$kind" "life-$lives_made"
   done
   wait_for "the removal of the namespace's sandboxes" no_sandbox_of_the_namespace
   for _ in $(seq 45); do
-    after="$(node_state)"
+    after="$(node_state)" || exit 1
     [ "$after" = "$before" ] && break
     sleep 2
   done
