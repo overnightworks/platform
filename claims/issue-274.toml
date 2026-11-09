@@ -1,0 +1,8 @@
+claim_id = "d2dd3201b4964a26ac367973ae07e5e6"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "f4a47816011deb68ee308df9ea63ae5b774704bf"
+branch = "claude/issue-274-skat-legal-texts"
+scope = ["AGENTS.md", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/skat", "infrastructure/legal/built"]
+opened_commit = "a053ddadaa5614d0942c72f083a32bd597a37bb4"
+whole_reason = "The copies, their list entries and the rebuilt pages are one fact: a copy without its entry or rebuild fails the legal checks."
