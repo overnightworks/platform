@@ -1,7 +1,0 @@
-claim_id = "e32a3f4ff8c94725ac5e9ae8100152b8"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "e375b80aaed69c123a5f14f572ad5aacad4b1454"
-branch = "claude/issue-308-g4-code-scanning-ruleset"
-scope = ["docs/github-settings.md", "src/opentofu/github/organization/main.tf", "src/opentofu/github/tests/organization_rulesets.tftest.hcl"]
-opened_commit = "5d5e7d5303bb3f496cb7e57a8ccb987d8cf4e2c9"
