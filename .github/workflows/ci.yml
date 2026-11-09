@@ -75,7 +75,7 @@ jobs:
       - name: Check that the app texts under infrastructure/legal equal their apps' files and dates at the release each names
         run: mise exec -- tests/legal/app_texts_equal_their_release.sh
 
-      - name: Check that the legal sections, stylesheet, headers and appkit files equal hal's and appkit's at the pinned commit
+      - name: Check that the legal stylesheet, headers and appkit files equal hal's and appkit's at the pinned commit
         run: tests/legal/legal_sections_assets_and_headers_equal_hals_at_commit.sh
 
       - name: Check that a failed LiteLLM write stops the rest and names what was made, and that no key value reaches an argument or an output
