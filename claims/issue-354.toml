@@ -1,7 +1,0 @@
-claim_id = "f11c44cfa70e4f24a640537229b3b033"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "cf37ca78cc07dcdddc8e3ea90e34b4ba6a32498e"
-branch = "claude/issue-354-reconcile-ready-times"
-scope = ["tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh", "tests/flux/print_ready_times.sh"]
-opened_commit = "d6f54ee7edb0a14332d8a98e328435be6078c845"
