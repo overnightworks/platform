@@ -7,7 +7,8 @@
 # passes the front, a second run reports unchanged, and a changed value, one without sk-, a missing key and an app
 # outside the table are refused and change no row; no output holds a value, the master key or the value's sha256. The
 # rows carry the models LiteLLM lists and the routes the front's rules name, read from their owners.
-# The Kustomization litellm is suspended meanwhile, so that it does not restore the table, and resumed on every exit.
+# The Kustomizations litellm and platform-secrets are suspended meanwhile, so that neither restores the table or the
+# Secret hopin, and resumed on every exit.
 set -euo pipefail
 # No value of this cell reaches a trace.
 { set +x; } 2>/dev/null
@@ -59,6 +60,7 @@ cleanup() {
   attempt clear_secret_key
   [ -z "$table_original" ] || attempt set_table "$table_original"
   attempt flux resume kustomization litellm
+  attempt flux resume kustomization platform-secrets --namespace flux-system
   end_deletions "$cell_status"
 }
 table_original="" budget_id=""
@@ -89,6 +91,7 @@ for _ in $(seq 30); do grep -q '^Forwarding from 127.0.0.1:' "$forward_log" && b
 local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$forward_log" | head -n 1)"
 [ -n "$local_port" ] || fail "kubectl port-forward to the Service litellm did not start"
 flux suspend kustomization litellm
+flux suspend kustomization platform-secrets --namespace flux-system
 # The empty copy of a fresh claim: LiteLLM migrates when it starts, so the budget list answers once it has.
 for _ in $(seq 60); do admin /budget/list >/dev/null 2>&1 && break; sleep 2; done
 [ "$(admin /budget/list | yq --input-format json 'length')" = 0 ] || fail "the cell expects a LiteLLM without budgets"

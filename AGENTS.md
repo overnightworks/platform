@@ -407,7 +407,7 @@
   kube-router has its rules) where one without them reaches all three, and a Pending Pod of flux-system with the port `http-prom` is a dropped target
   of `flux-controllers` with no `up` series. k3d proves neither a delivery nor the resolved mail, which Alertmanager
   attempts only after a firing mail succeeded; the PC's synthetic alert proves one firing and one resolved mail.
-  The step "P9c cells", in the part `postgres`, suspends the Kustomization `litellm` and resumes it on every exit, removing
+  The step "P9c cells", in the part `postgres`, suspends the Kustomizations `litellm` and `platform-secrets`, so that no reconcile undoes its write to the Secret `hopin`, and resumes both on every exit, removing
   its keys, person budget and Secret key: `mise run litellm:keys --plan` lists the differences between the table and two
   keys made with the master key, exits 2 and changes no row; the run sets the numbers, a second run prints 0 changes and a
   raised budget changes that field alone and keeps `budget_reset_at`; the person budget takes the table's number; a row
