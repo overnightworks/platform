@@ -1,7 +1,0 @@
-claim_id = "2726eadd9a24425492f68d66f4dfafe0"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "3c458cf42e2e78cada6aab2a5f85e50bc36f4e75"
-branch = "claude/issue-288-p1-agents-md-loses-every-sentence-that-o"
-scope = ["AGENTS.md"]
-opened_commit = "66e1cb8e9f960d7adad53afeb29ca41fb2a48f34"
