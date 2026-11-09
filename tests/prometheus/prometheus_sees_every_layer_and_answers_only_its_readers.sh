@@ -81,6 +81,26 @@ root_filesystem_is_measured() { [ -n "$(query "$disk_ratio")" ]; }
 until_true 300 "DiskLow's expression without its threshold has a series" root_filesystem_is_measured
 echo "DiskLow's expression has series, by device: $(query "$disk_ratio" | yq -p=json '.metric.device + " " + .value[1]' | paste -sd' ')"
 
+# kube-state-metrics reads a CronJob's schedule in its own zone unless spec.timeZone is set, as does the controller in its
+# zone, so the two agree on a due time only when every CronJob sets a zone: none reports the zone "local".
+cronjobs_report_a_zone() {
+  [ -n "$(query 'kube_cronjob_info')" ] && [ -z "$(query 'kube_cronjob_info{timezone="local"}')" ]
+}
+until_true 300 "kube_cronjob_info has series and none with timezone local" cronjobs_report_a_zone
+echo "every CronJob sets a timeZone: kube_cronjob_info has series and none reads local"
+
+# ScheduledJobMissed's own expression, without its threshold, has a series for LiteLLM's CronJob, so the metric and its
+# labels exist; its firing is the rules' test's, since no CronJob misses within this job.
+missed_ago="$(yq 'select(.kind == "ConfigMap" and .metadata.name == "prometheus-rules") | .data["rules.yml"] | from_yaml | .groups[].rules[] | select(.alert == "ScheduledJobMissed") | .expr' \
+  infrastructure/prometheus/rules.yaml)"
+[[ $missed_ago == *" > "* ]] || fail "the expression of ScheduledJobMissed '$missed_ago' has no threshold to strip"
+missed_ago="${missed_ago% > *}"
+next_time_is_measured() {
+  [ -n "$(query "$missed_ago" | yq -p=json 'select(.metric.namespace == "litellm" and .metric.cronjob == "litellm-expire")')" ]
+}
+until_true 300 "ScheduledJobMissed's expression without its threshold has a series for litellm/litellm-expire" next_time_is_measured
+echo "ScheduledJobMissed's expression has a series for litellm/litellm-expire"
+
 # A Deployment at an image no registry holds, a Kustomization at a missing path and the failed Job of a suspended CronJob
 # make their alerts pending; the durations, firing and resolving are the rules' tests'.
 kubectl create namespace "$OTHER_NAMESPACE"
@@ -93,6 +113,7 @@ metadata:
   namespace: $OTHER_NAMESPACE
 spec:
   schedule: "0 0 1 1 *"
+  timeZone: UTC
   suspend: true
   jobTemplate:
     spec:
