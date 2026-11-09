@@ -379,7 +379,9 @@
   The step "P7d cells" (`tests/backup/`) first asserts that the rest server has a ready endpoint, then shows, for each
   namespace including the backup component, that the restore test (after a `restic init` that is retried up to 30 times,
   only on a refused connection, with the refusals counted in the log)
-  fails on its repository without a snapshot, and for the first namespace on an empty first key table; a Backup yields
+  fails on its repository without a snapshot, and for the first namespace on an empty first key table; the master key
+  makes LiteLLM's one key through a port-forward first, so its first key table holds the row the restore test needs and
+  stays; a Backup yields
   one snapshot holding the custom-format dump alone, by a Job pod at a listed digest that Pod Security `restricted`
   admits; neither the Job's log nor a Snapshot object holds the repository's credentials; the restore test passes on
   the snapshot; without
