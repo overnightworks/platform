@@ -1,0 +1,8 @@
+claim_id = "0fcf0c3c590c41a0b03d547c6dfbd053"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "3a8245e9ad53317eeba4c3ce4f4eb678463ef676"
+branch = "claude/issue-326-gpu-worker-at-zero"
+scope = ["apps/songmaker/acestep-worker.yaml", "apps/songmaker/kustomization.yaml", "clusters/pc/apps.yaml", "tests/workloads/apps_run_at_their_full_ref.sh"]
+opened_commit = "d122b198ab998d85615b21a718f23f0168b11444"
+whole_reason = "The worker cannot be added without its test exception and listing, and the timeout serves its first pull."
