@@ -144,7 +144,7 @@ jobs:
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
       # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
-      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml
+      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml apps/songmaker/music-worker.yaml apps/songmaker/scoring-worker.yaml
       # The Kustomization that serves the Secrets of every namespace, so that no other layer holds one of them.
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
@@ -345,6 +345,14 @@ jobs:
           OTHER_NAMESPACE: songmaker-web-client
         run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
 
+      - name: Assert that songmaker's music and scoring workers are Ready at their full refs, that neither asks for the GPU, and that the scoring worker reaches only its Postgres and Redis
+        if: matrix.part == 'postgres'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          CLUSTER_SERVICE: default/kubernetes
+          OUTSIDE_TARGET: github.com:443
+        run: tests/songmaker/workers_are_ready_at_their_full_ref_and_scoring_reaches_only_its_stores.sh
+
       - name: Assert that the layer nvidia is Ready with its DaemonSet scheduled nowhere, offers the RuntimeClass, holds only the plugin in a Namespace without a Pod Security label, and that a restricted Pod with the class passes dry-run
         if: matrix.part == 'core'
         env:
@@ -383,6 +391,7 @@ jobs:
         run: |
           tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
           tests/keycloak/agent_client_tokens_and_groups.sh
+          tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh
 
       - name: P7c cells
         if: matrix.part == 'core'
@@ -427,6 +436,12 @@ jobs:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
         run: tests/litellm/admin_budget_follows_the_fingerprint_and_keeps_spend.sh
+
+      - name: Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind on the node
+        if: matrix.part == 'backup'
+        env:
+          NO_NETWORK_NAMESPACE: no-network
+        run: tests/no_network/pod_loses_its_link_before_the_worker_starts.sh
 
       - name: Assert that /impressum reaches a Pod beside cloudflared through Traefik with the committed bytes and header and everything else gets 404
         if: matrix.part == 'core'
@@ -579,8 +594,9 @@ jobs:
       contents: read
       packages: read
     env:
-      # The image the render runs in without network; flux2 is a static binary, mounted from the lock.
-      RENDER_IMAGE: ubuntu:26.04
+      # The image the render runs in without network, by the digest of its multi-arch index; flux2 is a static binary,
+      # mounted from the lock and run as the container's entrypoint.
+      RENDER_IMAGE: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Check out
