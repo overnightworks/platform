@@ -7,7 +7,7 @@
 - Every change, an app's new version included, is a pull request; undoing a change is reverting its pull request.
 - A new app release can be live within minutes: the release opens that pull request, and its merge deploys it.
 - Only versions the operator released start, and the server itself proves that each one is his.
-- Every app runs by one standard the platform owns, the only way an app runs live; none keeps a deploy path of its own.
+- Every app runs live only by the one standard the platform owns; none keeps a deploy path of its own.
 - Every app's data, database and files alike, is backed up the same way: on Sundays, with one retention and one restore
   test; the app only names what is kept.
 - No log line is kept longer than 30 days; the shared privacy text names each period, and every app keeps to it.
@@ -15,8 +15,8 @@
   part; an app links them and never copies them.
 - One command exports a person's data from every app, and one erases it; after a restore the erasure runs again, so no
   list of erased people is kept.
-- Every app signs people in through one shared account service and admits only those the operator lets in; nobody signs
-  up alone, and no app has its own passwords or an open sign-up.
+- Every app signs people in through one shared account service and admits only those the operator lets in; no app has
+  its own passwords or an open sign-up.
 - Apps reach AI models only through one shared gateway, which holds each app's and each person's budget. An admin's AI
   budget is unlimited, granted by one command per admin.
 - An app that wants video embeds a room of the fleet's one video app for the people it names and builds none.
