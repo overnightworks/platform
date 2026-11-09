@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # print_ready_times.sh <step start, epoch seconds>: when each Kustomization, pod and Job turned ready and how long
-# each image pull took, as seconds after the start. It only reads and always exits 0; a failed read prints its name.
+# each image pull took, as seconds after the start, and the timestamped log of each Failed pod. It only reads and always
+# exits 0; a failed read prints its name.
 set -uo pipefail
 step_started_at="${1:?the start of the step as epoch seconds}"
 
@@ -71,6 +72,7 @@ pull_filter="$(
 JQ
 )"
 
+echo "The step started at $(date -u --date "@$step_started_at" '+%Y-%m-%dT%H:%M:%SZ') (UTC); the seconds below count from it"
 report "Kustomizations by Ready change" $'READY_AT\tREADY\tNAMESPACE/NAME' "$kustomization_filter" \
   kustomizations.kustomize.toolkit.fluxcd.io --all-namespaces
 report "Pods by Ready time, not ready last" $'READY_AT\tCREATED\tPHASE\tNAMESPACE/NAME\tOWNER' "$pod_filter" \
@@ -79,4 +81,37 @@ report "Jobs by start" $'STARTED\tCOMPLETED\tACTIVE\tSUCCEEDED\tNAMESPACE/NAME' 
   jobs --all-namespaces
 report "Image pulls by duration, slowest first" $'PULLED_AT\tSECONDS\tSIZE_MB\tNAMESPACE/POD\tIMAGE' "$pull_filter" \
   events --all-namespaces --field-selector reason=Pulled
+# failed_pod_logs: the header and the timestamped log of every Failed pod; the container times are seconds after the
+# start, the log lines carry the kubelet's own UTC times.
+failed_pod_filter="$(
+  cat <<'JQ'
+  .items[] | (.status.containerStatuses // [] | map(.state.terminated // empty)) as $ended
+    | [.metadata.namespace, .metadata.name,
+       (.metadata.ownerReferences // [] | first | if . then .kind + "/" + .name else "-" end),
+       (($ended | map(.startedAt | t) | min) | seconds), (($ended | map(.finishedAt | t) | max) | seconds)]
+  | @tsv
+JQ
+)"
+failed_pod_logs() {
+  local json rows namespace name owner started ended
+  echo "== Failed pods with their logs (seconds after the step's start)"
+  if ! json="$(kubectl get pods --all-namespaces --field-selector status.phase=Failed --output json 2>/dev/null)"; then
+    echo "the read 'kubectl get pods --all-namespaces --field-selector status.phase=Failed' failed"
+    return 0
+  fi
+  if ! rows="$(jq --raw-output --argjson start "$step_started_at" "$filter_prelude $failed_pod_filter" <<<"$json" 2>/dev/null)"; then
+    echo "the Failed pods could not be formatted"
+    return 0
+  fi
+  if [ -z "$rows" ]; then
+    echo "no Failed pod"
+    return 0
+  fi
+  while IFS=$'\t' read -r namespace name owner started ended; do
+    echo "-- $namespace/$name owner $owner, container started at $started, ended at $ended"
+    kubectl logs --namespace "$namespace" "$name" --all-containers --timestamps --tail=200 2>&1 ||
+      echo "the read 'kubectl logs $namespace/$name' failed"
+  done <<<"$rows"
+}
+failed_pod_logs
 exit 0
