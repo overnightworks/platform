@@ -1,0 +1,21 @@
+<h2 id="skat">Skat</h2>
+<p>Skat ist unser Kartenspiel im Browser unter skat.hallucinai.de. Hier steht, was Skat verarbeitet; <a href="#verantwortlicher">Verantwortlicher</a>, <a href="#rechte">Ihre Rechte</a>, <a href="#widerspruch">Ihr Widerspruchsrecht</a>, <a href="#cloudflare">Cloudflare</a> und die <a href="#anmeldung">Anmeldung (Keycloak)</a> stehen in den allgemeinen Abschnitten.</p>
+<section id="skat-konto">
+<h3>Konto und Sitzung</h3>
+<p>Um Skat zu nutzen, müssen Sie angemeldet und in Keycloak für Skat freigeschaltet sein (Gruppe <code>/apps/skat</code>); mehr müssen Sie nicht bereitstellen. Bei der Anmeldung übernimmt Skat aus Ihrem Keycloak-Konto dessen Kennung und Ihren Benutzernamen und prüft anhand Ihrer Gruppen, ob Sie Skat nutzen dürfen. Jede Anmeldung öffnet eine Sitzung mit Kennung, Beginn und Ablauf und mit dem ID-Token und dem Erneuerungstoken, die Keycloak dabei ausstellt. Das ID-Token nutzt Skat nur, um Sie beim Abmelden auch bei Keycloak abzumelden; den Erneuerungstoken nutzt Skat nicht.</p>
+<p>Konto und Sitzungen liegen nur im Arbeitsspeicher des Servers. Eine Sitzung endet, wenn Sie sich bei Skat abmelden, spätestens 12 Stunden nach der Anmeldung. Eine abgelaufene Sitzung löscht Skat bei der nächsten Anmeldung einer Person, spätestens beim Neustart; Ihr Konto löscht Skat spätestens beim Neustart. Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung).</p>
+</section>
+<section id="skat-protokolle">
+<h3>Protokolle und Schutz vor Überlastung</h3>
+<p>Skat schreibt Ereignisse mit Zeitpunkt in das Protokoll seines Containers auf unserem Server: wenn es ein Konto anlegt, mit Ihrer Keycloak-Kennung und Ihrer Rolle, wenn Keycloak Ihre Abmeldung meldet, mit Ihrer Keycloak-Kennung, und eine abgelehnte Anmeldung mit Grund und Fehlercode, ohne Kennung und Namen. Dazu kommen technische Warnungen und Fehlermeldungen. Skat protokolliert keine Anfragen und keine IP-Adressen. Wir löschen diese Einträge nach spätestens 30 Tagen. Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse, Fehler zu finden, Missbrauch zu erkennen und den Betrieb zu sichern).</p>
+<p>Um Skat vor Überlastung und die Anmeldung vor Missbrauch zu schützen, zählt Skat im Arbeitsspeicher die Anfragen je IP-Adresse (bei IPv6 je Adressblock). Ein Zähler zählt nur die Anfragen der letzten Minute, bei der Anmeldung der letzten 10 Minuten; danach löscht Skat ihn bei der nächsten Bereinigung, spätestens beim Neustart. Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse am Schutz vor Überlastung und Missbrauch).</p>
+</section>
+<section id="skat-geraet">
+<h3>Speicherung auf Ihrem Gerät</h3>
+<ul>
+<li><strong>Cookies:</strong> Für die Anmeldung setzt Skat nur für skat.hallucinai.de zwei Arten von Cookies: für jede begonnene Anmeldung ein Cookie <code>__Host-oidc_pending_…</code>, das Skat bei der Rückkehr von Keycloak löscht und das sonst nach 10 Minuten abläuft, und nach der Anmeldung das Cookie <code>__Host-session_id</code> für Ihre Sitzung; es bleibt auch nach dem Schließen des Browsers, bis es nach 12 Stunden abläuft oder Sie sich abmelden.</li>
+<li><strong>Sitzungsspeicher:</strong> Nach der Anmeldung merkt sich die Startseite im Sitzungsspeicher (<code>sessionStorage</code>) Ihres Browser-Tabs unter Schlüsseln mit dem Anfang <code>sveltekit:</code>, an welcher Stelle Sie die Seite im Verlauf des Tabs verlassen haben, damit Zurück und Vorwärts Sie dorthin bringen. Die Einträge enthalten keine Kennung und keine Eingaben, gehen nie an den Server und verschwinden, wenn Sie den Tab schließen, außer Ihr Browser stellt die Sitzung später wieder her.</li>
+<li><strong>Zwischenspeicher:</strong> Ihr Browser legt die Dateien der Seite in seinem Zwischenspeicher (Cache) ab, um Skat zu laden; wie lange er sie behält, entscheidet Ihr Browser.</li>
+</ul>
+<p>All das ist unbedingt erforderlich, damit Skat den Dienst bereitstellen kann, den Sie ausdrücklich wünschen (§ 25 Abs. 2 Nr. 2 TDDDG); eine Einwilligung ist dafür nicht nötig. Die Verarbeitung danach beruht auf Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung).</p>
+</section>

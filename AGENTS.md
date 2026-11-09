@@ -683,8 +683,8 @@
   `sections/<unit>/<page>.html` are hal's sections at the pinned commit, word for word: a changed sentence is the
   operator's. `stand.toml` holds one table per section path with its `date` (the Stand it prints, `D. Monat YYYY`, a
   page's the latest of its own sections) and the file's `sha256`, so an edited section keeps no old Stand.
-  `app-texts/<key>/<page>.html` are the apps' own files byte for byte (hopin, presentator and
-  songmaker; skat joins with its go-live) and `app-texts.toml` holds per app and page their `date` and `sha256` and, for an app with no
+  `app-texts/<key>/<page>.html` are the apps' own files byte for byte (hopin, presentator,
+  songmaker and skat) and `app-texts.toml` holds per app and page their `date` and `sha256` and, for an app with no
   image under `apps/<key>`, its release `tag`; an app with an image has its release from that image, so a `tag` beside
   one is refused. A bump of an app's image whose release changes its legal text carries the refreshed copy in the same pull request. `assets/` mirrors hal's served tree, copied
   byte for byte and not built: `legal-2.css` is hal's `legal/assets/legal-2.css` and `appkit-<version>/` the files of
