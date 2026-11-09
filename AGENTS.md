@@ -210,9 +210,10 @@
   `quality` job that calls quality's `gate.yml`.
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
-  `cluster` runs in two parts, each on its own k3d cluster and both listed as `cluster`: `postgres` holds the "P7a
-  cells" and `core` every other cell and the checks that need no cluster, the setup through the reconcile's assertion
-  runs in both, and a new cell joins the part with more room.
+  `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
+  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells"; `core`
+  every other cell and the checks that need no cluster. The setup through the reconcile's assertion runs in all three,
+  and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
   `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
