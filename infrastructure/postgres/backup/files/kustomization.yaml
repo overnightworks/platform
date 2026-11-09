@@ -1,7 +1,8 @@
 # What an app adds to the backup component to back up one of its claims beside its database: the staging claim and the
 # PreBackupPod that stages the claim's copy and the database's dump in it. A layer that includes it lists it after
 # ../postgres/backup, whose patch on the StatefulSet it removes, declares the claim as backup-claim in its ConfigMap
-# postgres, and copies its app's runAsUser into the PreBackupPod and the PodConfig postgres-backup by a replacement.
+# postgres, and copies its app's runAsUser into the PreBackupPod, the group of its copy container and the PodConfig
+# postgres-backup by a replacement.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 resources:

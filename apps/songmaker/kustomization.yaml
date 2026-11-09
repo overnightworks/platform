@@ -31,7 +31,8 @@ replacements:
           name: postgres
         fieldPaths:
           - spec.backend.rest.url
-  # The reading uid: the backup copies the audio files and k8up's Job pods read the copy as the web's user.
+  # The reading uid: the backup copies the audio files and k8up's Job pods read the copy as the web's user; the copy
+  # container takes it as its group too, which is not the dump's.
   - source:
       kind: Deployment
       name: web
@@ -42,6 +43,7 @@ replacements:
           name: files
         fieldPaths:
           - spec.pod.spec.securityContext.runAsUser
+          - spec.pod.spec.containers.[name=copy].securityContext.runAsGroup
       - select:
           kind: PodConfig
           name: postgres-backup

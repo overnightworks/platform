@@ -154,11 +154,14 @@ spec:
             - name: password
               mountPath: /run/secrets/postgres
               readOnly: true
-        # rsync is the image's own tool; the declared claim is mounted read-only, so nothing writes into it.
+        # rsync is the image's own tool; the declared claim is mounted read-only, so nothing writes into it. This vendor
+        # container keeps out of the dump's group 70: its group is the including layer's reading uid, set by a
+        # replacement, so it cannot read the 0640 dump.
         - name: copy
           image: docker.io/eeacms/rsync:3.1@sha256:0a1aeb0be88aac159aedbd6c59b2d6f0dcf8fcc61d7fdf6445a2b7dd60e541b7
           command: [sh, /etc/stage/stage_files.sh, copy]
           securityContext:
+            runAsGroup: 65534
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:

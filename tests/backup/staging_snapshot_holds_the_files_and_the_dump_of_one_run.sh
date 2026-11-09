@@ -103,12 +103,17 @@ create_backup() {
     kubectl --namespace "$namespace" create --filename - >/dev/null
 }
 
+# The verdict of the pod's copy container on the staged dump, whose bytes it never prints: the dump is 70's and 0640, and
+# copy, a vendor image, is outside group 70.
+copy_dump_verdict='if [ ! -s /staging/postgres.dump ]; then echo missing; elif cat /staging/postgres.dump >/dev/null 2>&1; then echo readable; else echo unreadable; fi'
+
 # run_backup <name>: a Backup that must succeed; at every look at most one Pod carries a backup command. Once the
-# PreBackupPod's pod is Ready, its spec goes to staged_pod and its containers' logs to run_logs.
+# PreBackupPod's pod is Ready, its spec goes to staged_pod and its containers' logs to run_logs, and its copy container
+# must not read the dump.
 staged_pod=
 run_logs=
 run_backup() {
-  local name="$1" deadline=$((SECONDS + 300)) pods pod pod_logs reason captured=false
+  local name="$1" deadline=$((SECONDS + 300)) pods pod pod_logs reason captured=false copy_dump
   create_backup "$name"
   while :; do
     pods="$(backup_pods)"
@@ -118,9 +123,11 @@ run_backup() {
       [ "$(kubectl --namespace "$namespace" get pod "$pod" --output jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ]; then
       # k8up may remove the pod between two reads; the next look tries again.
       if staged_pod="$(kubectl --namespace "$namespace" get pod "$pod" --output json 2>/dev/null)" &&
-        pod_logs="$(kubectl --namespace "$namespace" logs "pod/$pod" --all-containers 2>/dev/null)"; then
+        pod_logs="$(kubectl --namespace "$namespace" logs "pod/$pod" --all-containers 2>/dev/null)" &&
+        copy_dump="$(kubectl --namespace "$namespace" exec "$pod" --container copy -- sh -c "$copy_dump_verdict" 2>/dev/null)"; then
         run_logs+="$pod_logs"$'\n'
         captured=true
+        [ "$copy_dump" = unreadable ] || fail "the copy container of the Backup $name's pod finds the staged dump $copy_dump, not unreadable"
       fi
     fi
     reason="$(kubectl --namespace "$namespace" get backup "$name" \
@@ -156,15 +163,34 @@ refused_backup() {
   run_logs+="$(kubectl --namespace "$namespace" logs "pod/$refused_pod" --all-containers)"$'\n'
 }
 
-# end_backup <name>: deletes a refused Backup and the Deployment k8up made for its PreBackupPod, before k8up's deadline.
+# report_backup_pods: what holds the Pods that carry a backup command and the pre-backup ReplicaSets and Deployments,
+# by name, phase, container states, deletionTimestamp and owners; no log, Secret or environment value.
+report_backup_pods() {
+  kubectl --namespace "$namespace" get pods --output json | jq --raw-output '
+    .items[] | select(.metadata.annotations["k8up.io/backupcommand"] != null) |
+    "pod \(.metadata.name) phase=\(.status.phase) containers=\([.status.containerStatuses[]? | .name + ":" + (.state | keys[0])] | join(",")) " +
+    "deletionTimestamp=\(.metadata.deletionTimestamp // "none") owners=\([.metadata.ownerReferences[]? | .kind + "/" + .name] | join(","))"' >&2 || true
+  kubectl --namespace "$namespace" get replicasets,deployments --selector k8up.io/preBackupPod --output json | jq --raw-output '
+    .items[] | "\(.kind) \(.metadata.name) deletionTimestamp=\(.metadata.deletionTimestamp // "none") " +
+    "finalizers=\(.metadata.finalizers // [] | join(",")) owners=\([.metadata.ownerReferences[]? | .kind + "/" + .name] | join(","))"' >&2 || true
+}
+
+# end_backup <name>: deletes a refused Backup and the Deployment k8up made for its PreBackupPod, before k8up's deadline,
+# then waits for the Pod to go; at the deadline it reports what still carries a backup command.
 end_backup() {
-  local name="$1" replica_set deployment
+  local name="$1" replica_set deployment deadline=$((SECONDS + 120))
   replica_set="$(kubectl --namespace "$namespace" get pod "$refused_pod" --output jsonpath='{.metadata.ownerReferences[0].name}')"
   deployment="$(kubectl --namespace "$namespace" get replicaset "$replica_set" --output jsonpath='{.metadata.ownerReferences[0].name}')"
   deployments+=("$deployment")
   kubectl --namespace "$namespace" delete backup "$name" --wait --timeout=2m >/dev/null
   kubectl --namespace "$namespace" delete deployment "$deployment" --ignore-not-found --wait --timeout=2m >/dev/null
-  until_true 120 "no Pod of $namespace carries a backup command after the Backup $name" [ "$(backup_pods)" = 0 ]
+  until [ "$(backup_pods)" = 0 ]; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      report_backup_pods
+      fail "within the time: no Pod of $namespace carries a backup command after the Backup $name"
+    fi
+    sleep 5
+  done
 }
 
 # staged_file_exists <path>: whether the refused pod's stager sees the path under /staging or /scratch.

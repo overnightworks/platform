@@ -16,12 +16,20 @@ tab="$(printf '\t')"
 newline='
 '
 
+# Every role ends at once on SIGTERM. PID 1 ignores a signal without a handler, and a shell runs a trap only between its
+# commands, so each wait below is a background command the shell waits on, which a trapped signal interrupts.
+trap 'exit 0' TERM
+
+# nap: waits a second, interruptibly.
+nap() {
+  sleep 1 &
+  wait "$!"
+}
+
 # idle: waits for the SIGTERM with which k8up ends the pod, so the pod neither restarts nor stages again.
 idle() {
   sleep 2147483647 &
-  sleeper=$!
-  trap 'kill "$sleeper"; exit 0' TERM
-  wait "$sleeper"
+  wait "$!"
   exit 0
 }
 
@@ -31,9 +39,10 @@ serve() {
   step="$1"
   shift
   [ ! -e "$scratch/$step.exit" ] || return 0
-  until [ -e "$scratch/$step.request" ]; do sleep 1; done
+  until [ -e "$scratch/$step.request" ]; do nap; done
   status=0
-  "$@" || status=$?
+  "$@" &
+  wait "$!" || status=$?
   echo "$status" >"$scratch/$step.exit.tmp"
   mv "$scratch/$step.exit.tmp" "$scratch/$step.exit"
 }
@@ -52,7 +61,7 @@ dump() {
   until pg_isready --quiet --timeout=2; do
     tries=$((tries + 1))
     [ "$tries" -lt 30 ] || return 1
-    sleep 1
+    nap
   done
   PGPASSWORD="$(cat /run/secrets/postgres/password)" pg_dump --format=custom --file="$staging/postgres.dump.tmp" &&
     mv "$staging/postgres.dump.tmp" "$staging/postgres.dump"
@@ -88,7 +97,7 @@ run_step() {
   : >"$scratch/$step.request"
   while [ ! -e "$scratch/$step.exit" ]; do
     [ "$(date +%s)" -lt "$deadline" ] || fail "$step ran out of its budget"
-    sleep 1
+    nap
   done
   status="$(cat "$scratch/$step.exit")"
   [ "$status" = 0 ] || fail "$step failed with exit $status"
@@ -124,7 +133,8 @@ stager() {
   remaining="$((capture_deadline - $(date +%s)))"
   [ "$remaining" -gt 0 ] || fail "manifest ran out of its budget"
   status=0
-  timeout "$remaining" sh "$0" manifest || status=$?
+  timeout "$remaining" sh "$0" manifest &
+  wait "$!" || status=$?
   [ "$status" = 0 ] || fail "manifest failed with exit $status"
   mv "$staging/MANIFEST.tmp" "$staging/MANIFEST" || fail "the MANIFEST cannot be renamed"
   : >"$scratch/ready"
