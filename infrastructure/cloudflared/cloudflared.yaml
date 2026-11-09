@@ -8,6 +8,8 @@ metadata:
 data:
   config.yaml: |
     ingress:
+      - hostname: hallucinai.de
+        service: http://traefik.traefik.svc.cluster.local:80
       - hostname: hopin.hallucinai.de
         service: http://traefik.traefik.svc.cluster.local:80
       - hostname: skat.hallucinai.de
@@ -33,7 +35,7 @@ spec:
       annotations:
         # cloudflared reads its lines once, when it starts, so a changed line must roll the pod: this is the sha256 of
         # the ConfigMap's data config.yaml, and `cluster` fails with the right value when the two differ.
-        checksum/config: 9bb58124db5f9b3a3c878088b660c26a755c8f58db5ba3268b37d44401ee4001
+        checksum/config: 31063943e2d163967fa873c75efc216287e3b3ba1e72ed008ffe1645d422afa5
     spec:
       automountServiceAccountToken: false
       securityContext:

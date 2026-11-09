@@ -98,6 +98,10 @@ for line_index in "${routed_lines[@]}"; do
     [ "$matched_service" = http_status:404 ] ||
       fail "the tunnel sends $routed_host/, outside the path of the line #$line_index, to '$matched_service', not http_status:404"
     echo "the tunnel answers $routed_host/, outside the path of the line #$line_index, with http_status:404"
+  else
+    # A host whose Ingress routes no "/" is asked on the first path of its rule instead.
+    request_path="$(kubectl get ingresses -A -o jsonpath="{range .items[*]}{range .spec.rules[?(@.host==\"$forwarded_host\")]}{.http.paths[0].path}{\"\n\"}{end}{end}" | head -n 1)"
+    [ "$request_path" != / ] || request_path=""
   fi
   match_rule "$routed_host" "$request_path"
   [ "$matched_index" = "$line_index" ] ||
