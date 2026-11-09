@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Proves docs/personal-data.md PD-3.
 set -euo pipefail
 # shellcheck source=../client_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"

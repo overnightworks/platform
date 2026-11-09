@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Proves docs/personal-data.md PD-8.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
