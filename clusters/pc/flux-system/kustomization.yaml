@@ -3,3 +3,21 @@ kind: Kustomization
 resources:
   - gotk-components.yaml
   - gotk-sync.yaml
+# kustomize-controller looks again at a Kustomization with an unready dependency every 5 s instead of 30 s and runs
+# ten reconciles at once instead of four. The patch's test operation fails the render when the first container is not
+# named manager, which a strategic merge would pass over by adding a container instead.
+patches:
+  - target:
+      kind: Deployment
+      name: kustomize-controller
+      namespace: flux-system
+    patch: |-
+      - op: test
+        path: /spec/template/spec/containers/0/name
+        value: manager
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --requeue-dependency=5s
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --concurrent=10

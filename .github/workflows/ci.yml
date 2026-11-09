@@ -214,7 +214,11 @@ jobs:
 
       - name: Apply the Flux controllers from the committed components
         run: |
-          kubectl apply --server-side -f clusters/pc/flux-system/gotk-components.yaml
+          # The directory's render, as the PC applies it, so the controller starts with its patched arguments; its
+          # GitRepository and root Kustomization are the candidate overlay's to apply.
+          kubectl kustomize clusters/pc/flux-system |
+            yq 'select(.kind != "GitRepository" and .kind != "Kustomization")' |
+            kubectl apply --server-side -f -
           kubectl -n flux-system wait deployment --all --for=condition=Available --timeout=3m
 
       # flux install writes a binding subject for every controller, omitted ones included.
