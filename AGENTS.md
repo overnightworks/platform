@@ -257,8 +257,17 @@
   that script does not map fails the images render; `tunnel` given its own
   `spec.patches`, which only scale the Deployment `cloudflared` to 0, as k3d holds no tunnel token; `nvidia` given its
   own, which only give the device plugin's DaemonSet a node selector no k3d node carries, as k3d holds no card) and the
-  `flux-system` source's ref, in the object applied and in Flux's build: a pull request's ref on a pull request, `main` at the
-  run's own commit on a push, so a landing during the run moves nothing. It first fails when the committed root, `tunnel` or `nvidia` carries
+  `flux-system` source's url and ref, in the object applied and in Flux's build. The job checks out `github.sha`, the
+  commit its workflow comes from (on a pull request the merge of the head into main, on a push main's commit), and serves it
+  to Flux from a read-only smart-HTTP repository on the runner (`git http-backend` behind Python's `http.server`, started
+  by `tests/flux/serve_the_candidate_commit.sh`, stopped by its pid in a final step that runs on every exit), since
+  source-controller fetches only `refs/heads/*` and cannot reach a pull request's merge ref. The url is `host.k3d.internal`
+  on the server's port and the ref is `{branch: candidate, commit: <github.sha>}`, so the steps and the tree are one
+  commit and a landing or a push during the run moves nothing. The job asserts that the checkout's HEAD equals
+  `github.sha`, that the GitRepository's artifact revision is `candidate@sha1:<github.sha>` and that `spec.ref` is the same
+  after `flux reconcile --with-source`. In part `core`, a throwaway GitRepository at the committed root's url and branch
+  must turn Ready under the same source-controller and is deleted on every exit, since the run itself never fetches from
+  github.com. It first fails when the committed root, `tunnel` or `nvidia` carries
   `spec.patches`, which the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
   Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's, skat's and songmaker's files as dummies
   and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is

@@ -258,6 +258,10 @@ jobs:
       - name: Assert that Flux reconciled the candidate commit and decrypted the dummy
         run: tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh
 
+      - name: Assert that a GitRepository at the committed root's url and branch turns Ready
+        if: matrix.part == 'core'
+        run: tests/flux/committed_source_url_turns_ready.sh
+
       - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's and Gatus's pods and routes the app, and that speech-runtime answers only its callers' pods
         if: matrix.part == 'core'
         env:
