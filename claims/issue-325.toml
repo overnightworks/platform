@@ -1,0 +1,8 @@
+claim_id = "2b91306b860242cb9ffe6fee578e8417"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "ab4d602e7d7b8e6e3e7f1ab65e0b092f65282cdc"
+branch = "claude/issue-325-design-0-18"
+scope = [".github/workflows/ci.yml", "infrastructure/legal/assets", "infrastructure/legal/built", "infrastructure/legal/default.conf", "infrastructure/legal/frame", "infrastructure/legal/kustomization.yaml", "infrastructure/legal/legal.yaml", "quality/config.toml", "tests/legal/appkit_assets_equal_their_release_wheel.sh", "tests/legal/design_assets_equal_their_release_wheel.sh", "tests/legal/five_paths_through_traefik.sh"]
+opened_commit = "df104af295409ebca7dacb012c4a90b7e7bf586c"
+whole_reason = "One asset path moves: the files, every page and config that names the path, and the check against the release prove it only together."
