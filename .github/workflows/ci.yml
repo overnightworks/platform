@@ -45,6 +45,9 @@ jobs:
           scripts/bootstrap_pc.sh --only tools
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Check that cutover:preflight names each missing precondition, exits 1, 3 or 2, writes its evidence only at 0 and makes only reads
+        run: mise exec -- tests/cutover/preflight_names_each_missing_precondition.sh
+
       - name: Check that every secret and password in the realm files is an env reference
         run: >-
           mise exec -- tests/keycloak/realm_secrets_are_env_references.sh
