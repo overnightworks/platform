@@ -1,6 +1,6 @@
 # Runbook: remove a host part
 
-Symptom: the pod-log parts, the inotify limits or the disk units leave the PC.
+Symptom: the pod-log parts, the inotify limits, the journal's retention or the disk units leave the PC.
 Impact: without the pod-log parts nothing deletes pod logs after the 30 days the apps' privacy texts promise.
 Deleted logs stay deleted.
 
@@ -29,10 +29,16 @@ The inotify limits:
 7. The operator: `scripts/bootstrap_pc.sh --only files,services`. The kernel keeps the raised values until the next
    reboot.
 
+The journal's retention:
+
+8. An agent, pull request: `/etc/systemd/journald.conf.d/90-retention.conf` gets `state = "absent"`.
+9. The operator: `scripts/bootstrap_pc.sh --only files,services`. The plan lists the restart of `systemd-journald`
+   through the file's `notify`; the journal returns to its defaults. Deleted lines stay deleted.
+
 The disk units:
 
-8. An agent, pull request: every disk unit, the Trash's included, gets `state = "absent"`.
-9. An agent: `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`. `~/.config/user-tmpfiles.d/disk.conf`
+10. An agent, pull request: every disk unit, the Trash's included, gets `state = "absent"`.
+11. An agent: `scripts/bootstrap_pc.sh --only dotfiles,linux-systemd-units`. `~/.config/user-tmpfiles.d/disk.conf`
    and `~/.local/share/docuum/state.yml` stay, inert without the units.
 
 Rollback: [install the PC](install-the-pc.md), steps 9 and 10.
