@@ -375,6 +375,14 @@ jobs:
           OTHER_NAMESPACE: songmaker-web-client
         run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
 
+      - name: Assert that songmaker's route reaches its web through Traefik for the tunnel's Pods, that the web answers the host the GPU worker sends and refuses another, and that a Pod in another namespace gets no answer
+        if: matrix.part == 'postgres'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          # The throwaway namespace of the Pod that must get no answer.
+          OTHER_NAMESPACE: songmaker-route-client
+        run: tests/songmaker/route_reaches_the_web.sh
+
       - name: Assert that the layer nvidia is Ready with its DaemonSet scheduled nowhere, offers the RuntimeClass, holds only the plugin in a Namespace without a Pod Security label, and that a restricted Pod with the class passes dry-run
         if: matrix.part == 'core'
         env:
