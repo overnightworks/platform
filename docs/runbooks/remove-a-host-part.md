@@ -32,10 +32,8 @@ The inotify limits:
 The journal's retention:
 
 8. An agent, pull request: `/etc/systemd/journald.conf.d/90-retention.conf` gets `state = "absent"`.
-9. The operator: `scripts/bootstrap_pc.sh --only files,services`. The file's `notify` restarts `systemd-journald`,
-   which returns to its defaults; mise's documentation states that notification for a removal by an empty template
-   and not for `state = "absent"`, so read the plan for the restart and, if it lists none, run
-   `systemctl restart systemd-journald`. Deleted lines stay deleted.
+9. The operator: `scripts/bootstrap_pc.sh --only files,services`. The plan lists the restart of `systemd-journald`
+   through the file's `notify`; the journal returns to its defaults. Deleted lines stay deleted.
 
 The disk units:
 

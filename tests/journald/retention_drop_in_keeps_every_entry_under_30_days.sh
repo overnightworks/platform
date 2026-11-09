@@ -25,8 +25,8 @@ file_value="$(value_of MaxFileSec)"
 retention_seconds="$(seconds_of "$retention_value")"
 file_seconds="$(seconds_of "$file_value")"
 
-# journald deletes a file once its oldest entry passes the retention, and a file spans MaxFileSec, so an entry
-# is as old as both limits together when it goes.
+# journald deletes a file once its oldest entry passes the retention, and a file spans MaxFileSec, so no entry
+# is older than both limits together when it goes.
 [ "$retention_seconds" -gt 0 ] || fail "MaxRetentionSec is $retention_seconds seconds"
 [ "$file_seconds" -gt 0 ] || fail "MaxFileSec is $file_seconds seconds"
 [ $((retention_seconds + file_seconds)) -le "$promised_seconds" ] ||
