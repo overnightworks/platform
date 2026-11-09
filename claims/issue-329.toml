@@ -1,8 +1,0 @@
-claim_id = "b42f0abf60a74e6aab07d5c4dddeb717"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "3223fb0e83569ca23c30a6ce35190de0764bdc89"
-branch = "claude/issue-329-apps-presentator"
-scope = [".github/workflows/ci.yml", "apps/presentator", "infrastructure/namespaces/namespaces.yaml", "tests/no_network/pod.sh", "tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh", "tests/presentator/pods_stay_within_their_levels.sh"]
-opened_commit = "5dd2602d5bd8e632e1a2d27ff7274b381d1e7135"
-whole_reason = "The web cannot start without its worker, and the exception's check belongs to the manifest it limits."
