@@ -2,24 +2,9 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+# shellcheck source=prometheus_api.sh
+source "$(dirname "${BASH_SOURCE[0]}")/prometheus_api.sh"
 # The cell reads Prometheus' answers and creates nothing; it prints namespaces, names and counts.
-
-# api <path>: Prometheus' answer through the API server's proxy, which no NetworkPolicy of the pod network stops.
-api() { kubectl get --raw "/api/v1/namespaces/$PROMETHEUS_NAMESPACE/services/prometheus-server:80/proxy/api/v1/$1"; }
-# query <expression>: the instant vector's series, one JSON object per line.
-query() {
-  api "query?query=$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1")" |
-    yq -p=json -o=json -I=0 '.data.result[]'
-}
-# until_true <seconds> <description> <command>...: the command passes within the time, tried every 10 seconds.
-until_true() {
-  local deadline=$((SECONDS + $1)) description="$2"
-  shift 2
-  until "$@"; do
-    [ "$SECONDS" -lt "$deadline" ] || fail "within the time: $description"
-    sleep 10
-  done
-}
 
 # kube-state-metrics shows each Schedule the cluster holds, which names the namespaces BackupMissing judges.
 schedules="$(kubectl get schedules.k8up.io --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}')"

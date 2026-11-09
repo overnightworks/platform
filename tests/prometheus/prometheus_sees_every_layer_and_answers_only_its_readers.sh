@@ -4,6 +4,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=../client_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
+# shellcheck source=prometheus_api.sh
+source "$(dirname "${BASH_SOURCE[0]}")/prometheus_api.sh"
 web_address="http://prometheus-server.${PROMETHEUS_NAMESPACE}.svc"
 # A digest no registry holds, on the repository of the probe image, which the image policy judges by form only.
 dead_image="${PROBE_IMAGE%@*}@sha256:$(printf '0%.0s' {1..64})"
@@ -14,23 +16,6 @@ remove_probes() {
   kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
 }
 trap remove_probes EXIT
-
-# api <path>: Prometheus' answer through the API server's proxy, which no NetworkPolicy of the pod network stops.
-api() { kubectl get --raw "/api/v1/namespaces/$PROMETHEUS_NAMESPACE/services/prometheus-server:80/proxy/api/v1/$1"; }
-# query <expression>: the instant vector's series, one JSON object per line.
-query() {
-  api "query?query=$(python3 -I -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1")" |
-    yq -p=json -o=json -I=0 '.data.result[]'
-}
-# until_true <seconds> <description> <command>...: the command passes within the time, tried every 10 seconds.
-until_true() {
-  local deadline=$((SECONDS + $1)) description="$2"
-  shift 2
-  until "$@"; do
-    [ "$SECONDS" -lt "$deadline" ] || fail "within the time: $description"
-    sleep 10
-  done
-}
 
 kubectl -n "$PROMETHEUS_NAMESPACE" wait deployment --all --for=condition=Available --timeout=5m
 echo "every Deployment of namespace $PROMETHEUS_NAMESPACE is Available"
