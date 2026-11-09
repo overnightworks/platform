@@ -17,7 +17,6 @@ remove_probes() {
 }
 trap remove_probes EXIT
 
-
 kubectl -n "$PROMETHEUS_NAMESPACE" wait deployment --all --for=condition=Available --timeout=5m
 echo "every Deployment of namespace $PROMETHEUS_NAMESPACE is Available"
 
