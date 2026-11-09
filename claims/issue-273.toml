@@ -1,0 +1,8 @@
+claim_id = "2f81917ea69a42129d88514606d228b8"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "f4a47816011deb68ee308df9ea63ae5b774704bf"
+branch = "claude/issue-273-skat-public-route"
+scope = [".github/workflows/ci.yml", "AGENTS.md", "apps/skat/skat.yaml", "infrastructure/cloudflared/cloudflared.yaml", "infrastructure/gatus/gatus-config.yaml", "tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh", "tests/ingress/traefik_answers_only_cloudflared_and_routes_the_app.sh"]
+opened_commit = "62eddde0bce1396d37c2c5cf068d89bde4338ccb"
+whole_reason = "One public route: the Ingress, the policy that admits only Traefik, the trusted proxies the sign-in limit reads, the tunnel line and Gatus's move behind Traefik only hold together, and their CI cells prove them in one run."
