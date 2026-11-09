@@ -18,6 +18,8 @@ configMapGenerator:
       # alembic_version, which alembic upgrade fills, comes first: the restore test fails on an empty first table.
       - key-tables=alembic_version songs generations
       - backup-repository=http://rest-server.backup.svc.cluster.local:8000/songmaker/
+      # The claim the backup copies beside the dump, through ../../infrastructure/postgres/backup/files.
+      - backup-claim=audiofiles
 replacements:
   - source:
       kind: ConfigMap
@@ -29,3 +31,21 @@ replacements:
           name: postgres
         fieldPaths:
           - spec.backend.rest.url
+  # The reading uid: the backup copies the audio files and k8up's Job pods read the copy as the web's user.
+  - source:
+      kind: Deployment
+      name: web
+      fieldPath: spec.template.spec.securityContext.runAsUser
+    targets:
+      - select:
+          kind: PreBackupPod
+          name: files
+        fieldPaths:
+          - spec.pod.spec.securityContext.runAsUser
+      - select:
+          kind: PodConfig
+          name: postgres-backup
+        fieldPaths:
+          - spec.template.spec.securityContext.runAsUser
+        options:
+          create: true

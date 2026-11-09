@@ -1,12 +1,15 @@
-# The staging claim holds the finished dump that k8up streams. local-path binds a claim only for its first consumer,
-# so the Job below mounts it once; a claim that stays Pending keeps the including Kustomization from turning Ready.
-# The class retains the volume and the annotation keeps a prune from taking the claim.
+# The staging claim holds one restore point: files/, the copy of the claim the layer declares, the dump k8up also
+# streams, and MANIFEST. It is the one claim k8up backs up (k8up.io/backup), into the snapshot path
+# /data/backup-staging. local-path binds a claim only for its first consumer, so the Job below mounts it once; a claim
+# that stays Pending keeps the including Kustomization from turning Ready. The class retains the volume and the
+# annotation keeps a prune from taking the claim.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: backup-staging
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
+    k8up.io/backup: "true"
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: local-path
@@ -52,18 +55,46 @@ spec:
           persistentVolumeClaim:
             claimName: backup-staging
 ---
-# k8up starts this pod at the start of a Backup and removes it at the end. The container dumps the database over the
-# Service into a temporary file in the staging claim and renames it to postgres.dump, so the file k8up streams is
-# always a finished dump; it is Ready only on that file, and a failed dump leaves no postgres.dump and no Ready pod.
-# The image is the StatefulSet's, set by the replacement in kustomization.yaml. The password reaches pg_dump only in its
-# environment. The pod mounts no claim but the staging one.
+# The stager's account: it lists the namespace's pods for the guard and may do nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-stager
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-stager
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-stager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backup-stager
+subjects:
+  - kind: ServiceAccount
+    name: backup-stager
+---
+# k8up starts this pod at the start of a Backup, waits for it to turn Ready, streams the backup command's output from
+# its first container and backs up the staging claim, then removes it. Its three containers run scripts/stage_files.sh: the
+# stager guards, removes the old MANIFEST, has copy sync the declared claim and postgres dump the database, and writes
+# MANIFEST and ready; the readiness probe reads ready. The pod runs as the reading uid, which the including layer sets
+# by a replacement from the app's own pod, so copy reads the app's files and k8up's Job pods read the copy.
 apiVersion: k8up.io/v1
 kind: PreBackupPod
 metadata:
   name: files
 spec:
-  # k8up reuses an existing Deployment of this pod when its delete failed after the last Backup, and that pod dumped only
-  # at its start and still holds last run's file; a dump older than 60 minutes fails the Backup, which mails, instead of
+  # k8up reuses an existing Deployment of this pod when its delete failed after the last Backup, and that pod staged
+  # only at its start and still holds last run's file; a dump older than 60 minutes fails the Backup, which mails, instead of
   # becoming a snapshot of old data. find prints the name only for a file younger than that, so a find without -mmin fails too.
   # k8up runs the command without a shell, split on spaces and tabs with quoted chunks kept whole and unquoted, so it is
   # one line `sh -c '<script>'` with double quotes only inside the script.
@@ -72,6 +103,8 @@ spec:
   fileExtension: .dump
   pod:
     spec:
+      serviceAccountName: backup-stager
+      # Only the stager holds a token, through its own projected volume.
       automountServiceAccountToken: false
       enableServiceLinks: false
       securityContext:
@@ -81,19 +114,12 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        # The container's name decides the file name in the snapshot: /<namespace>-<container>.dump.
+        # The first container is the one k8up execs the backup command in, and its name decides the file name in the
+        # snapshot: /<namespace>-<container>.dump. The image is the StatefulSet's, set by the replacement in
+        # kustomization.yaml. The password reaches pg_dump only in its environment.
         - name: postgres
           image: postgres
-          command:
-            - sh
-            - -c
-            - |
-              set -e
-              umask 077
-              rm -f /staging/postgres.dump /staging/postgres.dump.tmp
-              PGPASSWORD="$(cat /run/secrets/postgres/password)" pg_dump --format=custom --file=/staging/postgres.dump.tmp
-              mv /staging/postgres.dump.tmp /staging/postgres.dump
-              exec tail -f /dev/null
+          command: [sh, /etc/stage/stage_files.sh, dump]
           env:
             - name: PGHOST
               value: postgres
@@ -107,7 +133,7 @@ spec:
                   fieldPath: metadata.namespace
           readinessProbe:
             exec:
-              command: [test, -s, /staging/postgres.dump]
+              command: [test, -e, /scratch/ready]
             periodSeconds: 2
           securityContext:
             allowPrivilegeEscalation: false
@@ -117,13 +143,99 @@ spec:
           volumeMounts:
             - name: staging
               mountPath: /staging
+            - name: scratch
+              mountPath: /scratch
+            - name: stage
+              mountPath: /etc/stage
+              readOnly: true
             - name: password
               mountPath: /run/secrets/postgres
               readOnly: true
+        # rsync is the image's own tool; the declared claim is mounted read-only, so nothing writes into it.
+        - name: copy
+          image: docker.io/eeacms/rsync:3.1@sha256:0a1aeb0be88aac159aedbd6c59b2d6f0dcf8fcc61d7fdf6445a2b7dd60e541b7
+          command: [sh, /etc/stage/stage_files.sh, copy]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: source
+              mountPath: /source
+              readOnly: true
+            - name: staging
+              mountPath: /staging
+            - name: scratch
+              mountPath: /scratch
+            - name: stage
+              mountPath: /etc/stage
+              readOnly: true
+        # k8up's own image, which holds kubectl and jq for the guard; set by the replacement in kustomization.yaml from
+        # the restore test's.
+        - name: stager
+          image: k8up
+          command: [sh, /etc/stage/stage_files.sh, stager]
+          env:
+            # k8up fails the Backup when this pod is not Ready 600 seconds after its start, so the pod's start and both
+            # budgets stay inside that: the pre-sync of the declared claim, then the dump, the final sync and the manifest.
+            - name: PRE_SYNC_BUDGET
+              value: "300"
+            - name: CAPTURE_BUDGET
+              value: "180"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: staging
+              mountPath: /staging
+            - name: scratch
+              mountPath: /scratch
+            - name: tmp
+              mountPath: /tmp
+            - name: stage
+              mountPath: /etc/stage
+              readOnly: true
+            - name: token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
       volumes:
+        - name: source
+          persistentVolumeClaim:
+            claimName: set-by-the-including-layer
+            readOnly: true
         - name: staging
           persistentVolumeClaim:
             claimName: backup-staging
+        - name: scratch
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: stage
+          configMap:
+            name: backup-stage
         - name: password
           secret:
             secretName: postgres
+        - name: token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace

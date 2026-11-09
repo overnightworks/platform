@@ -36,6 +36,12 @@ wait_completed() {
   }
 }
 
+# snapshots_per_run <namespace>: the snapshots one Backup leaves, the dump's and, for a layer that declares a claim
+# beside its database, the staging claim's.
+snapshots_per_run() {
+  if [ -n "$(kubectl --namespace "$1" get configmap postgres --output jsonpath='{.data.backup-claim}')" ]; then echo 2; else echo 1; fi
+}
+
 secret_value() { kubectl --namespace "$1" get secret restic --output json | KEY="$2" yq --output-format json '.data[strenv(KEY)]' | tr -d '"' | base64 --decode; }
 rest_base="$(dirname "$(kubectl --namespace "${BACKUP_NAMESPACES%% *}" get configmap postgres \
   --output jsonpath='{.data.backup-repository}')")"
@@ -131,19 +137,21 @@ for namespace in $BACKUP_NAMESPACES; do
   [ -z "$snapshot_objects" ] || fail "$namespace holds Snapshot objects, whose repository field would hold the rest password"
   echo "the logs and objects of $namespace hold none of its backup credentials"
 
-  # One snapshot, the dump alone, in custom format.
+  # One snapshot per run's shape; the dump's holds the dump alone, in custom format. A layer with a staging claim also
+  # has a snapshot of it, which tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh reads.
+  per_run="$(snapshots_per_run "$namespace")"
   run_restic "$namespace" snapshot-listing '
     restic --no-cache snapshots --json | jq length
-    restic --no-cache ls --json latest | jq --raw-output "select(.type == \"file\") | .path"
+    restic --no-cache ls --json --path "/$(NAMESPACE)-postgres.dump" latest | jq --raw-output "select(.type == \"file\") | .path"
     # An early exit of head kills restic by SIGPIPE while it holds its read lock, which k8up prune then waits out; draining ends it.
-    restic --no-cache dump latest "/$(NAMESPACE)-postgres.dump" | { head -c 5; cat >/dev/null; }'
+    restic --no-cache dump --path "/$(NAMESPACE)-postgres.dump" latest "/$(NAMESPACE)-postgres.dump" | { head -c 5; cat >/dev/null; }'
   [ "$restic_exit" = 0 ] || fail "the snapshot of $namespace cannot be read (exit $restic_exit)"
   mapfile -t listing <<<"$restic_output"
-  [ "${listing[0]}" = 1 ] || fail "the repository of $namespace holds ${listing[0]} snapshots, not 1"
-  [ "${listing[1]}" = "/$namespace-postgres.dump" ] || fail "the snapshot of $namespace holds ${listing[1]}, not its dump"
-  [ "${#listing[@]}" = 3 ] || fail "the snapshot of $namespace holds further files beside its dump"
-  [ "${listing[2]}" = PGDMP ] || fail "the snapshot of $namespace holds no custom-format dump"
-  echo "the repository of $namespace holds one snapshot with its dump alone, in custom format"
+  [ "${listing[0]}" = "$per_run" ] || fail "the repository of $namespace holds ${listing[0]} snapshots, not $per_run"
+  [ "${listing[1]}" = "/$namespace-postgres.dump" ] || fail "the dump's snapshot of $namespace holds ${listing[1]}, not its dump"
+  [ "${#listing[@]}" = 3 ] || fail "the dump's snapshot of $namespace holds further files beside its dump"
+  [ "${listing[2]}" = PGDMP ] || fail "the dump's snapshot of $namespace holds no custom-format dump"
+  echo "the repository of $namespace holds $per_run snapshots of one run, the dump's with its dump alone, in custom format"
 
   # The restore test passes on the snapshot.
   run_restore_test "$namespace" restore-test-run
@@ -214,9 +222,11 @@ mapfile -t statuses <<<"$restic_output"
 [ "${statuses[0]}" = 200 ] || fail "$first's credentials got ${statuses[0]} under its own /$first/, not 200"
 [[ ${statuses[1]} == 40[13] ]] || fail "$first's credentials got ${statuses[1]} under /$second/, not 401 or 403"
 [[ ${statuses[2]} == 40[13] ]] || fail "$first's credentials got ${statuses[2]} deleting /$second/config, not 401 or 403"
+second_snapshots="$(snapshots_per_run "$second")"
 run_restic "$second" foreign-snapshots 'restic --no-cache snapshots --json | jq length'
-[ "$restic_exit" = 0 ] && [ "$restic_output" = 1 ] || fail "$second's snapshots after the attempts read '$restic_output' (exit $restic_exit), not 1"
-echo "$first's credentials read only its own repository, and $second's snapshot stays"
+[ "$restic_exit" = 0 ] && [ "$restic_output" = "$second_snapshots" ] ||
+  fail "$second's snapshots after the attempts read '$restic_output' (exit $restic_exit), not $second_snapshots"
+echo "$first's credentials read only its own repository, and $second's snapshots stay"
 
 # A deleted Kustomization keeps the claim, and the snapshots list again after the root re-creates it.
 claim="$(kubectl --namespace "$BACKUP_LAYER" get pvc rest-server-data --output jsonpath='{.metadata.uid}|{.spec.volumeName}')"
@@ -229,11 +239,12 @@ flux reconcile kustomization flux-system --timeout=5m
 kubectl --namespace flux-system wait kustomization "$BACKUP_LAYER" --for=create --timeout=1m
 kubectl --namespace flux-system wait kustomization "$BACKUP_LAYER" --for=condition=Ready --timeout=5m
 for namespace in $BACKUP_NAMESPACES; do
+  per_run="$(snapshots_per_run "$namespace")"
   run_restic "$namespace" snapshots-again 'restic --no-cache snapshots --json | jq length'
-  [ "$restic_exit" = 0 ] && [ "$restic_output" = 1 ] ||
-    fail "$namespace's snapshots after the root re-created the layer read '$restic_output' (exit $restic_exit), not 1"
+  [ "$restic_exit" = 0 ] && [ "$restic_output" = "$per_run" ] ||
+    fail "$namespace's snapshots after the root re-created the layer read '$restic_output' (exit $restic_exit), not $per_run"
 done
-echo "each namespace's snapshot lists again after the root re-created the Kustomization $BACKUP_LAYER"
+echo "each namespace's snapshots list again after the root re-created the Kustomization $BACKUP_LAYER"
 
 # backup:fetch: the shipped task writes the latest dump at mode 0600 from the same init container; a second run refuses.
 fetched="$RUNNER_TEMP/fetched.dump"

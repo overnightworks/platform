@@ -47,7 +47,7 @@ kubectl --namespace "$namespace" get prebackuppod files --output json |
     '{ "apiVersion": "v1", "kind": "Pod", "metadata": { "name": strenv(NAME) }, "spec": .spec.pod.spec }' |
   kubectl --namespace "$namespace" create --filename - >/dev/null
 kubectl --namespace "$namespace" wait "pod/$check_pod" --for=condition=Ready --timeout=5m ||
-  { kubectl --namespace "$namespace" describe "pod/$check_pod" >&2; fail "the PreBackupPod's container of $namespace did not turn Ready on a finished dump"; }
+  { kubectl --namespace "$namespace" describe "pod/$check_pod" >&2; fail "the PreBackupPod's container of $namespace did not turn Ready on a finished staging tree"; }
 digests='pg_restore --file=- | sh /etc/postgres-checks/table-digests.sh'
 live_digests="$(kubectl --namespace "$namespace" exec postgres-0 --container postgres -- sh -c "pg_dump --format=custom | $digests")"
 staged_digests="$(kubectl --namespace "$namespace" exec "$check_pod" -- cat /staging/postgres.dump |
@@ -118,21 +118,23 @@ done
 [ "$seen_one" = true ] || fail "no Pod of $namespace carried a backup command at any look during the Backup"
 echo "exactly one pod of $namespace carried a backup command during the Backup"
 
-# One more snapshot, whose only path is the dump streamed from the PreBackupPod's file, in custom format.
+# Two more snapshots: the dump streamed from the PreBackupPod's file, in custom format, and the staging claim, which
+# staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh reads.
 run_restic "$namespace" snapshots-after '
   restic --no-cache snapshots --json | jq length
   restic --no-cache snapshots --json | jq --raw-output ".[].paths[]" | sort -u
-  restic --no-cache ls --json latest | jq --raw-output "select(.type == \"file\") | .path"
+  restic --no-cache ls --json --path "/$(NAMESPACE)-postgres.dump" latest | jq --raw-output "select(.type == \"file\") | .path"
   # An early exit of head kills restic by SIGPIPE while it holds its read lock, which a Prune waits out; draining ends it.
   restic --no-cache dump --path "/$(NAMESPACE)-postgres.dump" latest "/$(NAMESPACE)-postgres.dump" | { head -c 5; cat >/dev/null; }'
 [ "$restic_exit" = 0 ] || fail "the snapshot of $namespace cannot be read (exit $restic_exit)"
 mapfile -t listing <<<"$restic_output"
-[ "${listing[0]}" = "$((snapshots_before + 1))" ] || fail "the Backup left ${listing[0]} snapshots in $namespace, after $snapshots_before"
-[ "${#listing[@]}" = 4 ] || fail "the snapshots of $namespace hold paths or files beside the dump"
-[ "${listing[1]}" = "$dump_path" ] || fail "the snapshots of $namespace hold the path ${listing[1]}, not $dump_path"
-[ "${listing[2]}" = "$dump_path" ] || fail "the latest snapshot of $namespace holds ${listing[2]}, not $dump_path"
-[ "${listing[3]}" = PGDMP ] || fail "the latest snapshot of $namespace holds no custom-format dump"
-echo "the Backup left one more snapshot in $namespace, $dump_path in custom format, and none for the staging claim"
+[ "${listing[0]}" = "$((snapshots_before + 2))" ] || fail "the Backup left ${listing[0]} snapshots in $namespace, after $snapshots_before"
+[ "${#listing[@]}" = 5 ] || fail "the snapshots of $namespace hold paths or files beside the dump and the staging claim"
+[ "${listing[1]}" = /data/backup-staging ] || fail "the snapshots of $namespace hold the path ${listing[1]}, not /data/backup-staging"
+[ "${listing[2]}" = "$dump_path" ] || fail "the snapshots of $namespace hold the path ${listing[2]}, not $dump_path"
+[ "${listing[3]}" = "$dump_path" ] || fail "the latest dump snapshot of $namespace holds ${listing[3]}, not $dump_path"
+[ "${listing[4]}" = PGDMP ] || fail "the latest dump snapshot of $namespace holds no custom-format dump"
+echo "the Backup left two more snapshots in $namespace, $dump_path in custom format and the staging claim's"
 
 # Every restore test reads its dump by path, and passes.
 for target in $BACKUP_NAMESPACES; do
