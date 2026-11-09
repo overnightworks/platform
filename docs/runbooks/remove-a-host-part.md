@@ -11,14 +11,15 @@ Deleted logs stay deleted.
 
 ## Fix
 
-Every pull request step is an agent's. It lands before the next step, and the next step runs from a checkout at the landed main.
+Every pull request step is an agent's. It lands before the next step, and the next step runs from a checkout at
+the landed main.
 
 The pod-log parts:
 
 1. An agent, pull request: `pod-logs-clean.timer` gets `state = "stopped"` and `enabled = false`.
 2. The operator: `scripts/bootstrap_pc.sh --only services`. systemd disables the timer while its file exists.
-3. An agent, pull request: the timer's entry goes, which a plan reports unknown once its file is gone; the four files get
-   `state = "absent"`; `host/k3s/config.yaml` drops its `kubelet-arg`.
+3. An agent, pull request: the timer's entry goes, which a plan reports unknown once its file is gone; the four
+   files get `state = "absent"`; `host/k3s/config.yaml` drops its `kubelet-arg`.
 4. The operator: `scripts/bootstrap_pc.sh --only files`.
 5. The operator: `mise run bootstrap:k3s`.
 
