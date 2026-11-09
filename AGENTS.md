@@ -94,6 +94,8 @@
 - `mise run gatus:open` forwards `127.0.0.1` at a free local port kubectl chooses to the port of Gatus's Service and prints
   the address of the status page once kubectl listens, none when the forward fails, which exits non-zero; the page has no
   other way in.
+- `mise run grafana:open` does the same for Grafana's Service, through the one hidden task `page:forward` that
+  `gatus:open` shares.
 - `mise run keycloak:agent-owner [--adder] <client> <username>` runs through kcadm in Keycloak's
   container, signed in as config-cli, it sets the service account's `agent_owner` of a service-account client of
   `realm.yaml` with `agent-identity` among its default scopes to that one person's id, keeping the account's other
@@ -208,9 +210,10 @@
   `quality` job that calls quality's `gate.yml`.
   The cells of `cluster` and `bootstrap` live as scripts under `tests/<area>/`, named after what they prove, which the
   steps call; `ci.yml` holds the job structure, the setup and the calls.
-  `cluster` runs in two parts, each on its own k3d cluster and both listed as `cluster`: `postgres` holds the "P7a
-  cells" and `core` every other cell and the checks that need no cluster, the setup through the reconcile's assertion
-  runs in both, and a new cell joins the part with more room.
+  `cluster` runs in three parts, each on its own k3d cluster and all listed as `cluster`: `postgres` holds the Docuum
+  check, the "P7a cells", the "P9c cells", the Alertmanager step and the Grafana step; `backup` holds the "P7d cells"; `core`
+  every other cell and the checks that need no cluster. The setup through the reconcile's assertion runs in all three,
+  and a new cell joins the part with more room.
   `images` runs `scripts/verify_image_release.sh`. It renders the tree as Flux applies it with the locked flux2
   (`flux build kustomization --dry-run --recursive` from the root Kustomization in
   `clusters/pc/flux-system/gotk-sync.yaml`, this checkout as the root's source, in a container without network).
@@ -253,7 +256,7 @@
   `flux-system` source's ref, in the object applied and in Flux's build: a pull request's ref on a pull request, `main` at the
   run's own commit on a push, so a landing during the run moves nothing. It first fails when the committed root, `tunnel` or `nvidia` carries
   `spec.patches`, which the overlay would replace. The job proves decryption with an age key and a dummy Secret it generates and never prints.
-  Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's and skat's files as dummies
+  Its `platform-secrets` source also serves the Secrets the manifests under `apps/` name, hopin's, skat's and songmaker's files as dummies
   and each app's pull Secret from the job's own token, whose `packages: read` reads the apps' private packages; none is
   printed, each namespace whose layer includes `infrastructure/postgres` its Secret `postgres`, a generated password,
   and each key a container of a layer in `SECRET_KEY_LAYERS` reads from a Secret, a generated dummy (Alertmanager's
@@ -313,6 +316,12 @@
   The step "songmaker's stores" asserts that Postgres and Redis of namespace `songmaker` are Ready as the image's own
   non-root user, that a Pod there reaches both and one in a throwaway namespace neither, and that a key written to
   Redis is gone once its pod is deleted and Ready again.
+  The step "songmaker's web", in the part `postgres`, asserts that the Deployment `web` is Available with one Ready pod
+  at a full app ref under the candidate's revision and prints the kubelet's pull report and the runner's free disk; that
+  `migrate` ended 0 and `alembic_version` equals the image's head on a Postgres of the major version of the base's
+  image; that a Pod in the namespace gets 200 from `/health` with the public host and an error for an unknown host
+  while a Pod in another namespace gets no answer; that the pod runs as a non-root user on a read-only root and writes to
+  the audio claim and `/tmp`; and that the claim is Bound on the Retain class with prune disabled.
   The nvidia step asserts that the Kustomization `nvidia` is Ready at the candidate with its DaemonSet wanting
   0 pods, that the RuntimeClass `nvidia` has the handler `nvidia`, that Namespace `nvidia` has no Pod Security label and
   holds only that DaemonSet, and that a Pod with the class, uid 1000 and `nvidia.com/gpu: 1` passes server-side dry-run
@@ -370,7 +379,9 @@
   The step "P7d cells" (`tests/backup/`) first asserts that the rest server has a ready endpoint, then shows, for each
   namespace including the backup component, that the restore test (after a `restic init` that is retried up to 30 times,
   only on a refused connection, with the refusals counted in the log)
-  fails on its repository without a snapshot, and for the first namespace on an empty first key table; a Backup yields
+  fails on its repository without a snapshot, and for the first namespace on an empty first key table; the master key
+  makes LiteLLM's one key through a port-forward first, so its first key table holds the row the restore test needs and
+  stays; a Backup yields
   one snapshot holding the custom-format dump alone, by a Job pod at a listed digest that Pod Security `restricted`
   admits; neither the Job's log nor a Snapshot object holds the repository's credentials; the restore test passes on
   the snapshot; without
@@ -455,11 +466,24 @@
   a pull request, pulled through the Secret `ghcr-pull` and started from the files of the Secret `skat` and the
   password file of the namespace's Secret `postgres`, all from `platform-secrets`; its URL names no password. An init
   container of the same image runs `skat migrate` before `skat serve`. It has no route, NetworkPolicy or tunnel line yet.
-- `apps/songmaker/`: songmaker's stores, no image and no route yet: its Postgres from the base `infrastructure/postgres`,
-  in namespace `songmaker` with `key-tables` `songs generations`, and `redis.yaml`, the queue: one StatefulSet pod at
-  the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a read-only root, persistence
-  off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a NetworkPolicy that admits only the
-  namespace's own pods. The Namespace is in `infrastructure/namespaces/`, not here.
+- `apps/songmaker/`: songmaker's stores and web, no route or login yet: its Postgres from the base
+  `infrastructure/postgres`, in namespace `songmaker` with `key-tables` `songs generations`, and `redis.yaml`, the
+  queue: one StatefulSet pod at the image's redis user (uid 999, as `restricted` refuses the entrypoint's drop to it), a
+  read-only root, persistence off and `/data` an `emptyDir`, so a restart empties it, a Service on 6379 and a
+  NetworkPolicy that admits only the namespace's own pods. `web.yaml` is the Deployment `web`, one pod with `Recreate`,
+  its image the full app ref of a release that changes only in a pull request, pulled through the Secret `ghcr-pull`;
+  songmaker reads `/run/secrets` as its fixed directory, so that is one `projected` volume of the Secret `songmaker`
+  and the key `password` of the Secret `postgres` as `postgres_password`. The web refuses to start without its OIDC
+  settings, which it asks Keycloak for only at a sign-in, so they stand with a placeholder `oidc_client_secret`
+  until the route sets Keycloak's value. The image's own start runs through `uv`, so the container runs the installed
+  `songmaker` directly. The init container `migrate` runs `alembic upgrade head` with `DATABASE_URL` and the password
+  file alone. The kubelet's probe sends `Host: localhost`, which `ALLOWED_HOSTS` lists beside the public host; the
+  startup probe allows 10 minutes. `/health` answers 200 while the app is degraded, so readiness proves that the process
+  runs and not that its stores are healthy; that is songmaker's to change. No `AGENT__*` setting and no LiteLLM key is set,
+  so the web never calls the gateway. `audio.yaml` is the claim `audiofiles` at `/app/data/audio`, Retain class and the
+  prune annotation, without a k8up annotation; its size is nominal, as local-path enforces none. The web's Service
+  on 8080 admits only the namespace's own pods, and its egress is open. The Namespace is in `infrastructure/namespaces/`,
+  not here.
 - `apps/hopin/`: hopin's Deployment and Service, one pod with `Recreate`, its image the full app ref of a release
   that changes only in a pull request, pulled through the Secret `ghcr-pull` and started from the
   Secret `hopin`'s files under `/run/secrets`, both from `platform-secrets`. Its Ingress routes `hopin.hallucinai.de`
@@ -673,21 +697,39 @@
   resolving; and in k3d its ServiceAccount may get `nodes/metrics` and not `nodes/proxy`, every target is up,
   `gotk_resource_info` exists for every Kustomization, `DiskLow`'s
   expression without its threshold has a series, a Deployment at a dead image ref and a Kustomization at a missing
-  path make `DeploymentUnavailable` and `KustomizationNotReady` pending, a Pod in the throwaway namespace `grafana`
+  path make `DeploymentUnavailable` and `KustomizationNotReady` pending, a Pod in namespace `grafana`
   gets 200 and one in another namespace no answer, the claim is Bound on a Retain volume with prune disabled, and the
   throwaway objects are gone on every exit.
 - `infrastructure/gatus/`: Gatus, the status page, in a Namespace that enforces Pod Security `restricted`: one pod with
   `Recreate`, storage `memory` (a restart forgets the history; nothing is backed up) and metrics off. Its configuration
   is a generated ConfigMap whose name carries its content's hash, so a change rolls the pod. Every 60 seconds it asks
   hopin's `/health` and Keycloak's discovery of the realm `hallucinai` through Traefik's `web` with each app's Host
-  header, speech-runtime's `/health`, skat's `/health`, Loki's `/ready`, Prometheus's `/-/ready` and Alertmanager's `/-/ready` directly at each
+  header, speech-runtime's `/health`, skat's `/health`, Loki's `/ready`, Prometheus's `/-/ready`, Alertmanager's `/-/ready` and Grafana's `/api/health` directly at each
   Service, and LiteLLM's front for `GET /v1/models` without a key, which must answer 401 since Gatus holds no key. The
-  NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus, Alertmanager and the front admit the namespace `gatus` on the port
+  NetworkPolicies of Traefik, speech-runtime, Loki, Prometheus, Alertmanager, Grafana and the front admit the namespace `gatus` on the port
   its request uses; hopin and Keycloak stay closed to it. Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its
   Service at a free port and prints the address, the only way to the page. A Gatus pod is a sender Traefik's `web` trusts forwarded
   headers from; it sends only the requests of its configuration. In k3d, through the address `mise run gatus:open` prints, every endpoint of the
   configuration is healthy, speech-runtime at scale 0 turns unhealthy and, restored and Ready, healthy again, and a Pod
   in another namespace gets no answer from Gatus.
+- `infrastructure/grafana/`: Grafana for Loki and Prometheus, in the Namespace `grafana` the layer owns, which enforces
+  Pod Security `restricted`: one pod, its image `docker.io/grafana/grafana` at a digest, and no claim, Secret, Role or
+  hook. `values.yaml` is its hand-written source; `rendered.yaml` is generated by `mise run charts:render`, not edited by
+  hand, and `cluster` fails when a regeneration differs. A chart or image bump changes the task's chart version and digest
+  and `image.tag`, which holds the digest, together and regenerates, in a pull request started from the Dependency Dashboard
+  that `renovate` keeps. Its data directory is an `emptyDir`, so a restart forgets what a person built in the page; the
+  data sources Loki (no tenant header) and Prometheus are provisioned from `values.yaml` and no dashboard exists.
+  The page has no login: anonymous access at the role Editor, the lowest that runs Explore, the login form and the initial admin off, since only
+  `mise run grafana:open` opens it, which forwards `127.0.0.1` to the Service; so whoever can start that forward reads
+  every line Loki holds. Update checks, analytics, the preinstall of plugins from grafana.com and Grafana's own alerting are off, so
+  Alertmanager stays the one alert channel. Its NetworkPolicy admits only the namespace `gatus` to port 3000 and lets it send only to cluster DNS,
+  Loki's 3100 and Prometheus's 9090. In k3d, through the address `mise run grafana:open` prints, `/api/health` answers
+  200, both data sources report OK and answer a PromQL `up` and a LogQL query over Loki's namespace without any
+  credential, which may explore and may not write a data source, and a delete request posted through its proxy to Loki
+  is refused by Grafana with its own 403 (Loki's delete API stays on, so a later Grafana that forwards the POST turns the cell red). Gaps of the page's reach, accepted since the forward's port is random, on loopback and open only while the forward runs:
+  Prometheus keeps its lifecycle endpoints, which its reloader needs, so the page can still make it quit or reload, a restart; a GET on Loki's `/ingester/shutdown` through the page stops new lines being stored until the pod is restarted, and no stored line is lost; the pod holds no claim and only `emptyDir`, ConfigMap and projected volumes; the layer renders no Role,
+  ClusterRole or hook; a Pod in `gatus` gets 200 for `/api/health` and one in another namespace no answer; a Pod in
+  Grafana's namespace reaches Loki and Prometheus and neither the Service `kubernetes` nor github.com.
 - `clusters/pc/secrets.yaml`: the reference to the private repository Flux fetches secrets from on the PC; platform holds no secret.
 - `host/k3s/config.yaml`: the k3s server configuration the PC and k3d share; `cluster` proves its keys from the
   cluster, except `write-kubeconfig-group` and `write-kubeconfig-mode`: k3d's image has no `docker` group, so the PC's

@@ -8,11 +8,10 @@ web_address="http://prometheus-server.${PROMETHEUS_NAMESPACE}.svc"
 # A digest no registry holds, on the repository of the probe image, which the image policy judges by form only.
 dead_image="${PROBE_IMAGE%@*}@sha256:$(printf '0%.0s' {1..64})"
 
-# The namespaces of one admitted reader and of the stranger, and the Kustomization at a missing path, which the cell
-# creates and always removes.
+# The namespace of the stranger and the Kustomization at a missing path, which the cell creates and always removes.
 remove_probes() {
   kubectl -n flux-system delete kustomization --ignore-not-found --wait --timeout=2m "$BROKEN_KUSTOMIZATION"
-  kubectl delete namespace --ignore-not-found --wait --timeout=2m "$READER_NAMESPACE" "$OTHER_NAMESPACE"
+  kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
 }
 trap remove_probes EXIT
 
@@ -109,7 +108,6 @@ until_true 360 "KustomizationNotReady is pending for the broken Kustomization" a
 echo "KustomizationNotReady is pending for a Kustomization at a missing path"
 
 # Only the admitted namespaces and Prometheus' own reach the web port, and a Pod there proves the address is right.
-kubectl create namespace "$READER_NAMESPACE"
 for namespace in "$PROMETHEUS_NAMESPACE" "$READER_NAMESPACE"; do
   request "$namespace" reader "prometheus-server.$PROMETHEUS_NAMESPACE.svc" "$web_address/-/ready"
   [ "$status" = 200 ] || fail "a Pod in namespace $namespace got '$status' from Prometheus, not 200"

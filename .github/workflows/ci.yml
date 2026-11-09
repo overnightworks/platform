@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, postgres]
+        part: [core, postgres, backup]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -138,7 +138,7 @@ jobs:
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
       # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
-      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml
+      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml
       # The Kustomization that serves the Secrets of every namespace, so that no other layer holds one of them.
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
@@ -331,6 +331,14 @@ jobs:
           OTHER_NAMESPACE: songmaker-client
         run: tests/songmaker/stores_are_ready_non_root_closed_and_forget.sh
 
+      - name: Assert that songmaker's web is Ready at its full ref, migrated, closed to other namespaces, read-only and holds its audio claim
+        if: matrix.part == 'postgres'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          # The throwaway namespace of the Pod that must get no answer.
+          OTHER_NAMESPACE: songmaker-web-client
+        run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
+
       - name: Assert that the layer nvidia is Ready with its DaemonSet scheduled nowhere, offers the RuntimeClass, holds only the plugin in a Namespace without a Pod Security label, and that a restricted Pod with the class passes dry-run
         if: matrix.part == 'core'
         env:
@@ -382,11 +390,12 @@ jobs:
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
       - name: P7d cells
-        if: matrix.part == 'core'
+        if: matrix.part == 'backup'
         env:
           # The Kustomization and Namespace of the rest-server, a namespace with no repository, which gets no answer, and a
           # Keycloak table its realm leaves empty.
           BACKUP_LAYER: backup
+          LITELLM_NAMESPACE: litellm
           OUTSIDE_NAMESPACE: hopin
           EMPTY_KEY_TABLE: broker_link
           VENDOR_LIST: infrastructure/admission/image-vendors.yaml
@@ -454,8 +463,9 @@ jobs:
         if: matrix.part == 'core'
         env:
           PROMETHEUS_NAMESPACE: prometheus
-          # The throwaway namespaces the step creates and removes: one of the readers the NetworkPolicy admits, one that
-          # is not and holds the Deployment at a dead image, and the Kustomization at a missing path.
+          # The namespace of a reader the NetworkPolicy admits, which the layer owns, then the throwaway namespace the step
+          # creates and removes, one that is not admitted and holds the Deployment at a dead image, and the Kustomization at
+          # a missing path.
           READER_NAMESPACE: grafana
           OTHER_NAMESPACE: prometheus-probe
           BROKEN_KUSTOMIZATION: prometheus-probe
@@ -469,6 +479,20 @@ jobs:
           READER_NAMESPACE: gatus
           OTHER_NAMESPACE: alertmanager-client
         run: tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh
+
+      - name: Assert that Grafana answers a query through both data sources at the address grafana:open printed, holds no state and answers only Gatus's pods
+        if: matrix.part == 'postgres'
+        env:
+          GRAFANA_NAMESPACE: grafana
+          LOKI_NAMESPACE: loki
+          PROMETHEUS_NAMESPACE: prometheus
+          # Grafana's one admitted sender, the throwaway namespace of a Pod that is not, a Service every other Pod
+          # reaches and a host outside the cluster.
+          GATUS_NAMESPACE: gatus
+          OTHER_NAMESPACE: grafana-client
+          CLUSTER_SERVICE: default/kubernetes
+          OUTSIDE_TARGET: github.com:443
+        run: tests/grafana/grafana_answers_both_data_sources_without_state_and_only_gatus_reaches_it.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
