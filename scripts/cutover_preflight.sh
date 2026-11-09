@@ -116,10 +116,17 @@ http_get() {
 }
 # unreachable <curl status>: the host refused or did not answer, which is a fact about the host and no failed reader.
 unreachable() { [ "$1" = 7 ] || [ "$1" = 28 ] || [ "$1" = 124 ]; }
+# answered <curl status> <fact when refused>: records a failure when curl read no answer; true when one was read.
+answered() {
+  if unreachable "$1"; then bad "$2"
+  elif [ "$1" != 0 ]; then doubt "curl could not run"
+  else return 0; fi
+  return 1
+}
 short() { echo "${1:0:12}"; }
 # repository_of <github url>: owner/repo.
 repository_of() {
-  [[ $1 =~ ^(https://|ssh://git@|git@)github\.com[/:]([^/]+)/([^/]+)$ ]] || return 1
+  [[ $1 =~ ^(https://|ssh://git@)github\.com/([^/]+)/([^/]+)$ ]] || return 1
   echo "${BASH_REMATCH[2]}/${BASH_REMATCH[3]%.git}"
 }
 # github_head <owner/repo> <branch>: the branch's head commit.
@@ -245,9 +252,9 @@ keycloak_render="[]"
 policy_index='
   def normalised:
     .spec
+    | with_entries(select(.value != []))
     | .policyTypes //= (["Ingress"] + (if has("egress") then ["Egress"] else [] end))
-    | (.ingress[]?.ports[]?, .egress[]?.ports[]?) |= (.protocol //= "TCP")
-    | with_entries(select(.value != []));
+    | (.ingress[]?.ports[]?, .egress[]?.ports[]?) |= (.protocol //= "TCP");
   [.[] | select(type == "object" and .kind == "NetworkPolicy")
     | select((.metadata.namespace // $namespace) == $namespace)
     | {key: "\($namespace)/\(.metadata.name)", value: normalised}] | from_entries'
@@ -330,10 +337,7 @@ check_H1() {
     doubt "KC_HOSTNAME is unknown, since I1 rendered no keycloak"
   else
     http_get --header "Host: ${kc_hostname#*://}" "$local_edge/realms/$realm/.well-known/openid-configuration" || status=$?
-    if unreachable "$status"; then
-      bad "hal's Keycloak does not answer at $local_edge"
-    elif [ "$status" != 0 ]; then
-      doubt "curl could not run"
+    if ! answered "$status" "hal's Keycloak does not answer at $local_edge"; then :
     elif [ "$http_status" != 200 ]; then
       bad "hal's discovery answers $http_status"
     elif [ "$(jq -r '.issuer // ""' <<<"$http_body")" != "$kc_hostname/realms/$realm" ]; then
@@ -359,14 +363,12 @@ check_H2() {
       status=0
       http_get --output /dev/null --header "Host: $fqdn" "$target$ready" || status=$?
       checked=$((checked + 1))
-      if unreachable "$status"; then
-        bad "$fqdn is refused or times out"
-      elif [ "$status" != 0 ]; then
-        doubt "curl could not run for $fqdn"
+      if ! answered "$status" "$fqdn is refused or times out"; then :
       elif [[ ! $http_status =~ ^2 ]]; then
         bad "$fqdn answers $http_status"
       fi
     done <<<"$lines"
+    [ "$checked" -gt 0 ] || doubt "fleet.yaml names no host with a ready path"
   fi
   finish "$checked hosts answer 2xx"
 }
@@ -375,10 +377,7 @@ check_H3() {
   begin H3 "hal's head"
   local status=0
   http_get --output /dev/null --header "Host: localhost" "$hal_admin/admin/" || status=$?
-  if unreachable "$status"; then
-    bad "hal's admin console does not answer at $hal_admin"
-  elif [ "$status" != 0 ]; then
-    doubt "curl could not run"
+  if ! answered "$status" "hal's admin console does not answer at $hal_admin"; then :
   elif [ "$http_status" != 200 ] && ! { [[ $http_status =~ ^3 ]] && [[ $http_redirect =~ ^https?://[^/]+/admin/ ]]; }; then
     bad "hal's admin console answers $http_status"
   fi
@@ -448,7 +447,7 @@ check_H5() {
 
 check_D1() {
   begin D1 "platform; operator frees space"
-  local containers size usage line lines avail percent target previous_target="" need filesystems=0 same
+  local containers size usage line lines avail percent target need same
   if ! fetch containers docker ps --all --quiet --no-trunc \
     --filter label=com.docker.compose.project=hal --filter label=com.docker.compose.service=keycloak-db \
     --filter label=com.docker.compose.oneoff=False || [ "$(grep -c . <<<"$containers")" != 1 ]; then
@@ -462,6 +461,7 @@ check_D1() {
   else
     mapfile -t lines < <(tail -n +2 <<<"$usage")
     same=false
+    [ "${#lines[@]}" = 2 ] || { doubt "df printed ${#lines[@]} lines for two paths"; finish ""; return; }
     [ "${lines[0]##* }" != "${lines[1]##* }" ] || same=true
     need=$((size * room_factor))
     [ "$same" = false ] || need=$((need * 2))
@@ -471,12 +471,9 @@ check_D1() {
       [[ $avail =~ ^[0-9]+$ && $percent =~ ^[0-9]+$ ]] || { doubt "df printed an unreadable line"; continue; }
       [ "$avail" -ge "$need" ] || bad "$target has $avail bytes free, needs $need"
       [ "$percent" -lt "$usage_limit_percent" ] || bad "$target is at $percent %"
-      [ "$target" != "$previous_target" ] || continue
-      previous_target="$target"
-      filesystems=$((filesystems + 1))
     done
   fi
-  finish "$filesystems filesystems have room for a database of ${size:-0} bytes"
+  finish "the home directory and the volume path have room for a database of ${size:-0} bytes"
 }
 
 check_B1() {
@@ -569,7 +566,7 @@ check_L1() {
       elif [[ $theme != */login/hallucinai/ ]]; then
         bad "Keycloak serves the theme ${theme#*/login/}, not hallucinai"
       else
-        stylesheet="$(grep -o "$theme[^\"?]*\.css" <<<"$page" | head -n 1)"
+        stylesheet="$(grep -o "${theme}[^\"?]*\.css" <<<"$page" | head -n 1)"
         if [ -z "$stylesheet" ]; then
           bad "the login page names no stylesheet of the theme"
         elif ! http_get --output /dev/null "http://127.0.0.1:$port$stylesheet"; then
@@ -591,7 +588,7 @@ check_L2() {
     doubt "N2 did not read the repository of platform-secrets"
   elif ! fetch content gh api "repos/$repository/contents/.sops.yaml" --jq .content ||
     ! counts="$(base64 --decode <<<"$content" | yq --output-format json '.creation_rules' |
-      jq -r '[.[] | (.age // "") | if type == "array" then . else split(",") end | map(gsub("\\s"; "") | select(length > 0)) | length] | join(" ")')" ||
+      jq -r '[.[] | (.age // "") | split(",") | map(gsub("\\s"; "") | select(length > 0)) | length] | join(" ")')" ||
     [ -z "$counts" ]; then
     doubt "the creation rules of platform-secrets are unreadable"
   else

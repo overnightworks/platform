@@ -218,10 +218,12 @@ serve() {
   key="$(printf '%s' "$1 $2" | tr -c 'A-Za-z0-9\n' _)"
   { echo "$3|${4:-}|${5:-}|${6:-0}"; cat; } >"$scenario_directory/http/$key"
 }
-discovery_body='{"issuer":"https://auth.hallucinai.de/realms/hallucinai","jwks_uri":"https://auth.hallucinai.de/realms/hallucinai/protocol/openid-connect/certs"}'
-login_page='<html><link href="/resources/abcde/login/hallucinai/css/styles.css" rel="stylesheet"></html>'
-discovery_path=/realms/hallucinai/.well-known/openid-configuration
-certs_path=/realms/hallucinai/protocol/openid-connect/certs
+realm="$(yq '.realm' "$repository_root/infrastructure/keycloak/realm.yaml")"
+zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' "$repository_root/infrastructure/legal/legal.yaml")"
+discovery_body='{"issuer":"https://auth.'$zone'/realms/'$realm'","jwks_uri":"https://auth.'$zone'/realms/'$realm'/protocol/openid-connect/certs"}'
+login_page='<html><link href="/resources/abcde/login/'$realm'/css/styles.css" rel="stylesheet"></html>'
+discovery_path=/realms/$realm/.well-known/openid-configuration
+certs_path=/realms/$realm/protocol/openid-connect/certs
 
 build_base() {
   scenario_directory="$base"
@@ -244,7 +246,7 @@ build_base() {
   {
     policy_document keycloak keycloak-egress "$keycloak_egress"; echo ---
     policy_document keycloak http-from-traefik-only "${traefik_only//PORT/8080}"; echo ---
-    yq --prettyPrint '.' <<<'{"kind":"Deployment","metadata":{"name":"keycloak","namespace":"keycloak"},"spec":{"template":{"spec":{"containers":[{"name":"keycloak","env":[{"name":"KC_HOSTNAME","value":"https://auth.hallucinai.de"},{"name":"KC_HOSTNAME_ADMIN","value":"http://localhost:9000"}]}]}}}}'
+    yq --prettyPrint '.' <<<'{"kind":"Deployment","metadata":{"name":"keycloak","namespace":"keycloak"},"spec":{"template":{"spec":{"containers":[{"name":"keycloak","env":[{"name":"KC_HOSTNAME","value":"https://auth.'"$zone"'"},{"name":"KC_HOSTNAME_ADMIN","value":"http://localhost:9000"}]}]}}}}'
   } >"$base/render-keycloak.yaml"
   policy_document litellm litellm "$litellm_policy" >"$base/render-litellm.yaml"
   policy_document hopin http-from-traefik-only "${traefik_only//PORT/8000}" >"$base/render-hopin.yaml"
@@ -252,7 +254,7 @@ build_base() {
     policy_item keycloak http-from-traefik-only "${traefik_only_served//PORT/8080}"; } | items >"$base/networkpolicies-keycloak.json"
   policy_item litellm litellm "$litellm_policy" | items >"$base/networkpolicies-litellm.json"
   policy_item hopin http-from-traefik-only "${traefik_only_served//PORT/8000}" | items >"$base/networkpolicies-hopin.json"
-  tunnel_lines=$'ingress:\n  - hostname: hopin.hallucinai.de\n    service: http://traefik.traefik:80\n  - service: http_status:404\n'
+  tunnel_lines=$'ingress:\n  - hostname: hopin.'"$zone"$'\n    service: http://traefik.traefik:80\n  - service: http_status:404\n'
   jq -n --arg lines "$tunnel_lines" '{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "cloudflared", namespace: "cloudflared"}, data: {"config.yaml": $lines}}' |
     yq --prettyPrint '.' >"$base/render-tunnel.yaml"
   write_tunnel_live "$tunnel_lines"
@@ -264,17 +266,17 @@ build_base() {
   for unit in hal-backup.service hal-backup-restore-test.service; do echo inactive >"$base/systemctl/$unit"; done
   for unit in hal-backup.timer hal-backup-restore-test.timer; do echo "@$(($(date +%s) + 100000))" >"$base/systemctl/$unit"; done
   echo '{"locks": []}' >"$base/lslocks.json"
-  serve auth.hallucinai.de "http://127.0.0.1:8081$discovery_path" 200 application/json <<<"$discovery_body"
-  serve auth.hallucinai.de "http://127.0.0.1:8081$certs_path" 200 application/json <<<'{"keys":[{"kid":"kid-b"},{"kid":"kid-a"}]}'
-  serve "" "https://auth.hallucinai.de$discovery_path" 200 application/json <<<"$discovery_body"
-  serve "" "https://auth.hallucinai.de$certs_path" 200 application/json <<<'{"keys":[{"kid":"kid-a"},{"kid":"kid-b"}]}'
-  for host_and_path in presentator.hallucinai.de/health presentator-talk.hallucinai.de/health hallucinai.de/impressum; do
+  serve auth.$zone "http://127.0.0.1:8081$discovery_path" 200 application/json <<<"$discovery_body"
+  serve auth.$zone "http://127.0.0.1:8081$certs_path" 200 application/json <<<'{"keys":[{"kid":"kid-b"},{"kid":"kid-a"}]}'
+  serve "" "https://auth.$zone$discovery_path" 200 application/json <<<"$discovery_body"
+  serve "" "https://auth.$zone$certs_path" 200 application/json <<<'{"keys":[{"kid":"kid-a"},{"kid":"kid-b"}]}'
+  for host_and_path in presentator.$zone/health presentator-talk.$zone/health $zone/impressum; do
     serve "${host_and_path%%/*}" "http://127.0.0.1:8081/${host_and_path#*/}" 200 text/html </dev/null
   done
-  serve x.hallucinai.de http://localhost:9000/h 204 </dev/null
+  serve x.$zone http://localhost:9000/h 204 </dev/null
   serve localhost http://127.0.0.1:8090/admin/ 302 text/html http://localhost:8090/admin/master/console/ </dev/null
-  serve "" "http://127.0.0.1:$forward_port/realms/hallucinai/protocol/openid-connect/auth" 200 text/html <<<"$login_page"
-  serve "" "http://127.0.0.1:$forward_port/resources/abcde/login/hallucinai/css/styles.css" 200 'text/css;charset=UTF-8' </dev/null
+  serve "" "http://127.0.0.1:$forward_port/realms/$realm/protocol/openid-connect/auth" 200 text/html <<<"$login_page"
+  serve "" "http://127.0.0.1:$forward_port/resources/abcde/login/$realm/css/styles.css" 200 'text/css;charset=UTF-8' </dev/null
   build_home
 }
 write_tunnel_live() {
@@ -293,13 +295,13 @@ build_home() {
   "$real_git" -C "$hal" remote add origin https://github.com/overnightworks/hal.git
   "$real_git" -C "$hal" -c user.name=cell -c user.email=cell@example.invalid commit --quiet --allow-empty --message hal
   echo fleet.yaml >"$hal/.git/info/exclude"
-  cat >"$hal/fleet.yaml" <<'YAML'
-cloudflare: {zone: hallucinai.de}
+  sed -e "s/ZONE/$zone/" -e "s/REALM/$realm/" >"$hal/fleet.yaml" <<'YAML'
+cloudflare: {zone: ZONE}
 services:
   hopin: {hosts: [{name: hopin, tunnel: platform, ready: /health}]}
   presentator: {hosts: [{name: presentator, ready: /health}, {name: presentator-talk, ready: /health}]}
   legal: {hosts: [{name: "@", ready: /impressum}]}
-  keycloak: {hosts: [{name: auth, ready: "/realms/hallucinai/.well-known/openid-configuration"}]}
+  keycloak: {hosts: [{name: auth, ready: "/realms/REALM/.well-known/openid-configuration"}]}
   songmaker: {hosts: [{name: songmaker, target: "http://localhost:8080"}]}
   other: {hosts: [{name: x, ready: /h, target: "http://localhost:9000"}]}
 YAML
@@ -329,6 +331,9 @@ hold_lock() {
   jq -n --arg inode "$(stat -c %i "$lock_file")" --arg device "$(stat -c '%Hd:%Ld' "$lock_file")" --argjson pid "$1" --argjson blocker "$2" \
     '{locks: [{command: "hal", pid: $pid, inode: ($inode | tonumber), "maj:min": $device, blocker: $blocker}]}' >"$case_directory/lslocks.json"
 }
+# What the script must not hold, outside comments: a PATH assignment, command -p, env as a command, and an absolute,
+# $HOME or ~ path in command position (after a line start, a separator, a keyword, exec or timeout), which would bypass the fakes.
+interception_pattern='(^|[^A-Za-z_])PATH=|command[[:space:]]+-p|(^|[;&|(!{]|\$\(|[[:space:]](then|do|else|exec))[[:space:]]*env[[:space:]]|(^|[;&|(!{]|\$\(|[[:space:]](then|do|else|exec|timeout [0-9]+))[[:space:]]*"?(/|\$HOME|\$\{HOME|~)'
 # logs_clean: every call was one of the contract's reads, from the fakes first on PATH, by bare name.
 logs_clean() {
   local script_under_test="${1:-$script}"
@@ -337,8 +342,8 @@ logs_clean() {
     reason="a fake ran with another first PATH entry: the script changed PATH"
     return 1
   fi
-  if grep -qE '(^|[[:space:];|&(])/(usr|bin|sbin)/' "$script_under_test"; then
-    reason="the script calls an executable by an absolute path"
+  if grep -vE '^[[:space:]]*#' "$script_under_test" | grep -qE "$interception_pattern"; then
+    reason="the script assigns PATH, uses command -p or env, or calls an executable by an absolute, \$HOME or ~ path"
     return 1
   fi
 }
@@ -383,7 +388,7 @@ expect_line "^ok I2: .*auth is not among them"
 expect_line '^ok I1: .*hopin/http-from-traefik-only'
 expect_no_line 'age1canary'
 [ "$(stat -c %a "$case_directory/evidence")" = 600 ] || fail "healthy: the evidence file is not mode 600"
-expected_evidence="issuer https://auth.hallucinai.de/realms/hallucinai
+expected_evidence="issuer https://auth.$zone/realms/$realm
 kid kid-a
 kid kid-b
 hal-main $hal_sha
@@ -399,14 +404,14 @@ fail_N4() { edit kustomizations.json "(.items[] | select(.metadata.name == \"flu
 fail_I1() { edit networkpolicies-hopin.json '.items = []'; }
 fail_I2() { edit configmap.json '.data["config.yaml"] += "# drift\n"'; }
 fail_H1() { mkdir -p "$case_home/.local/state/edge/stopped" && : >"$case_home/.local/state/edge/stopped/keycloak"; }
-fail_H2() { serve presentator.hallucinai.de http://127.0.0.1:8081/health 503 </dev/null; }
+fail_H2() { serve presentator.$zone http://127.0.0.1:8081/health 503 </dev/null; }
 fail_H3() { serve localhost http://127.0.0.1:8090/admin/ 500 </dev/null; }
-fail_H4() { serve auth.hallucinai.de "http://127.0.0.1:8081$certs_path" 200 application/json <<<'{"keys":[{"kid":"kid-a"},{"kid":"kid-c"}]}'; }
+fail_H4() { serve auth.$zone "http://127.0.0.1:8081$certs_path" 200 application/json <<<'{"keys":[{"kid":"kid-a"},{"kid":"kid-c"}]}'; }
 fail_H5() { : >"$case_home/srv/hal/untracked"; }
 fail_D1() { printf '        Avail Use%% Mounted on\n1000 40%% /\n100000000000 40%% /opt\n' >"$case_directory/df.out"; }
 fail_B1() { edit k8up.json '.items += [{kind: "Backup", metadata: {namespace: "keycloak", name: "b"}, status: {started: true}}]'; }
 fail_B2() { hold_lock 4242 null; }
-fail_L1() { serve "" "http://127.0.0.1:$forward_port/realms/hallucinai/protocol/openid-connect/auth" 200 text/html <<<'<link href="/resources/abcde/login/keycloak.v2/css/login.css">'; }
+fail_L1() { serve "" "http://127.0.0.1:$forward_port/realms/$realm/protocol/openid-connect/auth" 200 text/html <<<'<link href="/resources/abcde/login/keycloak.v2/css/login.css">'; }
 fail_L2() { printf 'creation_rules:\n  - age: age1canaryone\n' | base64 >"$case_directory/gh/repos_overnightworks_platform-secrets_contents_.sops.yaml"; }
 unknown_N1() { touch "$case_directory/fail/kubectl-nodes"; }
 unknown_N2() { touch "$case_directory/fail/gh-repos_overnightworks_platform_commits_main"; }
@@ -414,10 +419,10 @@ unknown_N3() { touch "$case_directory/fail/kubectl-kustomizations"; }
 unknown_N4() { touch "$case_directory/fail/git-platform"; }
 unknown_I1() { touch "$case_directory/fail/kubectl-crd"; }
 unknown_I2() { touch "$case_directory/fail/kubectl-configmap"; }
-unknown_H1() { serve auth.hallucinai.de "http://127.0.0.1:8081$discovery_path" 000 "" "" 127 </dev/null; }
+unknown_H1() { serve auth.$zone "http://127.0.0.1:8081$discovery_path" 000 "" "" 127 </dev/null; }
 unknown_H2() { echo 'services: [' >"$case_home/srv/hal/fleet.yaml"; }
 unknown_H3() { serve localhost http://127.0.0.1:8090/admin/ 000 "" "" 127 </dev/null; }
-unknown_H4() { serve "" "https://auth.hallucinai.de$certs_path" 000 "" "" 127 </dev/null; }
+unknown_H4() { serve "" "https://auth.$zone$certs_path" 000 "" "" 127 </dev/null; }
 unknown_H5() { touch "$case_directory/fail/git-hal"; }
 unknown_D1() { touch "$case_directory/fail/docker-exec"; }
 unknown_B1() { touch "$case_directory/fail/kubectl-k8up"; }
@@ -451,6 +456,19 @@ unknown_N3
 run_case --evidence "$case_directory/evidence"
 expect_status 1
 expect_no_evidence
+
+# ------------------------------------------------------ readers that read nothing are UNKNOWN, never ok
+new_case h2-without-a-host
+printf 'services:\n  hopin: {hosts: [{name: hopin, tunnel: platform, ready: /health}]}\n' >"$case_home/srv/hal/fleet.yaml"
+run_case
+expect_status 3
+expect_line '^UNKNOWN H2: '
+expect_no_line '^ok H2:'
+new_case d1-df-prints-one-line
+printf '        Avail Use%% Mounted on\n100000000000 40%% /\n' >"$case_directory/df.out"
+run_case
+expect_status 3
+expect_line '^UNKNOWN D1: '
 
 # ------------------------------------------------------ case 5: usage ends before any read
 new_case usage
@@ -514,7 +532,7 @@ expect_line '^UNKNOWN I1: an admin-policy CRD exists'
 
 # ------------------------------------------------------ the tunnel's hostnames
 new_case tunnel-with-auth
-auth_lines=$'ingress:\n  - hostname: auth.hallucinai.de\n    service: http://traefik.traefik:80\n  - service: http_status:404\n'
+auth_lines=$'ingress:\n  - hostname: auth.'"$zone"$'\n    service: http://traefik.traefik:80\n  - service: http_status:404\n'
 jq -n --arg lines "$auth_lines" '{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "cloudflared", namespace: "cloudflared"}, data: {"config.yaml": $lines}}' |
   yq --prettyPrint '.' >"$case_directory/render-tunnel.yaml"
 write_tunnel_live "$auth_lines"
@@ -551,10 +569,15 @@ plant() {
 }
 plant absolute-path '/usr/bin/true'
 plant changed-path 'PATH="/usr/sbin:$PATH"; kubectl get nodes --output json >/dev/null || true'
+plant path-before-a-command 'PATH="/usr/bin:$PATH" lslocks --version || true'
+plant command-p 'command -p git --version || true'
+plant env-prefix 'env FOO=1 git --version || true'
+plant absolute-kubectl '/opt/nonexistent/kubectl get nodes || true'
+plant home-kubectl '"$HOME/nonexistent/kubectl" get nodes || true'
 plant git-fetch 'git -C "$root" fetch || true'
 plant git-status-with-locks 'git -C "$root" status --porcelain || true'
-plant curl-request 'curl --silent --request POST http://127.0.0.1:8081/realms/hallucinai/.well-known/openid-configuration || true'
-plant curl-data-without-get 'curl --silent --data a=b http://127.0.0.1:8081/realms/hallucinai/.well-known/openid-configuration || true'
+plant curl-request "curl --silent --request POST http://127.0.0.1:8081$discovery_path || true"
+plant curl-data-without-get "curl --silent --data a=b http://127.0.0.1:8081$discovery_path || true"
 plant curl-unlisted-url 'curl --silent https://example.invalid/x || true'
 plant gh-method-post 'gh api repos/overnightworks/platform/commits/main --method POST || true'
 plant gh-field-without-method 'gh api repos/overnightworks/platform/commits/main -f x=y || true'
