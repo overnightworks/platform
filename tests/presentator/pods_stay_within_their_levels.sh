@@ -34,7 +34,8 @@ trap remove_objects EXIT
 SPECS='(.spec.template.spec // .spec.jobTemplate.spec.template.spec // (select(.kind == "Pod") | .spec))'
 ANNOTATIONS='(.spec.template.metadata.annotations // .spec.jobTemplate.spec.template.metadata.annotations // (select(.kind == "Pod") | .metadata.annotations))'
 POD_OF="$SPECS as \$spec | $ANNOTATIONS as \$annotations | select(\$spec != null) | {\"apiVersion\": \"v1\", \"kind\": \"Pod\", \"metadata\": ({\"name\": .metadata.name} + (if \$annotations == null then {} else {\"annotations\": \$annotations} end)), \"spec\": \$spec}"
-WORKER_DOCUMENT='.kind == "StatefulSet" and .metadata.name == "build-worker"'
+WORKER_KEY=StatefulSet/build-worker
+WORKER_DOCUMENT=".kind + \"/\" + .metadata.name == \"$WORKER_KEY\""
 WORKER="select($WORKER_DOCUMENT) | .spec.template.spec"
 WEB='select(.kind == "Deployment" and .metadata.name == "web") | .spec.template.spec'
 WORKER_CONTAINER="$WORKER | .containers[] | select(.name == \"worker\")"
@@ -61,7 +62,7 @@ judge_levels() {
   local manifest="$1" name pod copy
   for name in $(yq --no-doc "select($SPECS != null) | .kind + \"/\" + .metadata.name" "$manifest"); do
     pod="$(yq "select(.kind + \"/\" + .metadata.name == \"$name\") | $POD_OF" "$manifest")"
-    if [ "$name" = StatefulSet/build-worker ]; then
+    if [ "$name" = "$WORKER_KEY" ]; then
       copy="$(yq 'del(.spec.initContainers[].securityContext.capabilities.add[] | select(. == "NET_ADMIN"))' <<<"$pod")"
       admit "$baseline_namespace" "$copy" ||
         echo "problem: the worker without its init's NET_ADMIN is refused at baseline: $admit_output"
@@ -134,7 +135,7 @@ judge_structure() {
     "$WORKER | .volumes[] | select(.projected) | .projected.sources[] | select(has(\"serviceAccountToken\"))"
   # Replicas, strategy, process sharing, fsGroup and exec probes.
   exactly "$manifest" "the web or the worker does not run one replica" \
-    'select((.kind == "Deployment" and .metadata.name == "web") or (.kind == "StatefulSet" and .metadata.name == "build-worker")) | .spec.replicas' '1,1'
+    "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | .spec.replicas" '1,1'
   exactly "$manifest" "the web's strategy is not Recreate" \
     'select(.kind == "Deployment" and .metadata.name == "web") | .spec.strategy.type' '"Recreate"'
   exactly "$manifest" "the web does not share its process namespace" "$WEB | .shareProcessNamespace" 'true'
@@ -178,7 +179,7 @@ mutant_with() {
   named_by "$1" "$2"
 }
 on_web='select(.kind == "Deployment" and .metadata.name == "web")'
-on_worker='select(.kind == "StatefulSet" and .metadata.name == "build-worker")'
+on_worker="select($WORKER_DOCUMENT)"
 worker_container='.spec.template.spec.containers[] | select(.name == "worker")'
 
 # The web at uid 0 or with an annotation restricted refuses, and a third template at uid 0, also one named like the worker.

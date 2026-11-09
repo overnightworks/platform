@@ -25,8 +25,8 @@ census() {
 layers="$(mktemp -d)"
 trap 'rm -rf "$layers"' EXIT
 kubectl kustomize apps/presentator >"$layers/presentator.yaml"
-layer_paths="$(yq --no-doc 'select(.kind == "Kustomization" and (.apiVersion | test("^kustomize[.]toolkit[.]fluxcd[.]io/"))) | .spec.path' clusters/pc/apps.yaml clusters/pc/infrastructure.yaml | grep -E '^[.]/(apps|infrastructure)/')"
-[ -n "$layer_paths" ] || fail "clusters/pc/apps.yaml and infrastructure.yaml name no layer path"
+layer_paths="$(yq --no-doc 'select(.kind == "Kustomization" and (.apiVersion | test("^kustomize[.]toolkit[.]fluxcd[.]io/"))) | .spec.path' clusters/pc/apps.yaml clusters/pc/infrastructure.yaml | grep -E '^[.]/(apps|infrastructure)/')" ||
+  fail "clusters/pc/apps.yaml and infrastructure.yaml name no layer path"
 for path in $layer_paths; do
   if [ -f "$path/kustomization.yaml" ]; then
     kubectl kustomize "$path" >"$layers/$(tr '/' '_' <<<"${path#./}").yaml"
