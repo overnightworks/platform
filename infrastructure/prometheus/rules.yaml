@@ -38,3 +38,33 @@ data:
             for: 10m
             annotations:
               summary: 'The filesystem {{ $labels.device }} of {{ $labels.instance }} is {{ $value | humanizePercentage }} full'
+          # A Job counts through its owner: a CronJob by name, and k8up's Backup, Check and Prune by kind alone, since their
+          # names change every run. A Job with no owner is not judged.
+          - record: namespace_owner:kube_job_status_start_time:scheduled
+            expr: >-
+              label_replace(
+              kube_job_status_start_time * on(namespace, job_name) group_left(owner_kind, owner_name)
+              kube_job_owner{owner_kind=~"CronJob|Backup|Check|Prune"},
+              "owner_name", "", "owner_kind", "Backup|Check|Prune")
+          # The newest finished Job of an owner failed; a later success ends it, and deleted older Jobs change nothing.
+          - alert: ScheduledJobFailed
+            expr: >-
+              max by (namespace, owner_kind, owner_name) (
+              namespace_owner:kube_job_status_start_time:scheduled and on(namespace, job_name) kube_job_failed{condition="true"} == 1)
+              == max by (namespace, owner_kind, owner_name) (
+              namespace_owner:kube_job_status_start_time:scheduled and on(namespace, job_name)
+              (kube_job_complete{condition="true"} == 1 or kube_job_failed{condition="true"} == 1))
+            for: 15m
+            annotations:
+              summary: 'The newest finished {{ $labels.owner_kind }}{{ with $labels.owner_name }} {{ . }}{{ end }} Job in {{ $labels.namespace }} failed'
+          # Only a successful Job has a completion time.
+          - record: namespace:kube_job_status_completion_time:backup_max
+            expr: max by (namespace) (kube_job_status_completion_time and on(namespace, job_name) kube_job_owner{owner_kind="Backup"})
+          # The guard of 8 days keeps a new Schedule and a fresh cluster quiet.
+          - alert: BackupMissing
+            expr: >-
+              min by (namespace) (k8up_schedule_created) < time() - 8 * 86400
+              unless on(namespace) namespace:kube_job_status_completion_time:backup_max > time() - 8 * 86400
+            for: 15m
+            annotations:
+              summary: 'No backup of {{ $labels.namespace }} completed in 8 days'

@@ -96,3 +96,149 @@ tests:
           - exp_labels: {id: /, device: /dev/disk1, instance: pc}
             exp_annotations: {summary: The filesystem /dev/disk1 of pc is 90% full}
       - {eval_time: 19m, alertname: DiskLow}
+  - interval: 1m
+    name: the newest finished Job of a CronJob that failed fires ScheduledJobFailed while a newer Job runs and resolves when that one completes
+    input_series:
+      - series: kube_job_owner{namespace="litellm", job_name="expire-1", owner_kind="CronJob", owner_name="litellm-expire"}
+        values: "1x50"
+      - series: kube_job_status_start_time{namespace="litellm", job_name="expire-1"}
+        values: "1000x50"
+      - series: kube_job_failed{namespace="litellm", job_name="expire-1", condition="true"}
+        values: "1x50"
+      - series: kube_job_failed{namespace="litellm", job_name="expire-1", condition="false"}
+        values: "0x50"
+      - series: kube_job_complete{namespace="litellm", job_name="expire-1", condition="true"}
+        values: "0x50"
+      - series: kube_job_owner{namespace="litellm", job_name="expire-2", owner_kind="CronJob", owner_name="litellm-expire"}
+        values: "_x20 1x30"
+      - series: kube_job_status_start_time{namespace="litellm", job_name="expire-2"}
+        values: "_x20 5000x30"
+      - series: kube_job_complete{namespace="litellm", job_name="expire-2", condition="true"}
+        values: "_x20 0x15 1x15"
+      - series: kube_job_failed{namespace="litellm", job_name="expire-2", condition="true"}
+        values: "_x20 0x30"
+    alert_rule_test:
+      - {eval_time: 14m, alertname: ScheduledJobFailed}
+      - eval_time: 16m
+        alertname: ScheduledJobFailed
+        exp_alerts:
+          - exp_labels: {namespace: litellm, owner_kind: CronJob, owner_name: litellm-expire}
+            exp_annotations: {summary: The newest finished CronJob litellm-expire Job in litellm failed}
+      - eval_time: 30m
+        alertname: ScheduledJobFailed
+        exp_alerts:
+          - exp_labels: {namespace: litellm, owner_kind: CronJob, owner_name: litellm-expire}
+            exp_annotations: {summary: The newest finished CronJob litellm-expire Job in litellm failed}
+      - {eval_time: 40m, alertname: ScheduledJobFailed}
+  - interval: 1m
+    name: a failed k8up Check fires ScheduledJobFailed by kind alone and an older failed Backup that a success followed, a Job with no owner and a running Job stay quiet
+    input_series:
+      - series: kube_job_owner{namespace="app", job_name="check-x", owner_kind="Check", owner_name="check-x-owner"}
+        values: "1x30"
+      - series: kube_job_status_start_time{namespace="app", job_name="check-x"}
+        values: "1000x30"
+      - series: kube_job_failed{namespace="app", job_name="check-x", condition="true"}
+        values: "1x30"
+      - series: kube_job_complete{namespace="app", job_name="check-x", condition="true"}
+        values: "0x30"
+      - series: kube_job_owner{namespace="app", job_name="backup-a", owner_kind="Backup", owner_name="backup-a"}
+        values: "1x30"
+      - series: kube_job_status_start_time{namespace="app", job_name="backup-a"}
+        values: "1000x30"
+      - series: kube_job_failed{namespace="app", job_name="backup-a", condition="true"}
+        values: "1x30"
+      - series: kube_job_complete{namespace="app", job_name="backup-a", condition="true"}
+        values: "0x30"
+      - series: kube_job_owner{namespace="app", job_name="backup-b", owner_kind="Backup", owner_name="backup-b"}
+        values: "1x30"
+      - series: kube_job_status_start_time{namespace="app", job_name="backup-b"}
+        values: "2000x30"
+      - series: kube_job_failed{namespace="app", job_name="backup-b", condition="true"}
+        values: "0x30"
+      - series: kube_job_complete{namespace="app", job_name="backup-b", condition="true"}
+        values: "1x30"
+      - series: kube_job_status_start_time{namespace="app", job_name="by-hand"}
+        values: "1000x30"
+      - series: kube_job_failed{namespace="app", job_name="by-hand", condition="true"}
+        values: "1x30"
+      - series: kube_job_owner{namespace="app", job_name="prune-a", owner_kind="Prune", owner_name="prune-a"}
+        values: "1x30"
+      - series: kube_job_status_start_time{namespace="app", job_name="prune-a"}
+        values: "1000x30"
+      - series: kube_job_failed{namespace="app", job_name="prune-a", condition="true"}
+        values: "0x30"
+      - series: kube_job_complete{namespace="app", job_name="prune-a", condition="true"}
+        values: "0x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ScheduledJobFailed
+        exp_alerts:
+          - exp_labels: {namespace: app, owner_kind: Check}
+            exp_annotations: {summary: The newest finished Check Job in app failed}
+    promql_expr_test:
+      - expr: namespace_owner:kube_job_status_start_time:scheduled{owner_kind="Check"}
+        eval_time: 1m
+        exp_samples:
+          - labels: namespace_owner:kube_job_status_start_time:scheduled{namespace="app", job_name="check-x", owner_kind="Check"}
+            value: 1000
+      - expr: count by (job_name) (namespace_owner:kube_job_status_start_time:scheduled)
+        eval_time: 1m
+        exp_samples:
+          - {labels: '{job_name="backup-a"}', value: 1}
+          - {labels: '{job_name="backup-b"}', value: 1}
+          - {labels: '{job_name="check-x"}', value: 1}
+          - {labels: '{job_name="prune-a"}', value: 1}
+  - interval: 1m
+    name: a namespace whose Schedule is older than eight days and has no Backup completed in eight days fires BackupMissing until a new completion
+    input_series:
+      - series: k8up_schedule_created{namespace="never", name="schedule"}
+        values: "-1000000x40"
+      - series: k8up_schedule_created{namespace="stale", name="schedule"}
+        values: "-1000000x40"
+      - series: k8up_schedule_created{namespace="recent", name="schedule"}
+        values: "-1000000x40"
+      - series: k8up_schedule_created{namespace="young", name="schedule"}
+        values: "-100000x40"
+      - series: k8up_schedule_created{namespace="renewed", name="schedule"}
+        values: "-1000000x40"
+      - series: kube_job_owner{namespace="never", job_name="restore-test-1", owner_kind="CronJob", owner_name="restore-test"}
+        values: "1x40"
+      - series: kube_job_status_completion_time{namespace="never", job_name="restore-test-1"}
+        values: "-100000x40"
+      - series: kube_job_owner{namespace="stale", job_name="backup-1", owner_kind="Backup", owner_name="backup-1"}
+        values: "1x40"
+      - series: kube_job_status_completion_time{namespace="stale", job_name="backup-1"}
+        values: "-800000x40"
+      - series: kube_job_owner{namespace="recent", job_name="backup-1", owner_kind="Backup", owner_name="backup-1"}
+        values: "1x40"
+      - series: kube_job_status_completion_time{namespace="recent", job_name="backup-1"}
+        values: "-100000x40"
+      - series: kube_job_owner{namespace="renewed", job_name="backup-1", owner_kind="Backup", owner_name="backup-1"}
+        values: "1x40"
+      - series: kube_job_status_completion_time{namespace="renewed", job_name="backup-1"}
+        values: "-900000x20 1500x20"
+    alert_rule_test:
+      - {eval_time: 14m, alertname: BackupMissing}
+      - eval_time: 16m
+        alertname: BackupMissing
+        exp_alerts:
+          - exp_labels: {namespace: never}
+            exp_annotations: {summary: No backup of never completed in 8 days}
+          - exp_labels: {namespace: renewed}
+            exp_annotations: {summary: No backup of renewed completed in 8 days}
+          - exp_labels: {namespace: stale}
+            exp_annotations: {summary: No backup of stale completed in 8 days}
+      - eval_time: 30m
+        alertname: BackupMissing
+        exp_alerts:
+          - exp_labels: {namespace: never}
+            exp_annotations: {summary: No backup of never completed in 8 days}
+          - exp_labels: {namespace: stale}
+            exp_annotations: {summary: No backup of stale completed in 8 days}
+    promql_expr_test:
+      - expr: namespace:kube_job_status_completion_time:backup_max
+        eval_time: 30m
+        exp_samples:
+          - {labels: 'namespace:kube_job_status_completion_time:backup_max{namespace="recent"}', value: -100000}
+          - {labels: 'namespace:kube_job_status_completion_time:backup_max{namespace="renewed"}', value: 1500}
+          - {labels: 'namespace:kube_job_status_completion_time:backup_max{namespace="stale"}', value: -800000}

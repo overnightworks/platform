@@ -242,11 +242,15 @@ kube-state-metrics:
     - replicasets
     - services
     - statefulsets
-  # Flux's resources, so gotk_resource_info exists for each Kustomization.
+  # Flux's resources, so gotk_resource_info exists for each Kustomization, and k8up's Schedules, so k8up_schedule_created
+  # names each namespace that should be backed up.
   rbac:
     extraRules:
       - apiGroups: [kustomize.toolkit.fluxcd.io]
         resources: [kustomizations]
+        verbs: [list, watch]
+      - apiGroups: [k8up.io]
+        resources: [schedules]
         verbs: [list, watch]
   customResourceState:
     enabled: true
@@ -273,3 +277,18 @@ kube-state-metrics:
                   suspended: [spec, suspend]
                   revision: [status, lastAppliedRevision]
                   source_name: [spec, sourceRef, name]
+          - groupVersionKind:
+              group: k8up.io
+              version: v1
+              kind: Schedule
+            metricNamePrefix: k8up_schedule
+            metrics:
+              - name: created
+                help: The creation time of a k8up Schedule.
+                each:
+                  type: Gauge
+                  gauge:
+                    path: [metadata, creationTimestamp]
+                labelsFromPath:
+                  name: [metadata, name]
+                  namespace: [metadata, namespace]
