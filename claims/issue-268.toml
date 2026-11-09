@@ -1,8 +1,0 @@
-claim_id = "44663d544edd4fbc8d9741ea3959eaf0"
-agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
-role = "builder"
-base = "b91d068629013089efa2ec16cdcd6bba90020d35"
-branch = "claude/issue-268-shared-wait-and-prometheus-reader"
-scope = ["tests/failure.sh", "tests/grafana/grafana_answers_both_data_sources_without_state_and_only_gatus_reaches_it.sh", "tests/litellm/expire_deletes_only_what_is_past_90_days.sh", "tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh", "tests/prometheus/backup_alerts_read_every_schedule_and_namespace.sh", "tests/prometheus/prometheus_api.sh", "tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh"]
-opened_commit = "c97041a10cfa4c8135fca63a9e61d258c857bda5"
-whole_reason = "One deduplication: each helper's copies must go in the same change that gives them one owner, or two owners stand side by side."
