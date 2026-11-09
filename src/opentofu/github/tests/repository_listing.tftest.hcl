@@ -247,3 +247,43 @@ run "a_listing_read_without_status_200_cannot_be_judged" {
 
   expect_failures = [output.managed_repositories]
 }
+
+run "a_repository_to_create_that_the_listing_holds_fails" {
+  command = plan
+
+  plan_options {
+    target = [data.github_rest_api.organisation_repositories]
+  }
+
+  override_data {
+    target = data.github_rest_api.organisation_repositories
+    values = {
+      code    = 200
+      headers = "{}"
+      body    = <<-JSON
+        [
+          {"name": "aco", "archived": false, "private": false, "fork": false},
+          {"name": "agents", "archived": false, "private": false, "fork": false},
+          {"name": "design", "archived": false, "private": false, "fork": false},
+          {"name": "figure", "archived": false, "private": false, "fork": false},
+          {"name": "hal", "archived": false, "private": false, "fork": false},
+          {"name": "hopin", "archived": false, "private": false, "fork": false},
+          {"name": "marketplace", "archived": false, "private": false, "fork": false},
+          {"name": "personas", "archived": false, "private": false, "fork": false},
+          {"name": "platform", "archived": false, "private": false, "fork": false},
+          {"name": "platform-secrets", "archived": false, "private": true, "fork": false},
+          {"name": "presentator", "archived": false, "private": false, "fork": false},
+          {"name": "quality", "archived": false, "private": false, "fork": false},
+          {"name": "skat", "archived": false, "private": false, "fork": false},
+          {"name": "songmaker", "archived": false, "private": false, "fork": false},
+          {"name": "speech", "archived": false, "private": false, "fork": false},
+          {"name": "webauth", "archived": false, "private": false, "fork": false},
+          {"name": "ACE-Step-1.5", "archived": false, "private": false, "fork": true},
+          {"name": "retired-project", "archived": true, "private": false, "fork": false}
+        ]
+      JSON
+    }
+  }
+
+  expect_failures = [output.managed_repositories]
+}

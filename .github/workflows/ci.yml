@@ -522,6 +522,13 @@ jobs:
         if: matrix.part == 'postgres'
         run: tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh
 
+      # The step changes songmaker's database and audio claim, which no later step of this part reads.
+      - name: P7f cells
+        if: matrix.part == 'postgres'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+        run: tests/backup/load_replaces_database_and_files_together.sh
+
       - name: Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind on the node
         if: matrix.part == 'backup'
         env:

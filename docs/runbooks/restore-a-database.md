@@ -15,10 +15,20 @@ Impact: the namespace's writers stop, and its Flux Kustomization stays suspended
    file that exists.
 2. After the operator's yes to this load, an agent: `mise run db:load-dump --compare <namespace> <file>`. It verifies
    every table against the dump and only then resumes Flux. It refuses a Kustomization that is already suspended.
-3. After a hard kill of step 2 and the operator's yes to resuming without a verification, an agent:
-   `mise run db:load-dump --resume <namespace>`. It verifies nothing.
+3. For a namespace whose layer declares a claim (songmaker's audio files), step 2 takes `--files <dir>`:
+   `mise run db:load-dump --compare --files <dir> <namespace> <file>`. A claim layer refuses a load without it and a
+   layer without a claim refuses it, before any change. `<dir>` holds only regular files and directories, at least one
+   file, every entry readable and no name with a newline; it is only read. After the database is verified, rsync
+   makes the claim equal to `<dir>`, deleting what it lacks, and a `--checksum --dry-run` must list no difference, only then does Flux
+   resume; a Kustomization that is already suspended does not stop it. rsync's messages go to `<file>.load.log`. Do not load at Sunday's backup time: a backup that runs during the
+   load reads the claim half replaced.
+4. After a hard kill of step 2 and the operator's yes to resuming without a verification, an agent:
+   `mise run db:load-dump --resume <namespace>`. It verifies nothing. A load with `--files` has no resume: it stays
+   suspended with its writers at 0 and the same command, run again, converges. When the source itself cannot converge (a
+   bad dump), the operator's yes to resuming without it is `flux resume kustomization <namespace>` by hand.
 
-Rollback: a load whose `pg_restore` failed or was interrupted resumes Flux itself once the data reads as before. A
+Rollback: a load whose `pg_restore` failed or was interrupted resumes Flux itself once the data reads as before, except
+a load with `--files`, which stays suspended for its re-run. A
 load that committed is undone only by loading another dump; no command dumps the current state first, so the dump
 that serves is a dump fetched before the load, other than the one loaded.
 

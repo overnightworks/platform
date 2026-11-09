@@ -656,6 +656,7 @@ description = "Load a custom-format dump into a namespace's Postgres with its wr
 usage = '''
 flag "--compare" help="Also compare every table's row count and the sha256 of its sorted rows with the dump"
 flag "--resume" help="Only resume the Kustomization a killed load left suspended, once no other session holds the database"
+flag "--files <dir>" help="The directory whose files replace the namespace's claim, which a layer that declares one requires"
 arg "<namespace>" help="The namespace whose Postgres is loaded; its Flux Kustomization has the same name"
 arg "[file]" help="The custom-format dump; pg_restore's messages go to <file>.load.log beside it, mode 0600"
 '''
@@ -665,8 +666,8 @@ run = '''
 set -euo pipefail
 umask 077
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-namespace="${usage_namespace?}" file="${usage_file:-}"
-pod=postgres-0
+namespace="${usage_namespace?}" file="${usage_file:-}" files="${usage_files:-}"
+pod=postgres-0 loader=db-load-files
 say() { echo "db:load-dump: $1"; }
 fail() { echo "db:load-dump: $1" >&2; exit 1; }
 in_postgres() { kubectl --namespace "$namespace" exec "$pod" --container postgres -- "$@"; }
@@ -697,13 +698,14 @@ wait_alone() {
 resume_flux() {
   trap - EXIT TERM
   trap '' INT
+  [ -z "$files" ] || scripts/load_files.sh stop "$namespace" "$loader" || true
   flux resume kustomization "$namespace" --wait
 }
 resume() {
   trap - EXIT TERM
   trap '' INT
   wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; the \
-Kustomization stays suspended and the writers at 0: run mise run db:load-dump --resume $namespace once it ended"
+Kustomization stays suspended and the writers at 0: $(way_back)"
   resume_flux
 }
 # The sha256 of the whole database as pg_dump writes it: schema, rows and sequence values. The fixed restrict key
@@ -716,9 +718,19 @@ unfingerprinted_relations() {
     OR (c.relkind IN ('r', 'p') AND EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_class'::regclass
       AND d.objid = c.oid AND d.deptype = 'e'))"
 }
+# A load with files has no resume: the claim and the database change together, so only the same command again makes
+# them equal to the source.
+way_back() {
+  if [ -n "$files" ]; then echo "run the same command again"
+  else echo "check the data, then run mise run db:load-dump --resume $namespace"; fi
+}
 unknown_outcome() {
   echo "db:load-dump: whether the load changed the data is unknown; the Kustomization $namespace stays suspended \
-and its writers at 0: check the data, then run mise run db:load-dump --resume $namespace" >&2
+and its writers at 0: $(way_back)" >&2
+}
+files_unfinished() {
+  echo "db:load-dump: the load of $namespace with its files did not finish or is not verified; the Kustomization \
+$namespace stays suspended and its writers at 0: $(way_back)" >&2
 }
 # A non-zero status or a signal can follow a committed restore, and a client that died can leave its remote pg_restore
 # running, so the data counts as unchanged only once the database is alone, holds no relation the fingerprint leaves
@@ -727,6 +739,7 @@ failed_load() {
   trap 'unknown_outcome; exit 143' TERM
   trap - EXIT
   trap '' INT
+  if [ -n "$files" ]; then files_unfinished; return; fi
   local after_load
   if wait_alone && [ "$(unfingerprinted_relations)" = 0 ] && after_load="$(fingerprint)" &&
     [ "$after_load" = "$before_load" ]; then
@@ -738,7 +751,15 @@ failed_load() {
     unknown_outcome
   fi
 }
+claim="$(kubectl --namespace "$namespace" get configmap postgres --output jsonpath='{.data.backup-claim}')" ||
+  fail "cannot read whether $namespace declares a claim; nothing changed"
+if [ -n "$claim" ] && [ -z "$files" ] && [ "${usage_resume:-false}" != true ]; then
+  fail "$namespace declares a claim, so the load needs --files <dir> with its files; nothing changed"
+fi
+[ -z "$files" ] || [ -n "$claim" ] || fail "$namespace declares no claim, so --files is refused; nothing changed"
 if [ "${usage_resume:-false}" = true ]; then
+  [ -z "$claim" ] || fail "$namespace declares a claim, so --resume is refused: run the same command again with its \
+dump and --files; nothing changed"
   existing="$(kubectl --namespace flux-system get kustomization "$namespace" --ignore-not-found --output name)" ||
     fail "cannot read whether the Kustomization $namespace exists; nothing changed"
   [ -n "$existing" ] || fail "there is no Kustomization $namespace in flux-system; nothing changed"
@@ -747,14 +768,17 @@ if [ "${usage_resume:-false}" = true ]; then
 fi
 
 [ -r "$file" ] && [ ! -d "$file" ] || fail "no readable dump file given; nothing changed"
+[ -z "$files" ] || scripts/load_files.sh check "$files"
 suspended="$(kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.spec.suspend}')" ||
   fail "cannot read whether the Kustomization $namespace is suspended; nothing changed"
-[ "$suspended" != true ] ||
+# A load with files that was killed leaves the Kustomization suspended and runs again as the same command.
+[ "$suspended" != true ] || [ -n "$files" ] ||
   fail "the Kustomization $namespace is suspended; nothing changed. After a killed load of this command run mise run \
 db:load-dump --resume $namespace, else ask whoever suspended it"
 # Before the load no session of this run writes to the database, so the resume waits for none. It is armed before the
-# suspension, which a signal can apply before its client returns; the Kustomization was not suspended before.
-trap resume_flux EXIT
+# suspension, which a signal can apply before its client returns. A Kustomization that was suspended already holds a
+# killed load of this command or a foreign suspension, and a failure before the load leaves it suspended.
+if [ "$suspended" = true ]; then trap files_unfinished EXIT; else trap resume_flux EXIT; fi
 trap 'exit 130' INT
 trap 'exit 143' TERM
 flux suspend kustomization "$namespace"
@@ -770,6 +794,8 @@ writers="$(kubectl --namespace "$namespace" get pods -o yaml |
   yq '.items[] | select(.metadata.ownerReferences[]?.kind == "ReplicaSet" and ((.status.phase == "Failed" or .status.phase == "Succeeded") and ([.status.containerStatuses[]?, .status.initContainerStatuses[]?] | map(select(.state.running != null)) | length == 0)) == false) | "pod/" + .metadata.name')"
 [ -z "$writers" ] || kubectl --namespace "$namespace" wait $writers --for=delete --timeout=5m
 wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; nothing loaded"
+# Before the load, so a claim that cannot hold the files refuses with the database unchanged.
+[ -z "$files" ] || scripts/load_files.sh start "$namespace" "$loader" "$claim" "$files"
 before_load="$(fingerprint)" || fail "cannot read the database $namespace before the load; nothing loaded"
 
 log="$file.load.log"
@@ -787,7 +813,7 @@ kubectl --namespace "$namespace" exec --stdin "$pod" --container postgres -- \
 # The data is committed: until it is verified, a signal or a failure leaves the writers stopped, not resumed on it.
 unverified() {
   echo "db:load-dump: the loaded data is not verified against $file; the Kustomization $namespace stays suspended and \
-its writers at 0: check the data, then run mise run db:load-dump --resume $namespace" >&2
+its writers at 0: $(way_back)" >&2
 }
 trap unverified EXIT
 
@@ -808,6 +834,11 @@ if [ "${usage_compare:-false}" = true ]; then
 fi
 [ "$verified" = true ] || exit 1
 
+if [ -n "$files" ]; then
+  trap files_unfinished EXIT
+  scripts/load_files.sh sync "$namespace" "$loader" "$files" "$log"
+  scripts/load_files.sh verify "$namespace" "$loader" "$files" "$log"
+fi
 say "verified; resuming the Kustomization $namespace"
 resume
 trap - INT
