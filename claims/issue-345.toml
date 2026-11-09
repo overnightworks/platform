@@ -1,0 +1,7 @@
+claim_id = "973d315147bf478a9efa33235963fbd6"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "7ba3a152f89c9f6cbbac8f33c989af48130f3ff0"
+branch = "claude/issue-345-forward-log-race"
+scope = ["scripts/litellm_keys.sh"]
+opened_commit = "4115d625a9e15f88c2b959ab03a6f1a37346ad8e"
