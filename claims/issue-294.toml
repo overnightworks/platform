@@ -1,0 +1,8 @@
+claim_id = "fe09de54dda949e9a754c466d4a27474"
+agent = "Claude c317acd7-f6ce-4c16-a601-ba5aacdae2e1"
+role = "builder"
+base = "d0aae82cc858d6c3d917e109ff4f31bada25d567"
+branch = "claude/issue-294-docs-personal-data"
+scope = ["AGENTS.md", "docs/personal-data.md", "tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh", "tests/ingress/traefik_answers_only_cloudflared_and_routes_the_app.sh", "tests/litellm/expire_deletes_only_what_is_past_90_days.sh", "tests/litellm/front_key_check_routing_and_closed_egress.sh", "tests/loki/loki_keeps_lines_under_28_days.sh", "tests/pod-logs/check_pod_logs_names_each_breach.sh", "tests/pod-logs/kubelet_keeps_reopens_and_never_compresses_logs.sh", "tests/pod-logs/tmpfiles_line_deletes_a_log_by_creation_time.sh"]
+opened_commit = "a4e7162ff842aab1d980bd45212de125a278f3b3"
+whole_reason = "One move: the sentences leave AGENTS.md in the commit that writes them into the reference and gives their tests the citations, so no tree state holds a rule twice or nowhere."
