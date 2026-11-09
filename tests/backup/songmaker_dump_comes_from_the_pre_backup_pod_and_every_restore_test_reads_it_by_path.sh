@@ -58,12 +58,17 @@ echo "the staged dump of $namespace restores to the live database's table digest
 
 # The backup command streams a fresh dump and refuses an old one: it writes nothing to stdout and exits non-zero, so a
 # reused PreBackupPod that kept last run's file fails its Backup. The Pod is the one above, its file aged with touch.
+# k8up runs the command without a shell, split on spaces and tabs with quoted chunks unquoted, so the annotation must be
+# `sh -c '<script>'` and the Pod is exec'd with exactly the arguments sh, -c and the script.
 backup_command="$(kubectl --namespace "$namespace" get prebackuppod files --output jsonpath='{.spec.backupCommand}')"
-streamed="$(kubectl --namespace "$namespace" exec "$check_pod" -- sh -c "$backup_command" 2>/dev/null | head -c 5)" || true
+[[ $backup_command =~ ^sh\ -c\ \'[^\']*\'$ ]] || fail "the backup command of $namespace is not of the form sh -c '<script>', the one k8up runs without a shell"
+backup_script="${backup_command#"sh -c '"}"
+backup_script="${backup_script%"'"}"
+streamed="$(kubectl --namespace "$namespace" exec "$check_pod" -- sh -c "$backup_script" 2>/dev/null | head -c 5)" || true
 [ "$streamed" = PGDMP ] || fail "the backup command of $namespace streams no custom-format dump from a fresh file"
 kubectl --namespace "$namespace" exec "$check_pod" -- touch -d '2020-01-01 00:00:00' /staging/postgres.dump
 stale_exit=0
-stale="$(kubectl --namespace "$namespace" exec "$check_pod" -- sh -c "$backup_command" 2>/dev/null)" || stale_exit=$?
+stale="$(kubectl --namespace "$namespace" exec "$check_pod" -- sh -c "$backup_script" 2>/dev/null)" || stale_exit=$?
 [ "$stale_exit" != 0 ] || fail "the backup command of $namespace exited 0 on a dump from 2020"
 [ -z "$stale" ] || fail "the backup command of $namespace wrote to stdout from a dump from 2020"
 echo "the backup command of $namespace streams a fresh dump and refuses an old one with no output"

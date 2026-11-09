@@ -65,9 +65,10 @@ spec:
   # k8up reuses an existing Deployment of this pod when its delete failed after the last Backup, and that pod dumped only
   # at its start and still holds last run's file; a dump older than 60 minutes fails the Backup, which mails, instead of
   # becoming a snapshot of old data. find prints the name only for a file younger than that, so a find without -mmin fails too.
-  backupCommand: |
-    test -n "$(find /staging/postgres.dump -mmin -60)" || { echo "the dump is older than 60 minutes or missing" >&2; exit 1; }
-    cat /staging/postgres.dump
+  # k8up runs the command without a shell, split on spaces and tabs with quoted chunks kept whole and unquoted, so it is
+  # one line `sh -c '<script>'` with double quotes only inside the script.
+  backupCommand: |-
+    sh -c 'test -n "$(find /staging/postgres.dump -mmin -60)" || { echo "the dump is older than 60 minutes or missing" >&2; exit 1; }; cat /staging/postgres.dump'
   fileExtension: .dump
   pod:
     spec:
