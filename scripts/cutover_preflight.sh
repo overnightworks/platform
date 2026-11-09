@@ -101,9 +101,10 @@ finish() {
 # fetch <variable> <command>...: the command's stdout under the deadline; false when it fails. Its stderr is dropped,
 # since a message may quote a value.
 fetch() {
-  local -n destination="$1"
+  local name="$1" captured
   shift
-  destination="$(timeout 20 "$@" 2>/dev/null)"
+  captured="$(timeout 20 "$@" 2>/dev/null)" || return
+  printf -v "$name" %s "$captured"
 }
 # http_get <curl argument>...: sets http_status, http_content_type, http_redirect and http_body; returns curl's status.
 http_get() {
@@ -129,6 +130,7 @@ repository_of() {
   [[ $1 =~ ^(https://|ssh://git@)github\.com/([^/]+)/([^/]+)$ ]] || return 1
   echo "${BASH_REMATCH[2]}/${BASH_REMATCH[3]%.git}"
 }
+github_sha=""
 # github_head <owner/repo> <branch>: the branch's head commit.
 github_head() {
   fetch github_sha gh api "repos/$1/commits/$2" --jq .sha && [[ $github_sha =~ ^[0-9a-f]{40}$ ]]
