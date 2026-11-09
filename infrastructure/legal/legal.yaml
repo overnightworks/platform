@@ -62,28 +62,28 @@ spec:
           configMap:
             name: legal-assets
             items:
-              - key: appkit-0.15.0__appkit.css
-                path: appkit-0.15.0/appkit.css
-              - key: appkit-0.15.0__fonts__open-sans-LICENSE
-                path: appkit-0.15.0/fonts/open-sans-LICENSE
-              - key: appkit-0.15.0__fonts__open-sans-latin-400-normal.woff2
-                path: appkit-0.15.0/fonts/open-sans-latin-400-normal.woff2
-              - key: appkit-0.15.0__fonts__open-sans-latin-600-normal.woff2
-                path: appkit-0.15.0/fonts/open-sans-latin-600-normal.woff2
-              - key: appkit-0.15.0__fonts__open-sans-latin-ext-400-normal.woff2
-                path: appkit-0.15.0/fonts/open-sans-latin-ext-400-normal.woff2
-              - key: appkit-0.15.0__fonts__open-sans-latin-ext-600-normal.woff2
-                path: appkit-0.15.0/fonts/open-sans-latin-ext-600-normal.woff2
-              - key: appkit-0.15.0__fonts__oswald-LICENSE
-                path: appkit-0.15.0/fonts/oswald-LICENSE
-              - key: appkit-0.15.0__fonts__oswald-latin-400-normal.woff2
-                path: appkit-0.15.0/fonts/oswald-latin-400-normal.woff2
-              - key: appkit-0.15.0__fonts__oswald-latin-700-normal.woff2
-                path: appkit-0.15.0/fonts/oswald-latin-700-normal.woff2
-              - key: appkit-0.15.0__fonts__oswald-latin-ext-400-normal.woff2
-                path: appkit-0.15.0/fonts/oswald-latin-ext-400-normal.woff2
-              - key: appkit-0.15.0__fonts__oswald-latin-ext-700-normal.woff2
-                path: appkit-0.15.0/fonts/oswald-latin-ext-700-normal.woff2
+              - key: design-0.18.0__design.css
+                path: design-0.18.0/design.css
+              - key: design-0.18.0__fonts__open-sans-LICENSE
+                path: design-0.18.0/fonts/open-sans-LICENSE
+              - key: design-0.18.0__fonts__open-sans-latin-400-normal.woff2
+                path: design-0.18.0/fonts/open-sans-latin-400-normal.woff2
+              - key: design-0.18.0__fonts__open-sans-latin-600-normal.woff2
+                path: design-0.18.0/fonts/open-sans-latin-600-normal.woff2
+              - key: design-0.18.0__fonts__open-sans-latin-ext-400-normal.woff2
+                path: design-0.18.0/fonts/open-sans-latin-ext-400-normal.woff2
+              - key: design-0.18.0__fonts__open-sans-latin-ext-600-normal.woff2
+                path: design-0.18.0/fonts/open-sans-latin-ext-600-normal.woff2
+              - key: design-0.18.0__fonts__oswald-LICENSE
+                path: design-0.18.0/fonts/oswald-LICENSE
+              - key: design-0.18.0__fonts__oswald-latin-400-normal.woff2
+                path: design-0.18.0/fonts/oswald-latin-400-normal.woff2
+              - key: design-0.18.0__fonts__oswald-latin-700-normal.woff2
+                path: design-0.18.0/fonts/oswald-latin-700-normal.woff2
+              - key: design-0.18.0__fonts__oswald-latin-ext-400-normal.woff2
+                path: design-0.18.0/fonts/oswald-latin-ext-400-normal.woff2
+              - key: design-0.18.0__fonts__oswald-latin-ext-700-normal.woff2
+                path: design-0.18.0/fonts/oswald-latin-ext-700-normal.woff2
               - key: legal-2.css
                 path: legal-2.css
         - name: temporary
@@ -102,8 +102,7 @@ spec:
       targetPort: http
 ---
 # Cloudflare terminates TLS, so the route is plain HTTP on Traefik's web port. It names the host and the five paths
-# hal's catalog leaves to the origin, so Traefik itself answers every other path with its 404, and no tunnel line sends
-# the host here yet.
+# hal's catalog leaves to the origin, so Traefik itself answers every other path with its 404.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

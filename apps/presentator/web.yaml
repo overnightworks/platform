@@ -1,0 +1,131 @@
+# presentator's web, pulled from its private package through the Secret ghcr-pull and started from the files of the
+# Secret presentator, both from platform-secrets. One pod runs with Recreate, as the claims are ReadWriteOnce and the
+# database is a single file. It shares its process namespace so that a pull's git and ssh children have a reaper, and
+# it keeps its ServiceAccount token, since it deletes the build worker's pod through the API (rbac.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: presentator
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      serviceAccountName: web
+      automountServiceAccountToken: true
+      shareProcessNamespace: true
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        # The image's runtime user, whose gid is the one the worker's group names.
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: ghcr.io/overnightworks/presentator
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: PRESENTATOR_PUBLIC_ORIGIN
+              value: https://presentator.hallucinai.de
+            - name: PRESENTATOR_TALK_ORIGIN
+              value: https://presentator-talk.hallucinai.de
+            - name: PRESENTATOR_OIDC_ISSUER
+              value: https://auth.hallucinai.de/realms/hallucinai
+            - name: PRESENTATOR_OIDC_CLIENT_ID
+              value: presentator
+            - name: PRESENTATOR_OIDC_CLIENT_SECRET_FILE
+              value: /run/secrets/oidc_client_secret
+            - name: PRESENTATOR_SECRET_KEY_FILE
+              value: /run/secrets/presentator_secret_key
+            # The pod network, where Traefik's pods change address on every restart.
+            - name: PRESENTATOR_TRUSTED_PROXIES
+              value: 10.42.0.0/16
+            - name: PRESENTATOR_AGENT__BACKEND
+              value: litellm
+            - name: PRESENTATOR_AGENT__GATEWAY__ORIGIN
+              value: http://litellm-front.litellm.svc.cluster.local:4000
+            - name: PRESENTATOR_AGENT__GATEWAY__KEY_FILE
+              value: /run/secrets/litellm_key
+            - name: PRESENTATOR_AGENT__API_GROUP
+              value: /services/agent-service/api
+            - name: PRESENTATOR_SPEECH_SERVICE
+              value: http://speech-runtime.speech-runtime.svc.cluster.local:8080
+            - name: PRESENTATOR_SPEECH_SERVICE_SCOPE
+              value: speech-service-audience
+            - name: PRESENTATOR_SPEECH_VOICE
+              value: piper
+            - name: PRESENTATOR_BUILD_RUNNER
+              value: worker
+          # The web refuses to start unless the worker answers within 70 seconds, which the pod's first start may need
+          # the worker's image pull for.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: presentator.hallucinai.de
+            periodSeconds: 10
+            failureThreshold: 30
+          # The Host check admits the public host only, so the kubelet's probe names it.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: presentator.hallucinai.de
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: database
+              mountPath: /data/database
+            - name: mirrors
+              mountPath: /data/mirrors
+            - name: builds
+              mountPath: /data/builds
+            - name: build-socket
+              mountPath: /run/presentator-build
+      volumes:
+        # Every key of the Secret becomes a file: presentator_secret_key, oidc_client_secret and litellm_key.
+        - name: secrets
+          secret:
+            secretName: presentator
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+        - name: database
+          persistentVolumeClaim:
+            claimName: database
+        - name: mirrors
+          persistentVolumeClaim:
+            claimName: mirrors
+        - name: builds
+          persistentVolumeClaim:
+            claimName: builds
+        - name: build-socket
+          persistentVolumeClaim:
+            claimName: build-socket

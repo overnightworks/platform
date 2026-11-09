@@ -48,18 +48,18 @@ while IFS= read -r -d '' file; do
   served_sum["$asset_prefix$relative"]="$(sha256sum <"$file" | cut -d' ' -f1)"
 done < <(find "$layer/assets" -type f -print0)
 
-# What a browser asks for must be served: every asset path the three built pages name and every url() in appkit.css.
+# What a browser asks for must be served: every asset path the three built pages name and every url() in design.css.
 references=()
 while IFS= read -r reference; do references+=("$reference"); done < <(
   grep -oh "${asset_prefix}[^\"' )<>]*" "$layer"/built/*.html | sort -u)
 while IFS= read -r font; do
   references+=("$asset_prefix$asset_directory/$font")
-done < <(sed -n "s/.*url('\\([^']*\\)').*/\\1/p" "$layer/assets/$asset_directory/appkit.css" | sort -u)
+done < <(sed -n "s/.*url('\\([^']*\\)').*/\\1/p" "$layer/assets/$asset_directory/design.css" | sort -u)
 [ "${#references[@]}" -gt 0 ] || fail "the built pages name no file under $asset_prefix"
 for reference in "${references[@]}"; do
-  [ -n "${served_sum[$reference]:-}" ] || fail "$reference is named by a built page or appkit.css and is no file under $layer/assets"
+  [ -n "${served_sum[$reference]:-}" ] || fail "$reference is named by a built page or design.css and is no file under $layer/assets"
 done
-echo "the ${#references[@]} references of the pages and of appkit.css name files under $layer/assets"
+echo "the ${#references[@]} references of the pages and of design.css name files under $layer/assets"
 
 # nginx's 404s, and the paths Traefik's own 404 and 400 answer (they reach no nginx location).
 nginx_missing=(/favicon.ico "$asset_prefix" "$asset_prefix$asset_directory/" "$asset_prefix$asset_directory/fonts"

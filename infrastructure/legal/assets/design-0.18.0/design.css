@@ -1,4 +1,4 @@
-/* appkit family tokens and fonts: what every overnightworks product shares.
+/* design family tokens and fonts: what every overnightworks product shares.
    With no theme choice the page follows the device (light, or dark under
    prefers-color-scheme); data-theme='light' and data-theme='dark' force a
    theme, and each theme sets color-scheme. The state set (--ok, --busy, --fail

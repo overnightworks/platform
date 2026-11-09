@@ -1,15 +1,15 @@
 # shellcheck shell=bash
 # Sourced by the scripts under tests/no_network/.
 # no_network_pod <name> <image> <init|none>: a Pod of the shape the worker takes: with init, the init container
-# remove-link (the program of remove_link.sh, uid 0, only NET_ADMIN) before a non-root worker with restricted's fields;
-# with none, the same worker alone. The worker sleeps, so that a cell can exec into it.
+# remove-link (the program of remove_link.sh, uid 0, RuntimeDefault, only NET_ADMIN) before a non-root worker with
+# restricted's fields; with none, the same worker alone. The worker sleeps, so that a cell can exec into it.
 no_network_pod() {
   NAME="$1" IMAGE="$2" PROGRAM="$(cat "$(dirname "${BASH_SOURCE[0]}")/remove_link.sh")" yq --null-input '
     {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(NAME)},
      "spec": {"automountServiceAccountToken": false,
        "initContainers": [{"name": "remove-link", "image": strenv(IMAGE), "command": ["sh", "-c", strenv(PROGRAM)],
          "securityContext": {"runAsUser": 0, "allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true,
-           "capabilities": {"drop": ["ALL"], "add": ["NET_ADMIN"]}}}],
+           "seccompProfile": {"type": "RuntimeDefault"}, "capabilities": {"drop": ["ALL"], "add": ["NET_ADMIN"]}}}],
        "containers": [{"name": "worker", "image": strenv(IMAGE), "command": ["sleep", "3600"],
          "securityContext": {"runAsNonRoot": true, "runAsUser": 1000, "allowPrivilegeEscalation": false,
            "seccompProfile": {"type": "RuntimeDefault"}, "capabilities": {"drop": ["ALL"]}}}]}}' |

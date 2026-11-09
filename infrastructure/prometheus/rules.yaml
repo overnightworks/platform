@@ -10,8 +10,10 @@ data:
     groups:
       - name: platform
         rules:
+          # A target that names its Deployment through the labels namespace and deployment is judged by DeploymentUnavailable
+          # while that has unavailable replicas, so one event mails once; a target without the labels never matches.
           - alert: TargetDown
-            expr: up == 0
+            expr: up == 0 unless on(namespace, deployment) (kube_deployment_status_replicas_unavailable > 0)
             for: 5m
             annotations:
               summary: 'Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}'
@@ -75,3 +77,24 @@ data:
             for: 15m
             annotations:
               summary: 'The CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} did not start within an hour of its due time'
+          # songmaker's web exports the series at 0 with no worker, and its Deployment stands at 0 replicas until a worker is
+          # wanted, so the guard keeps the rule quiet until then. A worker that is not Ready is DeploymentUnavailable's, so
+          # this rule is the Ready-and-unregistered case.
+          - alert: NoOnlineAceStepWorker
+            expr: >-
+              songmaker_acestep_workers_total{status="online"} == 0
+              and on() kube_deployment_spec_replicas{namespace="songmaker", deployment="acestep-worker"} > 0
+              unless on() kube_deployment_status_replicas_unavailable{namespace="songmaker", deployment="acestep-worker"} > 0
+            for: 10m
+            annotations:
+              summary: 'No ACE-Step worker of songmaker is online'
+          # The gauge is the time of the newest failure and 0 while nothing ever failed, so every sample holds the answer.
+          - alert: SongmakerJobFailure
+            expr: time() - songmaker_last_job_failure_timestamp_seconds < 900
+            annotations:
+              summary: 'A songmaker job failed within the last 15 minutes'
+          - alert: SongmakerBackgroundLoopUnhealthy
+            expr: songmaker_background_loop_alive == 0 or songmaker_background_loop_consecutive_failures >= 3
+            for: 5m
+            annotations:
+              summary: 'The songmaker background loop {{ $labels.loop }} is unhealthy'

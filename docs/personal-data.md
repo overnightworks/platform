@@ -13,7 +13,8 @@ none and a copy's creation time is younger than its lines; `pod-logs-clean.timer
 `/etc/systemd/system/` run that clean daily by the wall clock and after boot, then `scripts/check_pod_logs.sh` as
 `/usr/local/sbin/check-pod-logs`; `container-log-max-files=2` in `host/k3s/config.yaml` keeps the kubelet from
 compressing a rotated file. (PD-1)
-The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung),
+The promise: [allgemein](../infrastructure/legal/sections/allgemein/datenschutz.html#server-protokolle),
+[keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung),
 [speech-runtime](../infrastructure/legal/sections/speech-runtime/datenschutz.html#sprachdienst),
 [hopin](../infrastructure/legal/app-texts/hopin/datenschutz.html#hopin-protokolle),
 [skat](../infrastructure/legal/app-texts/skat/datenschutz.html#skat-protokolle).
@@ -23,7 +24,8 @@ The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.ht
 `limits_config.retention_period` of 28 days with the compactor's retention on is the one rule for Loki's copy of every
 line, which the privacy texts promise gone before 30 days; the compactor runs at start, so a PC that was off deletes
 shortly after its next start. (PD-2)
-The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung),
+The promise: [allgemein](../infrastructure/legal/sections/allgemein/datenschutz.html#server-protokolle),
+[keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung),
 [speech-runtime](../infrastructure/legal/sections/speech-runtime/datenschutz.html#sprachdienst).
 
 ## The backup component (`infrastructure/postgres/backup/`)

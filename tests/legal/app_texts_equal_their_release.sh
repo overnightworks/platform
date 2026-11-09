@@ -25,13 +25,17 @@ while read -r key tag; do
   tag_of[$key]="$tag"
 done < <(awk 'NF == 2' <<<"$declared")
 
-# set_release_tag <key> <declared tag>: sets tag, so a failure is not captured by a command substitution.
+# set_release_tag <key> <declared tag>: sets tag, so a failure is not captured by a command substitution. The images of an
+# app stand at ghcr.io/overnightworks/<key>: or ghcr.io/overnightworks/<key>/<part>:, and all of them name one version.
 set_release_tag() {
-  local key="$1" declared_tag="$2" image_ref
-  image_ref="$(grep -rhoE "ghcr\.io/overnightworks/$key:[^@\" ]+" "apps/$key" 2>/dev/null | head -n 1 || true)"
-  if [ -n "$image_ref" ]; then
-    [ "$declared_tag" = "-" ] || fail "$list names a tag for $key, which has the image $image_ref under apps/$key; drop the tag"
-    tag="v${image_ref#*:}"
+  local key="$1" declared_tag="$2" image_refs versions
+  image_refs="$(grep -rhoE "ghcr\.io/overnightworks/$key(/[a-z0-9-]+)?:[^@\" ]+" "apps/$key" 2>/dev/null | sort -u || true)"
+  if [ -n "$image_refs" ]; then
+    [ "$declared_tag" = "-" ] || fail "$list names a tag for $key, which has images under apps/$key; drop the tag"
+    versions="$(grep -oE '[^:]+$' <<<"$image_refs" | sort -u)"
+    [ "$(wc -l <<<"$versions")" -eq 1 ] ||
+      fail "the images of $key under apps/$key are at more than one version: $(tr '\n' ' ' <<<"$image_refs")"
+    tag="v$versions"
     return
   fi
   [ "$declared_tag" != "-" ] || fail "$list names no tag for $key, which has no image under apps/$key"

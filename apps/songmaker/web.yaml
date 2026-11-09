@@ -66,12 +66,12 @@ spec:
               value: json
             - name: HOST
               value: 0.0.0.0
-            # The Host check admits the public host, localhost, the host of the kubelet's probe, and web, the name the
-            # GPU worker sends with its control-plane URL.
+            # The Host check admits the public host, localhost, the host of the kubelet's probe, web, the name the
+            # GPU worker sends with its control-plane URL, and the Service's name Prometheus scrapes it by.
             - name: ALLOWED_HOSTS
-              value: songmaker.hallucinai.de,web,localhost
+              value: songmaker.hallucinai.de,web,web.songmaker.svc,localhost
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicy below admits
-            # only Traefik's pods and the namespace's own.
+            # only Traefik's, Prometheus's and the namespace's own pods, so their forwarded headers are trusted too.
             - name: TRUSTED_PROXIES
               value: 10.42.0.0/16
             # The web refuses to start without its sign-in settings, though it asks Keycloak only at a sign-in.
@@ -83,6 +83,16 @@ spec:
               value: /run/secrets/oidc_client_secret
             - name: PUBLIC_BASE_URL
               value: https://songmaker.hallucinai.de
+            # The co-writer's gateway is the platform's AI front with the key of this app's row in keys.yaml; a partly set
+            # value stops the start, so the four stand together. MCP stays off without a client id.
+            - name: AGENT__BACKEND
+              value: litellm
+            - name: AGENT__GATEWAY__ORIGIN
+              value: http://litellm-front.litellm:4000
+            - name: AGENT__GATEWAY__KEY_FILE
+              value: /run/secrets/litellm_key
+            - name: AGENT__API_GROUP
+              value: /services/agent-service/api
           # The start runs the migrations under a lock before it serves, so a slow one is not a failed start.
           startupProbe:
             httpGet:
@@ -178,7 +188,7 @@ spec:
                 port:
                   number: 8080
 ---
-# Traefik's pods and the namespace's own reach the web; the kubelet's probe comes from the node, which a NetworkPolicy
+# Traefik's pods, Prometheus's and the namespace's own reach the web; the kubelet's probe comes from the node, which a NetworkPolicy
 # never blocks.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -197,6 +207,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: traefik
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: prometheus
       ports:
         - port: http
           protocol: TCP

@@ -48,7 +48,7 @@ for manifest in $APP_MANIFESTS; do
     app_files="$(secret_files "$app_secret" "$app_namespace")"
     case "$app_namespace" in
       skat) app_keys="oidc_client_secret session_secret" ;;
-      songmaker) app_keys="oidc_client_secret session_secret songmaker_internal_token" ;;
+      songmaker) app_keys="oidc_client_secret session_secret songmaker_internal_token litellm_key songmaker_monitoring_token" ;;
       *) app_keys="oidc_client_secret session_secret turn_key_id turn_api_token" ;;
     esac
     for key in $app_keys; do
@@ -63,6 +63,12 @@ for manifest in $APP_MANIFESTS; do
   echo "::add-mask::$(base64 --wrap=0 < "$pull_file")"
   plain_secret "$pull_secret" "$app_namespace" kubernetes.io/dockerconfigjson
 done
+
+# Prometheus mounts songmaker's monitoring token as a file, which the secretKeyRef scan below does not find, so its Secret
+# takes the value of the key songmaker reads it from.
+monitoring_files="$(secret_files songmaker-monitoring prometheus)"
+cp "$(secret_files songmaker songmaker)/songmaker_monitoring_token" "$monitoring_files/token"
+plain_secret songmaker-monitoring prometheus Opaque
 
 # Each namespace whose layer includes the Postgres base gets its password, in the URL-safe alphabet, as the
 # file the base's StatefulSet reads from its Secret.
