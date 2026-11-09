@@ -33,6 +33,10 @@ spec:
               value: "true"
             - name: KEYCLOAK_AVAILABILITYCHECK_TIMEOUT
               value: 180s
+            # Logger names are case sensitive and an environment name binds lower case only, so the exact class goes
+            # through Spring's JSON property source.
+            - name: SPRING_APPLICATION_JSON
+              value: '{"logging.level.de.adorsys.keycloak.config.provider.KeycloakProvider":"debug"}'
             - name: KEYCLOAK_GRANTTYPE
               value: client_credentials
             - name: KEYCLOAK_CLIENTID
