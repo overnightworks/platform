@@ -139,6 +139,27 @@ data:
             - spec
             - suspend
           name: resource_info
+      - groupVersionKind:
+          group: k8up.io
+          kind: Schedule
+          version: v1
+        metricNamePrefix: k8up_schedule
+        metrics:
+        - each:
+            gauge:
+              path:
+              - metadata
+              - creationTimestamp
+            type: Gauge
+          help: The creation time of a k8up Schedule.
+          labelsFromPath:
+            name:
+            - metadata
+            - name
+            namespace:
+            - metadata
+            - namespace
+          name: created
 
 ---
 # Source: prometheus/templates/cm.yaml
@@ -356,6 +377,13 @@ rules:
   - kustomize.toolkit.fluxcd.io
   resources:
   - kustomizations
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - k8up.io
+  resources:
+  - schedules
   verbs:
   - list
   - watch

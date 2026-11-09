@@ -412,6 +412,11 @@ jobs:
           EMPTY_KEY_TABLE: broker_link
           VENDOR_LIST: infrastructure/admission/image-vendors.yaml
         run: tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh
+      - name: P9f cells
+        if: matrix.part == 'backup'
+        env:
+          PROMETHEUS_NAMESPACE: prometheus
+        run: tests/prometheus/backup_alerts_read_every_schedule_and_namespace.sh
       - name: P9b cells
         if: matrix.part == 'core'
         env:
@@ -481,6 +486,8 @@ jobs:
           READER_NAMESPACE: grafana
           OTHER_NAMESPACE: prometheus-probe
           BROKEN_KUSTOMIZATION: prometheus-probe
+          # The suspended CronJob in that namespace whose Job exits 1.
+          FAILING_CRONJOB: prometheus-probe
         run: tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh
 
       - name: Assert that Alertmanager runs on a finished file, is found by Prometheus, refuses bad values, makes at most one send per flush of a fired alert, answers only its readers and Prometheus drops a Flux Pod that is not running
