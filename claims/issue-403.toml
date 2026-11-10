@@ -3,6 +3,6 @@ agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
 role = "builder"
 base = "bce4b5620ae40fdfe5b2fc6a6d5162db9240c98e"
 branch = "claude/issue-403-presentator-s-web-streams-a-consistent-c"
-scope = [".github/workflows/ci.yml", "apps/presentator/web.yaml", "infrastructure/sqlite/scripts/sqlite_copy.py", "mise.toml", "tests/presentator/backup_streams_a_consistent_copy_that_fetch_and_load_restore.sh"]
+scope = [".github/workflows/ci.yml", "apps/presentator/web.yaml", "infrastructure/namespaces/namespaces.yaml", "infrastructure/sqlite/scripts/sqlite_copy.py", "mise.toml", "tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh", "tests/presentator/backup_streams_a_consistent_copy_that_fetch_and_load_restore.sh", "tests/presentator/pods_stay_within_their_levels.sh", "tests/presentator/restore_test_reads_the_latest_copy.sh"]
 opened_commit = "5d3dffc580eca004c6d1f6475b9184aa3eed1d4e"
 whole_reason = "The stream, its copy method, the fetch that reads it and the cell that drives them in sequence are one end-to-end proof of the backup path."
