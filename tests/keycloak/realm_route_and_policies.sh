@@ -51,6 +51,9 @@ asset_path="$(grep -o '/resources/[a-z0-9]\{5\}/[^"?]*' "$login_page" | head -n 
 [ -n "$asset_path" ] || fail "the login page names no asset under /resources/<version>/"
 echo "the login page of $LOGIN_CLIENT answers 200 and names the asset $asset_path"
 
+# canonical_form: writes its JSON input with object keys and every list sorted, at every depth. Keycloak returns its
+# sets (a client's optional scopes, redirect URIs) in no fixed order, and walk sorts a list after its elements.
+canonical_form() { jq --sort-keys 'walk(if type == "array" then sort else . end)'; }
 # keep_part <state directory> <realm> <part>: passes its input on and keeps it as one file of the state.
 keep_part() { tee "$1/$2.$3.json"; }
 # A second run on the applied realms changes nothing: their exports and their declared service accounts with their
@@ -59,16 +62,16 @@ realm_state() {
   local state_dir="$1" realm_file realm_name username user user_id
   for realm_file in "$MASTER_FILE" "$REALM_FILE"; do
     realm_name="$(yq '.realm' "$realm_file")"
-    admin POST "$realm_name/partial-export?exportClients=true&exportGroupsAndRoles=true" | jq --sort-keys . |
+    admin POST "$realm_name/partial-export?exportClients=true&exportGroupsAndRoles=true" | canonical_form |
       keep_part "$state_dir" "$realm_name" "partial export" || return 1
     for username in $(yq '.users[] | select(.serviceAccountClientId) | .username' "$realm_file"); do
-      user="$(admin GET "$realm_name/users?exact=true&username=$username" | jq --sort-keys '.[0] // empty')" || return 1
+      user="$(admin GET "$realm_name/users?exact=true&username=$username" | jq '.[0] // empty' | canonical_form)" || return 1
       [ -n "$user" ] || { echo "::error::the realm $realm_name holds no user $username" >&2; return 1; }
       printf '%s\n' "$user" | keep_part "$state_dir" "$realm_name" "user $username" || return 1
       user_id="$(jq --raw-output .id <<<"$user")"
-      admin GET "$realm_name/users/$user_id/role-mappings" | jq --sort-keys . |
+      admin GET "$realm_name/users/$user_id/role-mappings" | canonical_form |
         keep_part "$state_dir" "$realm_name" "role mappings $username" || return 1
-      admin GET "$realm_name/users/$user_id/groups" | jq --sort-keys . |
+      admin GET "$realm_name/users/$user_id/groups" | canonical_form |
         keep_part "$state_dir" "$realm_name" "groups $username" || return 1
     done
   done
@@ -87,21 +90,14 @@ differing_paths() {
     | [($was | with_entries(select(.key | in($now) | not))), ($now | with_entries(select(.key | in($was) | not)))]
     | map(.[]) | unique_by(tojson)[] | tojson' 2>/dev/null
 }
-# equal_with_arrays_sorted <before file> <after file>: prints yes or no.
-equal_with_arrays_sorted() {
-  jq -n --raw-output --slurpfile before "$1" --slurpfile after "$2" '
-    def sorted: walk(if type == "array" then sort else . end);
-    if ($before[0] | sorted) == ($after[0] | sorted) then "yes" else "no" end'
-}
 # describe_difference <before dir> <after dir> <file name>: one line for a part whose two files differ.
 describe_difference() {
-  local before_file="$1/$3" after_file="$2/$3" name="${3%.json}" paths shown total sorted_equal
+  local before_file="$1/$3" after_file="$2/$3" name="${3%.json}" paths shown total
   paths="$(differing_paths "$before_file" "$after_file")" || paths=""
   total="$(grep -c . <<<"$paths")" || total=0
   shown="$(head -n 20 <<<"$paths" | paste -sd, - | sed 's/,/, /g')"
   [ "$total" -le 20 ] || shown="$shown, and $((total - 20)) more"
-  sorted_equal="$(equal_with_arrays_sorted "$before_file" "$after_file")" || sorted_equal="unknown"
-  echo "realm ${name%%.*}, part ${name#*.}: differs at ${shown:-no path}; equal with arrays sorted: $sorted_equal"
+  echo "realm ${name%%.*}, part ${name#*.}: differs at ${shown:-no path}"
 }
 # report_difference <before dir> <after dir>: a line per part that differs or exists in one run only. The calls
 # run under `||` so that a failing report cannot end the cell before its message.
