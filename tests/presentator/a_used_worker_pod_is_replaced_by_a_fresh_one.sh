@@ -3,11 +3,12 @@
 # worker container's image and command replaced by a stand-in, gives every exit of the worker a fresh pod: after a
 # life's end and after a crash the pod has a new uid, its init container ran again, its worker never restarted and its
 # scratch was empty; a running pod is left alone; an exit loop makes one pod at a time, restarts no container and leaves
-# the node's leases, links and sandboxes as they were; and after a removed sandbox the worker runs again in the same pod,
-# finds its scratch used and ends it, which gives a fresh pod too. It needs CLUSTER_NAME and PROBE_IMAGE, and creates and
-# deletes the Namespace $REPLACEMENT_NAMESPACE, which carries no Pod Security label. The stand-in appends to the file
-# lives in the claim: "empty" when every scratch directory of the worker was empty at its start, else "used" and exit 2.
-# It then waits for the file trigger in the claim, whose content is its exit status. In loop mode it exits 2 at once.
+# the node's leases, links and sandboxes as they were; and after a removed sandbox a pod with a new uid follows and its
+# worker finds its scratch empty, while the cell prints what the old uid's worker did after the loss. It needs
+# CLUSTER_NAME and PROBE_IMAGE, and creates and deletes the Namespace $REPLACEMENT_NAMESPACE, which carries no Pod
+# Security label. The stand-in appends to the file lives in the claim: "empty" when every scratch directory of the worker
+# was empty at its start, else "used" and exit 2. It then waits for the file trigger in the claim, whose content is its
+# exit status. In loop mode it exits 2 at once.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 # shellcheck source=../failure.sh
@@ -87,12 +88,13 @@ namespace_created=1
 find_lease_directory
 node_before="$(node_state)" || exit 1
 
-# observe: sets uid (empty when the pod is absent), phase, init_exit, restarts and started (when the worker runs) from the pod.
+# observe: sets uid (empty when the pod is absent), phase, init_exit, restarts, started (when the worker runs) and the
+# exit code and reason of the worker's last termination from the pod.
 observe() {
   local reply
-  reply="$(k get pod "$pod" --ignore-not-found -o jsonpath='{.metadata.uid},{.status.phase},{.status.initContainerStatuses[0].state.terminated.exitCode},{.status.containerStatuses[0].restartCount},{.status.containerStatuses[0].state.running.startedAt}')" ||
+  reply="$(k get pod "$pod" --ignore-not-found -o jsonpath='{.metadata.uid},{.status.phase},{.status.initContainerStatuses[0].state.terminated.exitCode},{.status.containerStatuses[0].restartCount},{.status.containerStatuses[0].state.running.startedAt},{.status.containerStatuses[0].lastState.terminated.exitCode},{.status.containerStatuses[0].lastState.terminated.reason}')" ||
     fail "the read of pod/$pod failed"
-  IFS=, read -r uid phase init_exit restarts started <<<"$reply"
+  IFS=, read -r uid phase init_exit restarts started last_exit last_reason <<<"$reply"
 }
 now_milliseconds() { echo $(($(date +%s%N) / 1000000)); }
 pods_of_the_statefulset() { k get pods -o jsonpath='{range .items[*]}{.metadata.uid},{.status.containerStatuses[0].restartCount}{"\n"}{end}'; }
@@ -194,30 +196,45 @@ node_state_is_as_before() {
 wait_for 180 "the node's leases, links, sandboxes and CNI rules as they were" node_state_is_as_before
 echo "(c) with the StatefulSet at 0 the node's leases, links, sandboxes and CNI rules equal their state before"
 
-# (e) A lost sandbox: the worker runs again in the same pod, finds its scratch used and ends it; a fresh pod follows.
+# (e) A lost sandbox: the cell prints what the old uid's worker did, and a pod with a new uid follows on empty scratch.
 k apply -f - <<<"$(statefulset_manifest 1 serve)"
 wait_for 180 "the pod's worker runs after the loop" worker_runs
 stand_in_logged empty
 lost_uid="$uid"
+lives_before_the_loss="$(lives_log)"
 sandbox="$(crictl pods --namespace "$namespace" --state ready --label "io.kubernetes.pod.uid=$lost_uid" -q)" ||
   fail "the node's crictl cannot list the pod's sandbox"
 [ -n "$sandbox" ] && [ "$(wc -l <<<"$sandbox")" = 1 ] || fail "the pod holds no single sandbox: '$sandbox'"
 crictl stopp "$sandbox"
 crictl rmp "$sandbox"
-# trace: the distinct states the pod passed through, which says what the kubelet did.
+# trace: the distinct states the pod passed through; old_uid_state: the last state read while the old uid existed.
 trace=
+old_uid_state="no state of the old uid was read after the loss"
 traced_successor_of() {
   local reached=0 line
   is_successor_of "$1" || reached=1
-  line="${uid:0:8} $phase init=$init_exit restarts=$restarts"
+  line="${uid:0:8} $phase init=$init_exit restarts=$restarts last_exit=${last_exit:-none} last_reason=${last_reason:-none}"
   [ "$line" = "${last_line:-}" ] || trace+="${trace:+; }$line"
   last_line="$line"
+  [ "$uid" != "$1" ] || old_uid_state="$line"
   return "$reached"
 }
 wait_until 180 traced_successor_of "$lost_uid" || fail "within the time: a pod with a new uid whose worker runs after the removal of the sandbox; the pod showed: $trace"
 echo "(e) the pod showed: $trace"
+echo "(e) the old uid's worker after the loss, as last read: $old_uid_state"
+echo "(e) the events of the old pod: $(k get events --field-selector "involvedObject.uid=$lost_uid" --sort-by=.metadata.creationTimestamp \
+  -o jsonpath='{range .items[*]}{.reason}: {.message}; {end}')"
 fresh_pod_holds
-stand_in_logged used empty
-echo "(e) after the removal of its sandbox the worker ran again in the same pod, found its scratch used and ended it, and a pod with a new uid followed"
+# The new pod's worker logs its life last; whatever the old uid's worker wrote after the loss stands before it, recorded.
+lives_before_the_loss_count="$(grep -c . <<<"$lives_before_the_loss")"
+new_pod_found_its_scratch_empty() {
+  local lives
+  lives="$(lives_log)"
+  [ "$(grep -c . <<<"$lives")" -gt "$lives_before_the_loss_count" ] && [ "$(tail -n 1 <<<"$lives")" = empty ]
+}
+wait_until 60 new_pod_found_its_scratch_empty ||
+  fail "the stand-in's file lists '$(lives_log | tr '\n' ' ')' after the loss, not a further 'empty' as the last life after '$(tr '\n' ' ' <<<"$lives_before_the_loss")'"
+echo "(e) the stand-in's file after the loss lists '$(lives_log | tr '\n' ' ')', before it '$(tr '\n' ' ' <<<"$lives_before_the_loss")'"
+echo "(e) after the removal of its sandbox the pod with a new uid followed and its worker found its scratch empty"
 
 echo "presentator replacement cell ended after $((SECONDS - started_at)) seconds"
