@@ -5,9 +5,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=restic_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/restic_pod.sh"
 # songmaker's staging snapshot holds the copy of its declared claim and the dump of one run; prints names, counts,
-# digests and verdicts, never a file name, a file's content, a row or a secret. It runs after
-# songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh. Each cell plants synthetic
-# audio files at the reading uid into the declared claim and reads them back through the snapshots.
+# digests and verdicts, never a file name, a file's content, a row or a secret. It needs nothing from the other scripts
+# under tests/backup/: its own Backups fill songmaker's repository. Each cell plants synthetic audio files at the
+# reading uid into the declared claim and reads them back through the snapshots.
 export KUBECONFIG="$HOME/.kube/config"
 namespace="$SONGMAKER_NAMESPACE"
 staging=/data/backup-staging
@@ -258,8 +258,10 @@ source_mounts="$(jq --raw-output --arg claim "$declared_claim" '
 [ "$source_mounts" = "copy:true" ] || fail "the PreBackupPod's containers mount $declared_claim as '$source_mounts', not copy alone read-only"
 echo "only copy mounts $declared_claim, read-only, and the claim's files are unchanged after the Backup"
 
-# Cell 4: every restore test reads its dump by path while the newest snapshot is the staging one. Which of a run's two
-# snapshots k8up writes last is not fixed, so the cell makes the staging snapshot the newest by rewriting its time.
+# Cell 4: the restore test reads its dump by path while the newest snapshot is the staging one. Which of a run's two
+# snapshots k8up writes last is not fixed, so the cell makes the staging snapshot the newest by rewriting its time. Only
+# songmaker's repository can hold that state: the other namespaces' repositories hold the snapshots of their own runs,
+# whose restore tests the dump script runs.
 run_restic "$namespace" staging-newest '
   set -e
   staging='"$staging"'
@@ -273,11 +275,9 @@ run_restic "$namespace" staging-newest '
 [ "$restic_exit" = 0 ] || fail "the snapshots of $namespace cannot be ordered (exit $restic_exit)"
 [ "$(sed -n 's/^newest //p' <<<"$restic_output")" = "$staging" ] || fail "the newest snapshot of $namespace is not the staging one"
 echo "the newest snapshot of $namespace is the staging one$(grep -q '^arranged$' <<<"$restic_output" && echo ', by a rewritten time' || true)"
-for target in $BACKUP_NAMESPACES; do
-  run_restore_test "$target" staging-newest-restore-test
-  [ "$status" = passed ] || fail "the restore test of $target failed while $namespace's newest snapshot is the staging one"
-  echo "the restore test of $target passes"
-done
+run_restore_test "$namespace" staging-newest-restore-test
+[ "$status" = passed ] || fail "the restore test of $namespace failed while its newest snapshot is the staging one"
+echo "the restore test of $namespace passes"
 
 # Cell 6: a second Backup reads only the changed files, from its parent, and --delete drops the deleted file.
 run_files change-audio "$declared_claim" false "
