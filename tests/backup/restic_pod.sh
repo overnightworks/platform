@@ -42,6 +42,28 @@ run_restic() {
   fi
   kubectl --namespace "$namespace" delete pod "$name" --wait --timeout=2m >/dev/null
 }
+# init_restic_repository <namespace>: restic init of the namespace's repository from a run_restic Pod, fails when it does
+# not initialise it; sets restic_output. restic's REST backend creates a repository with one request that no retry wraps,
+# so a fresh Pod's first packets can meet a refusal before the network policy admits its address; init alone is retried,
+# only on a refusal, and its count is printed.
+init_restic_repository() {
+  local namespace="$1"
+  run_restic "$namespace" repository-init '
+  refused=0
+  while :; do
+    status=0
+    output="$(restic --no-cache init 2>&1)" || status=$?
+    if [ "$status" != 0 ] && [ "$refused" -lt 30 ] && printf "%s" "$output" | grep -q "connection refused"; then
+      refused=$((refused + 1))
+      sleep 1
+      continue
+    fi
+    printf "%s\n" "$output"
+    echo "init retries after refusal: $refused"
+    exit "$status"
+  done'
+  [ "$restic_exit" = 0 ] || fail "restic init did not initialise the repository of $namespace (exit $restic_exit): $restic_output"
+}
 # job_ended <namespace> <job>: waits for the Job's end; 0 when it completed, 1 when it failed.
 job_ended() {
   local namespace="$1" job="$2" deadline=$((SECONDS + 600)) state
@@ -57,10 +79,11 @@ job_ended() {
   fail "the Job $namespace/$job did not end within 10 minutes"
 }
 # run_restore_test <namespace> <job> [<configmap>]: runs the CronJob as it is, or with another ConfigMap as its checks;
-# sets status to passed or failed.
-# shellcheck disable=SC2034 # status is this function's result for the cells that source this file.
+# sets status to passed or failed, restore_exits to "dump <exit> check <exit>" (an exit the container never reached reads
+# as none) and restore_log to what the check printed.
+# shellcheck disable=SC2034 # status, restore_exits and restore_log are this function's results for the cells that source this file.
 run_restore_test() {
-  local namespace="$1" job="$2" checks="${3:-}" job_manifest
+  local namespace="$1" job="$2" checks="${3:-}" job_manifest pod exits
   job_manifest="$(kubectl --namespace "$namespace" create job "$job" --from=cronjob/restore-test --dry-run=client --output json)"
   if [ -n "$checks" ]; then
     job_manifest="$(CHECKS="$checks" yq --output-format json \
@@ -69,6 +92,12 @@ run_restore_test() {
   restic_objects+=("$namespace job $job")
   kubectl --namespace "$namespace" create --filename - <<<"$job_manifest" >/dev/null
   if job_ended "$namespace" "$job"; then status=passed; else status=failed; fi
+  pod="$(kubectl --namespace "$namespace" get pods --selector "batch.kubernetes.io/job-name=$job" \
+    --output jsonpath='{.items[0].metadata.name}')"
+  exits="$(kubectl --namespace "$namespace" get pod "$pod" --output json | yq --input-format json \
+    '[.status.initContainerStatuses[0], .status.containerStatuses[0]] | map(.state.terminated.exitCode // "none") | join(" ")')"
+  restore_exits="dump ${exits% *} check ${exits#* }"
+  restore_log="$(kubectl --namespace "$namespace" logs "pod/$pod" --container restore-test 2>/dev/null || true)"
   kubectl --namespace "$namespace" delete job "$job" --cascade=foreground --wait --timeout=2m >/dev/null
 }
 

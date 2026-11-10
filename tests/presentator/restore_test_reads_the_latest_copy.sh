@@ -46,17 +46,7 @@ postgres_schedule="$(kubectl --namespace "$postgres_namespace" get cronjob resto
   fail "presentator's restore test runs at '$schedule', the one of $postgres_namespace at '$postgres_schedule'"
 echo "the restore test reads with the operator's own image at the Postgres restore test's schedule ($schedule)"
 
-# restic's REST backend creates a repository with one request that no retry wraps, so a fresh Pod's first packets can meet
-# a refusal before the network policy admits its address; init alone is retried, only on a refusal.
-run_restic "$namespace" repository-init '
-  refused=0
-  until output="$(restic --no-cache init 2>&1)"; do
-    printf "%s" "$output" | grep -q "connection refused" && [ "$refused" -lt 30 ] || { printf "%s\n" "$output"; exit 1; }
-    refused=$((refused + 1))
-    sleep 1
-  done
-  echo "init retries after refusal: $refused"'
-[ "$restic_exit" = 0 ] || fail "restic init did not initialise presentator's repository (exit $restic_exit): $restic_output"
+init_restic_repository "$namespace"
 echo "$restic_output"
 
 # make_copy <kind>: a SQLite file of the kind in the scratch directory, built by the runner's Python; prints its path.
@@ -91,21 +81,13 @@ write_snapshot() {
   [ "$restic_exit" = 0 ] || fail "restic did not write the $1 copy into presentator's repository (exit $restic_exit)"
 }
 
-# run_test <job>: the CronJob run as a Job to its end; sets outcome to "<passed|failed> dump <exit> check <exit>", an
-# exit the container never reached read as none, and check_output to what the check printed.
+# run_test <job>: the CronJob run as a Job to its end; sets outcome to "<passed|failed> dump <exit> check <exit>" and
+# check_output to what the check printed.
 run_test() {
-  local job="$1" pod verdict exits
-  restic_objects+=("$namespace job $job")
-  kubectl --namespace "$namespace" create job "$job" --from=cronjob/restore-test >/dev/null
-  if job_ended "$namespace" "$job"; then verdict=passed; else verdict=failed; fi
-  pod="$(kubectl --namespace "$namespace" get pods --selector "batch.kubernetes.io/job-name=$job" \
-    --output jsonpath='{.items[0].metadata.name}')"
-  exits="$(kubectl --namespace "$namespace" get pod "$pod" --output json | yq --input-format json \
-    '[.status.initContainerStatuses[0], .status.containerStatuses[0]] | map(.state.terminated.exitCode // "none") | join(" ")')"
-  outcome="$verdict dump ${exits% *} check ${exits#* }"
-  check_output="$(kubectl --namespace "$namespace" logs "pod/$pod" --container restore-test 2>/dev/null || true)"
-  kubectl --namespace "$namespace" delete job "$job" --cascade=foreground --wait --timeout=2m >/dev/null
-  [[ $check_output != *"$marker"* ]] || fail "the restore test $job printed a row"
+  run_restore_test "$namespace" "$1"
+  outcome="$status $restore_exits"
+  check_output="$restore_log"
+  [[ $check_output != *"$marker"* ]] || fail "the restore test $1 printed a row"
 }
 
 run_test no-snapshot
