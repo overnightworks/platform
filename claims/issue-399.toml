@@ -1,8 +1,0 @@
-claim_id = "aa116f38af154b528255214993466fb8"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "045a9e9bebf4f2d0a81cfc505c54b133ac49c0ec"
-branch = "claude/issue-399-backup-schedule-component"
-scope = [".github/workflows/ci.yml", "infrastructure/backup/schedule/kustomization.yaml", "infrastructure/backup/schedule/schedule.yaml", "infrastructure/postgres/backup/backup.yaml", "infrastructure/postgres/backup/kustomization.yaml", "tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
-opened_commit = "060f7c4c434dde35c059bb54de558efa5b238786"
-whole_reason = "A move is one change: the new component, the old file losing the objects and the two checks that read them land together or the render or the checks break."
