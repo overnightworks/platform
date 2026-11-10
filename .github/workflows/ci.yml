@@ -65,6 +65,9 @@ jobs:
       - name: Check that check:secrets-expiry passes no annotated Secret and a date 31 days out and names each Secret within 30 days, past, unparseable or unlisted
         run: tests/secrets/expiry_check_names_each_breach.sh
 
+      - name: Run the unit test of the SQLite copy script on Python 3.14
+        run: mise run sqlite:test
+
       - name: Run the legal project's tests at 100 % branch coverage
         run: mise run legal:test
 
@@ -102,7 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2]
+        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator]
     runs-on: ubuntu-latest
     # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
     timeout-minutes: 17
@@ -164,6 +167,9 @@ jobs:
       UNROUTED_HOST: unrouted.invalid
       # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
       APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml apps/songmaker/music-worker.yaml apps/songmaker/scoring-worker.yaml apps/songmaker/acestep-worker.yaml
+      # The apps only a cell's stand-in layer runs: their Secrets are served beside the apps' above, and no check of the
+      # apps' full refs reads them.
+      STAND_IN_MANIFESTS: apps/presentator/web.yaml
       # The Kustomization that serves the Secrets of every namespace, so that no other layer holds one of them.
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
@@ -247,6 +253,10 @@ jobs:
       - name: Check that db:load-dump and interrupt_load.sh end as they owe where a command fails, a signal arrives or a table is empty
         if: matrix.part == 'core'
         run: tests/postgres/load_dump.sh
+
+      - name: Check that presentator:load-database names its state where the load is refused, its outcome is unknown, the rollout fails after a verified load, a signal arrives or the lock is unavailable
+        if: matrix.part == 'core'
+        run: tests/presentator/load_database.sh
 
       - name: Assert that k3s runs with host/k3s/config.yaml
         if: matrix.part == 'core'
@@ -552,6 +562,10 @@ jobs:
       - name: Assert that presentator's Namespace enforces nothing and warns and audits at restricted, and that no Pod template of a layer runs as 61001 or 61002
         if: matrix.part == 'apps'
         run: tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh
+
+      - name: Assert that presentator:load-database refuses before any change, replaces the live file whole or leaves the old one, keeps a suspension it found, and that a killed run and a second run at once converge on the same command
+        if: matrix.part == 'presentator'
+        run: tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells

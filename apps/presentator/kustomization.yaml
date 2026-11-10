@@ -6,6 +6,13 @@ resources:
   - rbac.yaml
   - web.yaml
   - worker.yaml
+  - ../../infrastructure/sqlite
+configMapGenerator:
+  - name: sqlite
+    behavior: merge
+    literals:
+      # One row per person who ever signed in.
+      - key-table=users
 # The image of the web and the worker, a placeholder release; a bump changes tag and digest together, in a pull request.
 images:
   - name: ghcr.io/overnightworks/presentator
