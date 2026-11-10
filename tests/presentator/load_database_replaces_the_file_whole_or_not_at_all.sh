@@ -26,8 +26,8 @@ cleanup() {
   local cell_status=$?
   [ -z "$held_pid" ] || pkill -KILL --session "$held_pid" 2>/dev/null || true
   [ -z "$lock_client" ] || kill "$lock_client" 2>/dev/null || true
-  remove_stand_in
   delete_object --namespace "$namespace" delete pod "$holder" "$loader" --ignore-not-found --wait --timeout=2m
+  remove_stand_in
   rm -rf "$scratch"
   end_deletions "$cell_status"
 }

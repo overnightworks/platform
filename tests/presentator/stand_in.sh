@@ -40,7 +40,8 @@ show_why_the_stand_in_is_not_ready() {
     --output custom-columns=OBJECT:.involvedObject.name,REASON:.reason,MESSAGE:.message || true
 }
 
-# remove_stand_in: for the cell's exit trap, which ends with end_deletions.
+# remove_stand_in: for the cell's exit trap, which ends with end_deletions, after the cell removed its own Pods that mount
+# the claim: a claim stays Terminating while any Pod uses it.
 remove_stand_in() {
   flux resume kustomization presentator >/dev/null 2>&1 || true
   delete_object --namespace flux-system delete kustomization presentator --ignore-not-found --wait --timeout=5m
