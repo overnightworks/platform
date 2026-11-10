@@ -187,7 +187,7 @@ request "$first" no-credentials-foreign "$UNROUTED_HOST" "$rest_base/$second/con
 [ "$status" = 401 ] || fail "without credentials the server answered $status under /$second/"
 echo "without credentials the server answers 401 everywhere"
 request "$OUTSIDE_NAMESPACE" outside-namespace "$UNROUTED_HOST" "$rest_base/$first/config" --retry 0
-[ "$status" = 000 ] && [ "$exit_code" != 0 ] ||
+[ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
   fail "a pod in $OUTSIDE_NAMESPACE reached the rest-server (status '$status', curl exit $exit_code)"
 echo "a pod in $OUTSIDE_NAMESPACE gets no answer, while a pod in $first was answered above"
 credential_requests='

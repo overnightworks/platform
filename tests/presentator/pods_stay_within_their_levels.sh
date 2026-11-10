@@ -230,6 +230,9 @@ spec:
             runAsUser: 0
 EOF
 )"
+# The CronJob's pod template is among the judged templates.
+mutant "the Pod restore-test is refused at restricted" \
+  "(select(.kind == \"CronJob\" and .metadata.name == \"restore-test\") | .spec.jobTemplate.spec.template.spec.securityContext) |= (.runAsUser = 0 | .runAsNonRoot = false)"
 # NET_ADMIN is what makes the worker need baseline.
 mutant "the worker with its init's NET_ADMIN is admitted" "($on_worker | .spec.template.spec.initContainers[0].securityContext.capabilities.add) = []"
 # NET_ADMIN only in the finishing init.

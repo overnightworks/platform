@@ -94,10 +94,13 @@ run_test no-snapshot
 [[ $outcome == "failed dump "[1-9]*" check none" ]] || fail "without a snapshot the restore test ended '$outcome'"
 echo "without a snapshot the restore test fails at the dump: $outcome"
 
+# The check's verdict that the copy fails; any other exit, CPython's own 1 included, is a crash.
+verdict_exit="$(python3 -I -B -c 'import sys; sys.path.insert(0, sys.argv[1]); import sqlite_copy; print(sqlite_copy.VERDICT_EXIT)' \
+  "$(dirname "${BASH_SOURCE[0]}")/../../infrastructure/sqlite/scripts")"
 for kind in empty-table missing-table damaged; do
   write_snapshot "$kind"
   run_test "$kind"
-  [[ $outcome == "failed dump 0 check "[1-9]* ]] || fail "on a latest copy with $kind the restore test ended '$outcome'"
+  [ "$outcome" = "failed dump 0 check $verdict_exit" ] || fail "on a latest copy with $kind the restore test ended '$outcome'"
   echo "on a latest copy with $kind the restore test fails at the check: $outcome"
 done
 
@@ -128,6 +131,6 @@ mapfile -t statuses <<<"$restic_output"
 echo "presentator's credentials read its own repository (200) and are refused at $foreign's (${statuses[1]}, ${statuses[2]})"
 
 request "$OUTSIDE_NAMESPACE" outside-namespace "$UNROUTED_HOST" "$own/config" --retry 0
-[ "$status" = 000 ] && [ "$exit_code" != 0 ] ||
+[ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
   fail "a pod in $OUTSIDE_NAMESPACE reached the rest-server (status '$status', curl exit $exit_code)"
 echo "a pod in $OUTSIDE_NAMESPACE gets no answer from the rest-server"
