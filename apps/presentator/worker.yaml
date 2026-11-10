@@ -6,8 +6,9 @@
 # NET_ADMIN is outside baseline; tests/presentator/pods_stay_within_their_levels.sh holds the exception to this pod.
 # Every exit of the worker ends its pod: the container's restartPolicy is Never, so the kubelet makes the pod terminal
 # and the StatefulSet deletes it and creates it again, a fresh pod with the init run again, whatever the exit status.
-# A lost sandbox is the one exception: the kubelet then runs the worker again in the same pod, whose start the worker's
-# own scratch check judges. The claim build-socket is local-path, so the web and this pod run on its node.
+# A removed sandbox ended the worker's container as ContainerStatusUnknown, and the StatefulSet replaced the pod; a re-run
+# in the same pod was not observed and is not excluded, and if it happens presentator's scratch check refuses it.
+# The claim build-socket is local-path, so the web and this pod run on its node.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
