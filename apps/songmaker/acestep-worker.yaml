@@ -189,9 +189,9 @@ spec:
         - port: 8080
           protocol: TCP
 ---
-# The model checkpoints stay where the PC holds them: a copy would take 84 GB and sudo, and nothing mounts them at 0
-# replicas. The directory is owned by uid 1000, the worker's user. Retain keeps the directory when the volume object
-# goes, and the claimRef keeps any other claim from taking it. The mount is writable as in the release's compose file.
+# The model checkpoints stay where the PC holds them: a copy would take 84 GB and sudo. The directory is owned by uid
+# 1000, the worker's user. Retain keeps the directory when the volume object goes, and the claimRef keeps any other
+# claim from taking it. The mount is writable as in the release's compose file.
 apiVersion: v1
 kind: PersistentVolume
 metadata:
