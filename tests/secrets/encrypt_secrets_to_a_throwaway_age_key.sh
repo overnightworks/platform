@@ -78,13 +78,18 @@ postgres_statefulset="$(yq 'select(.kind == "StatefulSet")' "$POSTGRES_BASE/post
 postgres_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$postgres_statefulset")"
 password_file="$(yq '.spec.template.spec.containers[0].env[] | select(.name == "POSTGRES_PASSWORD_FILE") | .value' \
   <<<"$postgres_statefulset")"
+# layer_includes <kustomization file> <resources|components> <directory>: the field of the layer names the directory.
+layer_includes() {
+  local layer="$1" field="$2" directory entry
+  directory="$(realpath --canonicalize-missing "$3")"
+  while IFS= read -r entry; do
+    [ "$(realpath --canonicalize-missing "${layer%/*}/$entry")" != "$directory" ] || return 0
+  done < <(FIELD="$field" yq '.[strenv(FIELD)] // [] | .[]' "$layer")
+  return 1
+}
 postgres_namespaces=()
 for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
-  includes=0
-  while IFS= read -r resource; do
-    [ "$(realpath --canonicalize-missing "${layer%/*}/$resource")" != "$(realpath "$POSTGRES_BASE")" ] || includes=1
-  done < <(yq '.resources[]' "$layer")
-  [ "$includes" = 1 ] || continue
+  layer_includes "$layer" resources "$POSTGRES_BASE" || continue
   postgres_namespace="$(yq '.namespace' "$layer")"
   value="$(openssl rand -hex 32)"
   echo "::add-mask::$value"
@@ -94,9 +99,10 @@ for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
 done
 [ "${#postgres_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $POSTGRES_BASE"
 
-# Each namespace whose layer includes the backup component gets its restic Secret, under the names the component's
-# Schedule reads: a rest user, its rest password and its repository password, each in the URL-safe alphabet; the Secret
-# rest-users holds every user's password as a file named after the user.
+# Each namespace whose layer includes the Postgres backup component or the SQLite base gets its restic Secret, under the
+# names the Schedule reads: a rest user, its rest password and its repository password, each in the URL-safe alphabet;
+# the Secret rest-users holds every user's password as a file named after the user. BACKUP_NAMESPACES names the Postgres
+# ones alone, as the cells that read it restore a dump.
 schedule="$(yq 'select(.kind == "Schedule")' "$BACKUP_SCHEDULE_COMPONENT/schedule.yaml")"
 restic_secret="$(yq '.spec.backend.repoPasswordSecretRef.name' <<<"$schedule")"
 user_key="$(yq '.spec.backend.rest.userSecretRef.key' <<<"$schedule")"
@@ -108,13 +114,12 @@ rest_users_secret="$(yq 'select(.kind == "Deployment") | .spec.template.spec.vol
 rest_users_files="$(secret_files "$rest_users_secret" "$rest_namespace")"
 backup_namespaces=()
 for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
-  includes=0
-  while IFS= read -r component; do
-    [ "$(realpath --canonicalize-missing "${layer%/*}/$component")" != "$(realpath "$POSTGRES_BACKUP_COMPONENT")" ] || includes=1
-  done < <(yq '.components // [] | .[]' "$layer")
-  [ "$includes" = 1 ] || continue
   backup_namespace="$(yq '.namespace' "$layer")"
-  backup_namespaces+=("$backup_namespace")
+  if layer_includes "$layer" components "$POSTGRES_BACKUP_COMPONENT"; then
+    backup_namespaces+=("$backup_namespace")
+  elif ! layer_includes "$layer" resources "$SQLITE_COMPONENT"; then
+    continue
+  fi
   restic_files="$(secret_files "$restic_secret" "$backup_namespace")"
   # rest-server's --private-repos admits a user only to the path that starts with its name, and the repository's path
   # is the namespace, so the user equals the namespace.
