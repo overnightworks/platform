@@ -102,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, access, apps, load, backup-1, backup-2]
+        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -354,7 +354,7 @@ jobs:
         run: tests/cloudflared/ingress_from_pods_built_from_its_template.sh
 
       - name: P7a cells
-        if: matrix.part == 'load'
+        if: matrix.part == 'load-1'
         env:
           # The layer whose Kustomization the prune proof deletes and whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
@@ -368,6 +368,13 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
+      - name: P7a foreign-session and interrupt cells
+        if: matrix.part == 'load-2'
+        env:
+          # The layer whose Postgres the loader proof loads.
+          PROOF_LAYER: litellm
+        run: tests/postgres/load_dump_refuses_a_foreign_session_and_suspension_and_survives_interrupts.sh
+
       - name: Assert that songmaker's Postgres and Redis are Ready and non-root, closed to other namespaces, and that Redis forgets on restart
         if: matrix.part == 'core'
         env:
@@ -377,7 +384,7 @@ jobs:
         run: tests/songmaker/stores_are_ready_non_root_closed_and_forget.sh
 
       - name: Assert that songmaker's web is Ready at its full ref, migrated, closed to other namespaces, read-only and holds its audio claim
-        if: matrix.part == 'load'
+        if: matrix.part == 'load-1'
         env:
           SONGMAKER_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
@@ -385,7 +392,7 @@ jobs:
         run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
 
       - name: Assert that songmaker's route reaches its web through Traefik for the tunnel's Pods, that the web answers the host the GPU worker sends and refuses another, and that a Pod in another namespace gets no answer
-        if: matrix.part == 'load'
+        if: matrix.part == 'load-1'
         env:
           SONGMAKER_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
@@ -527,7 +534,7 @@ jobs:
 
       # The step suspends the Kustomization litellm, which would otherwise restore the table it changes.
       - name: P9c cells
-        if: matrix.part == 'load'
+        if: matrix.part == 'load-1'
         env:
           LITELLM_NAMESPACE: litellm
           APP_NAMESPACE: hopin
