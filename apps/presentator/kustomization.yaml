@@ -13,6 +13,51 @@ configMapGenerator:
     literals:
       # One row per person who ever signed in.
       - key-table=users
+      - backup-repository=http://rest-server.backup.svc.cluster.local:8000/presentator/
+      # k8up names a stream /<namespace>-<container><extension>: the web's, with the extension .sqlite3.
+      - snapshot-file=presentator-web.sqlite3
+replacements:
+  - source:
+      kind: ConfigMap
+      name: sqlite
+      fieldPath: data.backup-repository
+    targets:
+      - select:
+          kind: Schedule
+          name: backup
+        fieldPaths:
+          - spec.backend.rest.url
+  # The restore test checks the copy in the image and as the user that wrote it.
+  - source:
+      kind: Deployment
+      name: web
+      fieldPath: spec.template.spec.containers.[name=web].image
+    targets:
+      - select:
+          kind: CronJob
+          name: restore-test
+        fieldPaths:
+          - spec.jobTemplate.spec.template.spec.containers.[name=restore-test].image
+  - source:
+      kind: Deployment
+      name: web
+      fieldPath: spec.template.spec.securityContext.runAsUser
+    targets:
+      - select:
+          kind: CronJob
+          name: restore-test
+        fieldPaths:
+          - spec.jobTemplate.spec.template.spec.securityContext.runAsUser
+  - source:
+      kind: Deployment
+      name: web
+      fieldPath: spec.template.spec.securityContext.runAsGroup
+    targets:
+      - select:
+          kind: CronJob
+          name: restore-test
+        fieldPaths:
+          - spec.jobTemplate.spec.template.spec.securityContext.runAsGroup
 # The image of the web and the worker, a placeholder release; a bump changes tag and digest together, in a pull request.
 images:
   - name: ghcr.io/overnightworks/presentator
