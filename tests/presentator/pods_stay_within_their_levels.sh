@@ -134,10 +134,10 @@ judge_structure() {
   found "$manifest" "the worker projects a ServiceAccount token" \
     "$WORKER | .volumes[] | select(.projected) | .projected.sources[] | select(has(\"serviceAccountToken\"))"
   # The web holds its token and its Secret's files in the one volume at /run/secrets, with no automount.
-  exactly "$manifest" "the web mounts a ServiceAccount token of its own" "$WEB | .automountServiceAccountToken" 'false'
+  exactly "$manifest" "the web does not turn the kubelet's ServiceAccount token automount off" "$WEB | .automountServiceAccountToken" 'false'
   exactly "$manifest" "the web's volume at /run/secrets does not hold the token's three files" \
-    "$WEB | .volumes[] | select(.name == \"secrets\") | .projected.sources[] | (.serviceAccountToken.path, .configMap.items[].path, .downwardAPI.items[].path) | select(. != null)" \
-    '"kubernetes.io/serviceaccount/token","kubernetes.io/serviceaccount/ca.crt","kubernetes.io/serviceaccount/namespace"'
+    "$WEB | [.volumes[] | select(.name == \"secrets\") | .projected.sources[] | (.serviceAccountToken.path, .configMap.items[].path, .downwardAPI.items[].path) | select(. != null)] | sort | join(\",\") | select(. != \"\")" \
+    '"kubernetes.io/serviceaccount/ca.crt,kubernetes.io/serviceaccount/namespace,kubernetes.io/serviceaccount/token"'
   exactly "$manifest" "the web does not mount that volume read-only at /run/secrets" \
     "$WEB | .containers[0].volumeMounts[] | select(.name == \"secrets\") | .mountPath + \",\" + (.readOnly | to_string)" '"/run/secrets,true"'
   # Replicas, strategy, process sharing, fsGroup and exec probes.
@@ -286,7 +286,7 @@ mutant "the worker mounts a ServiceAccount token" "($on_worker | .spec.template.
 mutant "the worker projects a ServiceAccount token" \
   "($on_worker | .spec.template.spec.volumes) += [{\"name\": \"token\", \"projected\": {\"sources\": [{\"serviceAccountToken\": {\"path\": \"token\"}}]}}]"
 # Replicas, strategy, process sharing, fsGroup and exec probes.
-mutant "the web mounts a ServiceAccount token of its own" "($on_web | .spec.template.spec.automountServiceAccountToken) = true"
+mutant "the web does not turn the kubelet's ServiceAccount token automount off" "($on_web | .spec.template.spec.automountServiceAccountToken) = true"
 mutant "the web's volume at /run/secrets does not hold the token's three files" \
   "del($on_web | .spec.template.spec.volumes[] | select(.name == \"secrets\") | .projected.sources[] | select(has(\"serviceAccountToken\")))"
 mutant "the web does not mount that volume read-only at /run/secrets" "($on_web | .spec.template.spec.containers[0].volumeMounts[] | select(.name == \"secrets\") | .readOnly) = false"
