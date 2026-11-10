@@ -1,0 +1,7 @@
+claim_id = "ab16a833a5b946578bc7f5842b173446"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "32b7ca753fba7ee7e54e88755064fa23feef0479"
+branch = "claude/issue-381-p7a-two-steps"
+scope = [".github/workflows/ci.yml", "tests/postgres/load_dump_refuses_a_foreign_session_and_suspension_and_survives_interrupts.sh", "tests/postgres/postgres_storage_prune_load_and_egress.sh"]
+opened_commit = "c38be14c24f086bc57a22adaa9311281232859ee"
