@@ -81,12 +81,13 @@ PYTHON
   echo "$copy"
 }
 
-# write_snapshot <kind>: the copy written into the repository as the restore test's snapshot file, one new snapshot.
+# write_snapshot <kind>: the copy written into the repository as the restore test's snapshot file, one new snapshot;
+# restic stages its packs in TMPDIR, and the Pod's one writable path is its emptyDir.
 write_snapshot() {
   local copy
   copy="$(base64 --wrap=0 "$(make_copy "$1")")"
   run_restic "$namespace" snapshot-writer "printf '%s' '$copy' | base64 -d |
-    restic --no-cache backup --quiet --stdin --stdin-filename \"\$SNAPSHOT_FILE\""
+    TMPDIR=/restore restic --no-cache backup --quiet --stdin --stdin-filename \"\$SNAPSHOT_FILE\""
   [ "$restic_exit" = 0 ] || fail "restic did not write the $1 copy into presentator's repository (exit $restic_exit)"
 }
 
