@@ -102,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, postgres, backup, apps]
+        part: [core, observability, access, apps, load, backup]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -185,7 +185,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Check that Docuum with the service's arguments deletes the least recently used unprotected image and keeps the rest
-        if: matrix.part == 'postgres'
+        if: matrix.part == 'backup'
         run: tests/disk/docuum_deletes_the_least_recently_used_unprotected_image.sh
 
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
@@ -354,7 +354,7 @@ jobs:
         run: tests/cloudflared/ingress_from_pods_built_from_its_template.sh
 
       - name: P7a cells
-        if: matrix.part == 'postgres'
+        if: matrix.part == 'load'
         env:
           # The layer whose Kustomization the prune proof deletes and whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
@@ -377,7 +377,7 @@ jobs:
         run: tests/songmaker/stores_are_ready_non_root_closed_and_forget.sh
 
       - name: Assert that songmaker's web is Ready at its full ref, migrated, closed to other namespaces, read-only and holds its audio claim
-        if: matrix.part == 'postgres'
+        if: matrix.part == 'load'
         env:
           SONGMAKER_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
@@ -385,7 +385,7 @@ jobs:
         run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
 
       - name: Assert that songmaker's route reaches its web through Traefik for the tunnel's Pods, that the web answers the host the GPU worker sends and refuses another, and that a Pod in another namespace gets no answer
-        if: matrix.part == 'postgres'
+        if: matrix.part == 'load'
         env:
           SONGMAKER_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
@@ -401,7 +401,7 @@ jobs:
         run: tests/nvidia/layer_offers_the_class_and_judges_a_restricted_pod.sh
 
       - name: P7b cells
-        if: matrix.part == 'core'
+        if: matrix.part == 'access'
         env:
           KEYCLOAK_NAMESPACE: keycloak
           # The realm files config-cli applies, whose groups and service accounts the cells read, and the client whose
@@ -420,7 +420,7 @@ jobs:
         run: tests/keycloak/realm_route_and_policies.sh
 
       - name: P2 cells
-        if: matrix.part == 'core'
+        if: matrix.part == 'access'
         env:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
@@ -433,13 +433,13 @@ jobs:
           tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh
 
       - name: Assert that cutover:load refuses the cluster's own Keycloak dump, naming agent_owner and the platform's six objects, before it loads anything
-        if: matrix.part == 'core'
+        if: matrix.part == 'access'
         env:
           KEYCLOAK_NAMESPACE: keycloak
         run: tests/cutover/load_refuses_a_real_keycloak_dump_naming_its_platform_objects.sh
 
       - name: P7c cells
-        if: matrix.part == 'core'
+        if: matrix.part == 'access'
         env:
           # LiteLLM's namespace, an app namespace its front admits, a namespace it does not, and an SNI no router of
           # agent-egress allows.
@@ -450,7 +450,7 @@ jobs:
         run: tests/litellm/front_key_check_routing_and_closed_egress.sh
 
       - name: Assert that Alertmanager runs on a finished file, is found by Prometheus, refuses bad values, makes at most one send per flush of a fired alert, answers only its readers and Prometheus drops a Flux Pod that is not running
-        if: matrix.part == 'backup'
+        if: matrix.part == 'observability'
         env:
           PROMETHEUS_NAMESPACE: prometheus
           # The namespace of the readers the policy admits, and the throwaway one of the stranger.
@@ -459,7 +459,7 @@ jobs:
         run: tests/prometheus/alertmanager_mails_by_a_finished_file_and_answers_only_its_readers.sh
 
       - name: Assert that Grafana answers a query through both data sources at the address grafana:open printed, holds no state and answers only Gatus's pods
-        if: matrix.part == 'backup'
+        if: matrix.part == 'observability'
         env:
           GRAFANA_NAMESPACE: grafana
           LOKI_NAMESPACE: loki
@@ -516,14 +516,14 @@ jobs:
           REALM_FILE: infrastructure/keycloak/realm.yaml
         run: tests/litellm/admin_budget_follows_the_fingerprint_and_keeps_spend.sh
       - name: P9b cells
-        if: matrix.part == 'core'
+        if: matrix.part == 'access'
         env:
           LITELLM_NAMESPACE: litellm
         run: tests/litellm/expire_deletes_only_what_is_past_90_days.sh
 
       # The step suspends the Kustomization litellm, which would otherwise restore the table it changes.
       - name: P9c cells
-        if: matrix.part == 'postgres'
+        if: matrix.part == 'load'
         env:
           LITELLM_NAMESPACE: litellm
           APP_NAMESPACE: hopin
@@ -541,7 +541,7 @@ jobs:
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells
-        if: matrix.part == 'postgres'
+        if: matrix.part == 'core'
         env:
           SONGMAKER_NAMESPACE: songmaker
         run: tests/backup/load_replaces_database_and_files_together.sh
@@ -556,7 +556,7 @@ jobs:
         run: tests/legal/five_paths_through_traefik.sh
 
       - name: Assert that Loki keeps a pushed line for LogQL, deletes after at most 28 days, answers only its two namespaces and keeps its claim
-        if: matrix.part == 'core'
+        if: matrix.part == 'observability'
         env:
           LOKI_NAMESPACE: loki
           # Loki's admitted sender, the Namespace of the layer alloy, and the throwaway namespace of one that is not.
@@ -565,7 +565,7 @@ jobs:
         run: tests/loki/loki_keeps_lines_under_28_days.sh
 
       - name: Assert that Gatus shows every endpoint healthy, shows a stopped service unhealthy and healthy again, and answers no Pod
-        if: matrix.part == 'core'
+        if: matrix.part == 'observability'
         env:
           # The service the cell stops and restores, by its Namespace, Deployment and Gatus endpoint, and a namespace for
           # the Pod that must get no answer.
@@ -576,7 +576,7 @@ jobs:
         run: tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh
 
       - name: Assert that Alloy ships a pod's line to Loki with three labels, holds one ClusterRole with exactly two rules and answers nobody
-        if: matrix.part == 'core'
+        if: matrix.part == 'observability'
         env:
           ALLOY_NAMESPACE: alloy
           LOKI_NAMESPACE: loki
@@ -586,7 +586,7 @@ jobs:
         run: tests/alloy/alloy_ships_pod_lines_to_loki.sh
 
       - name: Assert that Prometheus scrapes every target and Flux's Kustomizations, goes pending on real failures, answers only its readers and keeps its claim
-        if: matrix.part == 'core'
+        if: matrix.part == 'observability'
         env:
           PROMETHEUS_NAMESPACE: prometheus
           # The namespace of a reader the NetworkPolicy admits, which the layer owns, then the throwaway namespace the step
