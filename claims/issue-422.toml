@@ -1,8 +1,0 @@
-claim_id = "eb964459d6e04a82bad1b6700b88a683"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "476530f50646e7488307c9f677e8ce9dd9a66e7d"
-branch = "claude/issue-422-a-used-build-worker-pod-of-presentator-i"
-scope = [".github/workflows/ci.yml", "apps/presentator/rbac.yaml", "apps/presentator/web.yaml", "apps/presentator/worker.yaml", "tests/no_network/pod.sh", "tests/no_network/pod_loses_its_link_before_the_worker_starts.sh", "tests/presentator"]
-opened_commit = "058b599cd367c46014c988d4e3ddfdd97fe2c2c3"
-whole_reason = "The replacement and the revert of the web's rights are one fact: the web needs no right once the platform replaces the pod."
