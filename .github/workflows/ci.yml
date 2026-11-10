@@ -254,6 +254,10 @@ jobs:
         if: matrix.part == 'core'
         run: tests/postgres/load_dump.sh
 
+      - name: Check that presentator:load-database names its state where the load is refused, its outcome is unknown, the rollout fails after a verified load, a signal arrives or the lock is unavailable
+        if: matrix.part == 'core'
+        run: tests/presentator/load_database.sh
+
       - name: Assert that k3s runs with host/k3s/config.yaml
         if: matrix.part == 'core'
         run: tests/k3s/k3s_runs_with_the_host_config.sh
