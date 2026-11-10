@@ -31,7 +31,7 @@ named="$(yq --no-doc 'select(.kind == "Deployment" and .metadata.name == "web") 
 [ "$named" = "$worker_pod" ] || fail "the web's PRESENTATOR_BUILD_WORKER_POD is '$named', not the StatefulSet's first pod '$worker_pod'"
 echo "the web's environment names the worker's pod $worker_pod"
 
-yq --no-doc 'select(.kind == "ServiceAccount" or .kind == "Role" or .kind == "RoleBinding")' "$work/presentator.yaml" >"$work/rbac.yaml"
+yq 'select(.kind == "ServiceAccount" or .kind == "Role" or .kind == "RoleBinding")' "$work/presentator.yaml" >"$work/rbac.yaml"
 applied=1
 kubectl apply --filename "$work/rbac.yaml" >/dev/null
 
