@@ -1,8 +1,0 @@
-claim_id = "4dda965773fc48a3bd86f703f256418a"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "7f971ed739a5118cb26ca0eb55e1c50ac59463b6"
-branch = "claude/issue-372-gpu-worker-at-one"
-scope = ["apps/songmaker/acestep-worker.yaml", "docs/app.md", "infrastructure/prometheus/rules.yaml", "tests/flux/reconcile_the_candidate_tree.sh", "tests/flux/root_and_tunnel_carry_no_spec_patches.sh"]
-opened_commit = "343f4b3e00ee5de6070329e7d47f9e09fe5ccf5c"
-whole_reason = "The replica change, its hold in k3d with the cell that guards it, and the two sentences it makes false (a comment beside the worker's alert rule and the app standard's sentence on who holds the card) are one fact and change together."
