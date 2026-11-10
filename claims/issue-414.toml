@@ -1,8 +1,0 @@
-claim_id = "aebf374c51eb474983c26d6cd2e1c5db"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "f52d27e22241749aab06ea08f7483cac3dbb0e48"
-branch = "claude/issue-414-presentator-s-web-may-read-and-delete-th"
-scope = [".github/workflows/ci.yml", "apps/presentator/rbac.yaml", "apps/presentator/web.yaml", "tests/presentator"]
-opened_commit = "9a6039f09bf37c136d284539a2549acc42f67a56"
-whole_reason = "The right, the name the web reads and the cell that proves both are one fact for presentator's pin."
