@@ -567,6 +567,10 @@ jobs:
         if: matrix.part == 'presentator'
         run: tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh
 
+      - name: Assert that presentator's web may get and delete exactly the build worker's pod, which its environment names, and the worker's ServiceAccount nothing
+        if: matrix.part == 'presentator'
+        run: tests/presentator/web_may_get_and_delete_only_the_worker_pod.sh
+
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells
         if: matrix.part == 'core'
