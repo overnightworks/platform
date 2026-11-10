@@ -1,0 +1,8 @@
+claim_id = "329a340818804ce6bbac13dec3325ebd"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "f52d27e22241749aab06ea08f7483cac3dbb0e48"
+branch = "claude/issue-402-presentator-has-its-repository-and-a-res"
+scope = [".github/workflows/ci.yml", "apps/presentator/kustomization.yaml", "infrastructure/backup/rest-server.yaml", "infrastructure/sqlite/kustomization.yaml", "infrastructure/sqlite/restore-test.yaml", "infrastructure/sqlite/scripts/sqlite_copy.py", "infrastructure/sqlite/tests/test_sqlite_copy.py", "tests/presentator/restore_test_reads_the_latest_copy.sh", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
+opened_commit = "c3464d86307c1caf02acc5b7e91c98f1110c4571"
+whole_reason = "The repository's admission, its URL and Secret, the restore test and its check are one proof; any part alone reads nothing or has nothing to read."
