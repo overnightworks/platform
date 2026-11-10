@@ -87,7 +87,7 @@ exactly() { [ "$(yq --no-doc -o=json -I=0 "$3" "$1" 2>&1 | paste -sd,)" = "$4" ]
 
 # judge_structure <manifest>: prints a problem line for each rule of the contract that the render breaks.
 judge_structure() {
-  local manifest="$1" probe_image reference actual web_group worker_group web_account worker_account role
+  local manifest="$1" probe_image reference actual web_group worker_group web_account worker_account role worker_pod
   # NET_ADMIN sits in the one finishing init container.
   exactly "$manifest" "a container other than remove-link holds NET_ADMIN" \
     "$WORKER | [.initContainers[], .containers[]][] | $NET_ADMIN_HOLDER" '"remove-link"'
@@ -116,10 +116,11 @@ judge_structure() {
     "$WORKER_CONTAINER | .securityContext.seccompProfile.type" '"RuntimeDefault"'
   exactly "$manifest" "the worker allows privilege escalation" \
     "$WORKER_CONTAINER | .securityContext.allowPrivilegeEscalation" 'false'
-  # The web's one right in the API.
-  exactly "$manifest" "the Role is not exactly delete on the pod build-worker-0" \
-    'select(.kind == "Role") | .rules[] | sort_keys(..)' \
-    '{"apiGroups":[""],"resourceNames":["build-worker-0"],"resources":["pods"],"verbs":["delete"]}'
+  # The web's one right in the API: get and delete on the worker's one pod, which a StatefulSet names <name>-0.
+  worker_pod="$(yq --no-doc "select($WORKER_DOCUMENT) | .metadata.name + \"-0\"" "$manifest")"
+  exactly "$manifest" "the Role is not exactly get and delete on the one pod $worker_pod" \
+    'select(.kind == "Role") | .rules[] | sort_keys(..) | .verbs |= sort' \
+    "{\"apiGroups\":[\"\"],\"resourceNames\":[\"$worker_pod\"],\"resources\":[\"pods\"],\"verbs\":[\"delete\",\"get\"]}"
   found "$manifest" "the render holds a ClusterRole or a ClusterRoleBinding" \
     'select(.kind == "ClusterRole" or .kind == "ClusterRoleBinding")'
   web_account="$(yq --no-doc "$WEB | .serviceAccountName" "$manifest")"
@@ -264,9 +265,11 @@ mutant "the worker's seccompProfile is not RuntimeDefault" "($on_worker | $worke
 mutant "the worker's seccompProfile is not RuntimeDefault" "del($on_worker | $worker_container | .securityContext.seccompProfile)"
 mutant "the worker allows privilege escalation" "($on_worker | $worker_container | .securityContext.allowPrivilegeEscalation) = true"
 # The Role and its binding.
-mutant "the Role is not exactly delete" 'select(.kind == "Role") |= (.rules[0].verbs += ["get"])'
-mutant "the Role is not exactly delete" 'select(.kind == "Role") |= (.rules[0].resourceNames = ["build-worker-1"])'
-mutant "the Role is not exactly delete" 'select(.kind == "Role") |= (.rules[0].resources += ["pods/eviction"])'
+mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules[0].verbs += ["list"])'
+mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules[0].verbs = ["delete"])'
+mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules[0].resourceNames = ["build-worker-1"])'
+mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules[0].resources += ["pods/eviction"])'
+mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules += [.rules[0] | .resources = ["secrets"]])'
 mutant_with "the render holds a ClusterRole" "a ClusterRole" "$(
   cat <<'EOF'
 apiVersion: rbac.authorization.k8s.io/v1

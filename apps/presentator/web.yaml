@@ -1,7 +1,7 @@
 # presentator's web, pulled from its private package through the Secret ghcr-pull and started from the files of the
 # Secret presentator, both from platform-secrets. One pod runs with Recreate, as the claims are ReadWriteOnce and the
 # database is a single file. It shares its process namespace so that a pull's git and ssh children have a reaper, and
-# it holds its ServiceAccount token, since it deletes the build worker's pod through the API (rbac.yaml).
+# it holds its ServiceAccount token, since it gets and deletes the build worker's pod through the API (rbac.yaml).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -70,6 +70,9 @@ spec:
               value: piper
             - name: PRESENTATOR_BUILD_RUNNER
               value: worker
+            # The StatefulSet build-worker's one pod, which a StatefulSet names <name>-<ordinal>; the web's Role grants it.
+            - name: PRESENTATOR_BUILD_WORKER_POD
+              value: build-worker-0
           # The web refuses to start unless the worker answers within 70 seconds, which the pod's first start may need
           # the worker's image pull for.
           startupProbe:
