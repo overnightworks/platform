@@ -1,0 +1,7 @@
+claim_id = "1e1c1cf0174348f29e825faf5c379771"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "32b7ca753fba7ee7e54e88755064fa23feef0479"
+branch = "claude/issue-390-p7b-names-the-difference"
+scope = ["tests/keycloak/realm_route_and_policies.sh"]
+opened_commit = "cd9780e391583d75f6cc930ee8d14469474ed718"
