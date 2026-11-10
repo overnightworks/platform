@@ -1,4 +1,4 @@
-"""The exits of sqlite_copy.py's `load`, driven through `main` on files in a temporary directory."""
+"""The exits of sqlite_copy.py's `load` and `check`, driven through `main` on files in a temporary directory."""
 
 import contextlib
 import hashlib
@@ -31,6 +31,16 @@ def make_database(path: Path, values: list[str], *, page_size: int = 4096, table
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute(f'CREATE TABLE "{table}" (name TEXT)')
         connection.executemany(f'INSERT INTO "{table}" VALUES (?)', [(value,) for value in values])  # noqa: S608 - a fixed test table name
+
+
+def make_damaged_database(path: Path) -> None:
+    """A database with a page overwritten, which its integrity check reports."""
+    make_database(path, [f"row-{number:04d}-" + "x" * 100 for number in range(300)])
+    content = bytearray(path.read_bytes())
+    content[4096 * 2 : 4096 * 3] = b"\xff" * 4096
+    path.write_bytes(content)
+    if integrity_of_or_error(path) == [("ok",)]:
+        raise AssertionError("the overwritten page left the database intact")
 
 
 def names_in(path: Path) -> list[str]:
@@ -78,11 +88,7 @@ class LoadTest(unittest.TestCase):
 
     def test_a_refusal_before_the_copy_exits_7_and_leaves_the_live_file_unchanged(self) -> None:
         damaged = self.directory / "damaged.sqlite3"
-        make_database(damaged, [f"row-{number:04d}-" + "x" * 100 for number in range(300)])
-        content = bytearray(damaged.read_bytes())
-        content[4096 * 2 : 4096 * 3] = b"\xff" * 4096
-        damaged.write_bytes(content)
-        self.assertNotEqual(integrity_of_or_error(damaged), [("ok",)])
+        make_damaged_database(damaged)
         without_table = self.directory / "without-table.sqlite3"
         make_database(without_table, NEW_ROWS, table="accounts")
         empty_table = self.directory / "empty-table.sqlite3"
@@ -171,6 +177,36 @@ class LoadTest(unittest.TestCase):
         return mock.patch.object(
             sqlite_copy.sqlite3, "connect", lambda *arguments, **keywords: real_connect(*arguments, factory=factory, **keywords)
         )
+
+
+class CheckTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def check(self, copy: Path, table: str = TABLE) -> tuple[int, str]:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            status = sqlite_copy.main(["check", str(copy), table])
+        return status, output.getvalue()
+
+    def test_an_intact_copy_with_rows_exits_0_and_prints_its_count(self) -> None:
+        copy = self.directory / "intact.sqlite3"
+        make_database(copy, NEW_ROWS)
+        self.assertEqual(self.check(copy), (0, f"{len(NEW_ROWS)}\n"))
+
+    def test_a_copy_that_is_damaged_lacks_its_key_table_or_holds_no_row_there_exits_non_zero_and_prints_nothing(self) -> None:
+        copies = {
+            "damaged page": (make_damaged_database, {}),
+            "missing key table": (make_database, {"values": NEW_ROWS, "table": "accounts"}),
+            "empty key table": (make_database, {"values": []}),
+        }
+        for name, (make, arguments) in copies.items():
+            with self.subTest(name):
+                copy = self.directory / f"{name}.sqlite3"
+                make(copy, **arguments)
+                status, output = self.check(copy)
+                self.assertNotEqual(status, 0)
+                self.assertEqual(output, "")
 
 
 def integrity_of_or_error(path: Path) -> list[tuple[str]]:

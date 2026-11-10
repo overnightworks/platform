@@ -30,8 +30,9 @@ remove_objects() {
 }
 trap remove_objects EXIT
 
-# A Pod of every template: a Deployment, StatefulSet or other workload, a CronJob or a Pod itself.
-SPECS='(.spec.template.spec // .spec.jobTemplate.spec.template.spec // (select(.kind == "Pod") | .spec))'
+# A Pod of every template: a Deployment, StatefulSet or other workload, a CronJob or a Pod itself; k8up's PodConfig is a
+# partial template merged over its Job pods, with a container and no image, so it is none.
+SPECS='(select(.kind != "PodConfig") | .spec.template.spec // .spec.jobTemplate.spec.template.spec // (select(.kind == "Pod") | .spec))'
 ANNOTATIONS='(.spec.template.metadata.annotations // .spec.jobTemplate.spec.template.metadata.annotations // (select(.kind == "Pod") | .metadata.annotations))'
 POD_OF="$SPECS as \$spec | $ANNOTATIONS as \$annotations | select(\$spec != null) | {\"apiVersion\": \"v1\", \"kind\": \"Pod\", \"metadata\": ({\"name\": .metadata.name} + (if \$annotations == null then {} else {\"annotations\": \$annotations} end)), \"spec\": \$spec}"
 WORKER_KEY=StatefulSet/build-worker

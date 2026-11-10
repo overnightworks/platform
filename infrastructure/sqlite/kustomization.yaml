@@ -1,7 +1,13 @@
-# The platform's way to load a SQLite database, a base a layer includes: the layer merges key-table, the table whose rows
-# prove a used database, into the ConfigMap. The ConfigMap names no app.
+# The platform's way to load, back up and restore-test a SQLite database, a base a layer includes. The layer merges into
+# the ConfigMap sqlite key-table, the table whose rows prove a used database, backup-repository, its repository's URL on
+# the rest-server, and snapshot-file, the name its stream has in a snapshot; and its replacements set that URL into the
+# Schedule backup and the app's image, user and group into the CronJob restore-test. The base names no app.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+resources:
+  - restore-test.yaml
+components:
+  - ../backup/schedule
 configMapGenerator:
   - name: sqlite
     files:
