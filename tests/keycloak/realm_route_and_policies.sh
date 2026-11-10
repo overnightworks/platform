@@ -51,10 +51,10 @@ asset_path="$(grep -o '/resources/[a-z0-9]\{5\}/[^"?]*' "$login_page" | head -n 
 [ -n "$asset_path" ] || fail "the login page names no asset under /resources/<version>/"
 echo "the login page of $LOGIN_CLIENT answers 200 and names the asset $asset_path"
 
-# A second run on the applied realms changes nothing: their exports and their declared service accounts with their
-# roles and groups are equal, and it needs no retry.
 # keep_part <state directory> <realm> <part>: passes its input on and keeps it as one file of the state.
 keep_part() { tee "$1/$2.$3.json"; }
+# A second run on the applied realms changes nothing: their exports and their declared service accounts with their
+# roles and groups are equal, and it needs no retry.
 realm_state() {
   local state_dir="$1" realm_file realm_name username user user_id
   for realm_file in "$MASTER_FILE" "$REALM_FILE"; do
@@ -77,11 +77,15 @@ fingerprint() { realm_state "$1" | sha256sum; }
 
 # The report names realms, parts and JSON paths only: a state holds client attributes and user data, so no value is
 # printed, and the files stay under the runner's temporary directory.
-# differing_paths <before file> <after file>: the paths of the scalars that differ, one per line.
+# differing_paths <before file> <after file>: the paths of the leaves (scalars, null, false, empty arrays and objects)
+# that differ, one per line. Paths come from jq's stream of path and leaf pairs, so a changed type or a missing path
+# needs no lookup that could fail; jq's own errors are dropped, as they can quote a value.
 differing_paths() {
   jq -n --raw-output --slurpfile before "$1" --slurpfile after "$2" '
-    ([$before[0], $after[0]] | map([paths(scalars)]) | add | unique)[] as $path
-    | select(($before[0] | getpath($path)) != ($after[0] | getpath($path))) | $path | tojson'
+    def leaves: [tostream | select(length == 2)] | map({key: tojson, value: .[0]}) | from_entries;
+    ($before[0] | leaves) as $was | ($after[0] | leaves) as $now
+    | [($was | with_entries(select(.key | in($now) | not))), ($now | with_entries(select(.key | in($was) | not)))]
+    | map(.[]) | unique_by(tojson)[] | tojson' 2>/dev/null
 }
 # equal_with_arrays_sorted <before file> <after file>: prints yes or no.
 equal_with_arrays_sorted() {
@@ -97,7 +101,7 @@ describe_difference() {
   shown="$(head -n 20 <<<"$paths" | paste -sd, - | sed 's/,/, /g')"
   [ "$total" -le 20 ] || shown="$shown, and $((total - 20)) more"
   sorted_equal="$(equal_with_arrays_sorted "$before_file" "$after_file")" || sorted_equal="unknown"
-  echo "realm ${name%%.*}, part ${name#*.}: differs at ${shown:-no scalar path}; equal with arrays sorted: $sorted_equal"
+  echo "realm ${name%%.*}, part ${name#*.}: differs at ${shown:-no path}; equal with arrays sorted: $sorted_equal"
 }
 # report_difference <before dir> <after dir>: a line per part that differs or exists in one run only. The calls
 # run under `||` so that a failing report cannot end the cell before its message.
@@ -113,7 +117,6 @@ report_difference() {
   done < <(find "$1" "$2" -type f -name '*.json' -printf '%f\n' | sort -u)
 }
 state_root="$(mktemp -d "$RUNNER_TEMP/keycloak-state.XXXXXX")"
-chmod 700 "$state_root"
 mkdir "$state_root/before" "$state_root/after"
 before="$(fingerprint "$state_root/before")" || fail "the realms master and $realm cannot be read"
 rerun_config_cli
