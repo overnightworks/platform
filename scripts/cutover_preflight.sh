@@ -378,7 +378,7 @@ check_H2() {
 check_H3() {
   begin H3 "hal's head"
   local status=0
-  http_get --output /dev/null --header "Host: localhost" "$hal_admin/admin/" || status=$?
+  http_get --output /dev/null --header "Host: localhost:${hal_admin##*:}" "$hal_admin/admin/" || status=$?
   if ! answered "$status" "hal's admin console does not answer at $hal_admin"; then :
   elif [ "$http_status" != 200 ] && ! { [[ $http_status =~ ^3 ]] && [[ $http_redirect =~ ^https?://[^/]+/admin/ ]]; }; then
     bad "hal's admin console answers $http_status"
