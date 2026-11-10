@@ -1,0 +1,7 @@
+claim_id = "c60f8aa79eda4965be2c422e2b13e9bc"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "fc7c5ef2d99059a170d4afec056d20d183b4be9b"
+branch = "claude/issue-374-drop-scratch-landing-drive"
+scope = ["src/opentofu/github/repositories.tf", "src/opentofu/github/tests/repository_listing.tftest.hcl"]
+opened_commit = "18cdcb0aeae69a0fd2dc3cc5945c2026d87d079a"
