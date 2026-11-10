@@ -907,6 +907,24 @@ chmod 0600 "$file"
 say "wrote the latest dump of $namespace to $file ($(stat --format=%s "$file") bytes, mode 0600)"
 '''
 
+# Replaces presentator's live SQLite file with a verified copy at the go; every line it prints is a name, a count or an
+# outcome, never a row.
+[tasks."presentator:load-database"]
+description = "Replace presentator's SQLite database with a verified copy while its web is stopped, then resume Flux"
+usage = '''
+arg "<file>" help="The closed SQLite copy; it is read, never changed"
+'''
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+exec scripts/presentator_load_database.sh "${usage_file?}"
+'''
+
+[tasks."sqlite:test"]
+description = "Run the unit test of infrastructure/sqlite's copy script on the Python the app images name as their floor"
+run = "uv run --no-project --python 3.14 python -I -m unittest discover -s infrastructure/sqlite/tests"
+
 [tasks."keycloak:admin"]
 description = "Forward Keycloak's admin front end to this PC's loopback and print the line that opens its console"
 quiet = true
