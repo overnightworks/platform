@@ -54,16 +54,17 @@ manifest="$(in_namespace get deployment "$deployment" --output json | NAME="$loa
           { "name": "sqlite", "configMap": { "name": "sqlite" } }] } }')" ||
   fail "cannot build the loader Pod from the Deployment $deployment in $namespace; nothing changed"
 
-by_run=false changed=false verified=false
+by_run=false stopped=false changed=false verified=false
 stop_loader() { in_namespace delete pod "$loader" --ignore-not-found --wait >/dev/null; }
 resume_flux() { flux resume kustomization "$kustomization" --wait; }
 # A Ctrl-C reaches mise and this script, and mise forwards it once more, so the end ignores INT and runs once, to its end.
 # Whatever ends the run deletes the loader. Before the load starts, the data is unchanged: a Kustomization this run
-# suspended is resumed and one suspended already stays so; from there on the outcome is unknown or the load is not
-# finished, and the Kustomization stays suspended with the web at 0.
+# suspended is resumed, one suspended already stays so, and one never touched stays as it is; the web is at 0 only once
+# this run scaled it. From the load on the outcome is unknown or the load is not finished, and the Kustomization stays
+# suspended with the web at 0.
 end_run() {
   local status=$?
-  trap - EXIT TERM
+  trap - EXIT TERM HUP
   trap '' INT
   stop_loader || echo "presentator:load-database: could not delete the loader Pod $loader; run kubectl -n $namespace delete pod $loader" >&2
   [ "$status" -ne 0 ] || return 0
@@ -77,14 +78,19 @@ the Kustomization $kustomization stays suspended and the web at 0: run the same 
     echo "presentator:load-database: the database is unchanged; resuming the Kustomization $kustomization" >&2
     resume_flux || echo "presentator:load-database: could not resume the Kustomization $kustomization; run flux resume \
 kustomization $kustomization" >&2
-  else
-    echo "presentator:load-database: the database is unchanged; the Kustomization $kustomization stays suspended as it was and the web at 0; resume it with flux \
+  elif [ "$suspended" = true ]; then
+    local web_state=""
+    [ "$stopped" = false ] || web_state=" and the web at 0"
+    echo "presentator:load-database: the database is unchanged; the Kustomization $kustomization stays suspended as it was$web_state; resume it with flux \
 resume kustomization $kustomization when you are done" >&2
+  else
+    echo "presentator:load-database: nothing changed" >&2
   fi
 }
 trap end_run EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 stop_loader || fail "cannot delete an earlier loader Pod $loader in $namespace; nothing changed"
 if [ "$suspended" = true ]; then
@@ -98,6 +104,8 @@ fi
 say "stopping the web of $namespace"
 deployments="$(in_namespace get deployments --output name)"
 readarray -t deployment_names <<<"$deployments"
+# Set before the scale, which a signal can apply before its client returns.
+stopped=true
 [ -z "$deployments" ] || in_namespace scale "${deployment_names[@]}" --replicas=0
 # A Failed or Succeeded Pod none of whose containers reports running holds no connection; nothing deletes it.
 writers="$(in_namespace get pods --output yaml |

@@ -276,9 +276,11 @@ cat "$held_output"
 converged_on_the_source "the first run"
 echo "a second run at once was refused with nothing changed, and the first converged once released"
 
-# 9: a client killed while the remote load of a large copy runs. The copy is a few hundred MB of random blobs, so that the
-# load runs for seconds after the client is gone; the load goes on in the loader, and the Kustomization's suspension and
-# the web at 0 outlast the client, so the live file ends whole as the old or the new database.
+# 9: a client killed with its whole session, the kubectl that carries a load of a large copy included, while the load
+# runs. The copy is a few hundred MB of random blobs, so that the load runs for seconds; the Kustomization's suspension
+# and the web at 0 outlast the client, and the same command run at once deletes the loader, which cuts a load still
+# running. The live file is then whole as the old or the new database, whichever the kill and the delete left, and the
+# run converges on the new one.
 large="$scratch/large.sqlite3"
 make_source "$large" 4096 "$key_table" "$new_marker" second third
 python3 -I - "$large" <<'PYTHON'
@@ -290,10 +292,10 @@ connection.execute("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM
 connection.close()
 PYTHON
 in_loader() { kubectl --namespace "$namespace" exec --stdin "$loader" --container loader -- "$@"; }
-# await_load <1|0>: within 30 seconds the loader's python3 runs the load (1) or no longer does (0).
-await_load() {
-  in_loader env WANT="$1" python3 -I - <<'PYTHON'
-import os, pathlib, sys, time
+# await_load_start: within 300 seconds the loader's python3 runs the load.
+await_load_start() {
+  in_loader python3 -I - <<'PYTHON'
+import pathlib, sys, time
 def loading():
     for cmdline in pathlib.Path("/proc").glob("[0-9]*/cmdline"):
         try:
@@ -303,44 +305,47 @@ def loading():
         if b"/sqlite/sqlite_copy.py" in arguments and b"load" in arguments:
             return True
     return False
-deadline = time.monotonic() + 30
-while loading() != (os.environ["WANT"] == "1"):
+deadline = time.monotonic() + 300
+while not loading():
     if time.monotonic() > deadline:
         sys.exit(1)
     time.sleep(0.05)
 PYTHON
 }
-# The Ready wait ends before the staging of the copy begins, so the watch for the load starts before the load does.
-loader_is_loading() {
-  loader_exists && kubectl --namespace "$namespace" wait "pod/$loader" --for=condition=Ready --timeout=3m >/dev/null &&
-    await_load 1
-}
+# The loader appears after the command starts and its Ready wait ends before the staging of the copy begins, so the
+# one watch for the load starts once the loader is Ready.
 session_ended() { ! pgrep --session "$held_pid" >/dev/null; }
 
 plant_live
 setsid mise run presentator:load-database "$large" >"$held_output" 2>&1 &
 held_pid=$!
-until_true 300 "the loader's python3 runs the load" loader_is_loading
-# The client is the command and the script it runs; the kubectl that carries the load is not killed with them.
-mapfile -t client < <(pgrep --parent "$held_pid" || true)
-kill -KILL "$held_pid" "${client[@]}"
+until_true 300 "the loader Pod exists" loader_exists
+kubectl --namespace "$namespace" wait "pod/$loader" --for=condition=Ready --timeout=3m >/dev/null
+await_load_start || fail "the loader's python3 did not run the load within 300 seconds"
+# The command ran in a session of its own, whose id is its pid.
+pkill -KILL --session "$held_pid"
 load_status=0
 wait "$held_pid" || load_status=$?
 [ "$load_status" = 137 ] || fail "the killed client did not exit as killed: $load_status"
-until_true 120 "the load in the loader ended" await_load 0
 until_true 120 "the processes the killed client left ended" session_ended
 held_pid=
 if [ "$(suspended)" != true ] || [ "$(web_replicas)" != 0 ] || ! loader_exists; then
   fail "the killed client did not leave Flux suspended, the web at 0 and the loader Pod"
 fi
+hold_at_load "$large"
 case "$(live_report)" in
   "1 1 0 ok") outcome="the old database" ;;
   "3 0 1 ok") outcome="the new database" ;;
   *) fail "the live file is neither the old nor the new database, whole: $(live_report)" ;;
 esac
-run_load "$large"
+: >"$scratch/release"
+load_status=0
+wait "$held_pid" || load_status=$?
+held_pid=
+cat "$held_output"
+[ "$load_status" = 0 ] || fail "the run after the killed client exited $load_status"
 converged_on_the_source "the run after the killed client"
-echo "a client killed during a $(stat --format=%s "$large")-byte load left Flux suspended, the web at 0 and $outcome whole, and the same command converged"
+echo "a client killed with its session during a $(stat --format=%s "$large")-byte load left Flux suspended, the web at 0 and, after the same command deleted its loader, $outcome whole; the command converged"
 
 # 10: a loader that ended is not run again: a Pod of its shape whose command ends after 5 seconds keeps its Pod object,
 # and the kubelet removes its emptyDir from the node.

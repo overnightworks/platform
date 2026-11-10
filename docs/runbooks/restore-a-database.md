@@ -35,8 +35,8 @@ Impact: the namespace's writers stop, and its Flux Kustomization stays suspended
    streams the copy into a loader Pod's disk and loads it through SQLite's backup API in one write transaction, so the
    live file holds the old or the new database and never a mix. The load refuses, with the file unchanged and Flux
    resumed (unless it was suspended already), a copy that differs from the file in size or sha256, fails SQLite's integrity
-   check, lacks the key table the ConfigMap `sqlite` names or holds no row in it, differs in page size from a live file in WAL, or finds the
-   live file busy (exit 7 and 6). The key table's rows must be equal after the load. A Kustomization that is already
+   check, lacks the key table the ConfigMap `sqlite` names or holds no row in it, differs in page size from a live file in WAL,
+   or finds no live file, which it never creates (exit 7), or the live file busy (exit 6). The key table's rows must be equal after the load. A Kustomization that is already
    suspended is accepted, and a run that found it suspended leaves it suspended on every failure; only a verified load
    resumes it. The loader lives at most an hour, which also ends a load that runs too long as an unknown outcome that
    the same command recovers.
@@ -53,8 +53,9 @@ that serves is a dump fetched before the load, other than the one loaded.
 The load reports that whether it changed the data is unknown, that the loaded data is not verified, or a table that
 `DIFFERS`: it stays suspended with its writers at 0 and names `--resume`. The operator decides before anyone resumes it.
 The runner reads only what the command prints, never the dump or `<file>.load.log`, since a COPY error there quotes a
-row. `presentator:load-database` reports the same unknown outcome with its Kustomization suspended and the web at 0, and
-the copy lives only in the loader Pod `presentator-load` until the next run deletes it, an hour at most;
+row. `presentator:load-database` reports the same unknown outcome with its Kustomization suspended and the web at 0; a
+run that reports deletes its loader Pod first. Only a run that could not report (a KILL, or a lost machine) leaves the
+copy in the loader Pod `presentator-load`, until the next run deletes it or its `sleep` ends after an hour at most;
 `kubectl -n presentator delete pod presentator-load` ends it at once. The operator decides before anyone resumes it by
 hand; the same command, run again, converges.
 

@@ -14,8 +14,9 @@ trap 'rm -rf "$work_directory"' EXIT
 fake_bin="$work_directory/bin"
 mkdir "$fake_bin"
 
-# FAKE_SUSPENDED is what the Kustomization reports, FAKE_LOAD_EXIT the exit of the remote load and FAKE_ROLLOUT the
-# rollout: ok, fails or hangs until killed. The remote shell runs here with the fake python3 in place of the image's.
+# FAKE_SUSPENDED is what the Kustomization reports, FAKE_LOAD_EXIT the exit of the remote load, FAKE_ROLLOUT the
+# rollout and FAKE_DELETE the loader's deletion: ok, fails or hangs until killed; FAKE_STOP=hangs makes the listing of
+# the Deployments, which comes after the suspension, hang until killed. The remote shell runs here with the fake python3 in place of the image's.
 cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 echo "$*" >>"$FAKE_DIR/kubectl.log"
@@ -23,7 +24,14 @@ case "$*" in
   *"get configmap"*) printf users ;;
   *"get kustomization"*) printf '%s' "${FAKE_SUSPENDED:-false}" ;;
   *"get deployment "*) echo '{}' ;;
-  *"get deployments"*) echo deployment.apps/web ;;
+  *"get deployments"*)
+    if [ "${FAKE_STOP:-ok}" = hangs ]; then echo $$ >"$FAKE_DIR/hang-pid"; exec sleep 60; fi
+    echo deployment.apps/web ;;
+  *"delete pod"*)
+    case "${FAKE_DELETE:-ok}" in
+      fails) exit 1 ;;
+      hangs) echo $$ >"$FAKE_DIR/hang-pid"; exec sleep 60 ;;
+    esac ;;
   *"get pods"*) echo 'items: []' ;;
   *"cat >/staging/copy"*) cat >/dev/null ;;
   *sqlite_copy.py*)
@@ -35,7 +43,7 @@ case "$*" in
   *"rollout status"*)
     case "${FAKE_ROLLOUT:-ok}" in
       fails) exit 1 ;;
-      hangs) echo $$ >"$FAKE_DIR/rollout-pid"; exec sleep 60 ;;
+      hangs) echo $$ >"$FAKE_DIR/hang-pid"; exec sleep 60 ;;
     esac ;;
 esac
 FAKE
@@ -113,9 +121,9 @@ cell_a_term_during_the_rollout_after_a_verified_load_names_that_state() {
   prepare
   FAKE_ROLLOUT=hangs bash "$FAKE_DIR/script.sh" "$copy" >"$FAKE_DIR/output" 2>&1 &
   script_pid=$!
-  until_true 30 "the rollout wait started" test -s "$FAKE_DIR/rollout-pid"
+  until_true 30 "the rollout wait started" test -s "$FAKE_DIR/hang-pid"
   kill -TERM "$script_pid"
-  kill -TERM "$(cat "$FAKE_DIR/rollout-pid")"
+  kill -TERM "$(cat "$FAKE_DIR/hang-pid")"
   status=0
   wait "$script_pid" || status=$?
   output="$(cat "$FAKE_DIR/output")"
@@ -153,6 +161,58 @@ cell_a_suspension_found_stays_unless_a_load_is_verified() {
   expect "Flux resumed without a suspend" test "$flux_calls" = "resume "
 }
 
+# run_signalled <signal>: starts the script, waits for a fake that hangs, sends the signal to the script and ends the
+# hanging fake, so the script's trap runs as it would after the client returned.
+run_signalled() {
+  prepare
+  bash "$FAKE_DIR/script.sh" "$copy" >"$FAKE_DIR/output" 2>&1 &
+  script_pid=$!
+  until_true 30 "a fake hangs" test -s "$FAKE_DIR/hang-pid"
+  kill -"$1" "$script_pid"
+  kill -TERM "$(cat "$FAKE_DIR/hang-pid")"
+  status=0
+  wait "$script_pid" || status=$?
+  output="$(cat "$FAKE_DIR/output")"
+  collect
+}
+
+cell_a_failed_first_delete_names_only_what_is_true() {
+  cell=first-delete-fails
+  FAKE_DELETE=fails run_load
+  expect "a non-zero exit" test "$status" != 0
+  expect "no state of a suspension" not_printed "suspended"
+  expect "no stopped web" not_printed "web at 0"
+  expect "Flux untouched" test -z "$flux_calls"
+  cell=first-delete-fails-found-suspended
+  FAKE_SUSPENDED=true FAKE_DELETE=fails run_load
+  expect "a non-zero exit" test "$status" != 0
+  expect "no stopped web" not_printed "web at 0"
+  expect "Flux untouched" test -z "$flux_calls"
+}
+
+cell_a_term_during_the_first_delete_names_only_what_is_true() {
+  cell=term-in-first-delete
+  FAKE_DELETE=hangs run_signalled TERM
+  expect "a non-zero exit" test "$status" != 0
+  expect "no state of a suspension" not_printed "suspended"
+  expect "no stopped web" not_printed "web at 0"
+  expect "Flux untouched" test -z "$flux_calls"
+}
+
+cell_a_hup_after_the_suspension_resumes_flux_like_a_term() {
+  cell=hup-after-suspend
+  FAKE_STOP=hangs run_signalled HUP
+  expect "a non-zero exit" test "$status" != 0
+  expect "the unchanged state" printed "the database is unchanged; resuming the Kustomization"
+  expect "Flux suspended and resumed" test "$flux_calls" = "suspend resume "
+  cell=hup-after-found-suspended
+  FAKE_SUSPENDED=true FAKE_STOP=hangs run_signalled HUP
+  expect "a non-zero exit" test "$status" != 0
+  expect "the suspension kept, the web not stopped" not_printed "web at 0"
+  expect "the way back" printed "stays suspended as it was"
+  expect "Flux untouched" test -z "$flux_calls"
+}
+
 cell_a_held_lock_is_refused_before_any_call_and_an_unopenable_one_names_its_file() {
   cell=lock_held
   prepare
@@ -187,6 +247,9 @@ cells=(
   a_suspension_found_stays_unless_a_load_is_verified
   a_held_lock_is_refused_before_any_call_and_an_unopenable_one_names_its_file
   kubectls_stderr_reaches_the_output_and_the_remote_programs_does_not
+  a_failed_first_delete_names_only_what_is_true
+  a_term_during_the_first_delete_names_only_what_is_true
+  a_hup_after_the_suspension_resumes_flux_like_a_term
 )
 failed=()
 for name in "${cells[@]}"; do
