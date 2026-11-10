@@ -31,50 +31,10 @@ create_namespace() {
 trap remove_objects EXIT
 "$(dirname "${BASH_SOURCE[0]}")/remove_link_branches.sh"
 
-node() { docker exec "$server" "$@"; }
-crictl() { node crictl "$@"; }
 k() { kubectl -n "$namespace" "$@"; }
 grace='.spec.terminationGracePeriodSeconds = 2'
 
-# The node's state that a leaked network would change. The lease directory is read from the node and must be there,
-# so that a wrong path cannot make the comparison pass. A reader that fails ends the cell naming itself; callers read it
-# with a plain assignment followed by `|| exit 1`, since a failing substitution inside another command is not an error.
-lease_directory="$(node sh -c 'ls -d /var/lib/cni/networks/*/')" ||
-  fail "the node holds no address lease directory under /var/lib/cni/networks"
-[ "$(wc -l <<<"$lease_directory")" = 1 ] || fail "the node holds several lease directories: $(tr '\n' ' ' <<<"$lease_directory")"
-reader_failed() { fail "the reader '$1' of the node's state failed" >&2; }
-leases() {
-  local listing
-  listing="$(node ls -1A "$lease_directory" | { grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || [ $? = 1 ]; } | sort)" || reader_failed leases
-  [ -z "$listing" ] || printf '%s\n' "$listing"
-}
-veths() {
-  local listing
-  listing="$(node ip -o link | sed -n 's/^[0-9]*: \(veth[^:@ ]*\).*/\1/p' | sort)" || reader_failed veths
-  [ -z "$listing" ] || printf '%s\n' "$listing"
-}
-sandboxes() {
-  local listing
-  listing="$(crictl pods --namespace "$namespace" ${1:+--label "io.kubernetes.pod.name=$1"} -q | sort)" || reader_failed sandboxes
-  [ -z "$listing" ] || printf '%s\n' "$listing"
-}
-iptables_rules() {
-  node sh -c 'PATH="$PATH:/var/lib/rancher/k3s/data/current/bin/aux:/var/lib/rancher/k3s/data/current/bin"
-    iptables-save' || reader_failed iptables_rules
-}
-cni_rules() {
-  local listing
-  listing="$(iptables_rules | { grep -F 'CNI-' || [ $? = 1 ]; } | sort)" || reader_failed cni_rules
-  [ -z "$listing" ] || printf '%s\n' "$listing"
-}
-node_state() {
-  local lease_list veth_list sandbox_list rule_list
-  lease_list="$(leases)" || exit 1
-  veth_list="$(veths)" || exit 1
-  sandbox_list="$(sandboxes)" || exit 1
-  rule_list="$(cni_rules)" || exit 1
-  printf 'leases:\n%s\nveths:\n%s\nsandboxes:\n%s\nrules:\n%s\n' "$lease_list" "$veth_list" "$sandbox_list" "$rule_list"
-}
+find_lease_directory
 current_leases="$(leases)" || exit 1
 [ -n "$current_leases" ] || fail "the lease directory $lease_directory holds no lease although pods run on the node"
 # Sandboxes of running pods exist on the node (kube-system's), so a listing that works shows at least one.

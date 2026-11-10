@@ -567,6 +567,10 @@ jobs:
         if: matrix.part == 'presentator'
         run: tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh
 
+      - name: Assert that every exit of presentator's worker container gives a fresh pod, that a running pod is left alone, that an exit loop makes one pod at a time and leaves the node as it was, and that a removed sandbox ends in a fresh pod
+        if: matrix.part == 'presentator'
+        run: tests/presentator/a_used_worker_pod_is_replaced_by_a_fresh_one.sh
+
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells
         if: matrix.part == 'core'
