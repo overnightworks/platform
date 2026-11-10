@@ -13,9 +13,11 @@ case "$(grep '^Kustomization' <<<"$objects" || true)" in
     fail "the root Kustomization in $root_file carries spec.patches, which the job root's overlay would replace" ;;
   *) fail "$root_file holds not exactly one Kustomization" ;;
 esac
-layers_file=clusters/pc/infrastructure.yaml
 # The job root's overlay patches these layers, one list with it (tests/flux/reconcile_the_candidate_tree.sh).
-for layer in tunnel nvidia; do
+for layers_file_and_layer in clusters/pc/infrastructure.yaml:tunnel clusters/pc/infrastructure.yaml:nvidia \
+  clusters/pc/apps.yaml:songmaker; do
+  layers_file="${layers_file_and_layer%%:*}"
+  layer="${layers_file_and_layer##*:}"
   objects="$(kubectl create --dry-run=client -f "$layers_file" -o go-template='{{if eq .metadata.name "'"$layer"'"}}
     {{- .kind}}{{if .spec.patches}} with spec.patches{{end}}{{"\n"}}{{end}}')"
   case "$objects" in

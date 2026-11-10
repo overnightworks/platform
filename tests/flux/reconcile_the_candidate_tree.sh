@@ -43,6 +43,18 @@ patches:
                       - op: replace
                         path: /spec/replicas
                         value: 0
+          # k3d has no card: a pod of the acestep-worker would stay Pending on nvidia.com/gpu, and the Kustomization
+          # songmaker, which waits, would never turn Ready; the Deployment applies and runs no pod.
+          - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: songmaker}
+            patch: |
+              - op: add
+                path: /spec/patches
+                value:
+                  - target: {group: apps, kind: Deployment, name: acestep-worker}
+                    patch: |
+                      - op: replace
+                        path: /spec/replicas
+                        value: 0
           # k3d has no card: the device plugin's DaemonSet applies and schedules nowhere.
           - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: nvidia}
             patch: |
