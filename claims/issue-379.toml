@@ -1,0 +1,7 @@
+claim_id = "57cdab16fc184f4e81fb09bf949a90e4"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "fc7c5ef2d99059a170d4afec056d20d183b4be9b"
+branch = "claude/issue-379-load-dump-alone-seconds"
+scope = ["docs/runbooks/restore-a-database.md", "mise.toml", "tests/postgres/load_dump.sh"]
+opened_commit = "ee10d1aa089190c2aed3b80de01c0d31222061b4"
