@@ -579,6 +579,11 @@ jobs:
         if: matrix.part == 'presentator'
         run: tests/presentator/web_may_get_and_delete_only_the_worker_pod.sh
 
+      # After the restore test's step, whose repository this one adds snapshots to.
+      - name: Assert that a Backup under a concurrent writer leaves one consistent copy of presentator's database that its restore test passes and backup:fetch writes at 0600, refuses to overwrite and refuses when the latest snapshot is no SQLite copy, and that presentator:load-database loads it through a loader without the backup annotation
+        if: matrix.part == 'presentator-backup'
+        run: tests/presentator/backup_streams_a_consistent_copy_that_fetch_and_load_restore.sh
+
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells
         if: matrix.part == 'core'
