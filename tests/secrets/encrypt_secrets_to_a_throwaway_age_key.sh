@@ -95,7 +95,7 @@ done
 # Each namespace whose layer includes the backup component gets its restic Secret, under the names the component's
 # Schedule reads: a rest user, its rest password and its repository password, each in the URL-safe alphabet; the Secret
 # rest-users holds every user's password as a file named after the user.
-schedule="$(yq 'select(.kind == "Schedule")' "$POSTGRES_BACKUP_COMPONENT/backup.yaml")"
+schedule="$(yq 'select(.kind == "Schedule")' "$BACKUP_SCHEDULE_COMPONENT/schedule.yaml")"
 restic_secret="$(yq '.spec.backend.repoPasswordSecretRef.name' <<<"$schedule")"
 user_key="$(yq '.spec.backend.rest.userSecretRef.key' <<<"$schedule")"
 password_key="$(yq '.spec.backend.rest.passwordSecretReg.key' <<<"$schedule")"
