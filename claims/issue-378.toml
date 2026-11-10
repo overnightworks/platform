@@ -1,0 +1,7 @@
+claim_id = "4c65670af7374d01a4ab616820fc4292"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "83f1e9caf83cde52ba1514e9eef19ebbdcd4c7fe"
+branch = "claude/issue-378-p7d-two-steps"
+scope = [".github/workflows/ci.yml", "tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh"]
+opened_commit = "cacb285dd7e7c6c0b9644957b093ad71b1d6b8b9"
