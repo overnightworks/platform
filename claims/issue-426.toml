@@ -1,0 +1,7 @@
+claim_id = "11cf5ab100ef4824a34d5e76595a43bd"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "bce4b5620ae40fdfe5b2fc6a6d5162db9240c98e"
+branch = "claude/issue-426-run-hopin-image-v2026-11-10-4"
+scope = ["apps/hopin/hopin.yaml"]
+opened_commit = "c742e54796abf5825fd2cd70c57270f04fb55f6e"
