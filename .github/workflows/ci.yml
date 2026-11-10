@@ -102,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, access, apps, load, backup]
+        part: [core, observability, access, apps, load, backup-1, backup-2]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -185,7 +185,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Check that Docuum with the service's arguments deletes the least recently used unprotected image and keeps the rest
-        if: matrix.part == 'backup'
+        if: matrix.part == 'backup-2'
         run: tests/disk/docuum_deletes_the_least_recently_used_unprotected_image.sh
 
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
@@ -489,7 +489,7 @@ jobs:
         run: tests/songmaker/workers_are_ready_at_their_full_ref_and_scoring_reaches_only_its_stores.sh
 
       - name: P7d cells
-        if: matrix.part == 'backup'
+        if: matrix.part == 'backup-1'
         env:
           # The Kustomization and Namespace of the rest-server, a namespace with no repository, which gets no answer, and a
           # Keycloak table its realm leaves empty.
@@ -502,14 +502,18 @@ jobs:
         run: |
           tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh
           tests/backup/songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh
-          tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh
+      - name: P7d staging cells
+        if: matrix.part == 'backup-2'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+        run: tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh
       - name: P9f cells
-        if: matrix.part == 'backup'
+        if: matrix.part == 'backup-1'
         env:
           PROMETHEUS_NAMESPACE: prometheus
         run: tests/prometheus/backup_alerts_read_every_schedule_and_namespace.sh
       - name: P9c-2 cells
-        if: matrix.part == 'backup'
+        if: matrix.part == 'backup-1'
         env:
           LITELLM_NAMESPACE: litellm
           KEYCLOAK_NAMESPACE: keycloak
