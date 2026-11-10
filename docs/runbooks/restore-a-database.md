@@ -44,6 +44,6 @@ row.
 This section holds ruled sentences.
 
 - `mise run backup:fetch`: It prints only names and sizes, since a dump holds keys and hashes.
-- `mise run db:load-dump`: It prints names, counts and outcomes, never a row, since a dump holds keys and hashes.
+- `mise run db:load-dump`: It prints names, counts and outcomes, never a row, since a dump holds keys and hashes. It waits up to `DB_LOAD_DUMP_ALONE_SECONDS` seconds, 120 when unset, for other sessions to leave the database.
 - `tests/keycloak/restored_copy_keeps_its_keys_and_people.sh`: It prints names, counts, key ids and `equal` or
   `DIFFERS`, never a row or a message of `pg_restore` or `psql`.

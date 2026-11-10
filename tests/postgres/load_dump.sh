@@ -24,6 +24,8 @@ case "$*" in
     [ -z "${FAKE_READ_SUSPEND_FAILS:-}" ] || { echo "fake kubectl: the server is unreachable" >&2; exit 1; }
     printf '%s' "${FAKE_SUSPENDED:-}" ;;
   *pg_stat_activity*)
+    # FAKE_SESSION_STAYS: another session that never leaves.
+    [ -z "${FAKE_SESSION_STAYS:-}" ] || { echo 1; exit 0; }
     # A lingering restore's backend: seen once, then its commit is done.
     if [ -e "$FAKE_DIR/committing" ]; then
       rm "$FAKE_DIR/committing"
@@ -566,8 +568,28 @@ cell_failing_rerun_on_a_suspended_kustomization_leaves_it_suspended() {
     fail "a failing re-run on a suspended Kustomization exited $status with '$output' after flux $flux_calls"
 }
 
+cell_other_session_that_stays_ends_the_wait_after_the_seconds_set() {
+  cell=other-session-that-stays-ends-the-wait-after-the-seconds-set
+  FAKE_SESSION_STAYS=1 DB_LOAD_DUMP_ALONE_SECONDS=2 run_loader x "$dump"
+  [ "$status" != 0 ] && [ ! -e "$FAKE_DIR/restored" ] && [[ $flux_calls == *resume* ]] &&
+    [[ $output == *"after 2 seconds; nothing loaded"* ]] && [ "$(grep -c 'still holds another session' <<<"$output")" = 1 ] ||
+    fail "a load beside a session that stays exited $status with '$output' after flux $flux_calls"
+}
+
+cell_malformed_wait_is_refused_before_anything_is_suspended() {
+  cell=malformed-wait-is-refused-before-anything-is-suspended
+  local value
+  for value in abc 0 -5 1.5 "2 3"; do
+    DB_LOAD_DUMP_ALONE_SECONDS="$value" run_loader x "$dump"
+    [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *DB_LOAD_DUMP_ALONE_SECONDS* ]] ||
+      fail "a wait of '$value' exited $status with '$output' after flux $flux_calls"
+  done
+}
+
 # Each cell runs in its own subshell, so one failed cell does not hide the next.
 cells=(
+  other-session-that-stays-ends-the-wait-after-the-seconds-set
+  malformed-wait-is-refused-before-anything-is-suspended
   failed-resume-exits-nonzero-and-does-not-claim-nothing-changed
   resume-of-missing-kustomization-stops-at-once
   unreadable-suspension-stops-before-suspend

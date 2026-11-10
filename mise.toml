@@ -668,8 +668,11 @@ umask 077
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 namespace="${usage_namespace?}" file="${usage_file:-}" files="${usage_files:-}"
 pod=postgres-0 loader=db-load-files
+alone_seconds="${DB_LOAD_DUMP_ALONE_SECONDS:-120}"
 say() { echo "db:load-dump: $1"; }
 fail() { echo "db:load-dump: $1" >&2; exit 1; }
+[[ $alone_seconds =~ ^[1-9][0-9]*$ ]] ||
+  fail "DB_LOAD_DUMP_ALONE_SECONDS is '$alone_seconds', not a positive whole number; unset it for the default or set the seconds to wait"
 in_postgres() { kubectl --namespace "$namespace" exec "$pod" --container postgres -- "$@"; }
 dump_into_postgres() { kubectl --namespace "$namespace" exec --stdin "$pod" --container postgres -- "$@" <"$file"; }
 other_sessions() {
@@ -690,7 +693,7 @@ no_restore_runs() {
 # processes come first: a restore connects before it ends, and its backend outlives it until its commit is done, so
 # a restore the scan no longer finds has either never connected or left a session the next check counts.
 wait_alone() {
-  local deadline=$((SECONDS + 120))
+  local deadline=$((SECONDS + alone_seconds))
   until no_restore_runs && [ "$(other_sessions)" = 0 ]; do [ "$SECONDS" -lt "$deadline" ] || return 1; sleep 2; done
 }
 # A Ctrl-C reaches mise and this script, and mise forwards it once more, so each exit path ignores INT and runs at most
@@ -704,7 +707,7 @@ resume_flux() {
 resume() {
   trap - EXIT TERM
   trap '' INT
-  wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; the \
+  wait_alone || fail "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds; the \
 Kustomization stays suspended and the writers at 0: $(way_back)"
   resume_flux
 }
@@ -793,7 +796,7 @@ kubectl --namespace "$namespace" delete job --selector "kustomize.toolkit.fluxcd
 writers="$(kubectl --namespace "$namespace" get pods -o yaml |
   yq '.items[] | select(.metadata.ownerReferences[]?.kind == "ReplicaSet" and ((.status.phase == "Failed" or .status.phase == "Succeeded") and ([.status.containerStatuses[]?, .status.initContainerStatuses[]?] | map(select(.state.running != null)) | length == 0)) == false) | "pod/" + .metadata.name')"
 [ -z "$writers" ] || kubectl --namespace "$namespace" wait $writers --for=delete --timeout=5m
-wait_alone || fail "the database $namespace still holds another session, or cannot be read, after 2 minutes; nothing loaded"
+wait_alone || fail "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds; nothing loaded"
 # Before the load, so a claim that cannot hold the files refuses with the database unchanged.
 [ -z "$files" ] || scripts/load_files.sh start "$namespace" "$loader" "$claim" "$files"
 before_load="$(fingerprint)" || fail "cannot read the database $namespace before the load; nothing loaded"
