@@ -105,7 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator]
+        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator, presentator-backup]
     runs-on: ubuntu-latest
     # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
     timeout-minutes: 17
@@ -568,6 +568,13 @@ jobs:
       - name: Assert that presentator:load-database refuses before any change, replaces the live file whole or leaves the old one, keeps a suspension it found, and that a killed run and a second run at once converge on the same command
         if: matrix.part == 'presentator'
         run: tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh
+
+      - name: Assert that presentator's restore test reads with the operator's restic at the Postgres test's schedule, fails without a snapshot and on an empty, missing or damaged copy, passes on a good copy written after it, and that presentator reaches only its own repository
+        if: matrix.part == 'presentator-backup'
+        env:
+          # A namespace with no repository, which gets no answer from the rest-server.
+          OUTSIDE_NAMESPACE: hopin
+        run: tests/presentator/restore_test_reads_the_latest_copy.sh
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells
