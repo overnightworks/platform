@@ -1,0 +1,8 @@
+claim_id = "d3cb0a09f952406195023d10bdf4542b"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "c93494a43effe01793fcc085eb72a7de13f4d909"
+branch = "claude/issue-395-presentator-legal-2026-11-10-1"
+scope = ["infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/presentator/datenschutz.html", "infrastructure/legal/app-texts/presentator/nutzungsbedingungen.html", "infrastructure/legal/built/datenschutz.html", "infrastructure/legal/built/nutzungsbedingungen.html"]
+opened_commit = "de2a51c9efdd30dbdb9c0521b0ca0b1a6b19b272"
+whole_reason = "a release that changes an app's legal text: the copies, their entries and the built pages change together"
