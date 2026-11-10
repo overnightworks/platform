@@ -1,7 +1,0 @@
-claim_id = "d8fa210f2f744c6cbca665e11412934c"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "e0052e5e26f212dac8451d4c54d429495dc4fdc7"
-branch = "claude/issue-392-preflight-h3-host"
-scope = ["scripts/cutover_preflight.sh", "tests/cutover/preflight_names_each_missing_precondition.sh"]
-opened_commit = "05e00841dfa8acdb190c22afef21a1ee2dc5cf41"
