@@ -4,14 +4,16 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=stand_in.sh
 source "$(dirname "${BASH_SOURCE[0]}")/stand_in.sh"
-# `mise run presentator:load-database` on the stand-in layer: a refusal changes nothing, a fresh load leaves the live
-# file equal to the source, and a source that is damaged, of another page size, without its key table or with an empty
-# one, a live file that is busy, a second run at once or a kill after the copy is staged leave the old database or
-# converge on the same command. Prints names, counts and verdicts, never a row.
+# `mise run presentator:load-database` on the stand-in layer, in ten cases: a refusal changes nothing, a fresh load leaves
+# the live file equal to the source, and a source that is damaged, of another page size, without its key table or with an
+# empty one, a live file that is busy, a second run at once, a kill after the copy is staged or a client killed during a
+# large load leave the old or the new database whole and converge on the same command; a finished loader's copy is gone
+# from the node. Prints names, counts and verdicts, never a row.
 export KUBECONFIG="$HOME/.kube/config"
 namespace=presentator
 holder=database-holder
 loader=presentator-load
+ended=presentator-load-ended
 
 scratch="$(mktemp -d)"
 shim="$scratch/shim"
@@ -26,7 +28,7 @@ cleanup() {
   local cell_status=$?
   [ -z "$held_pid" ] || pkill -KILL --session "$held_pid" 2>/dev/null || true
   [ -z "$lock_client" ] || kill "$lock_client" 2>/dev/null || true
-  delete_object --namespace "$namespace" delete pod "$holder" "$loader" --ignore-not-found --wait --timeout=2m
+  delete_object --namespace "$namespace" delete pod "$holder" "$loader" "$ended" --ignore-not-found --wait --timeout=2m
   remove_stand_in
   rm -rf "$scratch"
   end_deletions "$cell_status"
@@ -273,3 +275,102 @@ cat "$held_output"
 ! grep -qF -e "$old_marker" -e "$new_marker" "$held_output" || fail "the first run printed a row"
 converged_on_the_source "the first run"
 echo "a second run at once was refused with nothing changed, and the first converged once released"
+
+# 9: a client killed while the remote load of a large copy runs. The copy is a few hundred MB of random blobs, so that the
+# load runs for seconds after the client is gone; the load goes on in the loader, and the Kustomization's suspension and
+# the web at 0 outlast the client, so the live file ends whole as the old or the new database.
+large="$scratch/large.sqlite3"
+make_source "$large" 4096 "$key_table" "$new_marker" second third
+python3 -I - "$large" <<'PYTHON'
+import sqlite3, sys
+connection = sqlite3.connect(sys.argv[1], isolation_level=None)
+connection.execute("CREATE TABLE filler (data BLOB)")
+connection.execute("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 256) "
+                   "INSERT INTO filler SELECT randomblob(1048576) FROM n")
+connection.close()
+PYTHON
+in_loader() { kubectl --namespace "$namespace" exec --stdin "$loader" --container loader -- "$@"; }
+# await_load <1|0>: within 30 seconds the loader's python3 runs the load (1) or no longer does (0).
+await_load() {
+  in_loader env WANT="$1" python3 -I - <<'PYTHON'
+import os, pathlib, sys, time
+def loading():
+    for cmdline in pathlib.Path("/proc").glob("[0-9]*/cmdline"):
+        try:
+            arguments = cmdline.read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if b"/sqlite/sqlite_copy.py" in arguments and b"load" in arguments:
+            return True
+    return False
+deadline = time.monotonic() + 30
+while loading() != (os.environ["WANT"] == "1"):
+    if time.monotonic() > deadline:
+        sys.exit(1)
+    time.sleep(0.05)
+PYTHON
+}
+# The Ready wait ends before the staging of the copy begins, so the watch for the load starts before the load does.
+loader_is_loading() {
+  loader_exists && kubectl --namespace "$namespace" wait "pod/$loader" --for=condition=Ready --timeout=3m >/dev/null &&
+    await_load 1
+}
+session_ended() { ! pgrep --session "$held_pid" >/dev/null; }
+
+plant_live
+setsid mise run presentator:load-database "$large" >"$held_output" 2>&1 &
+held_pid=$!
+until_true 300 "the loader's python3 runs the load" loader_is_loading
+# The client is the command and the script it runs; the kubectl that carries the load is not killed with them.
+mapfile -t client < <(pgrep --parent "$held_pid" || true)
+kill -KILL "$held_pid" "${client[@]}"
+load_status=0
+wait "$held_pid" || load_status=$?
+[ "$load_status" = 137 ] || fail "the killed client did not exit as killed: $load_status"
+until_true 120 "the load in the loader ended" await_load 0
+until_true 120 "the processes the killed client left ended" session_ended
+held_pid=
+if [ "$(suspended)" != true ] || [ "$(web_replicas)" != 0 ] || ! loader_exists; then
+  fail "the killed client did not leave Flux suspended, the web at 0 and the loader Pod"
+fi
+case "$(live_report)" in
+  "1 1 0 ok") outcome="the old database" ;;
+  "3 0 1 ok") outcome="the new database" ;;
+  *) fail "the live file is neither the old nor the new database, whole: $(live_report)" ;;
+esac
+run_load "$large"
+converged_on_the_source "the run after the killed client"
+echo "a client killed during a $(stat --format=%s "$large")-byte load left Flux suspended, the web at 0 and $outcome whole, and the same command converged"
+
+# 10: a loader that ended is not run again: a Pod of its shape whose command ends after 5 seconds keeps its Pod object,
+# and the kubelet removes its emptyDir from the node.
+node() { docker exec "k3d-${CLUSTER_NAME:?}-server-0" "$@"; }
+staging_directory() { echo "/var/lib/kubelet/pods/$1/volumes/kubernetes.io~empty-dir/staging"; }
+directory_exists() { node test -e "$1"; }
+# The kubelet's pods directory is read first, so a node that cannot be reached never counts as a removed directory.
+directory_gone() { node test -d /var/lib/kubelet/pods && ! node test -e "$1"; }
+ended_succeeded() {
+  local phase
+  phase="$(kubectl --namespace "$namespace" get pod "$ended" --output jsonpath='{.status.phase}')"
+  [ "$phase" != Failed ] || fail "the Pod of the loader's shape failed"
+  [ "$phase" = Succeeded ]
+}
+plant_live
+hold_at_load "$good"
+loader_directory="$(staging_directory "$(kubectl --namespace "$namespace" get pod "$loader" --output jsonpath='{.metadata.uid}')")"
+directory_exists "$loader_directory/copy" || fail "the node holds no staged copy of the running loader under the path the case reads"
+end_hold
+kubectl --namespace "$namespace" get pod "$loader" --output json | NAME="$ended" yq --input-format json --output-format json '
+  del(.status, .metadata.uid, .metadata.resourceVersion, .metadata.creationTimestamp, .metadata.managedFields, .spec.nodeName) |
+  .metadata.name = strenv(NAME) |
+  .spec.containers[0].command = ["sh", "-c", "touch /staging/marker && sleep 5"]' |
+  kubectl --namespace "$namespace" create --filename - >/dev/null
+ended_directory="$(staging_directory "$(kubectl --namespace "$namespace" get pod "$ended" --output jsonpath='{.metadata.uid}')")"
+until_true 120 "the Pod of the loader's shape ended" ended_succeeded
+if ! (until_true 120 "the node removed the emptyDir of the ended Pod" directory_gone "$ended_directory"); then
+  echo "the node still holds under the ended Pod's emptyDir: $(node ls -A "$ended_directory" | tr '\n' ' ')"
+  exit 1
+fi
+kubectl --namespace "$namespace" get pod "$ended" >/dev/null || fail "the ended Pod object is gone"
+echo "the emptyDir of a loader that ended was removed from the node while its Pod object stayed"
+echo "ten cases held"
