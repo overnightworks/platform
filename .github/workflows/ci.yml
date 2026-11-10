@@ -555,7 +555,7 @@ jobs:
           APP_NAMESPACE: hopin
         run: tests/litellm/keys_table_drives_budgets_and_the_app_key.sh
 
-      - name: Assert that presentator's web passes restricted, its worker baseline without its init's NET_ADMIN, nothing else runs looser, and its RBAC and render hold the contract
+      - name: Assert that presentator's web passes restricted, its worker baseline without its init's NET_ADMIN, nothing else runs looser, and its render holds the contract
         if: matrix.part == 'apps'
         run: |
           kubectl kustomize apps/presentator >"$RUNNER_TEMP/presentator.yaml"
@@ -575,9 +575,10 @@ jobs:
           # A namespace with no repository, which gets no answer from the rest-server.
           OUTSIDE_NAMESPACE: hopin
         run: tests/presentator/restore_test_reads_the_latest_copy.sh
-      - name: Assert that presentator's web may get and delete exactly the build worker's pod, which its environment names, and the worker's ServiceAccount nothing
+
+      - name: Assert that every exit of presentator's worker container gives a fresh pod, that a running pod is left alone, that an exit loop makes one pod at a time and leaves the node as it was, and that a removed sandbox ends in a fresh pod
         if: matrix.part == 'presentator'
-        run: tests/presentator/web_may_get_and_delete_only_the_worker_pod.sh
+        run: tests/presentator/a_used_worker_pod_is_replaced_by_a_fresh_one.sh
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells
