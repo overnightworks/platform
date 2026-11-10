@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/stand_in.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/../backup/restic_pod.sh"
 # presentator's backup path on the stand-in layer, driven once end to end through the platform's own commands: a Backup as
 # the Schedule would start it, while a writer in the web commits one row and raises one counter in every transaction,
-# leaves one snapshot of the one stream file, whose pod passes restricted, and the restore test passes on it; `backup:fetch`
+# leaves one snapshot of the one stream file, whose pod restricted admits, and the restore test passes on it; `backup:fetch`
 # writes that copy at mode 0600 and refuses an existing file, and the copy holds whole transactions only; a latest
 # snapshot of neither format is refused and its file deleted, and a second Backup supersedes it; `presentator:load-database`
 # then loads the first copy through a loader that carries no label or annotation, and the live key table equals the copy.
@@ -21,11 +21,13 @@ mkdir -p "$shim"
 marker="row-$(openssl rand -hex 4)"
 writer=
 held_pid=
+shape_namespace=presentator-backup-shape
 cleanup() {
   local cell_status=$?
   [ -z "$writer" ] || kill "$writer" 2>/dev/null || true
   [ -z "$held_pid" ] || pkill -KILL --session "$held_pid" 2>/dev/null || true
   delete_restic_objects
+  delete_object delete namespace "$shape_namespace" --ignore-not-found --wait --timeout=2m
   remove_stand_in
   rm -rf "$scratch"
   end_deletions "$cell_status"
@@ -126,21 +128,26 @@ mapfile -t listing <<<"$restic_output"
   fail "the latest snapshot holds ${listing[*]:1}, not the one file /$snapshot_file"
 echo "one Backup under the writer left one snapshot of the stream file /$snapshot_file"
 
-# k8up's Job pod: its logs hold no row, and its shape passes restricted, which the Namespace only warns at; a pod that is
-# not restricted makes the same check warn.
+# k8up's Job pod: its logs hold no row, and its template is admitted by a Namespace that enforces restricted, which this
+# Namespace does not; a privileged copy of it is refused there, so the admission is what judges.
 job_logs="$(kubectl --namespace "$namespace" logs --selector k8upjob=true --all-pods --tail=-1)" ||
   fail "cannot read k8up's Job logs in $namespace"
 [ -n "$job_logs" ] || fail "k8up's Job logs in $namespace are empty"
 [[ $job_logs != *"$marker"* ]] || fail "k8up's Job log holds a row"
-job_pod="$(kubectl --namespace "$namespace" get jobs --selector k8upjob=true --output json | yq --input-format json \
-  '{"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "backup-shape"}, "spec": .items[0].spec.template.spec}')"
-shape_output="$(kubectl --namespace "$namespace" create --dry-run=server --filename - <<<"$job_pod" 2>&1)" ||
-  fail "k8up's Job pod is refused: $shape_output"
-[[ $shape_output != *"would violate"* ]] || fail "k8up's Job pod would violate its Namespace's level: $shape_output"
+job_template="$(kubectl --namespace "$namespace" get jobs --selector k8upjob=true --output json | yq --input-format json '.items[0].spec.template')"
+job_account="$(yq '.spec.serviceAccountName' <<<"$job_template")"
+kubectl create namespace "$shape_namespace" >/dev/null
+kubectl label namespace "$shape_namespace" pod-security.kubernetes.io/enforce=restricted >/dev/null
+kubectl --namespace "$shape_namespace" wait serviceaccount/default --for=create --timeout=1m >/dev/null
+kubectl --namespace "$shape_namespace" create serviceaccount "$job_account" >/dev/null
+job_pod="$(yq '{"apiVersion": "v1", "kind": "Pod", "metadata": {"name": "backup-shape"}, "spec": .spec}' <<<"$job_template")"
+shape_output="$(kubectl --namespace "$shape_namespace" create --dry-run=server --filename - <<<"$job_pod" 2>&1)" ||
+  fail "k8up's Job pod is refused at restricted: $shape_output"
 privileged_output="$(yq '.spec.containers[0].securityContext.privileged = true' <<<"$job_pod" |
-  kubectl --namespace "$namespace" create --dry-run=server --filename - 2>&1 || true)"
-[[ $privileged_output == *"would violate"* ]] || fail "a privileged copy of k8up's Job pod draws no warning, so the check proves nothing"
-echo "k8up's Backup pod passes the Namespace's restricted level, a privileged copy of it draws the warning, and its log holds no row"
+  kubectl --namespace "$shape_namespace" create --dry-run=server --filename - 2>&1)" &&
+  fail "a privileged copy of k8up's Job pod is admitted at restricted, so the check proves nothing"
+[[ $privileged_output == *privileged* ]] || fail "a privileged copy of k8up's Job pod is refused for another reason: $privileged_output"
+echo "k8up's Backup pod is admitted at restricted, a privileged copy of it is refused, and its log holds no row"
 
 # The backup wrote nothing to the claim but SQLite's own files.
 # shellcheck disable=SC2016 # the container's shell expands the variable
