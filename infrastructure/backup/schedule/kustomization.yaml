@@ -1,0 +1,6 @@
+# The weekly backup of a namespace into its repository on the platform's rest-server, with its retention and monthly
+# check, whatever the namespace's database is. A layer or component that includes it sets the repository URL.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - schedule.yaml

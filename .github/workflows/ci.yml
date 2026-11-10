@@ -102,9 +102,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, access, apps, load, backup-1, backup-2]
+        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
+    timeout-minutes: 17
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
@@ -169,6 +170,8 @@ jobs:
       POSTGRES_BASE: infrastructure/postgres
       # The component a Postgres layer includes to be backed up, and the rest-server it backs up to.
       POSTGRES_BACKUP_COMPONENT: infrastructure/postgres/backup
+      # The component that holds the weekly Schedule every backed-up namespace gets.
+      BACKUP_SCHEDULE_COMPONENT: infrastructure/backup/schedule
       REST_SERVER_MANIFEST: infrastructure/backup/rest-server.yaml
     steps:
       - name: Check out
@@ -350,11 +353,11 @@ jobs:
         run: tests/cloudflared/tunnel_applied_at_zero_replicas.sh
 
       - name: Assert cloudflared's ingress from Pods built from its Deployment's template
-        if: matrix.part == 'core'
+        if: matrix.part == 'backup-2'
         run: tests/cloudflared/ingress_from_pods_built_from_its_template.sh
 
       - name: P7a cells
-        if: matrix.part == 'load'
+        if: matrix.part == 'load-1'
         env:
           # The layer whose Kustomization the prune proof deletes and whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
@@ -368,8 +371,15 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
+      - name: P7a foreign-session and interrupt cells
+        if: matrix.part == 'load-2'
+        env:
+          # The layer whose Postgres the loader proof loads.
+          PROOF_LAYER: litellm
+        run: tests/postgres/load_dump_refuses_a_foreign_session_and_suspension_and_survives_interrupts.sh
+
       - name: Assert that songmaker's Postgres and Redis are Ready and non-root, closed to other namespaces, and that Redis forgets on restart
-        if: matrix.part == 'core'
+        if: matrix.part == 'load-1'
         env:
           SONGMAKER_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
@@ -377,7 +387,7 @@ jobs:
         run: tests/songmaker/stores_are_ready_non_root_closed_and_forget.sh
 
       - name: Assert that songmaker's web is Ready at its full ref, migrated, closed to other namespaces, read-only and holds its audio claim
-        if: matrix.part == 'load'
+        if: matrix.part == 'load-1'
         env:
           SONGMAKER_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
@@ -385,7 +395,7 @@ jobs:
         run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
 
       - name: Assert that songmaker's route reaches its web through Traefik for the tunnel's Pods, that the web answers the host the GPU worker sends and refuses another, and that a Pod in another namespace gets no answer
-        if: matrix.part == 'load'
+        if: matrix.part == 'load-1'
         env:
           SONGMAKER_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
@@ -393,7 +403,7 @@ jobs:
         run: tests/songmaker/route_reaches_the_web.sh
 
       - name: Assert that the layer nvidia is Ready with its DaemonSet scheduled nowhere, offers the RuntimeClass, holds only the plugin in a Namespace without a Pod Security label, and that a restricted Pod with the class passes dry-run
-        if: matrix.part == 'core'
+        if: matrix.part == 'load-1'
         env:
           NVIDIA_NAMESPACE: nvidia
           # The throwaway Namespace that enforces restricted, which the dry-run Pod meets.
@@ -513,7 +523,7 @@ jobs:
           PROMETHEUS_NAMESPACE: prometheus
         run: tests/prometheus/backup_alerts_read_every_schedule_and_namespace.sh
       - name: P9c-2 cells
-        if: matrix.part == 'backup-1'
+        if: matrix.part == 'backup-2'
         env:
           LITELLM_NAMESPACE: litellm
           KEYCLOAK_NAMESPACE: keycloak
@@ -527,7 +537,7 @@ jobs:
 
       # The step suspends the Kustomization litellm, which would otherwise restore the table it changes.
       - name: P9c cells
-        if: matrix.part == 'load'
+        if: matrix.part == 'load-1'
         env:
           LITELLM_NAMESPACE: litellm
           APP_NAMESPACE: hopin
@@ -551,7 +561,7 @@ jobs:
         run: tests/backup/load_replaces_database_and_files_together.sh
 
       - name: Assert that the three legal pages and every asset reach a Pod beside cloudflared through Traefik with the committed bytes and headers, /favicon.ico and the asset directories get nginx's 404 and everything else Traefik's
-        if: matrix.part == 'core'
+        if: matrix.part == 'apps'
         env:
           LEGAL_NAMESPACE: legal
           LEGAL_LAYER_DIRECTORY: infrastructure/legal
@@ -560,7 +570,7 @@ jobs:
         run: tests/legal/five_paths_through_traefik.sh
 
       - name: Assert that Loki keeps a pushed line for LogQL, deletes after at most 28 days, answers only its two namespaces and keeps its claim
-        if: matrix.part == 'observability'
+        if: matrix.part == 'apps'
         env:
           LOKI_NAMESPACE: loki
           # Loki's admitted sender, the Namespace of the layer alloy, and the throwaway namespace of one that is not.
@@ -580,7 +590,7 @@ jobs:
         run: tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh
 
       - name: Assert that Alloy ships a pod's line to Loki with three labels, holds one ClusterRole with exactly two rules and answers nobody
-        if: matrix.part == 'observability'
+        if: matrix.part == 'apps'
         env:
           ALLOY_NAMESPACE: alloy
           LOKI_NAMESPACE: loki

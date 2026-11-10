@@ -166,8 +166,8 @@ for namespace in $BACKUP_NAMESPACES; do
        "spec": { "backend": .spec.backend, "podConfigRef": .spec.podConfigRef, "retention": .spec.prune.retention } }' <<<"$schedule")" >/dev/null
   wait_completed "$namespace" prune first-prune
   expected_rule="$(yq 'select(.kind == "Schedule") | .spec.prune.retention | to_entries | .[] |
-    "KEEP_" + (.key | sub("^keep"; "") | upcase) + "=" + (.value | tostring)' "$POSTGRES_BACKUP_COMPONENT/backup.yaml" | sort)"
-  [ -n "$expected_rule" ] || fail "$POSTGRES_BACKUP_COMPONENT/backup.yaml declares no retention"
+    "KEEP_" + (.key | sub("^keep"; "") | upcase) + "=" + (.value | tostring)' "$BACKUP_SCHEDULE_COMPONENT/schedule.yaml" | sort)"
+  [ -n "$expected_rule" ] || fail "$BACKUP_SCHEDULE_COMPONENT/schedule.yaml declares no retention"
   actual_rule="$(kubectl --namespace "$namespace" get jobs --output json | yq --input-format json \
     '.items[] | select(.metadata.ownerReferences[].name == "first-prune") | .spec.template.spec.containers[0].env[] |
      select(.name | test("^KEEP_")) | .name + "=" + .value' | sort)"

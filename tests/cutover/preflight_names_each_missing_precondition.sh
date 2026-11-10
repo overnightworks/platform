@@ -275,7 +275,7 @@ build_base() {
     serve "${host_and_path%%/*}" "http://127.0.0.1:8081/${host_and_path#*/}" 200 text/html </dev/null
   done
   serve x.$zone http://localhost:9000/h 204 </dev/null
-  serve localhost http://127.0.0.1:8090/admin/ 302 text/html http://localhost:8090/admin/master/console/ </dev/null
+  serve localhost:8090 http://127.0.0.1:8090/admin/ 302 text/html http://localhost:8090/admin/master/console/ </dev/null
   serve "" "http://127.0.0.1:$forward_port/realms/$realm/protocol/openid-connect/auth" 200 text/html <<<"$login_page"
   serve "" "http://127.0.0.1:$forward_port/resources/abcde/login/$realm/css/styles.css" 200 'text/css;charset=UTF-8' </dev/null
   build_home
@@ -406,7 +406,7 @@ fail_I1() { edit networkpolicies-hopin.json '.items = []'; }
 fail_I2() { edit configmap.json '.data["config.yaml"] += "# drift\n"'; }
 fail_H1() { mkdir -p "$case_home/.local/state/edge/stopped" && : >"$case_home/.local/state/edge/stopped/keycloak"; }
 fail_H2() { serve presentator.$zone http://127.0.0.1:8081/health 503 </dev/null; }
-fail_H3() { serve localhost http://127.0.0.1:8090/admin/ 500 </dev/null; }
+fail_H3() { serve localhost:8090 http://127.0.0.1:8090/admin/ 500 </dev/null; }
 fail_H4() { serve auth.$zone "http://127.0.0.1:8081$certs_path" 200 application/json <<<'{"keys":[{"kid":"kid-a"},{"kid":"kid-c"}]}'; }
 fail_H5() { : >"$case_home/srv/hal/untracked"; }
 fail_D1() { printf '        Avail Use%% Mounted on\n1000 40%% /\n100000000000 40%% /opt\n' >"$case_directory/df.out"; }
@@ -422,7 +422,7 @@ unknown_I1() { touch "$case_directory/fail/kubectl-crd"; }
 unknown_I2() { touch "$case_directory/fail/kubectl-configmap"; }
 unknown_H1() { serve auth.$zone "http://127.0.0.1:8081$discovery_path" 000 "" "" 127 </dev/null; }
 unknown_H2() { echo 'services: [' >"$case_home/srv/hal/fleet.yaml"; }
-unknown_H3() { serve localhost http://127.0.0.1:8090/admin/ 000 "" "" 127 </dev/null; }
+unknown_H3() { serve localhost:8090 http://127.0.0.1:8090/admin/ 000 "" "" 127 </dev/null; }
 unknown_H4() { serve "" "https://auth.$zone$certs_path" 000 "" "" 127 </dev/null; }
 unknown_H5() { touch "$case_directory/fail/git-hal"; }
 unknown_D1() { touch "$case_directory/fail/docker-exec"; }
