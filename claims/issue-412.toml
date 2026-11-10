@@ -1,7 +1,0 @@
-claim_id = "c72b8b046a3f4a58b238feb032a4cf27"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "ccf8bc52d718deb18ab9e28f3c94dd9dd11ab966"
-branch = "claude/issue-412-p7b-canonical-state"
-scope = ["tests/keycloak/realm_route_and_policies.sh"]
-opened_commit = "e817d2f8713816ef6c110478f31d9b11a2e82521"
