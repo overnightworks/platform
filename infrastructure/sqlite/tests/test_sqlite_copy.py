@@ -30,12 +30,12 @@ def make_database(path: Path, values: list[str], *, page_size: int = 4096, table
         connection.execute(f"PRAGMA page_size={page_size}")
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute(f'CREATE TABLE "{table}" (name TEXT)')
-        connection.executemany(f'INSERT INTO "{table}" VALUES (?)', [(value,) for value in values])
+        connection.executemany(f'INSERT INTO "{table}" VALUES (?)', [(value,) for value in values])  # noqa: S608 - a fixed test table name
 
 
 def names_in(path: Path) -> list[str]:
     with contextlib.closing(sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)) as connection:
-        return sorted(row[0] for row in connection.execute(f"SELECT name FROM {TABLE}"))
+        return sorted(row[0] for row in connection.execute("SELECT name FROM users"))
 
 
 def integrity_of(path: Path) -> list[tuple[str]]:
