@@ -104,7 +104,8 @@ jobs:
       matrix:
         part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
+    timeout-minutes: 17
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
