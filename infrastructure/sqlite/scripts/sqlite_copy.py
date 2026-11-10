@@ -2,8 +2,9 @@
 
 `load` writes a verified copy into the live file through SQLite's backup API, one write
 transaction of the file's own journal or WAL, so the file holds the old or the new database,
-never a mix; its exit says whether that transaction began. It prints a count and nothing else:
-no row value, no path.
+never a mix; its exit says whether that transaction began. `check` judges a restored copy by the
+same rule `load` judges its source by, and exits 0 only when the copy passes. Each prints a count
+and nothing else: no row value, no path.
 """
 
 import hashlib
@@ -55,6 +56,13 @@ def load(staged: Path, size: int, sha256: str, live: Path, table: str) -> int:
         if rows != expected:
             raise LoadFailed(LoadExit.UNCHECKED)
         return rows
+
+
+def check(copy: Path, table: str) -> int:
+    """The row count of a copy whose integrity check answers exactly `ok` and whose key table
+    holds rows; anything else raises."""
+    with closing(_immutable(copy)) as connection:
+        return _populated_rows(connection, table)
 
 
 def _prepared(
@@ -137,9 +145,11 @@ def main(arguments: list[str]) -> int:
         match arguments:
             case ["load", staged, size, sha256, live, table]:
                 rows = load(Path(staged), int(size), sha256, Path(live), table)
-                sys.stdout.write(f"{rows}\n")
+            case ["check", copy, table]:
+                rows = check(Path(copy), table)
             case _:
                 return 2
+        sys.stdout.write(f"{rows}\n")
     except LoadFailed as failure:
         return failure.exit_code
     except (sqlite3.Error, OSError, ValueError):

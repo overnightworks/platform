@@ -1,0 +1,106 @@
+# The monthly restore test of the including layer's SQLite database: the latest snapshot's copy into an emptyDir, then
+# sqlite_copy.py's check of it in the app's own image, the one that wrote the file; the copy never leaves this pod and
+# the live database is not touched. The check's exit is the test's.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: restore-test
+spec:
+  # The Postgres restore test's time, so every namespace's test runs in the same hour.
+  schedule: "0 5 1 * *"
+  timeZone: UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          imagePullSecrets:
+            - name: ghcr-pull
+          securityContext:
+            # The app's user and group, set by the including layer's replacements.
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: restic-dump
+              # k8up's own image, so the restic that reads a repository is the one that wrote it. Its digest equals the
+              # one in infrastructure/k8up/values.yaml; a bump changes both, and the cluster job fails when they differ.
+              image: ghcr.io/k8up-io/k8up:v2.16.1@sha256:f59bfa37c51511d5ad67e53816fb55c62d0e6411890e59bb6b965923129f30b5
+              command:
+                - sh
+                - -c
+                - umask 077; restic --no-cache dump --path "/$(SNAPSHOT_FILE)" latest "/$(SNAPSHOT_FILE)" >/restore/dump
+              env:
+                - name: SNAPSHOT_FILE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: sqlite
+                      key: snapshot-file
+                - name: REPOSITORY_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: sqlite
+                      key: backup-repository
+                - name: RESTIC_REPOSITORY
+                  value: rest:$(REPOSITORY_URL)
+                - name: RESTIC_REST_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic
+                      key: username
+                - name: RESTIC_REST_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic
+                      key: password
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic
+                      key: repository-password
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: restore
+                  mountPath: /restore
+          containers:
+            - name: restore-test
+              # The app's image, set by the including layer's replacement.
+              image: set-by-the-including-layer
+              command: [python3, -I, /sqlite/sqlite_copy.py, check, /restore/dump, $(KEY_TABLE)]
+              env:
+                - name: KEY_TABLE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: sqlite
+                      key: key-table
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: restore
+                  mountPath: /restore
+                  readOnly: true
+                - name: sqlite
+                  mountPath: /sqlite
+                  readOnly: true
+          volumes:
+            - name: restore
+              emptyDir: {}
+            - name: sqlite
+              configMap:
+                name: sqlite

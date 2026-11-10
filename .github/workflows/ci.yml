@@ -105,7 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator]
+        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator, presentator-backup]
     runs-on: ubuntu-latest
     # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
     timeout-minutes: 17
@@ -178,6 +178,8 @@ jobs:
       POSTGRES_BACKUP_COMPONENT: infrastructure/postgres/backup
       # The component that holds the weekly Schedule every backed-up namespace gets.
       BACKUP_SCHEDULE_COMPONENT: infrastructure/backup/schedule
+      # The base a SQLite layer includes, which backs it up beside the Postgres ones.
+      SQLITE_COMPONENT: infrastructure/sqlite
       REST_SERVER_MANIFEST: infrastructure/backup/rest-server.yaml
     steps:
       - name: Check out
@@ -567,6 +569,12 @@ jobs:
         if: matrix.part == 'presentator'
         run: tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh
 
+      - name: Assert that presentator's restore test reads with the operator's restic at the Postgres test's schedule, fails without a snapshot and on an empty, missing or damaged copy, passes on a good copy written after it, and that presentator reaches only its own repository
+        if: matrix.part == 'presentator-backup'
+        env:
+          # A namespace with no repository, which gets no answer from the rest-server.
+          OUTSIDE_NAMESPACE: hopin
+        run: tests/presentator/restore_test_reads_the_latest_copy.sh
       - name: Assert that presentator's web may get and delete exactly the build worker's pod, which its environment names, and the worker's ServiceAccount nothing
         if: matrix.part == 'presentator'
         run: tests/presentator/web_may_get_and_delete_only_the_worker_pod.sh
