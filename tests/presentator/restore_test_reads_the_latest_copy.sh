@@ -126,7 +126,9 @@ run_test good
 echo "on a good copy written after the damaged one the restore test passes, printing the count $check_output"
 
 # presentator's user reaches its own repository and no other: --private-repos admits a user only to the path of its name.
-rest_base="$(dirname "$repository")"
+# The ConfigMap's URL ends in a slash, which the rest-server would answer with a redirect before the path.
+own="${repository%/}"
+rest_base="$(dirname "$own")"
 foreign="$postgres_namespace"
 run_restic "$namespace" isolation-check "
 status() {
@@ -134,7 +136,7 @@ status() {
     curl --silent --output /dev/null --write-out '%{http_code}\n' --retry 5 --retry-connrefused --retry-delay 2 \
       --retry-max-time 30 --config - \"\$@\"
 }
-status '$repository/config'
+status '$own/config'
 status '$rest_base/$foreign/config'
 status --request DELETE '$rest_base/$foreign/config'"
 mapfile -t statuses <<<"$restic_output"
@@ -143,7 +145,7 @@ mapfile -t statuses <<<"$restic_output"
 [[ ${statuses[2]} == 40[13] ]] || fail "presentator's credentials got ${statuses[2]} deleting /$foreign/config, not 401 or 403"
 echo "presentator's credentials read its own repository (200) and are refused at $foreign's (${statuses[1]}, ${statuses[2]})"
 
-request "$OUTSIDE_NAMESPACE" outside-namespace "$UNROUTED_HOST" "$repository/config" --retry 0
+request "$OUTSIDE_NAMESPACE" outside-namespace "$UNROUTED_HOST" "$own/config" --retry 0
 [ "$status" = 000 ] && [ "$exit_code" != 0 ] ||
   fail "a pod in $OUTSIDE_NAMESPACE reached the rest-server (status '$status', curl exit $exit_code)"
 echo "a pod in $OUTSIDE_NAMESPACE gets no answer from the rest-server"
