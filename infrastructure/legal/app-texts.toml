@@ -13,15 +13,15 @@ date = 2026-11-09
 sha256 = "901d03ad3bf0907bf65fb1431c39d9dc4f8ab5c3819fbc8b808af2683a096083"
 
 [presentator]
-tag = "v2026.11.08.1"
+tag = "v2026.11.10.1"
 
 [presentator.datenschutz]
-date = 2026-11-08
-sha256 = "01e4f697e897cf1804d90ade97ab5fed158cfaae208825e34c4ddce59dd2918a"
+date = 2026-11-10
+sha256 = "f2d7e60ef58ea54e26f67c7b73155e07e779d4d7613d37a111e87dc5547eed50"
 
 [presentator.nutzungsbedingungen]
-date = 2026-11-08
-sha256 = "94ba94a7cb63bcd358402f31f9875d7d188fe7845be8f27c766c6c30732a0d6c"
+date = 2026-11-09
+sha256 = "d756044aa9db85063bd48ba119bb4d09ac0956b09e139b805f6bb20241aacc21"
 
 [songmaker]
 
