@@ -1,7 +1,0 @@
-claim_id = "e141545aedd74c7abf2b2d3254715636"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "45984503339793a804427685c5f185a374f004f2"
-branch = "claude/issue-364-config-cli-sees-keycloak"
-scope = ["infrastructure/keycloak/config-cli.yaml", "infrastructure/keycloak/keycloak.yaml"]
-opened_commit = "b553f7a3d1905ea2dc007b0838fa8f72068b9402"
