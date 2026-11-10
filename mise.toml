@@ -923,7 +923,7 @@ exec scripts/presentator_load_database.sh "${usage_file?}"
 
 [tasks."sqlite:test"]
 description = "Run the unit test of infrastructure/sqlite's copy script on the Python the app images name as their floor"
-run = "uv run --no-project --python 3.14 python -I -m unittest discover -s infrastructure/sqlite/tests"
+run = "uv run --no-project --python 3.14 python -I -B -m unittest discover -s infrastructure/sqlite/tests"
 
 [tasks."keycloak:admin"]
 description = "Forward Keycloak's admin front end to this PC's loopback and print the line that opens its console"
