@@ -65,7 +65,8 @@ writers_at_zero() {
 }
 load() {
   local status=0
-  mise run db:load-dump --compare --files "$tree" "$namespace" "$dump" >"$output" 2>&1 || status=$?
+  # A load that does not end within the bound fails here instead of at the job's timeout; the tree is a few bytes.
+  timeout -k 10 300 mise run db:load-dump --compare --files "$tree" "$namespace" "$dump" >"$output" 2>&1 || status=$?
   cat "$output"
   ! grep -qF "$marker" "$output" || fail "the load printed a file name or a row"
   return "$status"
@@ -120,7 +121,7 @@ grep -qF '0 differing entries' "$output" || fail "the load did not report an equ
 echo "a fresh load made the claim and the database equal to the source and left the source unchanged"
 
 # A kill during rsync: Flux suspended, writers at 0, --resume refuses, the same command converges.
-kill_during rsync 'rsh_into_pod' false
+kill_during kubectl 'nc 127.0.0.1' false
 held_back || fail "a kill during rsync left Flux resumed or a writer running"
 if mise run db:load-dump --resume "$namespace" >"$output" 2>&1; then fail "--resume of a claim layer exited 0"; fi
 grep -qF 'same command again' "$output" || fail "--resume did not name the re-run"
