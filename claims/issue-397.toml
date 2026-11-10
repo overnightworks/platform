@@ -1,0 +1,7 @@
+claim_id = "8d1e192d7dc64400b771143a6d7ac5e5"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "60ed553b46db235e9de25cb31b0c1f4af0f73f42"
+branch = "claude/issue-397-cluster-steps-to-parts-with-room"
+scope = [".github/workflows/ci.yml"]
+opened_commit = "b885c03dca7fe92aea378c54a24aece3dd7dc54b"
