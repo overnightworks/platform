@@ -1,0 +1,7 @@
+claim_id = "d075a8561aa04ecbbe5a26d7e8b77643"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "0bf14b94c2116c054cee44071d7e25397ab5ec31"
+branch = "claude/issue-382-cluster-timeout-17"
+scope = [".github/workflows/ci.yml", "tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh"]
+opened_commit = "3713c2e342aac73426a9a0ae57da4de7918d11b3"
