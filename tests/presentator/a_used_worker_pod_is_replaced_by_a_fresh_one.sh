@@ -7,7 +7,7 @@
 # finds its scratch used and ends it, which gives a fresh pod too. It needs CLUSTER_NAME and PROBE_IMAGE, and creates and
 # deletes the Namespace $REPLACEMENT_NAMESPACE, which carries no Pod Security label. The stand-in appends to the file
 # lives in the claim: "empty" when every scratch directory of the worker was empty at its start, else "used" and exit 2.
-# In serve mode it then waits for the file trigger in the claim, whose content is its exit status; in loop mode it exits 2.
+# It then waits for the file trigger in the claim, whose content is its exit status. In loop mode it exits 2 at once.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 # shellcheck source=../failure.sh
@@ -33,6 +33,7 @@ STAND_IN="$(
 set -eu
 mode="$1" claim="$2"
 shift 2
+[ "$mode" = serve ] || exit 2
 for scratch in "$@"; do
   if [ -n "$(ls -A "$scratch")" ]; then
     echo used >>"$claim/lives"
@@ -41,7 +42,6 @@ for scratch in "$@"; do
 done
 echo empty >>"$claim/lives"
 for scratch in "$@"; do echo marker >"$scratch/marker"; done
-[ "$mode" = serve ] || exit 2
 until [ -e "$claim/trigger" ]; do sleep 1; done
 code="$(cat "$claim/trigger")"
 rm "$claim/trigger"
@@ -164,18 +164,6 @@ echo "(b) a running pod kept its uid, its phase and its worker's start over 15 s
 end_a_life 1 "a crash (exit 1)"
 echo "(d) after a crash the pod has a new uid and the same properties as after a life's end"
 
-# (e) A lost sandbox: the worker runs again in the same pod, finds its scratch used and ends it; a fresh pod follows.
-lost_uid="$uid"
-sandbox="$(crictl pods --namespace "$namespace" --state ready --label "io.kubernetes.pod.uid=$lost_uid" -q)" ||
-  fail "the node's crictl cannot list the pod's sandbox"
-[ -n "$sandbox" ] && [ "$(wc -l <<<"$sandbox")" = 1 ] || fail "the pod holds no single sandbox: '$sandbox'"
-crictl stopp "$sandbox"
-crictl rmp "$sandbox"
-wait_for 180 "a pod with a new uid whose worker runs after the removal of the sandbox" is_successor_of "$lost_uid"
-fresh_pod_holds
-stand_in_logged used empty
-echo "(e) after the removal of its sandbox the worker ran again in the same pod, found its scratch used and ended it, and a pod with a new uid followed"
-
 # (c) The exit loop stays bounded: one pod at a time, no restart, and nothing left on the node.
 loop_start_uid="$uid"
 k apply -f - <<<"$(statefulset_manifest 1 loop)"
@@ -205,5 +193,31 @@ node_state_is_as_before() {
 }
 wait_for 180 "the node's leases, links, sandboxes and CNI rules as they were" node_state_is_as_before
 echo "(c) with the StatefulSet at 0 the node's leases, links, sandboxes and CNI rules equal their state before"
+
+# (e) A lost sandbox: the worker runs again in the same pod, finds its scratch used and ends it; a fresh pod follows.
+k apply -f - <<<"$(statefulset_manifest 1 serve)"
+wait_for 180 "the pod's worker runs after the loop" worker_runs
+stand_in_logged empty
+lost_uid="$uid"
+sandbox="$(crictl pods --namespace "$namespace" --state ready --label "io.kubernetes.pod.uid=$lost_uid" -q)" ||
+  fail "the node's crictl cannot list the pod's sandbox"
+[ -n "$sandbox" ] && [ "$(wc -l <<<"$sandbox")" = 1 ] || fail "the pod holds no single sandbox: '$sandbox'"
+crictl stopp "$sandbox"
+crictl rmp "$sandbox"
+# trace: the distinct states the pod passed through, which says what the kubelet did.
+trace=
+traced_successor_of() {
+  local reached=0 line
+  is_successor_of "$1" || reached=1
+  line="${uid:0:8} $phase init=$init_exit restarts=$restarts"
+  [ "$line" = "${last_line:-}" ] || trace+="${trace:+; }$line"
+  last_line="$line"
+  return "$reached"
+}
+wait_until 180 traced_successor_of "$lost_uid" || fail "within the time: a pod with a new uid whose worker runs after the removal of the sandbox; the pod showed: $trace"
+echo "(e) the pod showed: $trace"
+fresh_pod_holds
+stand_in_logged used empty
+echo "(e) after the removal of its sandbox the worker ran again in the same pod, found its scratch used and ended it, and a pod with a new uid followed"
 
 echo "presentator replacement cell ended after $((SECONDS - started_at)) seconds"
