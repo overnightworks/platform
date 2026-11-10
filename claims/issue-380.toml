@@ -1,7 +1,0 @@
-claim_id = "46fe9812940a4b2181f73fd3a4c34461"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "fc7c5ef2d99059a170d4afec056d20d183b4be9b"
-branch = "claude/issue-380-p7a-proof-setup-file"
-scope = ["tests/postgres/loader_proof_setup.sh", "tests/postgres/postgres_storage_prune_load_and_egress.sh"]
-opened_commit = "da50e64f95aa50bebf0f0cf8aa66bc6a519f6f14"
