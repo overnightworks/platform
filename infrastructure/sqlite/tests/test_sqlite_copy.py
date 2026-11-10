@@ -89,10 +89,17 @@ class LoadTest(unittest.TestCase):
         make_database(empty_table, [])
         other_page_size = self.directory / "other-page-size.sqlite3"
         make_database(other_page_size, NEW_ROWS, page_size=8192)
+        broken_index = self.directory / "broken-index.sqlite3"
+        make_database(broken_index, NEW_ROWS)
+        with contextlib.closing(sqlite3.connect(broken_index, isolation_level=None)) as connection:
+            connection.execute("CREATE INDEX users_name ON users(name)")
+            connection.execute("PRAGMA writable_schema=ON")
+            connection.execute("UPDATE sqlite_schema SET sql='CREATE INDEX users_name ON users(name DESC)' WHERE name='users_name'")
         cases = {
             "wrong digest": {"sha256": "0" * 64},
             "wrong size": {"size": len(self.source.read_bytes()) + 1},
             "damaged page": {"staged": damaged},
+            "index that disagrees with its table": {"staged": broken_index},
             "missing key table": {"staged": without_table},
             "empty key table": {"staged": empty_table},
             "page size differs from a live file in WAL": {"staged": other_page_size},

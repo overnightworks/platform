@@ -21,12 +21,23 @@ spec:
   path: ./tests/presentator/stand_in
   prune: true
   wait: true
-  timeout: 10m0s
+  timeout: 3m0s
   sourceRef:
     kind: GitRepository
     name: flux-system
 YAML
-  kubectl --namespace flux-system wait kustomization/presentator --for=condition=Ready --timeout=12m
+  kubectl --namespace flux-system wait kustomization/presentator --for=condition=Ready --timeout=4m ||
+    { show_why_the_stand_in_is_not_ready; fail "within the time: the stand-in Kustomization presentator is Ready"; }
+}
+
+# show_why_the_stand_in_is_not_ready: the Kustomization's verdict, the namespace's Pods and its Warning events, which
+# name a mount or pull error that the wait's timeout does not; names, statuses and messages only.
+show_why_the_stand_in_is_not_ready() {
+  kubectl --namespace flux-system get kustomization presentator \
+    --output jsonpath='{range .status.conditions[?(@.type=="Ready")]}{.reason}: {.message}{"\n"}{end}' || true
+  kubectl --namespace presentator get pods || true
+  kubectl --namespace presentator get events --field-selector type=Warning \
+    --output custom-columns=OBJECT:.involvedObject.name,REASON:.reason,MESSAGE:.message || true
 }
 
 # remove_stand_in: for the cell's exit trap, which ends with end_deletions.

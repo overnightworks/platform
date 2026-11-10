@@ -12,7 +12,8 @@ file="${1:?usage: presentator_load_database.sh <file>}"
 say() { echo "presentator:load-database: $1"; }
 fail() { echo "presentator:load-database: $1" >&2; exit 1; }
 
-# The lock descriptor stays out of every child, so a child that outlives a killed run does not hold the lock.
+# The lock descriptor stays out of every kubectl and flux, so a killed run's children do not hold the lock. The command
+# substitution that runs the load keeps it while its kubectl runs, since the remote load may still be running.
 kubectl() { command kubectl "$@" 9>&-; }
 flux() { command flux "$@" 9>&-; }
 
@@ -53,7 +54,7 @@ manifest="$(in_namespace get deployment "$deployment" --output json | NAME="$loa
           { "name": "sqlite", "configMap": { "name": "sqlite" } }] } }')" ||
   fail "cannot build the loader Pod from the Deployment $deployment in $namespace; nothing changed"
 
-by_run=false changed=false
+by_run=false changed=false verified=false
 stop_loader() { in_namespace delete pod "$loader" --ignore-not-found --wait >/dev/null; }
 resume_flux() { flux resume kustomization "$kustomization" --wait; }
 # A Ctrl-C reaches mise and this script, and mise forwards it once more, so the end ignores INT and runs once, to its end.
@@ -66,7 +67,10 @@ end_run() {
   trap '' INT
   stop_loader || echo "presentator:load-database: could not delete the loader Pod $loader; run kubectl -n $namespace delete pod $loader" >&2
   [ "$status" -ne 0 ] || return 0
-  if [ "$changed" = true ]; then
+  if [ "$verified" = true ]; then
+    echo "presentator:load-database: the load is verified and the web may be serving it; finish with flux resume \
+kustomization $kustomization and kubectl -n $namespace rollout status deployment/$deployment; do not load again" >&2
+  elif [ "$changed" = true ]; then
     echo "presentator:load-database: whether the load changed the database is unknown, or the loaded data is not resumed on; \
 the Kustomization $kustomization stays suspended and the web at 0: run the same command again" >&2
   elif [ "$by_run" = true ]; then
@@ -74,7 +78,8 @@ the Kustomization $kustomization stays suspended and the web at 0: run the same 
     resume_flux || echo "presentator:load-database: could not resume the Kustomization $kustomization; run flux resume \
 kustomization $kustomization" >&2
   else
-    echo "presentator:load-database: the database is unchanged; the Kustomization $kustomization stays suspended as it was" >&2
+    echo "presentator:load-database: the database is unchanged; the Kustomization $kustomization stays suspended as it was and the web at 0; resume it with flux \
+resume kustomization $kustomization when you are done" >&2
   fi
 }
 trap end_run EXIT
@@ -106,14 +111,14 @@ in_namespace exec --stdin "$loader" --container loader -- sh -c 'cat >/staging/c
   fail "could not stage the copy in the loader Pod $loader"
 say "staged the copy in the loader Pod $loader; loading it"
 
-# The remote program prints the key table's row count and nothing else; its messages go nowhere, since a failure is
-# named by its exit and no output may carry a value.
+# The remote program prints the key table's row count and nothing else; its own messages go nowhere, since a failure
+# is named by its exit and no output may carry a value, while kubectl's lines reach the operator.
 changed=true
 load_status=0
 # shellcheck disable=SC2016 # the remote shell expands the arguments, the variable and the file
 rows="$(in_namespace exec "$loader" --container loader -- sh -c \
-  'exec python3 -I /sqlite/sqlite_copy.py load /staging/copy "$1" "$2" "$PRESENTATOR_DATABASE" "$(cat /sqlite/key-table)"' \
-  sh "$size" "$digest" 2>/dev/null)" || load_status=$?
+  'exec python3 -I /sqlite/sqlite_copy.py load /staging/copy "$1" "$2" "$PRESENTATOR_DATABASE" "$(cat /sqlite/key-table)" 2>/dev/null' \
+  sh "$size" "$digest")" || load_status=$?
 case "$load_status" in
   0) ;;
   6)
@@ -124,6 +129,7 @@ case "$load_status" in
     fail "the load exited 7: the copy is refused; the database is unchanged" ;;
   *) fail "the load exited $load_status" ;;
 esac
+verified=true
 
 say "verified: $rows rows in the key table $key_table; resuming the Kustomization $kustomization"
 stop_loader

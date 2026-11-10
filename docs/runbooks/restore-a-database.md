@@ -35,7 +35,7 @@ Impact: the namespace's writers stop, and its Flux Kustomization stays suspended
    streams the copy into a loader Pod's disk and loads it through SQLite's backup API in one write transaction, so the
    live file holds the old or the new database and never a mix. The load refuses, with the file unchanged and Flux
    resumed (unless it was suspended already), a copy that differs from the file in size or sha256, fails SQLite's integrity
-   check, lacks its key table `users` or holds no row in it, differs in page size from a live file in WAL, or finds the
+   check, lacks the key table the ConfigMap `sqlite` names or holds no row in it, differs in page size from a live file in WAL, or finds the
    live file busy (exit 7 and 6). The key table's rows must be equal after the load. A Kustomization that is already
    suspended is accepted, and a run that found it suspended leaves it suspended on every failure; only a verified load
    resumes it. The loader lives at most an hour, which also ends a load that runs too long as an unknown outcome that
@@ -43,7 +43,8 @@ Impact: the namespace's writers stop, and its Flux Kustomization stays suspended
 
 Rollback: a load whose `pg_restore` failed or was interrupted resumes Flux itself once the data reads as before, except
 a load with `--files`, which stays suspended for its re-run. `presentator:load-database` resumes Flux itself only after
-a refusal that left the file unchanged, and else stays suspended for its re-run. A
+a refusal that left the file unchanged, unless it was suspended already, and else stays suspended for its re-run. A
+verified load whose resume or rollout then failed names that: finish by hand, never load again. A
 load that committed is undone only by loading another dump; no command dumps the current state first, so the dump
 that serves is a dump fetched before the load, other than the one loaded.
 

@@ -34,6 +34,8 @@ cleanup() {
 trap cleanup EXIT
 
 apply_stand_in
+key_table="$(kubectl --namespace "$namespace" get configmap sqlite --output jsonpath='{.data.key-table}')"
+[ -n "$key_table" ] || fail "the ConfigMap sqlite in $namespace names no key table"
 
 # A Pod beside the web in the web's image and at its user, holding the claim read-write, to plant and read the live file.
 kubectl --namespace "$namespace" get deployment web --output json | NAME="$holder" yq --input-format json --output-format json '
@@ -46,12 +48,12 @@ kubectl --namespace "$namespace" get deployment web --output json | NAME="$holde
        "volumeMounts": [($web.volumeMounts[] | select(.name == "database")), {"name": "scratch", "mountPath": "/scratch"}]}],
      "volumes": [($spec.volumes[] | select(.name == "database")), {"name": "scratch", "emptyDir": {}}]}}' |
   kubectl --namespace "$namespace" create --filename - >/dev/null
-kubectl --namespace "$namespace" wait "pod/$holder" --for=condition=Ready --timeout=10m >/dev/null
+kubectl --namespace "$namespace" wait "pod/$holder" --for=condition=Ready --timeout=3m >/dev/null
 
 in_holder() { kubectl --namespace "$namespace" exec --stdin "$holder" --container holder -- "$@"; }
-# The live file in WAL mode with the old marker as the one row of the table users.
+# The live file in WAL mode with the old marker as the one row of the key table.
 plant_live() {
-  in_holder env OLD="$old_marker" python3 -I - <<'PYTHON'
+  in_holder env OLD="$old_marker" TABLE="$key_table" python3 -I - <<'PYTHON'
 import os, sqlite3
 live = os.environ["PRESENTATOR_DATABASE"]
 for suffix in ("", "-wal", "-shm", "-journal"):
@@ -59,8 +61,9 @@ for suffix in ("", "-wal", "-shm", "-journal"):
         os.remove(live + suffix)
 connection = sqlite3.connect(live, isolation_level=None)
 connection.execute("PRAGMA journal_mode=WAL")
-connection.execute("CREATE TABLE users (name TEXT)")
-connection.execute("INSERT INTO users VALUES (?)", (os.environ["OLD"],))
+table = os.environ["TABLE"]
+connection.execute(f'CREATE TABLE "{table}" (name TEXT)')
+connection.execute(f'INSERT INTO "{table}" VALUES (?)', (os.environ["OLD"],))
 connection.close()
 PYTHON
   planted_digest="$(live_digest)"
@@ -68,10 +71,10 @@ PYTHON
 live_digest() { in_holder sh -c 'sha256sum "$PRESENTATOR_DATABASE" | cut -c1-64'; }
 # "<rows> <old marker present> <new marker present> <integrity_check>", never a row.
 live_report() {
-  in_holder env OLD="$old_marker" NEW="$new_marker" python3 -I - <<'PYTHON'
+  in_holder env OLD="$old_marker" NEW="$new_marker" TABLE="$key_table" python3 -I - <<'PYTHON'
 import os, sqlite3
 connection = sqlite3.connect(os.environ["PRESENTATOR_DATABASE"])
-names = [row[0] for row in connection.execute("SELECT name FROM users")]
+names = [row[0] for row in connection.execute('SELECT name FROM "%s"' % os.environ["TABLE"])]
 print(len(names), int(os.environ["OLD"] in names), int(os.environ["NEW"] in names), connection.execute("PRAGMA integrity_check").fetchone()[0])
 connection.close()
 PYTHON
@@ -92,11 +95,11 @@ connection.close()
 PYTHON
 }
 good="$scratch/good.sqlite3"
-make_source "$good" 4096 users "$new_marker" second third
+make_source "$good" 4096 "$key_table" "$new_marker" second third
 many_values=()
 for number in $(seq 300); do many_values+=("row-$number-$(printf 'x%.0s' $(seq 100))"); done
 damaged="$scratch/damaged.sqlite3"
-make_source "$damaged" 4096 users "${many_values[@]}"
+make_source "$damaged" 4096 "$key_table" "${many_values[@]}"
 python3 -I - "$damaged" <<'PYTHON'
 import sys
 path = sys.argv[1]
@@ -105,11 +108,11 @@ content[4096 * 2 : 4096 * 3] = b"\xff" * 4096
 open(path, "wb").write(content)
 PYTHON
 other_page_size="$scratch/other-page-size.sqlite3"
-make_source "$other_page_size" 8192 users "$new_marker" second
+make_source "$other_page_size" 8192 "$key_table" "$new_marker" second
 without_table="$scratch/without-table.sqlite3"
 make_source "$without_table" 4096 accounts "$new_marker"
 empty_table="$scratch/empty-table.sqlite3"
-make_source "$empty_table" 4096 users
+make_source "$empty_table" 4096 "$key_table"
 
 suspended() { kubectl --namespace flux-system get kustomization presentator --output jsonpath='{.spec.suspend}'; }
 web_replicas() { kubectl --namespace "$namespace" get deployment web --output jsonpath='{.spec.replicas}'; }
@@ -158,7 +161,7 @@ hold_at_load() {
   SHIM_REAL="$real_kubectl" SHIM_FLAG="$scratch/started" SHIM_RELEASE="$scratch/release" PATH="$shim:$PATH" \
     MISE_DISABLE_TOOLS=kubectl setsid mise run presentator:load-database "$1" >"$held_output" 2>&1 &
   held_pid=$!
-  until_true 600 "the command reached the call that starts load" test -e "$scratch/started"
+  until_true 240 "the command reached the call that starts load" test -e "$scratch/started"
 }
 end_hold() { pkill -KILL --session "$held_pid" 2>/dev/null || true; wait "$held_pid" 2>/dev/null || true; held_pid=; }
 
