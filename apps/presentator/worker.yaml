@@ -4,8 +4,11 @@
 # the pod holds no token. The worker starts as root, with the web's group, and drops to its build uids per child, so
 # its capabilities are exactly SETUID, SETGID and KILL. Its Namespace enforces no Pod Security level, as the init's
 # NET_ADMIN is outside baseline; tests/presentator/pods_stay_within_their_levels.sh holds the exception to this pod.
-# The web deletes the pod after each life, and the StatefulSet recreates it with the init run again. The claim
-# build-socket is local-path, so the web and this pod run on its node.
+# Every exit of the worker ends its pod: the container's restartPolicy is Never, so the kubelet makes the pod terminal
+# and the StatefulSet deletes it and creates it again, a fresh pod with the init run again, whatever the exit status.
+# A removed sandbox ended the worker's container as ContainerStatusUnknown, and the StatefulSet replaced the pod; a re-run
+# in the same pod was not observed and is not excluded, and if it happens presentator's scratch check refuses it.
+# The claim build-socket is local-path, so the web and this pod run on its node.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -66,6 +69,7 @@ spec:
           image: ghcr.io/overnightworks/presentator
           # The image's entrypoint is a shell that exports its own variables, which the worker's self-check refuses.
           command: [presentator-worker]
+          restartPolicy: Never
           env:
             - name: PRESENTATOR_WORKER_SEAL
               value: kubernetes
