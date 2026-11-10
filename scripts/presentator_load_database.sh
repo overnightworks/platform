@@ -64,6 +64,9 @@ resume_flux() { flux resume kustomization "$kustomization" --wait; }
 # suspended with the web at 0.
 end_run() {
   local status=$?
+  # A hung-up terminal or a dead pipe makes a line fail; no step may end the others, and the run keeps its status.
+  set +e
+  trap '' PIPE
   trap - EXIT TERM HUP
   trap '' INT
   stop_loader || echo "presentator:load-database: could not delete the loader Pod $loader; run kubectl -n $namespace delete pod $loader" >&2
@@ -92,7 +95,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-stop_loader || fail "cannot delete an earlier loader Pod $loader in $namespace; nothing changed"
+stop_loader || fail "cannot delete an earlier loader Pod $loader in $namespace"
 if [ "$suspended" = true ]; then
   say "the Kustomization $kustomization was suspended already; it is resumed only after a verified load"
 else

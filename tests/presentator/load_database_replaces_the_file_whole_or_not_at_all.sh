@@ -278,9 +278,8 @@ echo "a second run at once was refused with nothing changed, and the first conve
 
 # 9: a client killed with its whole session, the kubectl that carries a load of a large copy included, while the load
 # runs. The copy is a few hundred MB of random blobs, so that the load runs for seconds; the Kustomization's suspension
-# and the web at 0 outlast the client, and the same command run at once deletes the loader, which cuts a load still
-# running. The live file is then whole as the old or the new database, whichever the kill and the delete left, and the
-# run converges on the new one.
+# and the web at 0 outlast the client, and the loader's deletion cuts a load still running. The live file is then
+# whole as the old or the new database, whichever the kill and the delete left, and the run converges on the new one.
 large="$scratch/large.sqlite3"
 make_source "$large" 4096 "$key_table" "$new_marker" second third
 python3 -I - "$large" <<'PYTHON'
@@ -324,13 +323,16 @@ kubectl --namespace "$namespace" wait "pod/$loader" --for=condition=Ready --time
 await_load_start || fail "the loader's python3 did not run the load within 300 seconds"
 # The command ran in a session of its own, whose id is its pid.
 pkill -KILL --session "$held_pid"
+loader_exists || fail "the killed client did not leave the loader Pod"
+# The loader's deletion cuts a remote load that still runs, which the same command's own deletion would otherwise race.
+kubectl --namespace "$namespace" delete pod "$loader" --wait >/dev/null
 load_status=0
 wait "$held_pid" || load_status=$?
 [ "$load_status" = 137 ] || fail "the killed client did not exit as killed: $load_status"
 until_true 120 "the processes the killed client left ended" session_ended
 held_pid=
-if [ "$(suspended)" != true ] || [ "$(web_replicas)" != 0 ] || ! loader_exists; then
-  fail "the killed client did not leave Flux suspended, the web at 0 and the loader Pod"
+if [ "$(suspended)" != true ] || [ "$(web_replicas)" != 0 ]; then
+  fail "the killed client did not leave Flux suspended and the web at 0"
 fi
 hold_at_load "$large"
 case "$(live_report)" in
@@ -343,9 +345,10 @@ load_status=0
 wait "$held_pid" || load_status=$?
 held_pid=
 cat "$held_output"
+! grep -qF -e "$old_marker" -e "$new_marker" "$held_output" || fail "the command printed a row"
 [ "$load_status" = 0 ] || fail "the run after the killed client exited $load_status"
 converged_on_the_source "the run after the killed client"
-echo "a client killed with its session during a $(stat --format=%s "$large")-byte load left Flux suspended, the web at 0 and, after the same command deleted its loader, $outcome whole; the command converged"
+echo "a client killed with its session during a $(stat --format=%s "$large")-byte load left Flux suspended and the web at 0 and, after its loader was deleted, $outcome whole; the command converged"
 
 # 10: a loader that ended is not run again: a Pod of its shape whose command ends after 5 seconds keeps its Pod object,
 # and the kubelet removes its emptyDir from the node.

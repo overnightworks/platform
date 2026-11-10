@@ -30,7 +30,7 @@ case "$*" in
   *"delete pod"*)
     case "${FAKE_DELETE:-ok}" in
       fails) exit 1 ;;
-      hangs) echo $$ >"$FAKE_DIR/hang-pid"; exec sleep 60 ;;
+      hangs) [ -e "$FAKE_DIR/hang-pid" ] || { echo $$ >"$FAKE_DIR/hang-pid"; exec sleep 60; } ;;
     esac ;;
   *"get pods"*) echo 'items: []' ;;
   *"cat >/staging/copy"*) cat >/dev/null ;;
@@ -142,6 +142,17 @@ cell_a_refused_source_leaves_the_database_unchanged_and_resumes_flux() {
   expect "Flux resumed" test "$flux_calls" = "suspend resume "
 }
 
+cell_a_failed_run_whose_stderr_cannot_be_written_still_resumes_flux() {
+  cell=unwritable-stderr
+  prepare
+  status=0
+  output=""
+  FAKE_LOAD_EXIT=7 bash "$FAKE_DIR/script.sh" "$copy" >/dev/null 2>/dev/full || status=$?
+  collect
+  expect "a non-zero exit" test "$status" != 0
+  expect "Flux suspended and resumed" test "$flux_calls" = "suspend resume "
+}
+
 cell_an_unknown_outcome_stays_suspended_and_names_the_same_command() {
   cell=unknown
   FAKE_LOAD_EXIT=137 run_load
@@ -243,6 +254,7 @@ cells=(
   a_failed_rollout_after_a_verified_load_names_that_state_and_loads_no_second_time
   a_term_during_the_rollout_after_a_verified_load_names_that_state
   a_refused_source_leaves_the_database_unchanged_and_resumes_flux
+  a_failed_run_whose_stderr_cannot_be_written_still_resumes_flux
   an_unknown_outcome_stays_suspended_and_names_the_same_command
   a_suspension_found_stays_unless_a_load_is_verified
   a_held_lock_is_refused_before_any_call_and_an_unopenable_one_names_its_file
