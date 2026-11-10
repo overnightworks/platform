@@ -4,6 +4,8 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 resources:
   - backup.yaml
+components:
+  - ../../backup/schedule
 configMapGenerator:
   - name: restore-test
     files:
@@ -11,6 +13,29 @@ configMapGenerator:
     options:
       disableNameSuffixHash: true
 patches:
+  # The Schedule and its PodConfig keep the names they were created under: BackupMissing reads each namespace's Schedule
+  # creation, and a renamed live Schedule is a new one, which keeps the alert quiet until it is eight days old.
+  - target:
+      kind: Schedule
+      name: backup
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: postgres
+      - op: replace
+        path: /spec/podConfigRef/name
+        value: postgres-backup
+    options:
+      allowNameChange: true
+  - target:
+      kind: PodConfig
+      name: backup
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: postgres-backup
+    options:
+      allowNameChange: true
   # k8up execs this in the running pod and streams it to restic; the extension names the file in the snapshot, which
   # then is /<namespace>-postgres.dump. A layer with ./files removes it: its PreBackupPod streams the same file name.
   - target:

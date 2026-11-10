@@ -107,7 +107,8 @@ jobs:
       matrix:
         part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
+    timeout-minutes: 17
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
@@ -175,6 +176,8 @@ jobs:
       POSTGRES_BASE: infrastructure/postgres
       # The component a Postgres layer includes to be backed up, and the rest-server it backs up to.
       POSTGRES_BACKUP_COMPONENT: infrastructure/postgres/backup
+      # The component that holds the weekly Schedule every backed-up namespace gets.
+      BACKUP_SCHEDULE_COMPONENT: infrastructure/backup/schedule
       REST_SERVER_MANIFEST: infrastructure/backup/rest-server.yaml
     steps:
       - name: Check out
