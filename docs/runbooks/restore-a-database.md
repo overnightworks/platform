@@ -14,7 +14,9 @@ Impact: the namespace's writers stop, and its Flux Kustomization stays suspended
 1. An agent: `mise run backup:fetch <namespace> <file>`. It writes the latest dump to a new file at 0600 and refuses a
    file that exists.
 2. After the operator's yes to this load, an agent: `mise run db:load-dump --compare <namespace> <file>`. It verifies
-   every table against the dump and only then resumes Flux. It refuses a Kustomization that is already suspended.
+   every table against the dump and only then resumes Flux. It refuses a Kustomization that is already suspended. It
+   waits up to `DB_LOAD_DUMP_ALONE_SECONDS` seconds, 120 when unset, for other sessions to leave the database; when one
+   stays, it loads nothing, resumes Flux and refuses.
 3. For a namespace whose layer declares a claim (songmaker's audio files), step 2 takes `--files <dir>`:
    `mise run db:load-dump --compare --files <dir> <namespace> <file>`. A claim layer refuses a load without it and a
    layer without a claim refuses it, before any change. `<dir>` holds only regular files and directories, at least one
@@ -44,6 +46,6 @@ row.
 This section holds ruled sentences.
 
 - `mise run backup:fetch`: It prints only names and sizes, since a dump holds keys and hashes.
-- `mise run db:load-dump`: It prints names, counts and outcomes, never a row, since a dump holds keys and hashes. It waits up to `DB_LOAD_DUMP_ALONE_SECONDS` seconds, 120 when unset, for other sessions to leave the database.
+- `mise run db:load-dump`: It prints names, counts and outcomes, never a row, since a dump holds keys and hashes.
 - `tests/keycloak/restored_copy_keeps_its_keys_and_people.sh`: It prints names, counts, key ids and `equal` or
   `DIFFERS`, never a row or a message of `pg_restore` or `psql`.

@@ -672,7 +672,7 @@ alone_seconds="${DB_LOAD_DUMP_ALONE_SECONDS:-120}"
 say() { echo "db:load-dump: $1"; }
 fail() { echo "db:load-dump: $1" >&2; exit 1; }
 [[ $alone_seconds =~ ^[1-9][0-9]*$ ]] ||
-  fail "DB_LOAD_DUMP_ALONE_SECONDS is '$alone_seconds', not a positive whole number; unset it for the default or set the seconds to wait"
+  fail "DB_LOAD_DUMP_ALONE_SECONDS is '$alone_seconds', not a whole number of seconds from 1 without a leading zero; unset it for the default or set the seconds to wait; nothing changed"
 in_postgres() { kubectl --namespace "$namespace" exec "$pod" --container postgres -- "$@"; }
 dump_into_postgres() { kubectl --namespace "$namespace" exec --stdin "$pod" --container postgres -- "$@" <"$file"; }
 other_sessions() {

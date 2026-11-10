@@ -570,7 +570,9 @@ cell_failing_rerun_on_a_suspended_kustomization_leaves_it_suspended() {
 
 cell_other_session_that_stays_ends_the_wait_after_the_seconds_set() {
   cell=other-session-that-stays-ends-the-wait-after-the-seconds-set
+  local started=$SECONDS
   FAKE_SESSION_STAYS=1 DB_LOAD_DUMP_ALONE_SECONDS=2 run_loader x "$dump"
+  [ $((SECONDS - started)) -lt 60 ] || fail "a wait of 2 seconds took $((SECONDS - started)) seconds, not under 60"
   [ "$status" != 0 ] && [ ! -e "$FAKE_DIR/restored" ] && [[ $flux_calls == *resume* ]] &&
     [[ $output == *"after 2 seconds; nothing loaded"* ]] && [ "$(grep -c 'still holds another session' <<<"$output")" = 1 ] ||
     fail "a load beside a session that stays exited $status with '$output' after flux $flux_calls"
