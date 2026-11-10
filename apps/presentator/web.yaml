@@ -70,6 +70,9 @@ spec:
               value: piper
             - name: PRESENTATOR_BUILD_RUNNER
               value: worker
+            # The StatefulSet build-worker's one pod, which a StatefulSet names <name>-<ordinal>; the web's Role grants it.
+            - name: PRESENTATOR_BUILD_WORKER_POD
+              value: build-worker-0
           # The web refuses to start unless the worker answers within 70 seconds, which the pod's first start may need
           # the worker's image pull for.
           startupProbe:
