@@ -1,8 +1,0 @@
-claim_id = "30b131b45eea430e9bf666a4deec06d7"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "045a9e9bebf4f2d0a81cfc505c54b133ac49c0ec"
-branch = "claude/issue-401-presentator-load-database"
-scope = [".github/workflows/ci.yml", "apps/presentator/kustomization.yaml", "docs/runbooks/restore-a-database.md", "infrastructure/sqlite/kustomization.yaml", "infrastructure/sqlite/scripts/sqlite_copy.py", "infrastructure/sqlite/tests/test_sqlite_copy.py", "mise.toml", "scripts/presentator_load_database.sh", "tests/presentator/load_database.sh", "tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh", "tests/presentator/stand_in.sh", "tests/presentator/stand_in/kustomization.yaml", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
-opened_commit = "2f1c1410ccc2149bcb4203963591d8d5bf0f7643"
-whole_reason = "The copy method with its unit test, the command that is its only caller with its runbook lines, the stand-in and the cell that proves both are one proof; a part without the others is dead code or an unproven write path."
