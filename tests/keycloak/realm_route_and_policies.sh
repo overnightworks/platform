@@ -51,29 +51,82 @@ asset_path="$(grep -o '/resources/[a-z0-9]\{5\}/[^"?]*' "$login_page" | head -n 
 [ -n "$asset_path" ] || fail "the login page names no asset under /resources/<version>/"
 echo "the login page of $LOGIN_CLIENT answers 200 and names the asset $asset_path"
 
+# keep_part <state directory> <realm> <part>: passes its input on and keeps it as one file of the state.
+keep_part() { tee "$1/$2.$3.json"; }
 # A second run on the applied realms changes nothing: their exports and their declared service accounts with their
 # roles and groups are equal, and it needs no retry.
 realm_state() {
-  local realm_file realm_name username user
+  local state_dir="$1" realm_file realm_name username user user_id
   for realm_file in "$MASTER_FILE" "$REALM_FILE"; do
     realm_name="$(yq '.realm' "$realm_file")"
-    admin POST "$realm_name/partial-export?exportClients=true&exportGroupsAndRoles=true" | jq --sort-keys . || return 1
+    admin POST "$realm_name/partial-export?exportClients=true&exportGroupsAndRoles=true" | jq --sort-keys . |
+      keep_part "$state_dir" "$realm_name" "partial export" || return 1
     for username in $(yq '.users[] | select(.serviceAccountClientId) | .username' "$realm_file"); do
       user="$(admin GET "$realm_name/users?exact=true&username=$username" | jq --sort-keys '.[0] // empty')" || return 1
       [ -n "$user" ] || { echo "::error::the realm $realm_name holds no user $username" >&2; return 1; }
-      printf '%s\n' "$user"
-      admin GET "$realm_name/users/$(jq --raw-output .id <<<"$user")/role-mappings" | jq --sort-keys . || return 1
-      admin GET "$realm_name/users/$(jq --raw-output .id <<<"$user")/groups" | jq --sort-keys . || return 1
+      printf '%s\n' "$user" | keep_part "$state_dir" "$realm_name" "user $username" || return 1
+      user_id="$(jq --raw-output .id <<<"$user")"
+      admin GET "$realm_name/users/$user_id/role-mappings" | jq --sort-keys . |
+        keep_part "$state_dir" "$realm_name" "role mappings $username" || return 1
+      admin GET "$realm_name/users/$user_id/groups" | jq --sort-keys . |
+        keep_part "$state_dir" "$realm_name" "groups $username" || return 1
     done
   done
 }
-fingerprint() { realm_state | sha256sum; }
-before="$(fingerprint)" || fail "the realms master and $realm cannot be read"
+fingerprint() { realm_state "$1" | sha256sum; }
+
+# The report names realms, parts and JSON paths only: a state holds client attributes and user data, so no value is
+# printed, and the files stay under the runner's temporary directory.
+# differing_paths <before file> <after file>: the paths of the leaves (scalars, null, false, empty arrays and objects)
+# that differ, one per line. Paths come from jq's stream of path and leaf pairs, so a changed type or a missing path
+# needs no lookup that could fail; jq's own errors are dropped, as they can quote a value.
+differing_paths() {
+  jq -n --raw-output --slurpfile before "$1" --slurpfile after "$2" '
+    def leaves: [tostream | select(length == 2)] | map({key: tojson, value: .[0]}) | from_entries;
+    ($before[0] | leaves) as $was | ($after[0] | leaves) as $now
+    | [($was | with_entries(select(.key | in($now) | not))), ($now | with_entries(select(.key | in($was) | not)))]
+    | map(.[]) | unique_by(tojson)[] | tojson' 2>/dev/null
+}
+# equal_with_arrays_sorted <before file> <after file>: prints yes or no.
+equal_with_arrays_sorted() {
+  jq -n --raw-output --slurpfile before "$1" --slurpfile after "$2" '
+    def sorted: walk(if type == "array" then sort else . end);
+    if ($before[0] | sorted) == ($after[0] | sorted) then "yes" else "no" end'
+}
+# describe_difference <before dir> <after dir> <file name>: one line for a part whose two files differ.
+describe_difference() {
+  local before_file="$1/$3" after_file="$2/$3" name="${3%.json}" paths shown total sorted_equal
+  paths="$(differing_paths "$before_file" "$after_file")" || paths=""
+  total="$(grep -c . <<<"$paths")" || total=0
+  shown="$(head -n 20 <<<"$paths" | paste -sd, - | sed 's/,/, /g')"
+  [ "$total" -le 20 ] || shown="$shown, and $((total - 20)) more"
+  sorted_equal="$(equal_with_arrays_sorted "$before_file" "$after_file")" || sorted_equal="unknown"
+  echo "realm ${name%%.*}, part ${name#*.}: differs at ${shown:-no path}; equal with arrays sorted: $sorted_equal"
+}
+# report_difference <before dir> <after dir>: a line per part that differs or exists in one run only. The calls
+# run under `||` so that a failing report cannot end the cell before its message.
+report_difference() {
+  local file_name label
+  while IFS= read -r file_name; do
+    label="${file_name%.json}"
+    if [ ! -f "$1/$file_name" ] || [ ! -f "$2/$file_name" ]; then
+      echo "realm ${label%%.*}, part ${label#*.}: held by only one of the two runs"
+    elif ! cmp -s "$1/$file_name" "$2/$file_name"; then
+      describe_difference "$1" "$2" "$file_name"
+    fi
+  done < <(find "$1" "$2" -type f -name '*.json' -printf '%f\n' | sort -u)
+}
+state_root="$(mktemp -d "$RUNNER_TEMP/keycloak-state.XXXXXX")"
+mkdir "$state_root/before" "$state_root/after"
+before="$(fingerprint "$state_root/before")" || fail "the realms master and $realm cannot be read"
 rerun_config_cli
 second_failures="$(kubectl -n "$namespace" get job/config-cli -o jsonpath='{.status.failed}')"
 [ -z "$second_failures" ] || fail "config-cli's second run failed $second_failures times before it completed"
-after="$(fingerprint)" || fail "the realms master and $realm cannot be read after config-cli's second run"
-[ "$after" = "$before" ] || fail "config-cli's second run changed the realms master or $realm"
+after="$(fingerprint "$state_root/after")" || fail "the realms master and $realm cannot be read after config-cli's second run"
+if [ "$after" != "$before" ]; then
+  report_difference "$state_root/before" "$state_root/after" || true
+  fail "config-cli's second run changed the realms master or $realm"
+fi
 echo "config-cli's second run completed at its first attempt and changed neither master nor $realm"
 
 # B2: through Traefik, as the tunnel asks, the public paths answer and every other path of the host is 404.
