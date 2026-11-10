@@ -169,6 +169,8 @@ jobs:
       POSTGRES_BASE: infrastructure/postgres
       # The component a Postgres layer includes to be backed up, and the rest-server it backs up to.
       POSTGRES_BACKUP_COMPONENT: infrastructure/postgres/backup
+      # The component that holds the weekly Schedule every backed-up namespace gets.
+      BACKUP_SCHEDULE_COMPONENT: infrastructure/backup/schedule
       REST_SERVER_MANIFEST: infrastructure/backup/rest-server.yaml
     steps:
       - name: Check out
