@@ -553,7 +553,7 @@ jobs:
           APP_NAMESPACE: hopin
         run: tests/litellm/keys_table_drives_budgets_and_the_app_key.sh
 
-      - name: Assert that presentator's web passes restricted, its worker baseline without its init's NET_ADMIN, nothing else runs looser, and its RBAC and render hold the contract
+      - name: Assert that presentator's web passes restricted, its worker baseline without its init's NET_ADMIN, nothing else runs looser, and its render holds the contract
         if: matrix.part == 'apps'
         run: |
           kubectl kustomize apps/presentator >"$RUNNER_TEMP/presentator.yaml"
@@ -566,10 +566,6 @@ jobs:
       - name: Assert that presentator:load-database refuses before any change, replaces the live file whole or leaves the old one, keeps a suspension it found, and that a killed run and a second run at once converge on the same command
         if: matrix.part == 'presentator'
         run: tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh
-
-      - name: Assert that presentator's web may get and delete exactly the build worker's pod, which its environment names, and the worker's ServiceAccount nothing
-        if: matrix.part == 'presentator'
-        run: tests/presentator/web_may_get_and_delete_only_the_worker_pod.sh
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells

@@ -1,5 +1,4 @@
-# The web may get and delete the build worker's one pod, reading its uid and status before it deletes that pod after
-# each life, and has no other right in the API; the worker's ServiceAccount is bound to nothing.
+# The ServiceAccounts of the web and the build worker, both bound to nothing: neither holds a right in the API.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -11,28 +10,3 @@ kind: ServiceAccount
 metadata:
   name: build-worker
   namespace: presentator
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: build-worker-pod
-  namespace: presentator
-rules:
-  - apiGroups: ['']
-    resources: [pods]
-    resourceNames: [build-worker-0]
-    verbs: [get, delete]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: build-worker-pod
-  namespace: presentator
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: build-worker-pod
-subjects:
-  - kind: ServiceAccount
-    name: web
-    namespace: presentator

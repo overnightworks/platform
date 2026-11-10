@@ -86,7 +86,7 @@ exactly() { [ "$(yq --no-doc -o=json -I=0 "$3" "$1" 2>&1 | paste -sd,)" = "$4" ]
 
 # judge_structure <manifest>: prints a problem line for each rule of the contract that the render breaks.
 judge_structure() {
-  local manifest="$1" probe_image reference actual web_group worker_group web_account worker_account role worker_pod
+  local manifest="$1" probe_image reference actual web_group worker_group
   # NET_ADMIN sits in the one finishing init container.
   exactly "$manifest" "a container other than remove-link holds NET_ADMIN" \
     "$WORKER | [.initContainers[], .containers[]][] | $NET_ADMIN_HOLDER" '"remove-link"'
@@ -115,30 +115,20 @@ judge_structure() {
     "$WORKER_CONTAINER | .securityContext.seccompProfile.type" '"RuntimeDefault"'
   exactly "$manifest" "the worker allows privilege escalation" \
     "$WORKER_CONTAINER | .securityContext.allowPrivilegeEscalation" 'false'
-  # The web's one right in the API: get and delete on the worker's one pod, which a StatefulSet names <name>-0.
-  worker_pod="$(yq --no-doc "select($WORKER_DOCUMENT) | .metadata.name + \"-0\"" "$manifest")"
-  exactly "$manifest" "the Role is not exactly get and delete on the one pod $worker_pod" \
-    'select(.kind == "Role") | .rules[] | sort_keys(..) | .verbs |= sort' \
-    "{\"apiGroups\":[\"\"],\"resourceNames\":[\"$worker_pod\"],\"resources\":[\"pods\"],\"verbs\":[\"delete\",\"get\"]}"
-  found "$manifest" "the render holds a ClusterRole or a ClusterRoleBinding" \
-    'select(.kind == "ClusterRole" or .kind == "ClusterRoleBinding")'
-  web_account="$(yq --no-doc "$WEB | .serviceAccountName" "$manifest")"
-  role="$(yq --no-doc 'select(.kind == "Role") | .metadata.name' "$manifest")"
-  exactly "$manifest" "the one RoleBinding does not bind the Role to the web's ServiceAccount alone" \
-    'select(.kind == "RoleBinding") | .roleRef.kind + "," + .roleRef.name + "," + (.subjects | length | to_string) + "," + .subjects[0].kind + "," + .subjects[0].name' \
-    "\"Role,$role,1,ServiceAccount,$web_account\""
-  # The worker holds no right in the API and no token.
-  worker_account="$(yq --no-doc "$WORKER | .serviceAccountName // \"default\"" "$manifest")"
-  found "$manifest" "the worker's ServiceAccount is a subject of a binding" \
-    "select(.kind == \"RoleBinding\" or .kind == \"ClusterRoleBinding\") | .subjects[] | select(.name == \"$worker_account\")"
+  # A worker container ends its pod at every exit: its own restart policy is Never, which no rule overrides.
+  exactly "$manifest" "the worker container's restartPolicy is not exactly Never" "$WORKER_CONTAINER | .restartPolicy" '"Never"'
+  found "$manifest" "the worker container has restartPolicyRules" "$WORKER_CONTAINER | select(has(\"restartPolicyRules\"))"
+  # No pod holds a right in the API: the render holds no Role or binding of either kind.
+  found "$manifest" "the render holds a Role, a RoleBinding, a ClusterRole or a ClusterRoleBinding" \
+    'select(.kind == "Role" or .kind == "RoleBinding" or .kind == "ClusterRole" or .kind == "ClusterRoleBinding")'
+  # The worker and the web hold no token.
   exactly "$manifest" "the worker mounts a ServiceAccount token" "$WORKER | .automountServiceAccountToken" 'false'
   found "$manifest" "the worker projects a ServiceAccount token" \
     "$WORKER | .volumes[] | select(.projected) | .projected.sources[] | select(has(\"serviceAccountToken\"))"
-  # The web holds its token and its Secret's files in the one volume at /run/secrets, with no automount.
   exactly "$manifest" "the web does not turn the kubelet's ServiceAccount token automount off" "$WEB | .automountServiceAccountToken" 'false'
-  exactly "$manifest" "the web's volume at /run/secrets does not hold the token's three files" \
-    "$WEB | [.volumes[] | select(.name == \"secrets\") | .projected.sources[] | (.serviceAccountToken.path, .configMap.items[].path, .downwardAPI.items[].path) | select(. != null)] | sort | join(\",\") | select(. != \"\")" \
-    '"kubernetes.io/serviceaccount/ca.crt,kubernetes.io/serviceaccount/namespace,kubernetes.io/serviceaccount/token"'
+  found "$manifest" "the web projects a ServiceAccount token" \
+    "$WEB | .volumes[] | select(.projected) | .projected.sources[] | select(has(\"serviceAccountToken\"))"
+  # The web's Secret's files lie in one read-only volume.
   exactly "$manifest" "the web does not mount that volume read-only at /run/secrets" \
     "$WEB | .containers[0].volumeMounts[] | select(.name == \"secrets\") | .mountPath + \",\" + (.readOnly | to_string)" '"/run/secrets,true"'
   # Replicas, strategy, process sharing, fsGroup and exec probes.
@@ -263,13 +253,44 @@ done
 mutant "the worker's seccompProfile is not RuntimeDefault" "($on_worker | $worker_container | .securityContext.seccompProfile.type) = \"Unconfined\""
 mutant "the worker's seccompProfile is not RuntimeDefault" "del($on_worker | $worker_container | .securityContext.seccompProfile)"
 mutant "the worker allows privilege escalation" "($on_worker | $worker_container | .securityContext.allowPrivilegeEscalation) = true"
-# The Role and its binding.
-mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules[0].verbs += ["list"])'
-mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules[0].verbs = ["delete"])'
-mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules[0].resourceNames = ["build-worker-1"])'
-mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules[0].resources += ["pods/eviction"])'
-mutant "the Role is not exactly get and delete on the one pod" 'select(.kind == "Role") |= (.rules += [.rules[0] | .resources = ["secrets"]])'
-mutant_with "the render holds a ClusterRole" "a ClusterRole" "$(
+# The worker container's restart policy.
+mutant "the worker container's restartPolicy is not exactly Never" "($on_worker | $worker_container | .restartPolicy) = \"Always\""
+mutant "the worker container's restartPolicy is not exactly Never" "($on_worker | $worker_container | .restartPolicy) = \"OnFailure\""
+mutant "the worker container's restartPolicy is not exactly Never" "del($on_worker | $worker_container | .restartPolicy)"
+mutant "the worker container has restartPolicyRules" \
+  "($on_worker | $worker_container | .restartPolicyRules) = [{\"action\": \"Restart\", \"exitCodes\": {\"operator\": \"In\", \"values\": [2]}}]"
+# No Role, binding or token.
+mutant_with "the render holds a Role" "a Role" "$(
+  cat <<'EOF'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pods
+  namespace: presentator
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [delete]
+EOF
+)"
+mutant_with "the render holds a Role" "a RoleBinding" "$(
+  cat <<'EOF'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pods
+  namespace: presentator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pods
+subjects:
+  - kind: ServiceAccount
+    name: web
+    namespace: presentator
+EOF
+)"
+mutant_with "the render holds a Role" "a ClusterRole" "$(
   cat <<'EOF'
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -281,17 +302,29 @@ rules:
     verbs: [delete]
 EOF
 )"
-mutant "the one RoleBinding does not bind" 'select(.kind == "RoleBinding") |= (.subjects += [{"kind": "ServiceAccount", "name": "default", "namespace": "presentator"}])'
-# No API right or token for the worker.
-mutant "the worker's ServiceAccount is a subject of a binding" \
-  'select(.kind == "RoleBinding") |= (.subjects += [{"kind": "ServiceAccount", "name": "build-worker", "namespace": "presentator"}])'
+mutant_with "the render holds a Role" "a ClusterRoleBinding" "$(
+  cat <<'EOF'
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: wide
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: wide
+subjects:
+  - kind: ServiceAccount
+    name: build-worker
+    namespace: presentator
+EOF
+)"
 mutant "the worker mounts a ServiceAccount token" "($on_worker | .spec.template.spec.automountServiceAccountToken) = true"
 mutant "the worker projects a ServiceAccount token" \
   "($on_worker | .spec.template.spec.volumes) += [{\"name\": \"token\", \"projected\": {\"sources\": [{\"serviceAccountToken\": {\"path\": \"token\"}}]}}]"
+mutant "the web projects a ServiceAccount token" \
+  "($on_web | .spec.template.spec.volumes[] | select(.name == \"secrets\") | .projected.sources) += [{\"serviceAccountToken\": {\"path\": \"token\"}}]"
 # Replicas, strategy, process sharing, fsGroup and exec probes.
 mutant "the web does not turn the kubelet's ServiceAccount token automount off" "($on_web | .spec.template.spec.automountServiceAccountToken) = true"
-mutant "the web's volume at /run/secrets does not hold the token's three files" \
-  "del($on_web | .spec.template.spec.volumes[] | select(.name == \"secrets\") | .projected.sources[] | select(has(\"serviceAccountToken\")))"
 mutant "the web does not mount that volume read-only at /run/secrets" "($on_web | .spec.template.spec.containers[0].volumeMounts[] | select(.name == \"secrets\") | .readOnly) = false"
 mutant "the web or the worker does not run one replica" "($on_web | .spec.replicas) = 2"
 mutant "the web or the worker does not run one replica" "($on_worker | .spec.replicas) = 2"
