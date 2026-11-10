@@ -1,6 +1,7 @@
 # Runbook: restore a database
 
-Symptom: a namespace's Postgres must return to its latest backup, or a restored copy must prove an upgrade.
+Symptom: a namespace's Postgres must return to its latest backup, presentator's SQLite file must be replaced by a copy,
+or a restored copy must prove an upgrade.
 Impact: the namespace's writers stop, and its Flux Kustomization stays suspended until the load converges.
 
 ## Check
@@ -28,9 +29,22 @@ Impact: the namespace's writers stop, and its Flux Kustomization stays suspended
    `mise run db:load-dump --resume <namespace>`. It verifies nothing. A load with `--files` has no resume: it stays
    suspended with its writers at 0 and the same command, run again, converges. When the source itself cannot converge (a
    bad dump), the operator's yes to resuming without it is `flux resume kustomization <namespace>` by hand.
+5. After the operator's yes to this load, an agent: `mise run presentator:load-database <file>`, for presentator's SQLite
+   file, a closed copy that is only read. Before any change it refuses a file that is not a readable regular file, a
+   non-empty `<file>-wal` or `<file>-journal` beside it, and a second run at once (`nothing changed`). It stops the web,
+   streams the copy into a loader Pod's disk and loads it through SQLite's backup API in one write transaction, so the
+   live file holds the old or the new database and never a mix. The load refuses, with the file unchanged and Flux
+   resumed (unless it was suspended already), a copy that differs from the file in size or sha256, fails SQLite's integrity
+   check, lacks the key table the ConfigMap `sqlite` names or holds no row in it, differs in page size from a live file in WAL,
+   or finds no live file, which it never creates (exit 7), or the live file busy (exit 6). The key table's rows must be equal after the load. A Kustomization that is already
+   suspended is accepted, and a run that found it suspended leaves it suspended on every failure; only a verified load
+   resumes it. The loader lives at most an hour, which also ends a load that runs too long as an unknown outcome that
+   the same command recovers.
 
 Rollback: a load whose `pg_restore` failed or was interrupted resumes Flux itself once the data reads as before, except
-a load with `--files`, which stays suspended for its re-run. A
+a load with `--files`, which stays suspended for its re-run. `presentator:load-database` resumes Flux itself only after
+a refusal that left the file unchanged, unless it was suspended already, and else stays suspended for its re-run. A
+verified load whose resume or rollout then failed names that: finish by hand, never load again. A
 load that committed is undone only by loading another dump; no command dumps the current state first, so the dump
 that serves is a dump fetched before the load, other than the one loaded.
 
@@ -39,7 +53,11 @@ that serves is a dump fetched before the load, other than the one loaded.
 The load reports that whether it changed the data is unknown, that the loaded data is not verified, or a table that
 `DIFFERS`: it stays suspended with its writers at 0 and names `--resume`. The operator decides before anyone resumes it.
 The runner reads only what the command prints, never the dump or `<file>.load.log`, since a COPY error there quotes a
-row.
+row. `presentator:load-database` reports the same unknown outcome with its Kustomization suspended and the web at 0; a
+run that reports deletes its loader Pod first. Only a run that could not report (a KILL, or a lost machine) leaves the
+copy in the loader Pod `presentator-load`, until the next run deletes it or its `sleep` ends after an hour at most;
+`kubectl -n presentator delete pod presentator-load` ends it at once. The operator decides before anyone resumes it by
+hand; the same command, run again, converges.
 
 ## Ruled
 
