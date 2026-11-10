@@ -1,5 +1,4 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2154,SC2034,SC2329 # the caller sets layer and reads the variables and functions set here
 # Sourced by the scripts that prove the loader on the proof layer; defines functions only. prepare_loader_proof reads
 # $layer (the proof layer), $PROBE_IMAGE, $RUNNER_TEMP and tests/postgres/writers from the working directory, and sets
 # for its caller: layer_path, key_tables, key_table, dump, toc_dump, marker and output (and dump_dir, job_uid,
@@ -10,6 +9,7 @@ sql() { kubectl --namespace "$1" exec postgres-0 --container postgres -- psql --
 # empty_database: the database as a fresh claim holds it, its public schema dropped with every table and view in it
 # and re-created as PostgreSQL creates it; fails when a relation outside the system schemas remains.
 empty_database() {
+  # shellcheck disable=SC2154 # layer is the sourcing script's.
   sql "$layer" 'DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION pg_database_owner;
     GRANT USAGE ON SCHEMA public TO PUBLIC' > /dev/null
   [ "$(sql "$layer" "SELECT count(*) FROM pg_class JOIN pg_namespace ON pg_namespace.oid = relnamespace
@@ -23,6 +23,7 @@ prepare_loader_proof() {
 # the layer's own path and with the probe image, so the loader and the interrupts stop and restore real
 # Flux-managed writers on a database no app writes. The root would revert the path, so it stays suspended until the
 # proofs are done.
+# shellcheck disable=SC2034 # layer_path is read by the sourcing script.
 layer_path="$(kubectl --namespace flux-system get kustomization "$layer" -o jsonpath='{.spec.path}')"
 mapfile -t app_pods < <(kubectl --namespace "$layer" get pods -o name | grep -vx 'pod/postgres-0' || true)
 flux suspend kustomization flux-system
@@ -90,6 +91,7 @@ kubectl --namespace "$layer" exec postgres-0 --container postgres -- pg_dump --f
   > "$toc_dump"
 sql "$layer" 'DROP DATABASE synthetic'
 output="$dump_dir/output"
+# shellcheck disable=SC2329 # loaded is called by the sourcing script.
 loaded() {
   local status=0
   mise run db:load-dump "$@" > "$output" 2>&1 || status=$?
