@@ -77,9 +77,9 @@ data:
             for: 15m
             annotations:
               summary: 'The CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} did not start within an hour of its due time'
-          # songmaker's web exports the series at 0 with no worker, and its Deployment stands at 0 replicas until a worker is
-          # wanted, so the guard keeps the rule quiet until then. A worker that is not Ready is DeploymentUnavailable's, so
-          # this rule is the Ready-and-unregistered case.
+          # songmaker's web exports the series at 0 with no worker, and a Deployment at 0 replicas wants none, so the guard
+          # keeps the rule quiet there. A worker that is not Ready is DeploymentUnavailable's, so this rule is the
+          # Ready-and-unregistered case.
           - alert: NoOnlineAceStepWorker
             expr: >-
               songmaker_acestep_workers_total{status="online"} == 0
