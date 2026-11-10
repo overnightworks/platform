@@ -18,6 +18,12 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: web
+      annotations:
+        # k8up execs this in the running pod and streams its stdout to restic, which names the file in the snapshot
+        # /<namespace>-<container><extension>, here /presentator-web.sqlite3. The path is read from the container's
+        # environment, so the image owns it.
+        k8up.io/backupcommand: sh -c 'exec python3 -I /etc/sqlite/sqlite_copy.py copy "$PRESENTATOR_DATABASE"'
+        k8up.io/file-extension: .sqlite3
     spec:
       serviceAccountName: web
       automountServiceAccountToken: false
@@ -111,6 +117,9 @@ spec:
               mountPath: /data/builds
             - name: build-socket
               mountPath: /run/presentator-build
+            - name: sqlite
+              mountPath: /etc/sqlite
+              readOnly: true
       volumes:
         # One volume holds the Secret's files and the ServiceAccount token's three files: the image's /var/run leads to
         # /run, so a token volume of its own would need its mountpoint inside this read-only one. Every key of the
@@ -151,3 +160,6 @@ spec:
         - name: build-socket
           persistentVolumeClaim:
             claimName: build-socket
+        - name: sqlite
+          configMap:
+            name: sqlite

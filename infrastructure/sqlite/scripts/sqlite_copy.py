@@ -4,7 +4,8 @@
 transaction of the file's own journal or WAL, so the file holds the old or the new database,
 never a mix; its exit says whether that transaction began. `check` judges a restored copy by the
 same rule `load` judges its source by, and exits 0 only when the copy passes. Each prints a count
-and nothing else: no row value, no path.
+and nothing else: no row value, no path. `copy` writes the live database to stdout as one
+consistent file, for the backup that streams it, and prints nothing else.
 """
 
 import hashlib
@@ -58,9 +59,25 @@ def load(staged: Path, size: int, sha256: str, live: Path, table: str) -> int:
         return rows
 
 
+def copy_live(live: Path) -> bytes:
+    """The live database as of one moment, serialized. The file is opened read-only, so the copy
+    is a reader of the WAL and writes or checkpoints nothing; the one `backup` step holds the read
+    lock throughout, so a writer's transaction is in the copy whole or not at all. The copy is
+    held in memory."""
+    with (
+        closing(
+            sqlite3.connect(f"{live.as_uri()}?mode=ro", uri=True, timeout=BUSY_SECONDS)
+        ) as source,
+        closing(sqlite3.connect(":memory:")) as snapshot,
+    ):
+        source.backup(snapshot, pages=-1)
+        return snapshot.serialize()
+
+
 def check(copy: Path, table: str) -> int:
     """The row count of a copy whose integrity check answers exactly `ok` and whose key table
-    holds rows; anything else raises."""
+    holds rows; anything else raises. The copy is opened immutable, so a `-wal` file beside it is
+    ignored: the check judges the one file a restic dump restores, which holds none."""
     with closing(_immutable(copy)) as connection:
         return _populated_rows(connection, table)
 
@@ -147,6 +164,10 @@ def main(arguments: list[str]) -> int:
                 rows = load(Path(staged), int(size), sha256, Path(live), table)
             case ["check", copy, table]:
                 rows = check(Path(copy), table)
+            case ["copy", live]:
+                sys.stdout.buffer.write(copy_live(Path(live)))
+                sys.stdout.buffer.flush()
+                return 0
             case _:
                 return 2
         sys.stdout.write(f"{rows}\n")
