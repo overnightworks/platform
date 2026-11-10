@@ -61,9 +61,10 @@ def load(staged: Path, size: int, sha256: str, live: Path, table: str) -> int:
 
 def copy_live(live: Path) -> bytes:
     """The live database as of one moment, serialized. The file is opened read-only, so the copy
-    is a reader of the WAL and writes or checkpoints nothing; the one `backup` step holds the read
-    lock throughout, so a writer's transaction is in the copy whole or not at all. The copy is
-    held in memory."""
+    is a reader of the WAL and writes nothing to the database file and checkpoints nothing; SQLite may
+    still create and write its own `-wal` and `-shm` files beside a WAL database. The one `backup`
+    step holds the read lock throughout, so a writer's transaction is in the copy whole or not at
+    all. The copy is held in memory."""
     with (
         closing(
             sqlite3.connect(f"{live.as_uri()}?mode=ro", uri=True, timeout=BUSY_SECONDS)

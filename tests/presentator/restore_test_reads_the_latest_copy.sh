@@ -96,7 +96,7 @@ echo "without a snapshot the restore test fails at the dump: $outcome"
 
 # The check's verdict that the copy fails; any other exit, CPython's own 1 included, is a crash.
 verdict_exit="$(python3 -I -B -c 'import sys; sys.path.insert(0, sys.argv[1]); import sqlite_copy; print(sqlite_copy.VERDICT_EXIT)' \
-  infrastructure/sqlite/scripts)"
+  "$(dirname "${BASH_SOURCE[0]}")/../../infrastructure/sqlite/scripts")"
 for kind in empty-table missing-table damaged; do
   write_snapshot "$kind"
   run_test "$kind"
