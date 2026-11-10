@@ -1,7 +1,7 @@
 # presentator's web, pulled from its private package through the Secret ghcr-pull and started from the files of the
 # Secret presentator, both from platform-secrets. One pod runs with Recreate, as the claims are ReadWriteOnce and the
 # database is a single file. It shares its process namespace so that a pull's git and ssh children have a reaper, and
-# it keeps its ServiceAccount token, since it deletes the build worker's pod through the API (rbac.yaml).
+# it holds its ServiceAccount token, since it deletes the build worker's pod through the API (rbac.yaml).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,7 +20,7 @@ spec:
         app.kubernetes.io/name: web
     spec:
       serviceAccountName: web
-      automountServiceAccountToken: true
+      automountServiceAccountToken: false
       shareProcessNamespace: true
       enableServiceLinks: false
       imagePullSecrets:
@@ -109,10 +109,29 @@ spec:
             - name: build-socket
               mountPath: /run/presentator-build
       volumes:
-        # Every key of the Secret becomes a file: presentator_secret_key, oidc_client_secret and litellm_key.
+        # One volume holds the Secret's files and the ServiceAccount token's three files: the image's /var/run leads to
+        # /run, so a token volume of its own would need its mountpoint inside this read-only one. Every key of the
+        # Secret becomes a file: presentator_secret_key, oidc_client_secret and litellm_key. The token is read at
+        # /var/run/secrets/kubernetes.io/serviceaccount, the client's default path.
         - name: secrets
-          secret:
-            secretName: presentator
+          projected:
+            defaultMode: 0444
+            sources:
+              - secret:
+                  name: presentator
+              - serviceAccountToken:
+                  path: kubernetes.io/serviceaccount/token
+                  expirationSeconds: 3607
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: kubernetes.io/serviceaccount/ca.crt
+              - downwardAPI:
+                  items:
+                    - path: kubernetes.io/serviceaccount/namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
         - name: tmp
           emptyDir:
             medium: Memory
