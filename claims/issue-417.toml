@@ -1,8 +1,0 @@
-claim_id = "5cfdc496de2f4eb6b55a4d3ffa7aae2c"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "f52d27e22241749aab06ea08f7483cac3dbb0e48"
-branch = "claude/issue-417-db-load-dump-files-ends-on-a-host-whose"
-scope = [".github/workflows/ci.yml", "mise.toml", "scripts/load_files.sh", "scripts/rsh_into_pod.sh", "tests/backup/load_replaces_database_and_files_together.sh"]
-opened_commit = "336a7824c58c802af652786eb566985a043b8031"
-whole_reason = "The loader's Pod, the channel to it and the cell that drives both are one path and change together."
