@@ -58,9 +58,13 @@ echo "the login page of $LOGIN_CLIENT answers 200 and names the asset $asset_pat
 default_profile="$(dirname "$REALM_FILE")/default-user-profile.json"
 profile_form() { jq --sort-keys '(.attributes[] |= (.multivalued //= false)) | del(..|nulls)'; }
 throwaway_realm="default-profile-probe-$RANDOM"
+# The realm goes on every exit, before the forward it is deleted through ends; a realm already gone is no error.
+trap 'admin DELETE "$throwaway_realm" >/dev/null 2>&1 || true
+  kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"' EXIT
 admin POST "" "{\"realm\": \"$throwaway_realm\", \"enabled\": true}"
 throwaway_profile="$(admin GET "$throwaway_realm/users/profile" | profile_form)" || throwaway_profile=""
 admin DELETE "$throwaway_realm"
+trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"' EXIT
 [ "$throwaway_profile" = "$(profile_form <"$default_profile")" ] ||
   fail "a realm that stores no user profile answers '$throwaway_profile', not $default_profile, Keycloak's built-in default"
 echo "a realm that stores no user profile answers the built-in default profile that $default_profile holds"
