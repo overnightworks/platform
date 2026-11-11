@@ -140,6 +140,14 @@ for root in github cloudflare; do
   expect_refused "--apply with a changed mise.toml" "unchanged"
   git -C "${apply_checkout}" checkout --quiet -- mise.toml
 
+  # The refusal comes before any path from mise.toml is used: an edit that moves the cache to a new place leaves that place unmade.
+  hijacked_cache="${work_directory}/hijacked/${root}"
+  sed -i "s|^cache_directory=.*|cache_directory=\"${hijacked_cache}\"|" "${apply_checkout}/mise.toml"
+  run_script "--apply with a mise.toml that moves the cache" 2 "$(plan_json d.forgotten '["forget"]')" --apply
+  expect_refused "--apply with a mise.toml that moves the cache" "unchanged"
+  [ ! -e "${work_directory}/hijacked" ] || fail "--apply with a mise.toml that moves the cache: the moved path was used"
+  git -C "${apply_checkout}" checkout --quiet -- mise.toml
+
   # Each root has its own state file and its own cache directory with its own lock.
   grep -qxF -- "init -input=false -lockfile=readonly -backend-config=path=${XDG_STATE_HOME}/platform/opentofu/${root}.tfstate" \
     "${work_directory}/init_arguments" || fail "${root}: init names no state file of this root"

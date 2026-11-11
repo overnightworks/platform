@@ -30,6 +30,16 @@ case "${2:-}" in
 esac
 
 root_directory="${repository_root}/src/opentofu/${root}"
+# Before the first mise call: mise.toml decides the paths below, so a changed one is refused before any of them is used.
+if [ "${apply}" = true ]; then
+  git -C "${repository_root}" fetch --quiet origin main
+  [ "$(git -C "${repository_root}" rev-parse HEAD)" = "$(git -C "${repository_root}" rev-parse origin/main)" ] ||
+    fail "--apply runs only when HEAD is origin/main"
+  # An ignored file counts too: tofu reads every .tf and auto-loaded .tfvars file in the root.
+  [ -z "$(git -C "${repository_root}" status --porcelain --untracked-files=all --ignored=matching -- src/opentofu mise.toml scripts/apply_opentofu.sh)" ] ||
+    fail "--apply runs only with src/opentofu/, mise.toml and this script unchanged"
+fi
+
 # mise looks its tasks up from the current directory, so every mise call runs inside the repository.
 cd "${repository_root}"
 # mise's hidden task opentofu:path owns these paths, which cloudflare:token-absent reads too.
@@ -45,15 +55,6 @@ chmod 700 "${cache_directory}"
 exec {lock_descriptor}>"${cache_directory}/lock"
 flock --wait "${LOCK_WAIT_SECONDS}" "${lock_descriptor}" ||
   fail "another run holds the lock ${cache_directory}/lock; waited ${LOCK_WAIT_SECONDS} seconds"
-
-if [ "${apply}" = true ]; then
-  git -C "${repository_root}" fetch --quiet origin main
-  [ "$(git -C "${repository_root}" rev-parse HEAD)" = "$(git -C "${repository_root}" rev-parse origin/main)" ] ||
-    fail "--apply runs only when HEAD is origin/main"
-  # An ignored file counts too: tofu reads every .tf and auto-loaded .tfvars file in the root.
-  [ -z "$(git -C "${repository_root}" status --porcelain --untracked-files=all --ignored=matching -- src/opentofu mise.toml scripts/apply_opentofu.sh)" ] ||
-    fail "--apply runs only with src/opentofu/, mise.toml and this script unchanged"
-fi
 
 # Not under the cache directory: tofu's plugin sockets live here, and a socket path is limited to 108 bytes.
 private_temporary="$(mktemp -d -t apply_opentofu.XXXXXX)"
