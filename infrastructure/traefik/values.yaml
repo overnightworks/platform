@@ -19,11 +19,21 @@ providers:
   # cannot express. The tunnel reaches only the hallucinai realm, its localization and the static resources under
   # Keycloak's five-character resources version; any wider /resources/ prefix admits /resources/master/..., the
   # master realm's localization texts. The bare address leads to the account page, and every other path stays 404.
+  # The router backchannel-logout-refused keeps every app's back-channel logout off the internet: Keycloak calls it on the app's
+  # Service and never through Traefik. It names no host, so a new app's host needs no entry, and its explicit priority
+  # beats every Ingress router, whose priority is the length of its rule. The pattern is case-insensitive and takes an
+  # optional trailing slash; the query is no part of the path, and sanitizePath has already cleaned doubled slashes and
+  # dot segments before a router is chosen. noop@internal answers 418 with no body, a status no app uses.
   file:
     enabled: true
     content:
       http:
         routers:
+          backchannel-logout-refused:
+            entryPoints: [web]
+            priority: 1000000
+            service: noop@internal
+            rule: PathRegexp(`(?i)^/auth/backchannel-logout/?$`)
           auth:
             entryPoints: [web]
             service: auth
