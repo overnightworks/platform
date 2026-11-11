@@ -123,9 +123,14 @@ cleared_clients="$(backchannel_urls '.[] | select(.attributes[$key] == "") | .cl
 stated_urls="$(backchannel_urls '.[] | select((.attributes[$key] // "") != "") | .clientId + "\t" + .attributes[$key]')"
 [ -n "$cleared_clients" ] && [ -n "$stated_urls" ] ||
   fail "$REALM_FILE clears no client's back-channel URL or states none"
-# client_attribute <client id> <key>: the client's attribute on the running realm; empty when the client holds none.
+# client_attribute <client id> <key>: the client's attribute on the running realm.
 client_attribute() {
   admin GET "$realm/clients?clientId=$1" | jq --raw-output --exit-status --arg key "$2" '.[0].attributes[$key] // empty'
+}
+# client_holds_attribute <client id> <key>: prints true or false for whether the client has the attribute on the
+# running realm, a stored "" included, and nothing when the client or its attributes cannot be read.
+client_holds_attribute() {
+  admin GET "$realm/clients?clientId=$1" | jq --exit-status --arg key "$2" '.[0].attributes | if type == "object" then has($key) else error("no attributes") end'
 }
 written_url=http://written-by-the-cell.invalid/
 while IFS= read -r client_id; do
@@ -146,8 +151,8 @@ if [ "$after" != "$before" ]; then
 fi
 echo "config-cli's second run completed at its first attempt and changed neither master nor $realm"
 while IFS= read -r client_id; do
-  [ -z "$(client_attribute "$client_id" "$backchannel_attribute")" ] ||
-    fail "the client $client_id holds a back-channel URL after config-cli's run, though $REALM_FILE clears it"
+  [ "$(client_holds_attribute "$client_id" "$backchannel_attribute")" = false ] ||
+    fail "the client $client_id holds a back-channel URL attribute, or cannot be read, after config-cli's run, though $REALM_FILE clears it"
 done <<<"$cleared_clients"
 while IFS=$'\t' read -r client_id url; do
   [ "$(client_attribute "$client_id" "$backchannel_attribute")" = "$url" ] ||
