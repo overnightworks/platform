@@ -170,9 +170,14 @@ for source in "$APP_NAMESPACE" "$namespace"; do expect_denied "$source" "$litell
 kubectl delete namespace "$OTHER_NAMESPACE" --wait --timeout=2m
 echo "pods in $OTHER_NAMESPACE and $namespace get no answer from the front, in $APP_NAMESPACE and $namespace none from" \
   "LiteLLM, and each an answer from the API server"
+# The job's provider keys are dummies: the provider refuses the key, and LiteLLM reports that refusal as the 401 it
+# received, with the provider's own error type, where a failed dial would end in a 5xx connection error. Nothing paid
+# is called.
 post "$front_url/v1/chat/completions" "$(completion)" "${authorized[@]}"
-[[ $status == 5?? ]] || fail "a real completion through the front got $status, not an upstream error"
-echo "a real completion through the front ends in LiteLLM's $status"
+[ "$status" = 401 ] && grep -q authentication_error <<<"$answer" ||
+  fail "a completion with the dummy provider key through the front got $status, not the provider's refusal: $(yq \
+    --input-format json '.error.message // .detail // "no error message"' <<<"$answer" 2>/dev/null | head -c 600)"
+echo "a completion with the dummy provider key through the front ends in the provider's refusal, LiteLLM's $status"
 
 # A Pod with a workload's labels in LiteLLM's namespace meets that workload's policy; it also matches the workload's
 # Service while it runs, so no request to that Service runs beside it.
@@ -191,24 +196,25 @@ expect_reach() {
   [ "$output" = "${expected%$'\n'}" ] || fail "a Pod with the labels $labels does not reach exactly as its policy says"
 }
 expect_reach '{"app.kubernetes.io/name": "litellm"}' open open closed closed
-expect_reach '{"app.kubernetes.io/name": "agent-egress"}' closed closed closed closed
+expect_reach '{"app.kubernetes.io/name": "agent-egress"}' closed closed closed open
 expect_reach '{"app.kubernetes.io/name": "litellm-front"}' closed closed closed closed
 expect_reach '{}' open closed open open
-echo "LiteLLM reaches only its Postgres and agent-egress, agent-egress and the front no target, though DNS resolves for" \
-  "both, a Pod without labels all but agent-egress"
+echo "LiteLLM reaches only its Postgres and agent-egress, agent-egress only the provider host's 443, the front no" \
+  "target, though DNS resolves for both, a Pod without labels all but agent-egress"
 
-# A handshake whose SNI no router allows ends in the gateway, which dials nothing. The provider's SNI passes to a dial
-# of the provider's resolved address, which the closed egress fails: the gateway logs that dial's error and ends the
-# handshake. curl waits past Traefik's 30 s dial timeout, so a dropped dial ends in the gateway too. Exit 35 is curl's
-# failed handshake: a refused connection to the gateway (7), a certificate (60) or a timeout (28) fail the cell, and so
-# does a dial error that names a DNS lookup.
+# A handshake whose SNI no router allows ends in the gateway, which dials nothing. The provider's SNI passes to the
+# provider, whose certificate completes the handshake: curl verifies it against its CA bundle for that name and ends 0
+# with a verify result of 0. The request that follows carries no key and calls nothing paid. curl waits past Traefik's
+# 30 s dial timeout, so a dropped dial ends in the gateway too. Exit 35 is curl's failed handshake: a refused connection
+# to the gateway (7), a certificate (60) or a timeout (28) fail the cell, and so does a dial error.
 # sni_handshake <SNI>: a Pod with LiteLLM's labels opens TLS with the SNI to agent-egress; sets exit_code, output to
-# curl's error and dial_error to the dial errors the gateway logged since.
+# curl's error or, when it connected, its verify result, and dial_error to the dial errors the gateway logged since.
 sni_handshake() {
   local start
   start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   run_client "$namespace" litellm-sni '{"app.kubernetes.io/name": "litellm"}' --silent --show-error --output /dev/null \
-    --max-time 45 "${retry[@]}" --resolve "$1:$egress_port:$egress_address" "https://$1:$egress_port/"
+    --max-time 45 "${retry[@]}" --write-out '%{ssl_verify_result}' --resolve "$1:$egress_port:$egress_address" \
+    "https://$1:$egress_port/"
   local gateway_log
   gateway_log="$(kubectl --namespace "$namespace" logs deployment/agent-egress --since-time="$start")" ||
     fail "the log of agent-egress cannot be read after the SNI $1"
@@ -219,11 +225,10 @@ sni_handshake "$THIRD_SNI"
   fail "the SNI $THIRD_SNI did not end in the gateway without a dial: exit $exit_code, $output, [$dial_error]"
 echo "agent-egress ends the SNI $THIRD_SNI without a dial: $output"
 sni_handshake "$provider_host"
-[ "$exit_code" = 35 ] && grep -Eq "dial tcp [^ ]+:443: " <<<"$dial_error" && ! grep -q lookup <<<"$dial_error" ||
-  fail "the SNI $provider_host did not end in a failed dial of a resolved provider address: exit $exit_code, $output,
+[ "$exit_code" = 0 ] && [ "$output" = 0 ] && [ -z "$dial_error" ] ||
+  fail "the SNI $provider_host did not complete a verified TLS handshake with the provider: exit $exit_code, $output,
 [$dial_error]"
-echo "agent-egress passes $provider_host to a dial the closed egress fails: $output"
-printf '%s\n' "$dial_error"
+echo "agent-egress passes $provider_host to the provider, whose certificate completes the handshake"
 
 # LiteLLM's start check, read from the live Deployment, runs in a client Pod under the same busybox sh with fake
 # values: every key or password that is empty, ends in a newline or holds a space or a non-ASCII byte, and a password

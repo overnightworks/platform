@@ -1,6 +1,7 @@
 # agent-egress, the SNI-allowlisting TLS passthrough between LiteLLM and its two providers (egress-allowed.yml). A
 # NetworkPolicy cannot filter by host name, so this Traefik keeps the provider keys from reaching any other host. It
-# sends only to cluster DNS, so nothing the copy of hal's data holds leaves the cluster.
+# sends to cluster DNS and to TCP 443 outside the pod and service networks, and dials only the upstreams of
+# egress-allowed.yml, so nothing the copy of hal's data holds leaves the cluster for any other host.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -79,7 +80,8 @@ spec:
       port: 443
       targetPort: litellm
 ---
-# Only LiteLLM reaches agent-egress, which sends only to cluster DNS.
+# Only LiteLLM reaches agent-egress, which sends only to cluster DNS and to port 443 outside the pod and service
+# networks, so the Service kubernetes and every other cluster address stay out of reach.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -111,4 +113,11 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.42.0.0/16, 10.43.0.0/16]
+      ports:
+        - port: 443
           protocol: TCP

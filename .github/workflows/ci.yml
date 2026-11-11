@@ -469,7 +469,7 @@ jobs:
           APP_NAMESPACE: hopin
           OTHER_NAMESPACE: litellm-client
           THIRD_SNI: third.invalid
-        run: tests/litellm/front_key_check_routing_and_closed_egress.sh
+        run: tests/litellm/front_key_check_routing_and_provider_egress.sh
 
       - name: Assert that Alertmanager runs on a finished file, is found by Prometheus, refuses bad values, makes at most one send per flush of a fired alert, answers only its readers and Prometheus drops a Flux Pod that is not running
         if: matrix.part == 'observability'
