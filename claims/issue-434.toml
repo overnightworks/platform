@@ -1,8 +1,0 @@
-claim_id = "865385bc90ce42c48bb0700293d0f578"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "a2629d7a70569882e57a0ff997dd7b8a42000b4b"
-branch = "claude/issue-434-p10-3c-the-realm-s-back-channel-urls-and"
-scope = ["infrastructure/cloudflared/cloudflared.yaml", "infrastructure/keycloak/realm.yaml", "tests/cloudflared/ingress_from_pods_built_from_its_template.sh", "tests/keycloak/realm_route_and_policies.sh"]
-opened_commit = "dd46fc4981becd5f10567341003d117116a54a4f"
-whole_reason = "The auth tunnel line is only green together with the tunnel cell that judges every line, which must know a host Traefik's file provider routes."
