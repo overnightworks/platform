@@ -1,0 +1,7 @@
+claim_id = "4b152478e44249a6925ed6c447149e0e"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "3f2d5fb2f88ad3145d3df0e651b4d7cc72c82a46"
+branch = "claude/issue-468-cutover-preflight-s-i1-also-reads-songma"
+scope = ["scripts/cutover_preflight.sh", "tests/cutover/preflight_names_each_missing_precondition.sh"]
+opened_commit = "74b5d1892b3abb7801a30ddc69cd23530f399726"
