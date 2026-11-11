@@ -480,10 +480,10 @@ clients:
     serviceAccountsEnabled: false
     frontchannelLogout: false
   # songmaker signs people in with the authorization code and PKCE, and has no service account. A
-  # sign-out in Keycloak calls songmaker's back-channel logout, a call keycloak-egress.yaml lets no
-  # app receive. songmaker ignores the session id and ends every session of the person, so the
-  # call does not require one. The device grant is named as off, so the import's
-  # merge cannot keep an earlier on.
+  # sign-out in Keycloak calls songmaker's back-channel logout at its web Service, under the one Host
+  # songmaker's route answers; the NetworkPolicies decide whether the call arrives. songmaker ignores
+  # the session id and ends every session of the person, so the call does not require one. The device
+  # grant is named as off, so the import's merge cannot keep an earlier on.
   - clientId: songmaker
     name: songmaker
     enabled: true
@@ -501,7 +501,7 @@ clients:
     attributes:
       post.logout.redirect.uris: "https://songmaker.hallucinai.de/login"
       pkce.code.challenge.method: "S256"
-      backchannel.logout.url: "http://songmaker.hallucinai.de:8080/auth/backchannel-logout"
+      backchannel.logout.url: "http://web.songmaker.svc:8080/auth/backchannel-logout"
       backchannel.logout.session.required: "false"
       oauth2.device.authorization.grant.enabled: "false"
     defaultClientScopes:
@@ -513,8 +513,8 @@ clients:
       - acr
       - groups
     optionalClientScopes: []
-  # hopin signs people in the same way as songmaker and is logged out the same way. It holds
-  # a refresh token per session, named as on so a merge cannot keep an earlier off, and its service
+  # hopin signs people in the same way as songmaker and is logged out the same way, at its own Service.
+  # It holds a refresh token per session, named as on so a merge cannot keep an earlier off, and its service
   # account is a workload of the speech service, whose audience it asks for by the optional scope
   # speech-service-audience. It reads no email, web origin or acr, so it has none of those scopes.
   - clientId: hopin
@@ -534,7 +534,7 @@ clients:
     attributes:
       post.logout.redirect.uris: "https://hopin.hallucinai.de/login"
       pkce.code.challenge.method: "S256"
-      backchannel.logout.url: "http://hopin.hallucinai.de:8080/auth/backchannel-logout"
+      backchannel.logout.url: "http://hopin.hopin.svc.cluster.local:8080/auth/backchannel-logout"
       backchannel.logout.session.required: "false"
       use.refresh.tokens: "true"
     defaultClientScopes:
@@ -545,9 +545,10 @@ clients:
       - service_account
     optionalClientScopes:
       - speech-service-audience
-  # One client for presentator's two hosts. It is logged out like hopin, on
-  # presentator's own port. Its service account is a workload of
-  # the speech service, whose audience it asks for by the optional scope speech-service-audience.
+  # One client for presentator's two hosts. It has no back-channel logout, so a sign-out in Keycloak ends a
+  # presentator session only at its lifetime, until presentator runs beside Keycloak. Its service account
+  # is a workload of the speech service, whose audience it asks for by the optional scope
+  # speech-service-audience.
   # It has songmaker's default scopes and service_account.
   - clientId: presentator
     name: presentator
@@ -567,7 +568,7 @@ clients:
     attributes:
       post.logout.redirect.uris: "https://presentator.hallucinai.de/login"
       pkce.code.challenge.method: "S256"
-      backchannel.logout.url: "http://presentator.hallucinai.de:8000/auth/backchannel-logout"
+      backchannel.logout.url: ""
       backchannel.logout.session.required: "false"
     defaultClientScopes:
       - basic

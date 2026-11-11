@@ -115,6 +115,27 @@ report_difference() {
 state_root="$(mktemp -d "$RUNNER_TEMP/keycloak-state.XXXXXX")"
 mkdir "$state_root/before" "$state_root/after"
 before="$(fingerprint "$state_root/before")" || fail "the realms master and $realm cannot be read"
+# The file clears a client's back-channel URL with "" and states the others. Config-cli must leave no attribute on a
+# cleared client, which the console or an earlier run may have filled, and hold each stated URL as the file has it.
+backchannel_attribute=backchannel.logout.url
+backchannel_urls() { yq --output-format json '.clients' "$REALM_FILE" | jq --raw-output --arg key "$backchannel_attribute" "$1"; }
+cleared_clients="$(backchannel_urls '.[] | select(.attributes[$key] == "") | .clientId')"
+stated_urls="$(backchannel_urls '.[] | select((.attributes[$key] // "") != "") | .clientId + "\t" + .attributes[$key]')"
+[ -n "$cleared_clients" ] && [ -n "$stated_urls" ] ||
+  fail "$REALM_FILE clears no client's back-channel URL or states none"
+# client_attribute <client id> <key>: the client's attribute on the running realm; empty when the client holds none.
+client_attribute() {
+  admin GET "$realm/clients?clientId=$1" | jq --raw-output --exit-status --arg key "$2" '.[0].attributes[$key] // empty'
+}
+written_url=http://written-by-the-cell.invalid/
+while IFS= read -r client_id; do
+  client="$(admin GET "$realm/clients?clientId=$client_id" | jq --exit-status '.[0]')" ||
+    fail "the realm $realm holds no client $client_id"
+  jq --arg key "$backchannel_attribute" --arg url "$written_url" '.attributes[$key] = $url' <<<"$client" |
+    admin PUT "$realm/clients/$(jq --raw-output .id <<<"$client")" @- >/dev/null
+  [ "$(client_attribute "$client_id" "$backchannel_attribute")" = "$written_url" ] ||
+    fail "the client $client_id did not keep the back-channel URL the cell wrote, so the next check proves nothing"
+done <<<"$cleared_clients"
 rerun_config_cli
 second_failures="$(kubectl -n "$namespace" get job/config-cli -o jsonpath='{.status.failed}')"
 [ -z "$second_failures" ] || fail "config-cli's second run failed $second_failures times before it completed"
@@ -124,6 +145,15 @@ if [ "$after" != "$before" ]; then
   fail "config-cli's second run changed the realms master or $realm"
 fi
 echo "config-cli's second run completed at its first attempt and changed neither master nor $realm"
+while IFS= read -r client_id; do
+  [ -z "$(client_attribute "$client_id" "$backchannel_attribute")" ] ||
+    fail "the client $client_id holds a back-channel URL after config-cli's run, though $REALM_FILE clears it"
+done <<<"$cleared_clients"
+while IFS=$'\t' read -r client_id url; do
+  [ "$(client_attribute "$client_id" "$backchannel_attribute")" = "$url" ] ||
+    fail "the client $client_id holds a back-channel URL other than the one $REALM_FILE states"
+done <<<"$stated_urls"
+echo "config-cli removed the back-channel URL of $(paste -sd, - <<<"$cleared_clients") and kept each stated URL as $REALM_FILE has it"
 
 # B2: through Traefik, as the tunnel asks, the public paths answer and every other path of the host is 404.
 web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
