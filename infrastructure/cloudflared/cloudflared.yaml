@@ -1,5 +1,6 @@
 # The tunnel platform's lines. A host reaches the internet only through a line here, which changes by a pull request;
-# every other host gets the tunnel's 404. A line without an Ingress gets Traefik's 404.
+# every other host gets the tunnel's 404. A line whose host no Ingress and no file-provider router of Traefik routes
+# gets Traefik's 404.
 apiVersion: v1
 kind: ConfigMap
 metadata:

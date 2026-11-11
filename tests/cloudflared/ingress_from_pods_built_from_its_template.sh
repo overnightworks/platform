@@ -74,9 +74,13 @@ echo "the tunnel answers the unrouted host $UNROUTED_HOST with http_status:404"
 
 # Every line that names a host sends it, on the line's path if it names one, to Traefik's Service at its web
 # port, and a client Pod beside cloudflared sends the request cloudflared forwards, as the line's
-# httpHostHeader if it rewrites the host: Traefik answers 404 for a host no Ingress routes, and passes on the
-# others. Another path on a host a line restricts by path falls through to the final http_status:404.
+# httpHostHeader if it rewrites the host: Traefik answers 404 for a host neither an Ingress nor its file provider
+# routes, and passes on the others; a host whose file provider redirects its root answers that redirect. Another
+# path on a host a line restricts by path falls through to the final http_status:404.
+file_provider="$(kubectl -n traefik get configmap traefik-file-provider -o jsonpath='{.data.config\.yml}')"
+file_provider_hosts="$(yq '.http.routers[].rule' <<<"$file_provider" | { grep -o 'Host(`[^`]*`)' || true; } | sed 's/^Host(`//; s/`)$//')"
 ingress_hosts="$(kubectl get ingresses -A -o jsonpath='{range .items[*]}{range .spec.rules[*]}{.host}{"\n"}{end}{end}')"
+ingress_hosts+=$'\n'"$file_provider_hosts"
 web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
 traefik_host="$(kubectl -n traefik get service traefik -o jsonpath='{.metadata.name}.{.metadata.namespace}.svc')"
 client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
@@ -116,7 +120,21 @@ for line_index in "${routed_lines[@]}"; do
   client_pod_name="routed-request-${routed_host//./-}"
   client_pod="${client_pod_template//@NAME@/${client_pod_name}}"
   client_pod="${client_pod//@HOST@/${forwarded_host}}"
-  printf '%s\n' "${client_pod//@URL@/${routed_url%/}${request_path:-/}}" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
+  client_pod="${client_pod//@URL@/${routed_url%/}${request_path:-/}}"
+  # The redirect the file provider gives the host's root, which the client Pod then prints beside the status.
+  root_redirect=""
+  root_middleware="$(FORWARDED_HOST="$forwarded_host" yq '.http.routers[] |
+    select(.rule | contains("Host(`" + strenv(FORWARDED_HOST) + "`) && Path(`/`)")) | .middlewares[0] // ""' <<<"$file_provider")"
+  if [ -n "$root_middleware" ]; then
+    root_redirect="$(MIDDLEWARE="$root_middleware" yq '.http.middlewares[strenv(MIDDLEWARE)].redirectRegex |
+      ((.permanent // false | tostring) + " " + .replacement)' <<<"$file_provider" | sed 's/^true /301 /; s/^false /302 /')"
+  fi
+  if [ -n "$root_redirect" ] && [ -z "$request_path" ]; then
+    client_pod="$(yq '.spec.containers[0].args += ["--write-out", "%{http_code} %{redirect_url}"]' <<<"$client_pod")"
+  else
+    root_redirect=""
+  fi
+  printf '%s\n' "$client_pod" | kubectl -n "$TUNNEL_NAMESPACE" create -f -
   kubectl -n "$TUNNEL_NAMESPACE" wait "pod/$client_pod_name" --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m || {
     kubectl -n "$TUNNEL_NAMESPACE" describe "pod/$client_pod_name"
     kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$client_pod_name" || true
@@ -124,7 +142,11 @@ for line_index in "${routed_lines[@]}"; do
   }
   status="$(kubectl -n "$TUNNEL_NAMESPACE" logs "pod/$client_pod_name")"
   kubectl -n "$TUNNEL_NAMESPACE" delete pod "$client_pod_name" --wait --timeout=2m
-  if grep -qxF "$forwarded_host" <<<"$ingress_hosts"; then
+  if [ -n "$root_redirect" ]; then
+    [ "$status" = "$root_redirect" ] ||
+      fail "Traefik answered '$status' for $routed_host/$forwarded_as at $routed_url, not the redirect '$root_redirect' its file provider gives"
+    echo "the tunnel sends $routed_host/$forwarded_as to $routed_url, where a Pod in $TUNNEL_NAMESPACE gets the redirect '$status'"
+  elif grep -qxF "$forwarded_host" <<<"$ingress_hosts"; then
     [[ $status =~ ^[1-5][0-9][0-9]$ && $status != 404 ]] ||
       fail "Traefik answered $status for $routed_host$request_path$forwarded_as at $routed_url, which an Ingress routes"
     echo "the tunnel sends $routed_host$request_path$forwarded_as to $routed_url, where a Pod in $TUNNEL_NAMESPACE reaches its route ($status)"
