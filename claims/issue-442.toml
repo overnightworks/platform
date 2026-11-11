@@ -1,0 +1,8 @@
+claim_id = "1893fd2e46264c9f8c91c7c5dc604b82"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "7699171d884d69ca36ed4b96db234a5710df7bee"
+branch = "claude/issue-442-p10-4b-keycloak-serves-the-theme-halluci"
+scope = [".github/workflows/ci.yml", "infrastructure/keycloak", "quality/config.toml", "tests/keycloak/realm_route_and_policies.sh"]
+opened_commit = "c6e4936447353d97b2171df1c1a68aadff582c2d"
+whole_reason = "The theme is one verbatim unit that is only proven together with its mount and the cell that reads its stylesheets."
