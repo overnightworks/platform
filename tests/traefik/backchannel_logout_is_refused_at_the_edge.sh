@@ -9,14 +9,20 @@ web_port="$(kubectl --namespace traefik get service traefik -o jsonpath='{.spec.
 traefik_origin="http://traefik.traefik.svc:${web_port}"
 backchannel_path=/auth/backchannel-logout
 
-# The paths that name the back-channel route once Traefik has cleaned and decoded them, and the ones the entrypoint
-# refuses because they carry an encoded slash or backslash.
-refused_paths=("$backchannel_path" "$backchannel_path/" "$backchannel_path?logout_token=x" "$backchannel_path/?logout_token=x"
+# The paths that name the back-channel route once Traefik has cleaned and decoded them, the ones that end the name with
+# whitespace, a control character or a path parameter, which an app's router may strip or ignore, and the ones the
+# entrypoint refuses because they carry an encoded slash or backslash. The groups print one line each.
+cleaned_paths=("$backchannel_path" "$backchannel_path/" "$backchannel_path?logout_token=x" "$backchannel_path/?logout_token=x"
   /AUTH/Backchannel-Logout "/$backchannel_path" /auth//backchannel-logout /x/../auth/backchannel-logout
   /./auth/backchannel-logout /%61uth/backchannel-logout)
-encoded_paths=(/auth%2Fbackchannel-logout /auth%2fbackchannel-logout "$backchannel_path%2F" /auth%5Cbackchannel-logout)
-# The neighbours the rule must leave to the app, so a rule that matches by prefix turns red.
-neighbour_paths=("$backchannel_path-x" "$backchannel_path/x")
+ended_paths=("$backchannel_path%0A" "$backchannel_path%0D%0A" "$backchannel_path%0D" "$backchannel_path%20" "$backchannel_path%09"
+  "$backchannel_path%0B" "$backchannel_path%0C" "$backchannel_path%0A/x" "${backchannel_path^^}%0A" "$backchannel_path/%0A")
+parameter_paths=("$backchannel_path;a=b" "$backchannel_path;" "$backchannel_path;a=b?x=1")
+refused_paths=("${cleaned_paths[@]}" "${ended_paths[@]}" "${parameter_paths[@]}")
+encoded_paths=(/auth%2Fbackchannel-logout /auth%2fbackchannel-logout "$backchannel_path%2F" /auth%5Cbackchannel-logout
+  "$backchannel_path%00" "$backchannel_path%3B")
+# The neighbours the rule must leave to the app, so a rule that matches by prefix or without its anchors turns red.
+neighbour_paths=("$backchannel_path-x" "$backchannel_path/x" /oauth/backchannel-logout /x/auth/backchannel-logout /auth/start)
 # What Traefik's own router answers: the status of noop@internal and no body.
 refusal="418 0"
 
@@ -94,7 +100,8 @@ prove_hosts() {
   for host in "${routed_hosts[@]}"; do
     control_path="$(kubectl get ingresses -A -o jsonpath="{range .items[*]}{range .spec.rules[?(@.host==\"$host\")]}{.http.paths[0].path}{\"\n\"}{end}{end}" | head -n 1)"
     until_true 120 "Traefik refuses the back-channel route on $host and routes $control_path" refused_on "$host" "$control_path" "$round"
-    echo "a Pod in $TUNNEL_NAMESPACE gets Traefik's answer for ${#refused_paths[@]} spellings of $backchannel_path and ${#encoded_paths[@]} encoded ones with the host $host, by POST and GET, the app's answer for $control_path and no refusal for ${#neighbour_paths[@]} neighbouring paths"
+    echo "a Pod in $TUNNEL_NAMESPACE gets Traefik's answer with the host $host, by POST and GET, for ${#cleaned_paths[@]} cleaned or decoded spellings of $backchannel_path, ${#ended_paths[@]} ended by whitespace or a control character, ${#parameter_paths[@]} ended by a path parameter and ${#encoded_paths[@]} the entrypoint refuses"
+    echo "a Pod in $TUNNEL_NAMESPACE gets no refusal with the host $host for ${#neighbour_paths[@]} neighbouring paths, the app's answer for $control_path and, on a host that routes Exact paths, Traefik's 404 for the others"
   done
 }
 
