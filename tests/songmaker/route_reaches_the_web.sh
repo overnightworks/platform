@@ -22,6 +22,8 @@ traefik_url="$traefik_origin/health"
 web_service_port="$(yq 'select(.kind == "Service") | .spec.ports[0].port' "$manifest")"
 backchannel_host="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "web") | .env[] | select(.name == "BACKCHANNEL_LOGOUT_HOST") | .value' "$manifest")"
 backchannel_path=/auth/backchannel-logout
+# The status of noop@internal, which answers the router that refuses the back-channel route.
+refusal_status=418
 backchannel_url="http://$worker_host.$SONGMAKER_NAMESPACE.svc.cluster.local:${web_service_port}$backchannel_path"
 web_url="http://web.$SONGMAKER_NAMESPACE.svc.cluster.local:8080/health"
 
@@ -53,7 +55,7 @@ post_malformed_token() {
 }
 
 # expect_answer <namespace> <name> <host> <url> <status> <body> <curl argument>...: the answer has the status, and the body
-# "empty" (the web's own 404), "text" (a proxy's 404 page) or "any". A Pod in the tunnel's namespace sends through Traefik.
+# "empty" (none) or "any". A Pod in the tunnel's namespace sends through Traefik.
 expect_answer() {
   local namespace="$1" name="$2" host="$3" url="$4" expected_status="$5" expected_body="$6"
   shift 6
@@ -61,8 +63,7 @@ expect_answer() {
   [ "$answer_status" = "$expected_status" ] ||
     fail "a Pod in $namespace got '$answer_status' for the logout with the host $host at $url, not $expected_status"
   case "$expected_body" in
-    empty) [ -z "$answer_body" ] || fail "the answer to $name carried a body, so it is not the web's empty $expected_status" ;;
-    text) [ -n "$answer_body" ] || fail "the answer to $name had no body, so it is not the proxy's $expected_status" ;;
+    empty) [ -z "$answer_body" ] || fail "the answer to $name carried a body, so it is not an empty $expected_status" ;;
     any) ;;
   esac
   echo "a Pod in $namespace got $answer_status with a $expected_body body for the logout with the host $host at $url"
@@ -74,18 +75,19 @@ expect_answer "$SONGMAKER_NAMESPACE" backchannel-control "$backchannel_host" "$b
 expect_answer "$SONGMAKER_NAMESPACE" backchannel-public-host "$public_host" "$backchannel_url" 404 empty
 expect_answer "$SONGMAKER_NAMESPACE" backchannel-public-host-port "$public_host:$web_service_port" "$backchannel_url" 404 empty
 
-# Through Traefik no request reaches the route: an absolute-form target with the internal Host is routed by its own host
-# (the public one), and the origin-form internal Host matches no router.
+# Through Traefik no request reaches the route: its router names no host, so the public Host, the internal one, a
+# forwarded one and an absolute-form target all get the status of Traefik's refusal, which carries no body.
 post_malformed_token "$TUNNEL_NAMESPACE" backchannel-absolute-form "$backchannel_host" "$traefik_origin$backchannel_path" \
   --request-target "http://$public_host$backchannel_path"
-[ "$answer_status" = 404 ] ||
-  fail "a Pod in $TUNNEL_NAMESPACE got '$answer_status' through Traefik for the absolute-form target of $public_host with the host $backchannel_host, not 404"
-if [ -z "$answer_body" ]; then answered_by="the web's empty 404"; else answered_by="Traefik's 404"; fi
-echo "a Pod in $TUNNEL_NAMESPACE got $answered_by through Traefik for the absolute-form target of $public_host with the host $backchannel_host"
-expect_answer "$TUNNEL_NAMESPACE" backchannel-internal-origin-form "$backchannel_host" "$traefik_origin$backchannel_path" 404 text
-expect_answer "$TUNNEL_NAMESPACE" backchannel-forwarded-host "$public_host" "$traefik_origin$backchannel_path" 404 empty \
+[ "$answer_status" = "$refusal_status" ] ||
+  fail "a Pod in $TUNNEL_NAMESPACE got '$answer_status' through Traefik for the absolute-form target of $public_host with the host $backchannel_host, not $refusal_status"
+[ -z "$answer_body" ] || fail "the answer to backchannel-absolute-form carried a body, so it is not Traefik's refusal"
+echo "a Pod in $TUNNEL_NAMESPACE got Traefik's refusal through Traefik for the absolute-form target of $public_host with the host $backchannel_host"
+expect_answer "$TUNNEL_NAMESPACE" backchannel-internal-origin-form "$backchannel_host" "$traefik_origin$backchannel_path" "$refusal_status" empty
+expect_answer "$TUNNEL_NAMESPACE" backchannel-forwarded-host "$public_host" "$traefik_origin$backchannel_path" "$refusal_status" empty \
   --header "X-Forwarded-Host: $backchannel_host"
-expect_answer "$TUNNEL_NAMESPACE" backchannel-public-host-port-through-traefik "$public_host:$web_service_port" "$traefik_origin$backchannel_path" 404 empty
+expect_answer "$TUNNEL_NAMESPACE" backchannel-public-host-port-through-traefik "$public_host:$web_service_port" "$traefik_origin$backchannel_path" \
+  "$refusal_status" empty
 
 request "$OTHER_NAMESPACE" other-client "$public_host" "$web_url" --max-time 5 --retry 0
 [ "$status" = 000 ] || fail "a Pod in $OTHER_NAMESPACE got '$status' from the web"

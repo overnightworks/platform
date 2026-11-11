@@ -51,6 +51,29 @@ asset_path="$(grep -o '/resources/[a-z0-9]\{5\}/[^"?]*' "$login_page" | head -n 
 [ -n "$asset_path" ] || fail "the login page names no asset under /resources/<version>/"
 echo "the login page of $LOGIN_CLIENT answers 200 and names the asset $asset_path"
 
+# A realm that stores no user profile has Keycloak's built-in default, which cutover:load's gate compares in its place: a
+# throwaway realm, which creating one leaves without a profile component (master is bootstrapped with a relaxed stored
+# one), answers the vendored copy. The admin API writes multivalued: false on an attribute that omits it and leaves out
+# what is null.
+default_profile="$(dirname "$REALM_FILE")/default-user-profile.json"
+profile_form() { jq --sort-keys '(.attributes[] |= (.multivalued //= false)) | del(..|nulls)'; }
+throwaway_realm="default-profile-probe-$(openssl rand -hex 8)"
+# The cell deletes only a realm it creates: a name Keycloak already holds stops it before the trap that deletes the name.
+existing_status="$(bearer_curl "$(admin_token)" --silent --output /dev/null --write-out '%{http_code}' \
+  "$local_url/admin/realms/$throwaway_realm")"
+[ "$existing_status" = 404 ] || fail "the throwaway realm name $throwaway_realm answers $existing_status, not 404"
+# The realm goes on every exit, before the forward it is deleted through ends, and also when its creation is cut short;
+# a realm already gone is no error.
+trap 'admin DELETE "$throwaway_realm" >/dev/null 2>&1 || true
+  kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"' EXIT
+admin POST "" "{\"realm\": \"$throwaway_realm\", \"enabled\": true}"
+throwaway_profile="$(admin GET "$throwaway_realm/users/profile" | profile_form)" || throwaway_profile=""
+admin DELETE "$throwaway_realm"
+trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"' EXIT
+[ "$throwaway_profile" = "$(profile_form <"$default_profile")" ] ||
+  fail "a realm that stores no user profile answers '$throwaway_profile', not $default_profile, Keycloak's built-in default"
+echo "a realm that stores no user profile answers the built-in default profile that $default_profile holds"
+
 # canonical_form: writes its JSON input with object keys and every list sorted, at every depth. Keycloak returns its
 # sets (a client's optional scopes, redirect URIs) in no fixed order, and walk sorts a list after its elements.
 canonical_form() { jq --sort-keys 'walk(if type == "array" then sort else . end)'; }

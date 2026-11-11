@@ -335,6 +335,12 @@ jobs:
         if: matrix.part == 'core'
         run: tests/workloads/apps_run_at_their_full_ref.sh
 
+      - name: Assert that Traefik refuses the back-channel logout path and its spellings on every routed host while a neighbouring path reaches the app, that the Service still answers it in-namespace, and that the refusal holds in a restarted pod
+        if: matrix.part == 'core'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+        run: tests/traefik/backchannel_logout_is_refused_at_the_edge.sh
+
       - name: Assert that every Deployment outside the system namespaces runs the digests it names
         if: matrix.part == 'core'
         env:
