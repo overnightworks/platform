@@ -1,7 +1,0 @@
-claim_id = "91238a7f00d54eb39882f10494083389"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "b92a7e29231c743eca039477e7afa9c542420736"
-branch = "claude/issue-456-the-platform-runs-keycloak-26-8-2-1-hal"
-scope = ["infrastructure/keycloak/keycloak.yaml", "infrastructure/keycloak/master.yaml", "infrastructure/keycloak/realm.yaml"]
-opened_commit = "0c40fd90b4346229ea066b6ef4b1ca0479fddb78"
