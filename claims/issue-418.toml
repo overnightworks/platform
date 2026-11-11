@@ -1,0 +1,8 @@
+claim_id = "7c471a43200d4eefb4fb88c3b7914f08"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "6d0fa986308d6a57a0df367441f8abd33a4adb62"
+branch = "claude/issue-418-one-command-plans-and-applies-both-opent"
+scope = [".github/workflows/ci.yml", "docs/cloudflare-zone.md", "docs/github-settings.md", "docs/runbooks/apply-github-settings.md", "docs/runbooks/plan-the-cloudflare-zone.md", "mise.toml", "scripts/apply_github_settings.sh", "scripts/apply_opentofu.sh", "src/opentofu/cloudflare", "tests/cloudflare", "tests/github", "tests/opentofu"]
+opened_commit = "85525a261cc8607ac5f2ecc2c1bc197076c296e7"
+whole_reason = "The shared command earns its generalisation only with its second caller, which is unusable without its token writer and unproven without its count check."
