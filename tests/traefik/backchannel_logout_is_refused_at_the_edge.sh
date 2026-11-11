@@ -15,6 +15,8 @@ refused_paths=("$backchannel_path" "$backchannel_path/" "$backchannel_path?logou
   /AUTH/Backchannel-Logout "/$backchannel_path" /auth//backchannel-logout /x/../auth/backchannel-logout
   /./auth/backchannel-logout /%61uth/backchannel-logout)
 encoded_paths=(/auth%2Fbackchannel-logout /auth%2fbackchannel-logout "$backchannel_path%2F" /auth%5Cbackchannel-logout)
+# The neighbours the rule must leave to the app, so a rule that matches by prefix turns red.
+neighbour_paths=("$backchannel_path-x" "$backchannel_path/x")
 # What Traefik's own router answers: the status of noop@internal and no body.
 refusal="418 0"
 
@@ -64,17 +66,25 @@ answered_by_traefik() {
 }
 
 # refused_on <host> <control path> <round>: POST and GET get Traefik's answer for every path of the route, while the
-# control path, which the host's Ingress routes, still reaches the app. The round only names the Pods.
+# control path, which the host's Ingress routes, and the neighbouring paths still reach the app, that is get neither the
+# refusal nor a 5xx. The round only names the Pods.
 refused_on() {
-  local host="$1" control_path="$2" name="backchannel-${1//./-}-$3" control_answer
+  local host="$1" control_path="$2" name="backchannel-${1//./-}-$3" offset index
+  local kept_paths=("$control_path" "${neighbour_paths[@]}") kept_answers
   ask "$name-post" "$host" POST "${refused_paths[@]}" "${encoded_paths[@]}"
   answered_by_traefik "$host" POST || return 1
-  ask "$name-get" "$host" GET "${refused_paths[@]}" "${encoded_paths[@]}" "$control_path"
-  control_answer="${answers[-1]}"
-  unset 'answers[-1]'
+  ask "$name-get" "$host" GET "${refused_paths[@]}" "${encoded_paths[@]}" "${kept_paths[@]}"
+  offset=$((${#refused_paths[@]} + ${#encoded_paths[@]}))
+  kept_answers=("${answers[@]:offset}")
   answered_by_traefik "$host" GET || return 1
-  [ "$control_answer" != "$refusal" ] && [ "$control_answer" != "$traefik_not_found" ] && [[ $control_answer != 5* ]] || {
-    echo "GET $control_path with the host $host got '$control_answer', which is not an app's answer"
+  for index in "${!kept_paths[@]}"; do
+    [ "${kept_answers[index]}" != "$refusal" ] && [[ ${kept_answers[index]} != 5* ]] || {
+      echo "GET ${kept_paths[index]} with the host $host got '${kept_answers[index]}', which is the refusal or a server error"
+      return 1
+    }
+  done
+  [ "${kept_answers[0]}" != "$traefik_not_found" ] || {
+    echo "GET $control_path with the host $host got '${kept_answers[0]}', which is not an app's answer"
     return 1
   }
 }
@@ -84,7 +94,7 @@ prove_hosts() {
   for host in "${routed_hosts[@]}"; do
     control_path="$(kubectl get ingresses -A -o jsonpath="{range .items[*]}{range .spec.rules[?(@.host==\"$host\")]}{.http.paths[0].path}{\"\n\"}{end}{end}" | head -n 1)"
     until_true 120 "Traefik refuses the back-channel route on $host and routes $control_path" refused_on "$host" "$control_path" "$round"
-    echo "a Pod in $TUNNEL_NAMESPACE gets Traefik's answer for ${#refused_paths[@]} spellings of $backchannel_path and ${#encoded_paths[@]} encoded ones with the host $host, by POST and GET, and the app's answer for $control_path"
+    echo "a Pod in $TUNNEL_NAMESPACE gets Traefik's answer for ${#refused_paths[@]} spellings of $backchannel_path and ${#encoded_paths[@]} encoded ones with the host $host, by POST and GET, the app's answer for $control_path and no refusal for ${#neighbour_paths[@]} neighbouring paths"
   done
 }
 
