@@ -134,6 +134,12 @@ for root in github cloudflare; do
   expect_refused "--apply with an untracked file in the roots" "unchanged"
   rm "${apply_checkout}/src/opentofu/${root}/unreviewed.auto.tfvars"
 
+  # mise.toml decides where the state, the cache and the lock live, so an edit of it is unreviewed too.
+  echo "# unreviewed" >>"${apply_checkout}/mise.toml"
+  run_script "--apply with a changed mise.toml" 2 "$(plan_json d.forgotten '["forget"]')" --apply
+  expect_refused "--apply with a changed mise.toml" "unchanged"
+  git -C "${apply_checkout}" checkout --quiet -- mise.toml
+
   # Each root has its own state file and its own cache directory with its own lock.
   grep -qxF -- "init -input=false -lockfile=readonly -backend-config=path=${XDG_STATE_HOME}/platform/opentofu/${root}.tfstate" \
     "${work_directory}/init_arguments" || fail "${root}: init names no state file of this root"

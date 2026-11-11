@@ -51,8 +51,8 @@ if [ "${apply}" = true ]; then
   [ "$(git -C "${repository_root}" rev-parse HEAD)" = "$(git -C "${repository_root}" rev-parse origin/main)" ] ||
     fail "--apply runs only when HEAD is origin/main"
   # An ignored file counts too: tofu reads every .tf and auto-loaded .tfvars file in the root.
-  [ -z "$(git -C "${repository_root}" status --porcelain --untracked-files=all --ignored=matching -- src/opentofu scripts/apply_opentofu.sh)" ] ||
-    fail "--apply runs only with src/opentofu/ and this script unchanged"
+  [ -z "$(git -C "${repository_root}" status --porcelain --untracked-files=all --ignored=matching -- src/opentofu mise.toml scripts/apply_opentofu.sh)" ] ||
+    fail "--apply runs only with src/opentofu/, mise.toml and this script unchanged"
 fi
 
 # Not under the cache directory: tofu's plugin sockets live here, and a socket path is limited to 108 bytes.
