@@ -50,6 +50,12 @@ data:
           - auth-root-to-account
           rule: Host(`auth.hallucinai.de`) && Path(`/`)
           service: noop@internal
+        backchannel-logout-refused:
+          entryPoints:
+          - web
+          priority: 1000000
+          rule: PathRegexp(`(?i)^/auth/backchannel-logout/?$`)
+          service: noop@internal
       services:
         auth:
           loadBalancer:
