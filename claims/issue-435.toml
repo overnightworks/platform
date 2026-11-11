@@ -1,8 +1,0 @@
-claim_id = "02fb8441c99d44c6901617cc0a703fb0"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "4c540272685c9fd01b48fd92c4a06fed93f0203f"
-branch = "claude/issue-435-p10-3s-songmaker-runs-its-release-with-2"
-scope = [".github/workflows/ci.yml", "apps/songmaker/acestep-worker.yaml", "apps/songmaker/music-worker.yaml", "apps/songmaker/scoring-worker.yaml", "apps/songmaker/web.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/songmaker", "infrastructure/legal/built/datenschutz.html", "tests/songmaker/route_reaches_the_web.sh"]
-opened_commit = "30b121c77780dd1af36c23b4fecc30abc00ff4a5"
-whole_reason = "The setting does nothing without the release, the legal copy must equal the release it ships with, and the Host cells pass only with both."
