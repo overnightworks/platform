@@ -51,16 +51,19 @@ asset_path="$(grep -o '/resources/[a-z0-9]\{5\}/[^"?]*' "$login_page" | head -n 
 [ -n "$asset_path" ] || fail "the login page names no asset under /resources/<version>/"
 echo "the login page of $LOGIN_CLIENT answers 200 and names the asset $asset_path"
 
-# A realm that stores no user profile has Keycloak's built-in default, which cutover:load's gate compares in its place: master,
-# whose file declares none, answers the vendored copy. The admin API writes multivalued: false on an attribute that omits it
-# and leaves out what is null.
+# A realm that stores no user profile has Keycloak's built-in default, which cutover:load's gate compares in its place: a
+# throwaway realm, which creating one leaves without a profile component (master is bootstrapped with a relaxed stored
+# one), answers the vendored copy. The admin API writes multivalued: false on an attribute that omits it and leaves out
+# what is null.
 default_profile="$(dirname "$REALM_FILE")/default-user-profile.json"
-[ "$(yq '.userProfile' "$MASTER_FILE")" = null ] || fail "$MASTER_FILE declares a user profile, so master stores one"
 profile_form() { jq --sort-keys '(.attributes[] |= (.multivalued //= false)) | del(..|nulls)'; }
-master_profile="$(admin GET master/users/profile | profile_form)"
-[ "$master_profile" = "$(profile_form <"$default_profile")" ] ||
-  fail "master's user profile is not $default_profile, Keycloak's built-in default: $master_profile"
-echo "master, which stores no user profile, answers the built-in default profile that $default_profile holds"
+throwaway_realm="default-profile-probe-$RANDOM"
+admin POST "" "{\"realm\": \"$throwaway_realm\", \"enabled\": true}"
+throwaway_profile="$(admin GET "$throwaway_realm/users/profile" | profile_form)" || throwaway_profile=""
+admin DELETE "$throwaway_realm"
+[ "$throwaway_profile" = "$(profile_form <"$default_profile")" ] ||
+  fail "a realm that stores no user profile answers '$throwaway_profile', not $default_profile, Keycloak's built-in default"
+echo "a realm that stores no user profile answers the built-in default profile that $default_profile holds"
 
 # canonical_form: writes its JSON input with object keys and every list sorted, at every depth. Keycloak returns its
 # sets (a client's optional scopes, redirect URIs) in no fixed order, and walk sorts a list after its elements.
