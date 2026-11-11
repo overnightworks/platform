@@ -1,0 +1,8 @@
+claim_id = "7587fc85b7a84b7e8b8f0817fb17d221"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "4c540272685c9fd01b48fd92c4a06fed93f0203f"
+branch = "claude/issue-444-p10-o-the-platform-s-ai-path-opens-to-it"
+scope = [".github/workflows/ci.yml", "apps/hopin/hopin.yaml", "infrastructure/litellm/egress.yaml", "tests/litellm/front_key_check_routing_and_closed_egress.sh", "tests/litellm/front_key_check_routing_and_provider_egress.sh"]
+opened_commit = "93272813cabb052d475dca6fd8ff9de60d916a8d"
+whole_reason = "The opened rule, the flipped cell that proves it and hopin's caller are one reviewable path; split, a half either proves nothing or opens a path no cell holds."
