@@ -10,13 +10,18 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Resolved before the fakes: the script reads the plan with the locked yq.
+real_mise="$(command -v mise)"
 real_yq="$(cd "${repository_root}" && mise which yq)"
+# mise keeps its tools, trust and cache where they are; only the tasks' XDG directories are temporary.
+export MISE_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/mise" MISE_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/mise"
+export MISE_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/mise" MISE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/mise"
 work_directory="$(mktemp -d)"
 trap 'rm -rf "${work_directory}"' EXIT
 fake_bin="${work_directory}/bin"
 mkdir "${fake_bin}"
 
-# The fake mise installs nothing and names the fake tofu, the real yq and the token file of the case.
+# The fake mise installs nothing, names the fake tofu, the real yq and the token file of the case, and lets the real mise
+# say where the root's files are.
 cat >"${fake_bin}/mise" <<'FAKE'
 #!/usr/bin/env bash
 case "$*" in
@@ -24,6 +29,7 @@ case "$*" in
   "which tofu") echo "${FAKE_BIN}/tofu" ;;
   "which yq") echo "${REAL_YQ}" ;;
   "run cloudflare:token-file") echo "${FAKE_TOKEN_FILE}" ;;
+  "run opentofu:path "*) exec "${REAL_MISE}" --cd "${REPOSITORY_ROOT}" "$@" ;;
   *) echo "fake mise: unexpected $*" >&2; exit 1 ;;
 esac
 FAKE
@@ -45,10 +51,10 @@ FAKE
 chmod +x "${fake_bin}/mise" "${fake_bin}/tofu" "${fake_bin}/gh"
 # mise's locked tools and the operator's login must not answer instead of the fakes.
 export PATH="${fake_bin}:${PATH}" MISE_DISABLE_TOOLS=gh,opentofu,tofu KUBECONFIG=/nonexistent
-export FAKE_BIN="${fake_bin}" REAL_YQ="${real_yq}"
+export FAKE_BIN="${fake_bin}" REAL_YQ="${real_yq}" REAL_MISE="${real_mise}" REPOSITORY_ROOT="${repository_root}"
 apply_marker="${work_directory}/applied"
 export XDG_CACHE_HOME="${work_directory}/cache" XDG_STATE_HOME="${work_directory}/state"
-# The Cloudflare root's credential step passes on an existing, non-empty token file and never reads it.
+# The Cloudflare root's credential step passes on an existing token file with a value and never passes it on.
 export FAKE_TOKEN_FILE="${work_directory}/token"
 echo synthetic-token >"${FAKE_TOKEN_FILE}"
 

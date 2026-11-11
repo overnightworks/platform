@@ -30,9 +30,11 @@ case "${2:-}" in
 esac
 
 root_directory="${repository_root}/src/opentofu/${root}"
-state_file="${XDG_STATE_HOME:-${HOME}/.local/state}/platform/opentofu/${root}.tfstate"
-cache_directory="${XDG_CACHE_HOME:-${HOME}/.cache}/platform/opentofu/${root}"
-kept_plan="${cache_directory}/last.tfplan"
+# mise's hidden task opentofu:path owns these paths, which cloudflare:token-absent reads too.
+state_file="$(mise run opentofu:path "${root}" state)"
+cache_directory="$(mise run opentofu:path "${root}" cache)"
+kept_plan="$(mise run opentofu:path "${root}" plan)"
+data_directory="$(mise run opentofu:path "${root}" data)"
 
 umask 077
 mkdir -p "${cache_directory}"
@@ -58,7 +60,7 @@ trap 'rm -rf "${private_temporary}" "${plan_file}"' EXIT
 
 # The allowlist keeps the caller's tokens, provider settings and TF_* variables away from gh and tofu.
 child_environment=(env -i "PATH=${PATH}" "HOME=${HOME}" "LANG=${LANG:-C.UTF-8}" "TMPDIR=${private_temporary}"
-  TF_INPUT=0 TF_IN_AUTOMATION=1 TF_CLI_CONFIG_FILE=/dev/null "TF_DATA_DIR=${cache_directory}/data")
+  TF_INPUT=0 TF_IN_AUTOMATION=1 TF_CLI_CONFIG_FILE=/dev/null "TF_DATA_DIR=${data_directory}")
 
 cd "${repository_root}"
 mise install --quiet opentofu yq
@@ -82,8 +84,8 @@ case "${root}" in
   cloudflare)
     # The provider reads the file itself; this command checks it and passes on only its path.
     token_file="$(mise run cloudflare:token-file)"
-    [ -f "${token_file}" ] && [ -r "${token_file}" ] && [ -s "${token_file}" ] ||
-      fail "the token file ${token_file} is missing, unreadable or empty; run mise run cloudflare:token"
+    [ -f "${token_file}" ] && [ -r "${token_file}" ] && grep -q '[^[:space:]]' "${token_file}" ||
+      fail "the token file ${token_file} is missing, unreadable or without a value; run mise run cloudflare:token"
     plan_variables=("-var=api_token_file=${token_file}")
     echo "apply_opentofu: planning cloudflare with the token file ${token_file}"
     ;;

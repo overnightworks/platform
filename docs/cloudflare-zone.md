@@ -19,13 +19,14 @@ mocked provider, and the token's path with a fake tofu.
 ## The token
 
 The token is the read-only API token in the file `mise run cloudflare:token` writes, at 0600 in a 0700 directory. The
-command checks that the file exists, is readable and is not empty, naming only its path, and gives tofu only that path
+command checks that the file exists, is readable and holds a value, naming only its path, and gives tofu only that path
 as `-var=api_token_file=…`; the provider reads the value itself. The command keeps the caller's environment from tofu,
 and no argument, environment variable or trace of a run holds the value.
 
 `mise run cloudflare:token-absent` counts the lines that hold the token file's value in the kept plan (read
-decompressed), every file of the root's data directory and the state, prints only the count and fails unless it is 0.
-CI cannot show it, since its tofu is a fake; it is run after each real plan.
+decompressed), every file of the root's data directory and the state if one exists, prints only the count and fails
+unless it is 0. It fails naming the path when the token file, the kept plan or the data directory is missing, since a
+count over nothing proves nothing. CI cannot show it, since its tofu is a fake; it is run after each real plan.
 
 ## Remaining risk
 

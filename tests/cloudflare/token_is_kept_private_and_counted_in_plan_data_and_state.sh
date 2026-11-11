@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Drive `mise run cloudflare:token` and `mise run cloudflare:token-absent` against temporary XDG directories and
 # synthetic values: the writer keeps the token at 0600 in a 0700 directory and prints only the path and refuses an empty
-# value; the count check prints 0 over files without the token and fails with the count over a kept plan, a data file
-# and a state file that hold it, those files written by scripts/apply_opentofu.sh under a fake mise and tofu.
-# Usage: tests/cloudflare/token_writer_and_count_check.sh
+# value, even under an inherited xtrace; the count check prints 0 over files without the token and fails with the count
+# over a kept plan, a data file and a state file that hold it, those files written by scripts/apply_opentofu.sh under a
+# fake mise and tofu, and fails naming the path when the kept plan or the data directory is missing (the state may be).
+# Usage: tests/cloudflare/token_is_kept_private_and_counted_in_plan_data_and_state.sh
 # Proves docs/cloudflare-zone.md: the token path.
 set -euo pipefail
 # shellcheck source=../failure.sh
@@ -21,8 +22,10 @@ mkdir "${fake_bin}"
 mise_dirs=("MISE_DATA_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/mise" "MISE_STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/mise"
   "MISE_CACHE_DIR=${XDG_CACHE_HOME:-$HOME/.cache}/mise" "MISE_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/mise")
 export XDG_CONFIG_HOME="${work_directory}/config" XDG_CACHE_HOME="${work_directory}/cache" XDG_STATE_HOME="${work_directory}/state"
+# task_environment holds more variables for the task, such as an inherited xtrace.
+task_environment=()
 run_task() {
-  (cd "${repository_root}" && env "${mise_dirs[@]}" "${real_mise}" run "$@")
+  (cd "${repository_root}" && env "${mise_dirs[@]}" "${task_environment[@]}" "${real_mise}" run "$@")
 }
 
 # writer <input> [<arguments>...]: sets writer_output, writer_error and writer_status.
@@ -62,6 +65,15 @@ replacement="replacement-${synthetic_token}"
 writer "${replacement}"
 [ "${writer_status}" -eq 0 ] && [ "$(cat "${token_file}")" = "${replacement}" ] || fail "the writer did not replace the token"
 printf '%s\n' "${synthetic_token}" >"${token_file}"
+rm -f "${token_file}"
+
+# An exported SHELLOPTS turns xtrace on in the task's bash, which would print the value it reads.
+task_environment=(SHELLOPTS=xtrace)
+writer "${synthetic_token}"
+task_environment=()
+[ "${writer_status}" -eq 0 ] || fail "the writer failed under xtrace: ${writer_error}"
+[ "$(cat "${token_file}")" = "${synthetic_token}" ] || fail "the writer under xtrace did not keep the token"
+! grep -qF -- "${synthetic_token}" <<<"${writer_output}${writer_error}" || fail "the writer printed the token under xtrace"
 
 # count_check: sets count_output and count_status.
 count_check() {
@@ -77,26 +89,28 @@ case "$*" in
   "which tofu") echo "${FAKE_BIN}/tofu" ;;
   "which yq") echo "${REAL_YQ}" ;;
   "run cloudflare:token-file") echo "${FAKE_TOKEN_FILE}" ;;
+  "run opentofu:path "*) exec "${REAL_MISE}" --cd "${REPOSITORY_ROOT}" "$@" ;;
   *) echo "fake mise: unexpected $*" >&2; exit 1 ;;
 esac
 FAKE
 # The fake tofu keeps what the case sets in a state file, a data file and a plan archive, as tofu does at the paths it is given.
-cat >"${fake_bin}/tofu" <<FAKE
+cat >"${fake_bin}/tofu" <<'FAKE'
 #!/usr/bin/env bash
-case "\$2" in
+work_directory="$(cd "$(dirname "$0")/.." && pwd)"
+case "$2" in
   init)
-    mkdir -p "\${TF_DATA_DIR}"
-    cp '${work_directory}/in_data' "\${TF_DATA_DIR}/provider_cache"
-    for argument in "\$@"; do
-      case "\${argument}" in -backend-config=path=*)
-        mkdir -p "\$(dirname "\${argument#-backend-config=path=}")"
-        cp '${work_directory}/in_state' "\${argument#-backend-config=path=}" ;;
+    mkdir -p "${TF_DATA_DIR}"
+    cp "${work_directory}/in_data" "${TF_DATA_DIR}/provider_cache"
+    for argument in "$@"; do
+      case "${argument}" in -backend-config=path=*)
+        mkdir -p "$(dirname "${argument#-backend-config=path=}")"
+        cp "${work_directory}/in_state" "${argument#-backend-config=path=}" ;;
       esac
     done
     ;;
   plan)
-    for argument in "\$@"; do
-      case "\${argument}" in -out=*) cp '${work_directory}/in_plan.zip' "\${argument#-out=}" ;; esac
+    for argument in "$@"; do
+      case "${argument}" in -out=*) cp "${work_directory}/in_plan.zip" "${argument#-out=}" ;; esac
     done
     ;;
   show) echo '{"resource_changes":[]}' ;;
@@ -109,7 +123,8 @@ write_plan() { # <member content>: a plan archive with a deflated member, as tof
   (cd "${work_directory}" && zip --quiet --compression-method deflate in_plan.zip tfplan)
 }
 run_apply_script() {
-  PATH="${fake_bin}:${PATH}" FAKE_BIN="${fake_bin}" REAL_YQ="${real_yq}" FAKE_TOKEN_FILE="${token_file}" \
+  env "PATH=${fake_bin}:${PATH}" "FAKE_BIN=${fake_bin}" "REAL_YQ=${real_yq}" "REAL_MISE=${real_mise}" "REPOSITORY_ROOT=${repository_root}" \
+    "FAKE_TOKEN_FILE=${token_file}" "${mise_dirs[@]}" \
     "${repository_root}/scripts/apply_opentofu.sh" cloudflare >/dev/null
 }
 
@@ -147,3 +162,29 @@ for broken in missing empty; do
   [ "${count_status}" -ne 0 ] && [ -z "${count_output}" ] || fail "${broken} token file: status ${count_status}, output ${count_output}"
   grep -qF -- "${token_file}" "${work_directory}/count_error" || fail "${broken} token file: the refusal does not name ${token_file}"
 done
+
+# A kept plan or a data directory that is missing is no proof of absence: the check fails naming it, and only the state
+# may not exist.
+printf '%s\n' "${synthetic_token}" >"${token_file}"
+printf 'clean state\n' >"${work_directory}/in_state"
+printf 'clean data\n' >"${work_directory}/in_data"
+write_plan "clean plan, long enough to be deflated: $(printf 'a%.0s' {1..500})"
+run_apply_script || fail "the script's run before the missing files failed"
+kept_plan="$(run_task opentofu:path cloudflare plan)"
+data_directory="$(run_task opentofu:path cloudflare data)"
+state_file="$(run_task opentofu:path cloudflare state)"
+rm -f "${state_file}"
+count_check
+echo "no state: status ${count_status}, count ${count_output}"
+[ "${count_status}" -eq 0 ] && [ "${count_output}" = 0 ] || fail "no state: status ${count_status}, count ${count_output}"
+mv "${data_directory}" "${work_directory}/moved_data"
+count_check
+echo "no data directory: status ${count_status}"
+[ "${count_status}" -ne 0 ] && [ -z "${count_output}" ] || fail "no data directory: status ${count_status}, output ${count_output}"
+grep -qF -- "${data_directory}" "${work_directory}/count_error" || fail "no data directory: the refusal does not name ${data_directory}"
+mv "${work_directory}/moved_data" "${data_directory}"
+rm -f "${kept_plan}"
+count_check
+echo "no kept plan: status ${count_status}"
+[ "${count_status}" -ne 0 ] && [ -z "${count_output}" ] || fail "no kept plan: status ${count_status}, output ${count_output}"
+grep -qF -- "${kept_plan}" "${work_directory}/count_error" || fail "no kept plan: the refusal does not name ${kept_plan}"
