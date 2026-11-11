@@ -22,6 +22,7 @@ Each runbook is one task with its commands and how to see it worked. A new PC st
 - [GPU runtime handler missing](docs/runbooks/gpu-runtime-handler-missing.md): the card's runtime is missing.
 - [Restore a database](docs/runbooks/restore-a-database.md): a namespace's Postgres from its latest backup.
 - [Apply the GitHub settings](docs/runbooks/apply-github-settings.md): plan and apply `src/opentofu/github`.
+- [Plan the Cloudflare zone](docs/runbooks/plan-the-cloudflare-zone.md): read `src/opentofu/cloudflare`'s lookups and measure the token's rights.
 - [Change AI keys and budgets](docs/runbooks/change-ai-keys-and-budgets.md): budgets, an app's key, an admin's budget.
 - [Move the AI group](docs/runbooks/move-the-ai-group.md): the AI group's members move at the live switch.
 
