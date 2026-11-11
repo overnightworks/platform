@@ -1,0 +1,8 @@
+claim_id = "4a56f6b08e1f4ca69a234037d0c38301"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "b92a7e29231c743eca039477e7afa9c542420736"
+branch = "claude/issue-452-traefik-refuses-auth-backchannel-logout"
+scope = [".github/workflows/ci.yml", "infrastructure/traefik", "tests/songmaker/route_reaches_the_web.sh", "tests/traefik"]
+opened_commit = "2042a5bc87aa6a16a26eb83c02202e01d9536723"
+whole_reason = "The refusal, the cell that proves it for every host and the songmaker cells whose expected answer it changes are only green together."
