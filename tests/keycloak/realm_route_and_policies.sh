@@ -180,6 +180,40 @@ expect "302 $public_issuer/account" "$public_host" / --write-out '%{http_code} %
 expect 404 "$UNROUTED_HOST" /
 expect 400 "$public_host" "/realms/$realm/a%2Fb"
 
+# The theme's stylesheets come from the two theme.properties beside the realm's file, named by the realm's themes. Hopin's
+# login page names each stylesheet of login's list, and through Traefik the tunnel's Pod gets each stylesheet of login's
+# and account's lists as text/css.
+theme_root="$(dirname "$REALM_FILE")/themes"
+login_theme="$(yq '.loginTheme' "$REALM_FILE")"
+account_theme="$(yq '.accountTheme' "$REALM_FILE")"
+# theme_styles <theme> <type>: the styles line of that theme's theme.properties, its stylesheets separated by spaces. A
+# fail must not run inside the command substitution, whose output would hold its message.
+theme_styles() { sed -n 's/^styles=//p' "$theme_root/$1/$2/theme.properties"; }
+login_styles="$(theme_styles "$login_theme" login)"
+account_styles="$(theme_styles "$account_theme" account)"
+if [ -z "$login_styles" ] || [ -z "$account_styles" ]; then
+  fail "a theme.properties beside $REALM_FILE lists no styles"
+fi
+read -r -a login_list <<<"$login_styles"
+read -r -a account_list <<<"$account_styles"
+# The version segment of the login page's own asset, which every theme's resources share.
+resources_version="${asset_path#/resources/}"
+resources_version="${resources_version%%/*}"
+for stylesheet in "${login_list[@]}"; do
+  grep -qF "/resources/$resources_version/login/$login_theme/$stylesheet\"" "$login_page" ||
+    fail "the login page of $LOGIN_CLIENT names no stylesheet $stylesheet of the theme $login_theme"
+done
+echo "the login page of $LOGIN_CLIENT names each stylesheet of the theme $login_theme that its theme.properties lists"
+# expect_stylesheet <type> <theme> <stylesheet>: through Traefik the tunnel's Pod gets the stylesheet as text/css.
+expect_stylesheet() {
+  local url="/resources/$resources_version/$1/$2/$3"
+  request "$TUNNEL_NAMESPACE" stylesheet-request "$public_host" "$traefik_url$url" --write-out '%{http_code} %{content_type}'
+  [[ "$status" == "200 text/css"* ]] || fail "Traefik answered '$status', not 200 as text/css, for $public_host$url"
+  echo "Traefik answers 200 as text/css for $public_host$url"
+}
+for stylesheet in "${login_list[@]}"; do expect_stylesheet login "$login_theme" "$stylesheet"; done
+for stylesheet in "${account_list[@]}"; do expect_stylesheet account "$account_theme" "$stylesheet"; done
+
 # B3: only Traefik and Keycloak's own namespace reach it; Keycloak reaches its Postgres and nothing else.
 keycloak_service_url="http://keycloak.$namespace.svc:$(kubectl -n "$namespace" get service keycloak -o jsonpath='{.spec.ports[0].port}')"
 request "$namespace" own-namespace-request "$public_host" "$keycloak_service_url/realms/$realm/.well-known/openid-configuration"

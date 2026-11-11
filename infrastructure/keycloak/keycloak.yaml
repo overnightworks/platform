@@ -102,6 +102,10 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /opt/keycloak/data/tmp
+            # hal's theme hallucinai, which realm.yaml selects for login and account.
+            - name: theme
+              mountPath: /opt/keycloak/themes/hallucinai
+              readOnly: true
       volumes:
         # Keycloak keeps gzip copies of theme files in data/tmp/kc-gzip-cache and never compares them with the file,
         # so the copies must not outlive the pod.
@@ -109,6 +113,81 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 64Mi
+        # The theme's files and the design kit's, one projected volume. A changed file renames its ConfigMap, which
+        # changes this template and rolls the pod: Keycloak reads a theme once, at start.
+        - name: theme
+          projected:
+            sources:
+              - configMap:
+                  name: keycloak-theme
+                  items:
+                    - key: account__resources__content.json
+                      path: account/resources/content.json
+                    - key: account__resources__css__edge-2.css
+                      path: account/resources/css/edge-2.css
+                    - key: account__resources__favicon.svg
+                      path: account/resources/favicon.svg
+                    - key: account__theme.properties
+                      path: account/theme.properties
+                    - key: login__footer.ftl
+                      path: login/footer.ftl
+                    - key: login__messages__messages_de.properties
+                      path: login/messages/messages_de.properties
+                    - key: login__messages__messages_en.properties
+                      path: login/messages/messages_en.properties
+                    - key: login__resources__css__edge-3.css
+                      path: login/resources/css/edge-3.css
+                    - key: login__resources__img__favicon.ico
+                      path: login/resources/img/favicon.ico
+                    - key: login__theme.properties
+                      path: login/theme.properties
+              - configMap:
+                  name: design
+                  items:
+                    - key: design-0.18.0__design.css
+                      path: login/resources/design-0.18.0/design.css
+                    - key: design-0.18.0__fonts__open-sans-LICENSE
+                      path: login/resources/design-0.18.0/fonts/open-sans-LICENSE
+                    - key: design-0.18.0__fonts__open-sans-latin-400-normal.woff2
+                      path: login/resources/design-0.18.0/fonts/open-sans-latin-400-normal.woff2
+                    - key: design-0.18.0__fonts__open-sans-latin-600-normal.woff2
+                      path: login/resources/design-0.18.0/fonts/open-sans-latin-600-normal.woff2
+                    - key: design-0.18.0__fonts__open-sans-latin-ext-400-normal.woff2
+                      path: login/resources/design-0.18.0/fonts/open-sans-latin-ext-400-normal.woff2
+                    - key: design-0.18.0__fonts__open-sans-latin-ext-600-normal.woff2
+                      path: login/resources/design-0.18.0/fonts/open-sans-latin-ext-600-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-LICENSE
+                      path: login/resources/design-0.18.0/fonts/oswald-LICENSE
+                    - key: design-0.18.0__fonts__oswald-latin-400-normal.woff2
+                      path: login/resources/design-0.18.0/fonts/oswald-latin-400-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-latin-700-normal.woff2
+                      path: login/resources/design-0.18.0/fonts/oswald-latin-700-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-latin-ext-400-normal.woff2
+                      path: login/resources/design-0.18.0/fonts/oswald-latin-ext-400-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-latin-ext-700-normal.woff2
+                      path: login/resources/design-0.18.0/fonts/oswald-latin-ext-700-normal.woff2
+                    - key: design-0.18.0__design.css
+                      path: account/resources/design-0.18.0/design.css
+                    - key: design-0.18.0__fonts__open-sans-LICENSE
+                      path: account/resources/design-0.18.0/fonts/open-sans-LICENSE
+                    - key: design-0.18.0__fonts__open-sans-latin-400-normal.woff2
+                      path: account/resources/design-0.18.0/fonts/open-sans-latin-400-normal.woff2
+                    - key: design-0.18.0__fonts__open-sans-latin-600-normal.woff2
+                      path: account/resources/design-0.18.0/fonts/open-sans-latin-600-normal.woff2
+                    - key: design-0.18.0__fonts__open-sans-latin-ext-400-normal.woff2
+                      path: account/resources/design-0.18.0/fonts/open-sans-latin-ext-400-normal.woff2
+                    - key: design-0.18.0__fonts__open-sans-latin-ext-600-normal.woff2
+                      path: account/resources/design-0.18.0/fonts/open-sans-latin-ext-600-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-LICENSE
+                      path: account/resources/design-0.18.0/fonts/oswald-LICENSE
+                    - key: design-0.18.0__fonts__oswald-latin-400-normal.woff2
+                      path: account/resources/design-0.18.0/fonts/oswald-latin-400-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-latin-700-normal.woff2
+                      path: account/resources/design-0.18.0/fonts/oswald-latin-700-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-latin-ext-400-normal.woff2
+                      path: account/resources/design-0.18.0/fonts/oswald-latin-ext-400-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-latin-ext-700-normal.woff2
+                      path: account/resources/design-0.18.0/fonts/oswald-latin-ext-700-normal.woff2
 ---
 apiVersion: v1
 kind: Service
