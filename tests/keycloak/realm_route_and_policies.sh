@@ -256,9 +256,10 @@ request "$namespace" free-egress-request "${cluster_target%:*}" "https://$cluste
 [ "$status" != 000 ] || fail "a Pod in $namespace without Keycloak's labels got no answer from $cluster_target, curl exit \
 code $exit_code, so the probe below proves no policy"
 echo "a Pod in $namespace without Keycloak's labels got $status from $cluster_target"
-# hopin's own policy refuses every sender but Traefik, so only a throwaway target in hopin's namespace, with hopin's
-# labels and port and a throwaway policy admitting Keycloak's namespace to it alone, leaves keycloak-egress as the one
-# thing that can keep Keycloak from that namespace. It never turns ready, so hopin's Service never routes to it.
+# The caller's own policy refuses every sender but Traefik, so only a throwaway target in the caller's namespace, with
+# the caller's labels and port and a throwaway policy admitting Keycloak's namespace to it alone, leaves Keycloak's
+# egress policies as the one thing that can keep Keycloak from that namespace. It never turns ready, so the caller's
+# Service never routes to it.
 target_name="keycloak-egress-target"
 target_objects=("pod/$target_name" "networkpolicy/$target_name")
 remove_target() {

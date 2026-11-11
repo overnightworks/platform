@@ -442,7 +442,7 @@ jobs:
           # An app's manifest whose namespace must not reach Keycloak and whose Service and namespace Keycloak must not
           # reach, the latter through a throwaway target with the app's labels and port; a Service no ingress policy
           # guards and a host outside the cluster, neither of which Keycloak reaches.
-          CALLER_MANIFEST: apps/hopin/hopin.yaml
+          CALLER_MANIFEST: apps/skat/skat.yaml
           CLUSTER_SERVICE: default/kubernetes
           OUTSIDE_TARGET: github.com:443
         run: tests/keycloak/realm_route_and_policies.sh
@@ -515,6 +515,15 @@ jobs:
           CLUSTER_SERVICE: default/kubernetes
           OUTSIDE_TARGET: github.com:443
         run: tests/songmaker/workers_are_ready_at_their_full_ref_and_scoring_reaches_only_its_stores.sh
+
+      - name: Assert that Keycloak's container gets 400 for a malformed logout token at each back-channel URL the realm holds and a Pod beside it without its labels gets no answer
+        if: matrix.part == 'apps'
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+          # The files that hold the apps' side of the pair and Keycloak's, whose three policies the cell names.
+          POLICY_MANIFESTS: apps/hopin/hopin.yaml apps/songmaker/web.yaml infrastructure/keycloak/keycloak-egress.yaml
+        run: tests/keycloak/backchannel_reaches_only_its_apps.sh
 
       - name: P7d cells
         if: matrix.part == 'backup-1'
