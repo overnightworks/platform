@@ -1066,7 +1066,7 @@ quiet = true
 run = "scripts/litellm_keys.sh keys"
 
 [tasks."cutover:preflight"]
-description = "Read whether the cutover's preconditions hold in the cluster, hal's host and GitHub, with reads only; --live adds the theme and the second age recipient, --evidence <new file> keeps the issuer and key ids"
+description = "Read whether the cutover's preconditions hold in the cluster, hal's host and GitHub, with reads only; --live adds the theme, --evidence <new file> keeps the issuer and key ids"
 quiet = true
 run = "scripts/cutover_preflight.sh"
 
