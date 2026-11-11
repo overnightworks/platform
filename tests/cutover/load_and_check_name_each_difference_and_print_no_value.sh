@@ -2,7 +2,7 @@
 # Drive scripts/cutover_load.sh, with the check it calls in tests/keycloak, against fake kubectl, mise, curl, flux, gh,
 # date and a git that refuses every call, all first on PATH, and against fake pg_restore, pg_dump and psql that stand in
 # Keycloak's Postgres container, where the real awk and sha256sum read planted COPY streams. Each difference between a
-# dump and realm.yaml, between the copy and the dump or the evidence, and between the public issuer and the evidence is
+# dump and realm.yaml or the server's Keycloak version, between the copy and the dump or the evidence, and between the public issuer and the evidence is
 # named and ends the run at exit 1, with `nothing loaded` for a refusal before the load; a usage error ends it at exit
 # 2 before any call; and no output holds a planted secret, its digest or a private key. Every call is one of the reads
 # or the two mise tasks the contract lists: the fakes refuse any other, and the cell turns red on each planted call.
@@ -18,7 +18,7 @@ fake_bin="$work_directory/bin"
 container_bin="$work_directory/container-bin"
 postgres_checks="$work_directory/postgres-checks"
 base="$work_directory/base"
-mkdir "$fake_bin" "$container_bin" "$postgres_checks" "$base"
+mkdir "$fake_bin" "$container_bin" "$postgres_checks" "$base" "$work_directory/cases"
 script="$repository_root/scripts/cutover_load.sh"
 forward_port=34568
 realm="$(yq '.realm' "$repository_root/infrastructure/keycloak/realm.yaml")"
@@ -247,7 +247,7 @@ secret_songmaker="$(random_value)" secret_presentator="$(random_value)" secret_m
 secret_agent="$(random_value)" private_key="$(random_value)"
 # What no output may hold: the planted secrets, their digests and the realm key's private part.
 planted_values=("$secret_songmaker" "$secret_presentator" "$secret_master" "$secret_agent" "$private_key"
-  "$(digest_of "$secret_songmaker")" "$(digest_of "$secret_presentator")" "$(digest_of "$secret_agent")")
+  "$(digest_of "$secret_songmaker")" "$(digest_of "$secret_presentator")" "$(digest_of "$secret_agent")" LEAKEDOBJECTNAME)
 
 # copy_table <directory> <table> <columns>: a COPY stream, the rows on stdin with " | " between the fields.
 copy_table() {
@@ -268,7 +268,8 @@ expected_profile="$(yq -o json -I0 '.userProfile | del(.attributes[] | select(.n
   "$repository_root/infrastructure/keycloak/realm.yaml")"
 # The dump stores the file's profile, compact and with Keycloak's default written out on one attribute.
 stored_profile="$(jq -c '.attributes |= map(if .name == "email" then .multivalued = false else . end)' <<<"$expected_profile")"
-
+# set_versions <directory> <version>...: the rows of migration_model, one per argument, in the order given.
+set_versions() { n=0; for v in "${@:2}"; do echo "m$((n += 1)) | $v | $n"; done | copy_table "$1" migration_model 'id, version, update_time'; }
 build_base() {
   mkdir -p "$base/dump-tables" "$base/live-tables" "$base/http" "$base/fail"
   printf '%s\n' "realm-hall | $realm" 'realm-master | master' | copy_table "$base/dump-tables" realm 'id, name'
@@ -305,6 +306,7 @@ comp-profile | declarative-user-profile | realm-hall | declarative-user-profile 
 comp-rsa | rsa-generated | realm-hall | rsa-generated | org.keycloak.keys.KeyProvider | realm-hall | \N
 ROWS
   store_profile "$base/dump-tables" "$stored_profile"
+  set_versions "$base/dump-tables" 1.2.0 24.0.0
   # After config-cli the database holds the dump's rows and the service account of a declared client, with its membership.
   for table in user_entity credential user_group_membership user_attribute; do cp "$base/dump-tables/$table" "$base/live-tables/$table"; done
   append_live_row user_entity 'u-agent | service-account-agent-mozart | realm-hall | c-agent'
@@ -336,17 +338,14 @@ script_env() {
 new_case() {
   case_directory="$work_directory/cases/$1"
   case_name="$1"
-  mkdir -p "$work_directory/cases"
   cp -a "$base" "$case_directory"
   dump="$case_directory/dump.bin" evidence="$case_directory/evidence"
+  serve_copy
 }
 # add_row / append_live_row <table> <row>: a row, with " | " between the fields, before the end of the table's stream.
 add_row_to() {
   local file="$1/$2"
-  head -n -1 "$file" >"$file.new"
-  printf '%s\n' "${3// | /$'\t'}" >>"$file.new"
-  printf '\\.\n' >>"$file.new"
-  mv "$file.new" "$file"
+  { head -n -1 "$file"; printf '%s\n\\.\n' "${3// | /$'\t'}"; } >"$file.new" && mv "$file.new" "$file"
 }
 add_row() { add_row_to "$case_directory/dump-tables" "$1" "$2"; }
 append_live_row() { add_row_to "$base/live-tables" "$1" "$2"; }
@@ -426,30 +425,24 @@ refused_before_the_load() {
   expect_line '; nothing loaded$'
   [ ! -e "$case_directory/log/mise" ] || fail "$case_name: a mise call after a refusal: $(calls_of mise)"
 }
-# refused_at_the_load <case> <setup> <pattern>: a new case, its setup, then the load refused as refused_before_the_load says.
+# refused_at_the_load <case> <setup command> <pattern>: a new case, its setup, then the load refused as refused_before_the_load says.
 refused_at_the_load() {
   new_case "$1"
-  serve_copy
-  "$2"
+  eval "$2"
   run_load
   refused_before_the_load "$3"
 }
-
 # copy_tree <label>: sets tree to a scratch copy of the scripts and the files they read.
 copy_tree() {
   tree="$work_directory/planted-$1"
-  mkdir -p "$tree/scripts" "$tree/tests/keycloak" "$tree/infrastructure/keycloak"
-  cp -p "$repository_root/scripts/cutover_load.sh" "$repository_root/scripts/keycloak_kcadm.sh" "$tree/scripts/"
-  cp -p "$repository_root/tests/keycloak/restored_copy_keeps_its_keys_and_people.sh" "$tree/tests/keycloak/"
-  cp -p "$repository_root/tests/failure.sh" "$tree/tests/"
-  cp -p "$repository_root/infrastructure/keycloak/realm.yaml" "$repository_root/infrastructure/keycloak/default-user-profile.json" "$tree/infrastructure/keycloak/"
+  mkdir -p "$tree"
+  (cd "$repository_root" && cp -p --parents scripts/cutover_load.sh scripts/keycloak_kcadm.sh tests/keycloak/restored_copy_keeps_its_keys_and_people.sh \
+    tests/failure.sh infrastructure/keycloak/{realm.yaml,default-user-profile.json,keycloak.yaml} "$tree")
 }
 
 build_base
-
 # ------------------------------------------------------ interception
 new_case interception
-serve_copy
 for tool in kubectl mise curl flux gh git date; do
   [ "$(script_env bash -c 'command -v "$1"' _ "$tool")" = "$fake_bin/$tool" ] || fail "$tool does not resolve to its fake in the script's environment"
 done
@@ -457,7 +450,6 @@ done
 
 # ------------------------------------------------------ case 1: healthy, in every stored form of the profile
 new_case healthy
-serve_copy
 run_load
 expect_status 0
 expect_line '^cutover:load: the gate passed'
@@ -488,7 +480,6 @@ second_file="$(grep -o 'keycloak-before-move-group-[0-9TZ]*\.dump' "$case_direct
 [ -n "$first_file" ] && [ "$first_file" != "$second_file" ] || fail "healthy: a rerun used the same move-group file: $first_file, $second_file"
 
 new_case last-line-without-newline
-serve_copy
 touch "$case_directory/no-newline"
 run_load
 expect_status 0
@@ -498,7 +489,6 @@ expect_line '^db:load-dump: a last line without a newline$'
 # profile_case <name> <jq program on the stored profile> <the one finding>
 profile_case() {
   new_case "profile-$1"
-  serve_copy
   set_profile "$(jq -c "$2" <<<"$stored_profile")"
   run_load
   refused_before_the_load "^cutover:load: profile $3\$"
@@ -517,7 +507,6 @@ profile_case changed-group '.groups[0].displayHeader = "Other"' 'group user-meta
 # ------------------------------------------------------ case 3: each platform-only object, alone
 object_case() {
   new_case "object-$1-$2"
-  serve_copy
   add_row "$3" "$4"
   run_load
   refused_before_the_load "^cutover:load: the dump holds $1 $2, which only realm.yaml declares\$"
@@ -531,7 +520,6 @@ object_case group agent-adders keycloak_group 'g-adders | agent-adders | \N | re
 object_case group agent-owners keycloak_group 'g-owners | agent-owners | \N | realm-hall'
 # The same names in the realm master are no object of the realm.
 new_case object-in-another-realm
-serve_copy
 add_row client 'c-other | agent-mozart | realm-master | \N'
 run_load
 expect_status 0
@@ -541,36 +529,29 @@ expect_status 0
 # another provider's component stores no profile: Keycloak's built-in default applies, which the gate compares with realm.yaml.
 default_profile_case() {
   new_case "default-$1"
-  serve_copy
   eval "$2"
   run_load
   expect_status 0
   expect_line "^cutover:load: the dump stores no user profile of realm $realm, so Keycloak's default applies\$"
   expect_line '^cutover:load: the gate passed'
 }
-no_profile_config() { grep -v 'cfg-profile' "$case_directory/dump-tables/component_config" >"$case_directory/x" && mv "$case_directory/x" "$case_directory/dump-tables/component_config"; }
-no_profile_component() { drop_rows component 'comp-profile'; }
-null_value() { drop_rows component_config cfg-profile; add_row component_config 'cfg-profile | comp-profile | kc.user.profile.config | \N'; }
-other_realms_component() { no_profile_component; add_row component 'comp-profile-m | declarative-user-profile | realm-master | declarative-user-profile | org.keycloak.userprofile.UserProfileProvider | realm-master | \N'; }
-other_provider_component() { no_profile_component; add_row component 'comp-profile | declarative-user-profile | realm-hall | declarative-user-profile | org.keycloak.keys.KeyProvider | realm-hall | \N'; }
-default_profile_case no-component no_profile_component
-default_profile_case component-without-value no_profile_config
+profile_component='comp-profile | declarative-user-profile | realm-hall | declarative-user-profile | org.keycloak.userprofile.UserProfileProvider | realm-hall | \N'
+default_profile_case no-component 'drop_rows component comp-profile'
+default_profile_case component-without-value 'drop_rows component_config cfg-profile'
 default_profile_case empty-value "set_profile ''"
 default_profile_case blank-value "set_profile ' '"
-default_profile_case null-value null_value
-default_profile_case other-realms-component other_realms_component
-default_profile_case other-providers-component other_provider_component
+default_profile_case null-value 'drop_rows component_config cfg-profile; add_row component_config "cfg-profile | comp-profile | kc.user.profile.config | \\N"'
+default_profile_case other-realms-component 'drop_rows component comp-profile; add_row component "${profile_component//hall/master}"'
+default_profile_case other-providers-component 'drop_rows component comp-profile; add_row component "${profile_component//userprofile.UserProfileProvider/keys.KeyProvider}"'
 # The default is compared with realm.yaml's profile: a realm file that differs from Keycloak's default is named, not skipped.
 new_case default-differs-from-realm-file
-serve_copy
-no_profile_component
+drop_rows component comp-profile
 copy_tree default-differs
 mise exec -- yq -i '.userProfile.attributes += [{"name": "nickname"}]' "$tree/infrastructure/keycloak/realm.yaml"
 run_script "$tree/scripts/cutover_load.sh" load "$dump" "$evidence"
 refused_before_the_load '^cutover:load: profile attribute nickname is missing$'
 # A stored profile is read whole, however it is written, and is compared as the default is.
 new_case stored-equals-the-default
-serve_copy
 set_profile "$(jq -c . "$repository_root/infrastructure/keycloak/default-user-profile.json")"
 run_load
 expect_status 0
@@ -582,29 +563,54 @@ pieces_only() {
   add_row component_config "cfg-piece-0 | comp-profile | config-piece-0 | $(copy_escape "$stored_profile")"
   add_row component_config 'cfg-count | comp-profile | config-pieces-count | 1'
 }
-whole_and_pieces() { add_row component_config "cfg-piece-0 | comp-profile | config-piece-0 | $(copy_escape "$expected_profile")"; }
-whole_twice() { add_row component_config "cfg-twice | comp-profile | kc.user.profile.config | $(copy_escape "$expected_profile")"; }
-two_components() { add_row component 'comp-profile-2 | declarative-user-profile | realm-hall | declarative-user-profile | org.keycloak.userprofile.UserProfileProvider | realm-hall | \N'; }
 unreadable_profile_case profile-in-pieces-only pieces_only
-unreadable_profile_case profile-whole-and-pieces whole_and_pieces
-unreadable_profile_case profile-whole-twice whole_twice
-unreadable_profile_case profile-two-components two_components
-non_object() { set_profile "$value"; }
+unreadable_profile_case profile-whole-and-pieces 'add_row component_config "cfg-piece-0 | comp-profile | config-piece-0 | $(copy_escape "$expected_profile")"'
+unreadable_profile_case profile-whole-twice 'add_row component_config "cfg-twice | comp-profile | kc.user.profile.config | $(copy_escape "$expected_profile")"'
+unreadable_profile_case profile-two-components 'add_row component "${profile_component/comp-profile/comp-profile-2}"'
 # A stored value that is no JSON object is refused as such, also one that is the status word the read prints and one
-# that holds the read's own terminator and a status word behind a JSON object.
-index=0; for value in '"text"' '[1]' '5' 'null' '{"attributes":' 'default-profile' $'{}\nprofile-end\nunreadable-profile'; do
-  refused_at_the_load "profile-no-object-$((index += 1))" non_object "^cutover:load: the dump's stored user profile is no JSON object; nothing loaded\$"
+# that holds every marker the read prints, each on a line of its own. The refusal is the only line of the run.
+index=0; for value in '"text"' '[1]' '5' 'null' '{"attributes":' 'default-profile' $'{}\nprofile-end\nunreadable-profile' $'{}\nobject client LEAKEDOBJECTNAME\nno-realm\nversion 99.0.0\nunreadable-version\nstored-profile\ndefault-profile'; do
+  refused_at_the_load "profile-no-object-$((index += 1))" 'set_profile "$value"' "^cutover:load: the dump's stored user profile is no JSON object; nothing loaded\$"
+  [ "$(grep -c '^cutover:load: ' <<<"$output")" = 1 ] || fail "$case_name: a stored line was read as a marker: $output"
 done
-drop_realm() { drop_rows realm "$realm"; }
-silent_read() { touch "$case_directory/silent-read"; }
-failing_restore() { touch "$case_directory/fail/pg_restore"; }
-refused_at_the_load no-realm drop_realm "^cutover:load: the dump holds no realm $realm\$"
-refused_at_the_load read-returns-nothing silent_read '^cutover:load: the read of the dump returned no answer$'
-refused_at_the_load pg_restore-fails failing_restore '^cutover:load: reading the dump through Keycloak.s Postgres failed; nothing loaded$'
+refused_at_the_load no-realm 'drop_rows realm "$realm"' "^cutover:load: the dump holds no realm $realm\$"
+refused_at_the_load read-returns-nothing 'touch "$case_directory/silent-read"' '^cutover:load: the read of the dump returned no answer$'
+refused_at_the_load pg_restore-fails 'touch "$case_directory/fail/pg_restore"' '^cutover:load: reading the dump through Keycloak.s Postgres failed; nothing loaded$'
+
+# ------------------------------------------------------ case 4b: the dump's Keycloak version against the server's
+# version_case <name> <image tag the tree declares> <the dump's versions, or absent for no table> <pass, unreadable or newer:<the highest>>
+version_case() {
+  new_case "version-$1"
+  copy_tree "version-$1"
+  yq -i "(select(.kind == \"Deployment\").spec.template.spec.containers[] | select(.name == \"keycloak\").image) = \"quay.io/keycloak/keycloak:$2@sha256:0\"" "$tree/infrastructure/keycloak/keycloak.yaml"
+  if [ "$3" = absent ]; then rm "$case_directory/dump-tables/migration_model"; else set_versions "$case_directory/dump-tables" $3; fi
+  local script="$tree/scripts/cutover_load.sh" newer="${4#newer:}"
+  run_load
+  case "$4" in
+    pass) expect_status 0; expect_line '^cutover:load: the gate passed' ;;
+    unreadable) refused_before_the_load '^cutover:load: the dump holds no readable Keycloak version in migration_model$' ;;
+    *) refused_before_the_load "^cutover:load: the dump was migrated by Keycloak ${newer//./[.]}, newer than the platform.s ${2%%-*}; the platform.s Keycloak must run at least ${newer//./[.]}\$" ;;
+  esac
+  [ "$4" = pass ] || expect_line '^cutover:load: the gate refuses the dump with 1 findings; nothing loaded$'
+}
+version_case equal 26.8.1 "1.2.0 26.8.1" pass
+version_case patch-above 26.8.1 26.8.2 newer:26.8.2
+version_case minor-above 26.8.1 26.9.0 newer:26.9.0
+version_case patch-below 26.8.2 26.8.1 pass
+version_case highest-of-several-above 26.8.1 "24.0.0 26.8.2 26.8.0" newer:26.8.2
+version_case highest-of-several-not-above 26.8.1 "26.0.0 26.8.1 24.0.0" pass
+version_case compared-by-number 26.8.9 26.8.10 newer:26.8.10
+version_case build-suffix-equal 26.8.2-1 26.8.2 pass
+version_case build-suffix-above 26.8.1-1 26.8.2 newer:26.8.2
+version_case no-rows 26.8.1 "" unreadable
+version_case no-table 26.8.1 absent unreadable
+version_case null-version 26.8.1 '\N' unreadable
+version_case unparsable 26.8.1 latest unreadable
+version_case unparsable-beside-a-valid-one 26.8.1 "26.8.0 latest" unreadable
+version_case null-beside-a-valid-one 26.8.1 '24.0.0 \N' unreadable
 
 # ------------------------------------------------------ case 5: the load fails
 new_case load-fails
-serve_copy
 touch "$case_directory/fail/mise-load"
 run_load
 expect_status 1
@@ -617,7 +623,6 @@ expect_no_line 'the copy is loaded'
 # exit_one_case <case> <setup command> <pattern>: the load on the healthy copy with the setup ends at exit 1 with a line of the pattern.
 exit_one_case() {
   new_case "$1"
-  serve_copy
   eval "$2"
   run_load
   expect_status 1
@@ -628,7 +633,6 @@ exit_one_case() {
 # copy_case <case> <setup> <pattern> [setup argument]...: the copy check refuses with the pattern, its exit line and the way back.
 copy_case() {
   new_case "copy-$1"
-  serve_copy
   "$2" "${@:4}"
   run_load
   expect_status 1
@@ -657,7 +661,6 @@ copy_case secret-client-missing missing_client "^presentator: client secret DIFF
 planted_values+=(LEAKEDTAILVALUE OTHERTAILVALUE)
 secret_text_case() {
   new_case "secret-text-$1"
-  serve_copy
   sed -i "s/\t$secret_songmaker\$/\t$2/" "$case_directory/dump-tables/client"
   sed -i "s/\t$secret_songmaker\$/\t$3/" "$case_directory/live-tables/client"
   run_load
@@ -694,7 +697,6 @@ back_channel_case another-url "$stated_client" 1 "$other_url" "the file's URL"
 # ------------------------------------------------------ the digests name a missing column and never read equal
 missing_column_case() {
   new_case "missing-column-$1"
-  serve_copy
   sed -i "1s/\\b$3\\b/${3}_renamed/" "$case_directory/$2/$1"
   run_load
   expect_status 1
@@ -756,19 +758,17 @@ expect_line '^cutover:check: key ids: public kid-a kid-b, evidence kid-a kid-b, 
 check_case() {
   new_case "check-$1"
   serve_public
-  "$2"
+  eval "$2"
   run_case check "$evidence"
   expect_status 1
   expect_line "$3"
 }
 public_other_key() { serve "$issuer/protocol/openid-connect/certs" <<<'{"keys":[{"kid":"kid-a"},{"kid":"kid-c"}]}'; }
 public_other_issuer() { serve "$issuer/.well-known/openid-configuration" <<<"{\"issuer\":\"https://other.example.test\",\"jwks_uri\":\"$issuer/protocol/openid-connect/certs\"}"; }
-public_discovery_fails() { fail_url "$issuer/.well-known/openid-configuration"; }
-public_keys_fail() { fail_url "$issuer/protocol/openid-connect/certs"; }
 check_case other-key-id public_other_key '^cutover:check: key ids: public kid-a kid-c, evidence kid-a kid-b, DIFFERS$'
 check_case other-issuer public_other_issuer "^cutover:check: issuer: public https://other.example.test, evidence $issuer, DIFFERS\$"
-check_case discovery-fails public_discovery_fails '^cutover:check: the discovery of .* cannot be read$'
-check_case keys-fail public_keys_fail '^cutover:check: the key set at .* cannot be read$'
+check_case discovery-fails 'fail_url "$issuer/.well-known/openid-configuration"' '^cutover:check: the discovery of .* cannot be read$'
+check_case keys-fail 'fail_url "$issuer/protocol/openid-connect/certs"' '^cutover:check: the key set at .* cannot be read$'
 [ ! -e "$case_directory/log/mise" ] && [ ! -e "$case_directory/log/kubectl" ] || fail "check: it called mise or kubectl"
 
 # ------------------------------------------------------ planted forbidden calls turn the cell red
@@ -790,7 +790,6 @@ plant() {
   mv "$copied.new" "$copied"
   chmod +x "$copied"
   new_case "planted-$label"
-  serve_copy
   run_script "$tree/scripts/cutover_load.sh" load "$dump" "$evidence"
   if logs_clean "$tree"; then fail "planted $label: the cell stayed green"; fi
   echo "planted $label turns the cell red: $reason"

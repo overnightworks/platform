@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # The commands behind `mise run cutover:load <dump> <evidence>` and `mise run cutover:check <evidence>`. The evidence
 # is the file `cutover:preflight --evidence` wrote: the public issuer and its key ids before the outage.
-#   load   refuses a dump that differs from realm.yaml's user profile or holds an object only realm.yaml declares, before
-#          anything is loaded; else loads it (db:load-dump --compare keycloak), checks the copy against the dump and the
-#          evidence, reads the admin group and moves the members of the old AI group without deleting it
+#   load   refuses a dump that differs from realm.yaml's user profile, holds an object only realm.yaml declares or was
+#          migrated by a newer Keycloak than the platform runs, before anything is loaded; else loads it (db:load-dump
+#          --compare keycloak), checks the copy against the dump and the evidence, reads the admin group and moves the
+#          members of the old AI group without deleting it
 #   check  compares the public issuer and its key ids with the evidence
 # Exit 0: everything held. 1: a refusal or a difference, named; a refusal before the load ends in `nothing loaded`, a
 # failure after it names the way back. 2: a usage error before any call. Every line is a name, a count, a key id or
@@ -68,8 +69,12 @@ read_evidence() {
 }
 
 # The awk program the gate runs in the database's container over the dump's COPY streams, which pg_restore writes to
-# stdout without connecting. It prints no-realm, then the console-made objects as `object <kind> <name>`, then
-# default-profile, unreadable-profile or the realm's stored user profile between profile-begin and profile-end. Keycloak 26
+# stdout without connecting. It prints the Keycloak versions in migration_model as `version <major.minor.patch>` lines, or
+# unreadable-version when the table has no row, a row without a version or one whose version does not start with three
+# numbers; then no-realm, or the console-made objects as `object <kind> <name>`, then default-profile, unreadable-profile
+# or stored-profile, after which every line of the realm's stored user profile follows behind the prefix `text `. A marker
+# is a line without that prefix, so no line of a stored value is read as one: the stored text only ever follows the prefix,
+# and the versions and object names printed are digits and dots or names from console_objects. Keycloak 26
 # stores the profile as one component of the realm with exactly one config value kc.user.profile.config
 # (DeclarativeUserProfileProvider's UP_COMPONENT_CONFIG_KEY); a realm without that component, or whose value is missing or
 # blank, has Keycloak's built-in default profile, which is default-profile. Its migration to 23 merges the older
@@ -97,6 +102,10 @@ gate_program='function unescape(text,   result, position, character) {
       if (cell[column["provider_type"]] == "org.keycloak.userprofile.UserProfileProvider") { components++; component_id[components] = cell[column["id"]]; component_realm[components] = cell[column["realm_id"]] }
     } else if (table == "component_config") {
       if (cell[column["name"]] ~ /^(kc[.]user[.]profile[.]config$|config-piece)/) { configs++; config_component[configs] = cell[column["component_id"]]; config_name[configs] = cell[column["name"]]; config_value[configs] = cell[column["value"]] }
+    } else if (table == "migration_model") {
+      version = cell[column["version"]]
+      if (match(version, /^[0-9]+[.][0-9]+[.][0-9]+/) && substr(version, RLENGTH + 1) ~ /^([.-]|$)/) versions[++version_count] = substr(version, 1, RLENGTH)
+      else unreadable_versions++
     } else {
       rows++; row_table[rows] = table; row_realm[rows] = cell[column["realm_id"]]
       row_name[rows] = cell[column[table == "client" ? "client_id" : table == "user_entity" ? "username" : "name"]]
@@ -112,6 +121,8 @@ gate_program='function unescape(text,   result, position, character) {
     copying = 1
   }
   END {
+    if (version_count == 0 || unreadable_versions > 0) print "unreadable-version"
+    else for (i = 1; i <= version_count; i++) print "version " versions[i]
     if (realm_id == "") { print "no-realm"; exit }
     kinds["client"] = "client"; kinds["user_entity"] = "user"; kinds["client_scope"] = "scope"; kinds["keycloak_group"] = "group"
     for (i = 1; i <= rows; i++) {
@@ -130,7 +141,7 @@ gate_program='function unescape(text,   result, position, character) {
     }
     text = unescape(whole)
     if (matches == 0 || (matches == 1 && others == 0 && (wholes == 0 || (wholes == 1 && (whole == "\\N" || text ~ /^[ \t\n\r]*$/))))) print "default-profile"
-    else if (matches == 1 && wholes == 1 && others == 0) print "profile-begin\n" text "\nprofile-end"
+    else if (matches == 1 && wholes == 1 && others == 0) { print "stored-profile"; lines = split(text, parts, "\n"); for (i = 1; i <= lines; i++) print "text " parts[i] }
     else print "unreadable-profile"
   }'
 
@@ -150,37 +161,57 @@ profile_differences() {
       differences("key"; $s | del(.attributes, .groups); $e | del(.attributes, .groups))'
 }
 
+# server_version: the version of the image ref that infrastructure/keycloak/keycloak.yaml declares for Keycloak, without the
+# build suffix of the tag and the digest, or nothing when the tag holds no three-number version.
+server_version() {
+  { yq 'select(.kind == "Deployment").spec.template.spec.containers[] | select(.name == "keycloak").image' "$root/infrastructure/keycloak/keycloak.yaml" |
+    sed -nE 's/^[^:@]*:([0-9]+[.][0-9]+[.][0-9]+)([-@].*)?$/\1/p'; } || true
+}
+
+# version_refusal <markers of the read> <server version>: says what is wrong with the dump's Keycloak version and returns 0, or
+# returns 1 when the dump's highest version is at most the server's. Keycloak migrates a database upward at its start and
+# refuses to run on one that a newer Keycloak migrated.
+version_refusal() {
+  local highest
+  if grep -qx unreadable-version <<<"$1"; then say "the dump holds no readable Keycloak version in migration_model"; return 0; fi
+  highest="$(sed -n 's/^version //p' <<<"$1" | sort -V | tail -n 1)"
+  [ -n "$highest" ] && [ "$(printf '%s\n%s\n' "$highest" "$2" | sort -V | tail -n 1)" != "$2" ] || return 1
+  say "the dump was migrated by Keycloak $highest, newer than the platform's $2; the platform's Keycloak must run at least $highest"
+}
+
 # gate <dump>: refuses before anything is loaded when the dump's user profile differs from realm.yaml's, apart from the
-# attribute agent_owner, which only the platform sets, or when it holds an object only realm.yaml declares. A realm that
-# stores no profile has Keycloak's built-in default, which default-user-profile.json holds as Keycloak 26.8.1 ships it
+# attribute agent_owner, which only the platform sets, when it holds an object only realm.yaml declares, or when a newer
+# Keycloak than the platform's has migrated it. Every marker of the read is a line without the prefix `text `, which every
+# line of a stored value carries, so stored text is never read as a marker. A realm that stores no profile has Keycloak's
+# built-in default, which default-user-profile.json holds as Keycloak 26.8.1 ships it
 # (services/src/main/resources/org/keycloak/userprofile/config/keycloak-default-user-profile.json at the tag 26.8.1); the
 # gate compares that file instead, and a profile it cannot read, or that is no JSON object, refuses.
 gate() {
-  local read_dump status findings=0 line kind name stored expected differences
+  local read_dump markers status findings=0 line kind name stored expected differences platform_version
+  platform_version="$(server_version)"
+  [ -n "$platform_version" ] || fail "infrastructure/keycloak/keycloak.yaml declares no Keycloak image whose tag holds a version"
   read_dump="$(timeout "$deadline" kubectl --namespace keycloak exec --stdin postgres-0 --container postgres -- sh -c \
     'set -o pipefail; timeout "$2" pg_restore --data-only --table=realm --table=client --table=client_scope \
-      --table=keycloak_group --table=user_entity --table=component --table=component_config --file=- 2>/dev/null |
+      --table=keycloak_group --table=user_entity --table=component --table=component_config --table=migration_model --file=- 2>/dev/null |
       awk -v realm="$3" -v wanted="$4" "$1"' sh "$gate_program" "$container_deadline" "$realm" "$console_objects" \
     <"$1" 2>/dev/null)" || fail "reading the dump through Keycloak's Postgres failed"
-  if grep -qx no-realm <<<"$read_dump"; then say "the dump holds no realm $realm"; findings=$((findings + 1)); fi
+  markers="$(grep -v '^text ' <<<"$read_dump" || true)"
+  ! version_refusal "$markers" "$platform_version" || findings=$((findings + 1))
+  if grep -qx no-realm <<<"$markers"; then say "the dump holds no realm $realm"; findings=$((findings + 1)); fi
   while read -r kind name; do
     say "the dump holds $kind $name, which only realm.yaml declares"
     findings=$((findings + 1))
-  done < <(sed -n 's/^object \([a-z]*\) \(.*\)$/\1 \2/p' <<<"$read_dump")
-  # The status is the first line that is no object line; the stored profile is everything between it and the last line,
-  # whatever lines that text holds, and never decides.
-  status="$(grep -vm1 '^object ' <<<"$read_dump" || true)"
+  done < <(sed -n 's/^object \([a-z]*\) \(.*\)$/\1 \2/p' <<<"$markers")
+  status="$(grep -vm1 -e '^object ' -e '^version ' -e '^unreadable-version$' <<<"$markers" || true)"
   if [ "$status" = unreadable-profile ]; then
     say "the dump holds no readable user profile of realm $realm"
     findings=$((findings + 1))
-  elif [ "$status" = default-profile ] || [ "$status" = profile-begin ]; then
+  elif [ "$status" = default-profile ] || [ "$status" = stored-profile ]; then
     if [ "$status" = default-profile ]; then
       say "the dump stores no user profile of realm $realm, so Keycloak's default applies"
       stored="$(cat "$root/infrastructure/keycloak/default-user-profile.json")"
     else
-      stored=$'\n'"$read_dump"
-      stored="${stored#*$'\nprofile-begin\n'}"
-      stored="${stored%$'\nprofile-end'}"
+      stored="$(sed -n 's/^text //p' <<<"$read_dump")"
     fi
     expected="$(yq -o json -I0 '.userProfile | del(.attributes[] | select(.name == "agent_owner"))' "$root/infrastructure/keycloak/realm.yaml")"
     differences="$(profile_differences "$stored" "$expected" 2>/dev/null)" || fail "the dump's stored user profile is no JSON object"
