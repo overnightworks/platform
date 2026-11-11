@@ -253,7 +253,7 @@ planted_values=("$secret_songmaker" "$secret_presentator" "$secret_master" "$sec
 copy_table() {
   { printf 'COPY public.%s (%s) FROM stdin;\n' "$2" "$3"; sed 's/ | /\t/g'; printf '\\.\n'; } >"$1/$2"
 }
-copy_escape() { sed -e 's/\\/\\\\/g' <<<"$1"; }
+copy_escape() { sed -e 's/\\/\\\\/g' <<<"$1" | sed -e ':join' -e 'N' -e '$!b join' -e 's/\n/\\n/g'; }  # copy_escape <text>: the text as one COPY field, a backslash and a line break written as pg_dump writes them.
 # store_profile <directory> <profile json>: the component_config of the user-profile component, the profile in its one value,
 # beside the realm key's private part, which the gate never prints.
 store_profile() {
@@ -373,7 +373,7 @@ serve_public() {
 path_pattern='(^|[^A-Za-z_])PATH=|command[[:space:]]+-p|(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec|timeout [0-9]+))[[:space:]]*"?(/[A-Za-z]|\$HOME|\$\{HOME|~)'
 env_pattern='(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec))[[:space:]]*env[[:space:]]'
 # logs_clean [<tree>]: every call was one of the contract's, from the fakes first on PATH by bare name, and none of the
-# tree's scripts could bypass them.
+# tree's scripts could bypass them. The greps read their whole input: a grep -q that quits early breaks its writer's pipe and pipefail hides the match.
 logs_clean() {
   local tree="${1:-$repository_root}" file
   [ ! -s "$case_directory/log/refused" ] || { reason="a call was refused: $(head -n 1 "$case_directory/log/refused")"; return 1; }
@@ -382,10 +382,10 @@ logs_clean() {
     return 1
   fi
   [ ! -s "$case_directory/log/git" ] || { reason="git was called"; return 1; }
-  grep -vE '^[[:space:]]*#' "$tree/scripts/cutover_load.sh" | grep -qE "$env_pattern" &&
+  grep -vE '^[[:space:]]*#' "$tree/scripts/cutover_load.sh" | grep -E "$env_pattern" >/dev/null &&
     { reason="the script runs env, which would bypass the fakes"; return 1; }
   for file in scripts/cutover_load.sh scripts/keycloak_kcadm.sh tests/keycloak/restored_copy_keeps_its_keys_and_people.sh; do
-    grep -vE '^[[:space:]]*#' "$tree/$file" | grep -qE "$path_pattern" &&
+    grep -vE '^[[:space:]]*#' "$tree/$file" | grep -E "$path_pattern" >/dev/null &&
       { reason="$file assigns PATH, uses command -p or calls an executable by an absolute, \$HOME or ~ path"; return 1; }
   done
   return 0
@@ -433,6 +433,16 @@ refused_at_the_load() {
   "$2"
   run_load
   refused_before_the_load "$3"
+}
+
+# copy_tree <label>: sets tree to a scratch copy of the scripts and the files they read.
+copy_tree() {
+  tree="$work_directory/planted-$1"
+  mkdir -p "$tree/scripts" "$tree/tests/keycloak" "$tree/infrastructure/keycloak"
+  cp -p "$repository_root/scripts/cutover_load.sh" "$repository_root/scripts/keycloak_kcadm.sh" "$tree/scripts/"
+  cp -p "$repository_root/tests/keycloak/restored_copy_keeps_its_keys_and_people.sh" "$tree/tests/keycloak/"
+  cp -p "$repository_root/tests/failure.sh" "$tree/tests/"
+  cp -p "$repository_root/infrastructure/keycloak/realm.yaml" "$repository_root/infrastructure/keycloak/default-user-profile.json" "$tree/infrastructure/keycloak/"
 }
 
 build_base
@@ -502,6 +512,7 @@ profile_case extra-key '. + {unmanagedAttributePolicy: "ENABLED"}' 'key unmanage
 # A quote and a backslash in the stored profile come through the COPY escape as the JSON the profile is.
 profile_case escaped-text '. + {note: "say \"hi\" and a\\b"}' 'key note is extra'
 profile_case missing-group 'del(.groups)' 'group user-metadata is missing'
+profile_case changed-group '.groups[0].displayHeader = "Other"' 'group user-metadata is different'
 
 # ------------------------------------------------------ case 3: each platform-only object, alone
 object_case() {
@@ -526,12 +537,46 @@ run_load
 expect_status 0
 
 # ------------------------------------------------------ case 4: a dump the gate cannot read refuses
-# A missing profile and more than one storage form or value of it are no readable profile, whatever it holds: the gate never picks one.
-unreadable_profile_case() { refused_at_the_load "$1" "$2" "^cutover:load: the dump holds no readable user profile of realm $realm\$"; }
+# A realm without a profile component, with a component that holds no value or a blank one, or with only another realm's or
+# another provider's component stores no profile: Keycloak's built-in default applies, which the gate compares with realm.yaml.
+default_profile_case() {
+  new_case "default-$1"
+  serve_copy
+  eval "$2"
+  run_load
+  expect_status 0
+  expect_line "^cutover:load: the dump stores no user profile of realm $realm, so Keycloak's default applies\$"
+  expect_line '^cutover:load: the gate passed'
+}
 no_profile_config() { grep -v 'cfg-profile' "$case_directory/dump-tables/component_config" >"$case_directory/x" && mv "$case_directory/x" "$case_directory/dump-tables/component_config"; }
 no_profile_component() { drop_rows component 'comp-profile'; }
-unreadable_profile_case no-profile-component-config no_profile_config
-unreadable_profile_case no-profile-component no_profile_component
+null_value() { drop_rows component_config cfg-profile; add_row component_config 'cfg-profile | comp-profile | kc.user.profile.config | \N'; }
+other_realms_component() { no_profile_component; add_row component 'comp-profile-m | declarative-user-profile | realm-master | declarative-user-profile | org.keycloak.userprofile.UserProfileProvider | realm-master | \N'; }
+other_provider_component() { no_profile_component; add_row component 'comp-profile | declarative-user-profile | realm-hall | declarative-user-profile | org.keycloak.keys.KeyProvider | realm-hall | \N'; }
+default_profile_case no-component no_profile_component
+default_profile_case component-without-value no_profile_config
+default_profile_case empty-value "set_profile ''"
+default_profile_case blank-value "set_profile ' '"
+default_profile_case null-value null_value
+default_profile_case other-realms-component other_realms_component
+default_profile_case other-providers-component other_provider_component
+# The default is compared with realm.yaml's profile: a realm file that differs from Keycloak's default is named, not skipped.
+new_case default-differs-from-realm-file
+serve_copy
+no_profile_component
+copy_tree default-differs
+mise exec -- yq -i '.userProfile.attributes += [{"name": "nickname"}]' "$tree/infrastructure/keycloak/realm.yaml"
+run_script "$tree/scripts/cutover_load.sh" load "$dump" "$evidence"
+refused_before_the_load '^cutover:load: profile attribute nickname is missing$'
+# A stored profile is read whole, however it is written, and is compared as the default is.
+new_case stored-equals-the-default
+serve_copy
+set_profile "$(jq -c . "$repository_root/infrastructure/keycloak/default-user-profile.json")"
+run_load
+expect_status 0
+expect_no_line "so Keycloak's default applies"
+# More than one storage form or value of the profile is no readable profile, whatever it holds: the gate never picks one.
+unreadable_profile_case() { refused_at_the_load "$1" "$2" "^cutover:load: the dump holds no readable user profile of realm $realm\$"; }
 pieces_only() {
   drop_rows component_config cfg-profile
   add_row component_config "cfg-piece-0 | comp-profile | config-piece-0 | $(copy_escape "$stored_profile")"
@@ -544,6 +589,12 @@ unreadable_profile_case profile-in-pieces-only pieces_only
 unreadable_profile_case profile-whole-and-pieces whole_and_pieces
 unreadable_profile_case profile-whole-twice whole_twice
 unreadable_profile_case profile-two-components two_components
+non_object() { set_profile "$value"; }
+# A stored value that is no JSON object is refused as such, also one that is the status word the read prints and one
+# that holds the read's own terminator and a status word behind a JSON object.
+index=0; for value in '"text"' '[1]' '5' 'null' '{"attributes":' 'default-profile' $'{}\nprofile-end\nunreadable-profile'; do
+  refused_at_the_load "profile-no-object-$((index += 1))" non_object "^cutover:load: the dump's stored user profile is no JSON object; nothing loaded\$"
+done
 drop_realm() { drop_rows realm "$realm"; }
 silent_read() { touch "$case_directory/silent-read"; }
 failing_restore() { touch "$case_directory/fail/pg_restore"; }
@@ -562,6 +613,16 @@ expect_line "the way back is the operator's cd ~/srv/hal && hal start keycloak\$
 expect_no_line 'the copy is loaded'
 [ "$(wc -l <"$case_directory/log/mise")" = 1 ] || fail "load-fails: mise ran after the failed load"
 [ "$(wc -l <"$case_directory/log/kubectl")" = 1 ] || fail "load-fails: kubectl ran after the failed load: $(calls_of kubectl)"
+
+# exit_one_case <case> <setup command> <pattern>: the load on the healthy copy with the setup ends at exit 1 with a line of the pattern.
+exit_one_case() {
+  new_case "$1"
+  serve_copy
+  eval "$2"
+  run_load
+  expect_status 1
+  expect_line "$3"
+}
 
 # ------------------------------------------------------ case 6: the copy against the dump and the evidence
 # copy_case <case> <setup> <pattern> [setup argument]...: the copy check refuses with the pattern, its exit line and the way back.
@@ -646,101 +707,44 @@ missing_column_case user_attribute live-tables user_id
 missing_column_case user_entity dump-tables id
 # A data row that starts like a COPY header is a row, and no message of the digests prints a cell of it.
 planted_values+=(LEAKEDATTRIBUTEVALUE)
-new_case row-starting-with-copy
-serve_copy
-add_row_to "$case_directory/live-tables" user_attribute 'COPY  | LEAKEDATTRIBUTEVALUE | x | u-alice'
-run_load
-expect_status 1
-expect_line '^user_attribute: .*, DIFFERS$'
-new_case empty-digests
-serve_copy
-touch "$case_directory/silent-digest"
-run_load
-expect_status 1
-expect_line 'the digest of the dump or of the database is empty'
+exit_one_case row-starting-with-copy "add_row_to \"\$case_directory/live-tables\" user_attribute 'COPY  | LEAKEDATTRIBUTEVALUE | x | u-alice'" '^user_attribute: .*, DIFFERS$'
+exit_one_case empty-digests 'touch "$case_directory/silent-digest"' 'the digest of the dump or of the database is empty'
 expect_no_line 'rows in the database.*equal$'
-new_case missing-table
-serve_copy
-: >"$case_directory/live-tables/credential"
-run_load
-expect_status 1
-expect_line 'the stream holds no COPY of the table'
+exit_one_case missing-table ': >"$case_directory/live-tables/credential"' 'the stream holds no COPY of the table'
 
 # ------------------------------------------------------ cases 8 and 9: the admin group and the move
-new_case admin-group-missing
-serve_copy
-rm "$case_directory/admin-group-id"
-run_load
-expect_status 1
-expect_line "^cutover:load: $realm holds no /services/litellm/admin or Keycloak cannot be read"
+exit_one_case admin-group-missing 'rm "$case_directory/admin-group-id"' "^cutover:load: $realm holds no /services/litellm/admin or Keycloak cannot be read"
 [ ! -e "$case_directory/log/mise" ] || [ "$(wc -l <"$case_directory/log/mise")" = 1 ] || fail "admin-group-missing: the move ran"
-new_case move-fails
-serve_copy
-touch "$case_directory/fail/mise-move"
-run_load
-expect_status 1
-expect_line '^keycloak:move-group: a member could not join'
+exit_one_case move-fails 'touch "$case_directory/fail/mise-move"' '^keycloak:move-group: a member could not join'
 expect_line "the way back is the operator's cd ~/srv/hal && hal start keycloak\$"
 
 # ------------------------------------------------------ case 10: usage errors end at exit 2 before any call
-expect_usage() { expect_status 2; expect_line 'usage: '; empty_logs; }
-new_case usage-no-argument
-run_case load
-expect_usage
-new_case usage-no-evidence
-run_case load "$dump"
-expect_usage
-new_case usage-no-command
-run_case
-expect_usage
-new_case usage-unknown-command
-run_case copy "$dump"
-expect_usage
-new_case usage-dump-is-a-directory
-run_case load "$case_directory/dump-tables" "$evidence"
-expect_status 2
-empty_logs
-new_case usage-no-issuer
-grep -v '^issuer ' "$evidence" >"$case_directory/x" && mv "$case_directory/x" "$evidence"
-run_load
-expect_status 2
-empty_logs
-new_case usage-two-issuers
-echo "issuer https://other.example.test" >>"$evidence"
-run_load
-expect_status 2
-empty_logs
-new_case usage-no-kid
-grep -v '^kid ' "$evidence" >"$case_directory/x" && mv "$case_directory/x" "$evidence"
-run_load
-expect_status 2
-empty_logs
-new_case usage-unknown-key
-echo "token not-a-key-of-the-evidence" >>"$evidence"
-run_load
-expect_status 2
-expect_no_line 'not-a-key-of-the-evidence'
-empty_logs
+# usage_case <case> <setup command> [<pattern>]: the setup changes the evidence or load_args, and the run ends at exit 2 before any call.
+usage_case() {
+  new_case "usage-$1"
+  load_args=(load "$dump" "$evidence")
+  eval "$2"
+  run_case "${load_args[@]}"
+  cd "$repository_root"
+  expect_status 2
+  empty_logs
+  [ -z "${3-}" ] || expect_line "$3"
+}
+usage_case no-argument 'load_args=(load)' 'usage: '
+usage_case no-evidence 'load_args=(load "$dump")' 'usage: '
+usage_case no-command 'load_args=()' 'usage: '
+usage_case unknown-command 'load_args=(copy "$dump")' 'usage: '
+usage_case dump-is-a-directory 'load_args=(load "$case_directory/dump-tables" "$evidence")'
+usage_case no-issuer "grep -v '^issuer ' \"\$evidence\" >\"\$case_directory/x\" && mv \"\$case_directory/x\" \"\$evidence\""
+usage_case two-issuers 'echo "issuer https://other.example.test" >>"$evidence"'
+usage_case no-kid "grep -v '^kid ' \"\$evidence\" >\"\$case_directory/x\" && mv \"\$case_directory/x\" \"\$evidence\""
+planted_values+=(not-a-key-of-the-evidence LEAKEDEVIDENCELINE)
+usage_case unknown-key 'echo "token not-a-key-of-the-evidence" >>"$evidence"'
 # A line of the evidence without a space is a whole value: no output holds it.
-planted_values+=(LEAKEDEVIDENCELINE)
-new_case usage-unknown-key-without-space
-echo "API_KEY=LEAKEDEVIDENCELINE" >>"$evidence"
-run_load
-expect_status 2
-expect_line "$evidence holds a key that the evidence of cutover:preflight does not have"
-empty_logs
+usage_case unknown-key-without-space 'echo "API_KEY=LEAKEDEVIDENCELINE" >>"$evidence"' ' holds a key that the evidence of cutover:preflight does not have'
+usage_case check-no-evidence-file 'load_args=(check "$case_directory/absent")'
 # A relative evidence path would put the move-group dump in the checkout.
-new_case usage-relative-evidence
-cd "$case_directory"
-run_case load "$dump" evidence
-cd "$repository_root"
-expect_status 2
-expect_line 'the evidence path evidence is not absolute'
-empty_logs
-new_case usage-check-no-evidence-file
-run_case check "$case_directory/absent"
-expect_status 2
-empty_logs
+usage_case relative-evidence 'cd "$case_directory"; load_args=(load "$dump" evidence)' 'the evidence path evidence is not absolute'
 
 # ------------------------------------------------------ case 11: cutover:check
 new_case check-equal
@@ -768,18 +772,14 @@ check_case keys-fail public_keys_fail '^cutover:check: the key set at .* cannot 
 [ ! -e "$case_directory/log/mise" ] && [ ! -e "$case_directory/log/kubectl" ] || fail "check: it called mise or kubectl"
 
 # ------------------------------------------------------ planted forbidden calls turn the cell red
-# plant <label> <file in the tree> <line>...: a scratch copy of the tree's scripts in which the file makes the calls right
+# plant <label> <file in the tree> <line>...: a copy of the tree in which the file makes the calls right
 # after its anchor line (`set -euo pipefail`, or the first line of the kcadm library's code, or plant_anchor), run on the
 # healthy scenario.
 plant() {
-  local label="$1" file="$2" tree="$work_directory/planted-$1" copied line anchor="${plant_anchor:-set -euo pipefail}"
+  local label="$1" file="$2" copied line anchor="${plant_anchor:-set -euo pipefail}"
   shift 2
   [ "$file" != scripts/keycloak_kcadm.sh ] || anchor='kcadm_path=/opt/keycloak/bin/kcadm.sh'
-  mkdir -p "$tree/scripts" "$tree/tests/keycloak" "$tree/infrastructure/keycloak"
-  cp -p "$repository_root/scripts/cutover_load.sh" "$repository_root/scripts/keycloak_kcadm.sh" "$tree/scripts/"
-  cp -p "$repository_root/tests/keycloak/restored_copy_keeps_its_keys_and_people.sh" "$tree/tests/keycloak/"
-  cp -p "$repository_root/tests/failure.sh" "$tree/tests/"
-  cp -p "$repository_root/infrastructure/keycloak/realm.yaml" "$tree/infrastructure/keycloak/"
+  copy_tree "$label"
   copied="$tree/$file"
   {
     while IFS= read -r line; do
