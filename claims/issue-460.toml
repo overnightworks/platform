@@ -1,7 +1,0 @@
-claim_id = "f14e7c9d41c645bd8682daf00eb1a13b"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "c85cbd7949106ac41de394da49e718553fce6711"
-branch = "claude/issue-460-cutover-load-s-gate-refuses-a-dump-migra"
-scope = ["scripts/cutover_load.sh", "tests/cutover/load_and_check_name_each_difference_and_print_no_value.sh"]
-opened_commit = "9cba7025faafcf799cd46834a75d0dc916fbed15"
