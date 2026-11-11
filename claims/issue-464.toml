@@ -1,0 +1,7 @@
+claim_id = "3e9765a60ed54dd692731a0f1c1891ef"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "69b867b656b0937f0ecd8d9fab95b867689f1cd0"
+branch = "claude/issue-464-run-speech-image-v2026-11-11-1"
+scope = ["apps/speech-runtime/speech-runtime.yaml"]
+opened_commit = "0436232f146d2498c1811b77118c23e8287d9860"
