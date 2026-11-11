@@ -1096,9 +1096,9 @@ fi
 # Sets the person-linked facts of an agent's service account, which no realm file holds: kcadm runs in Keycloak's own
 # container signed in as config-cli, so no secret reaches this shell.
 [tasks."keycloak:agent-owner"]
-description = "Set an agent's agent_owner to a person and add that person to /agent-owners, with --adder also to /agent-adders"
+description = "Set an agent's agent_owner to a person and add that person to /agent-owners; --adder also adds them to /agent-adders, whose members may add every owner's agent in every app. Before a second person joins /agent-owners, the agents repository's per-owner split must have landed"
 usage = '''
-flag "--adder" help="Also add the person to /agent-adders"
+flag "--adder" help="Also add the person to /agent-adders, whose members may add every owner's agent in every app"
 arg "<client>" help="A service-account client of realm.yaml with agent-identity among its default scopes"
 arg "<username>" help="A person, which no service account is"
 '''
