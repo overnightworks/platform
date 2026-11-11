@@ -1,8 +1,0 @@
-claim_id = "03789506c1ba46f4aa1837c6ef8830ed"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "b92a7e29231c743eca039477e7afa9c542420736"
-branch = "claude/issue-454-cutover-load-s-gate-compares-keycloak-s"
-scope = [".github/workflows/ci.yml", "infrastructure/keycloak/default-user-profile.json", "quality/config.toml", "scripts/cutover_load.sh", "tests/cutover/load_and_check_name_each_difference_and_print_no_value.sh", "tests/keycloak/realm_route_and_policies.sh"]
-opened_commit = "a368f038d31dd4b5b62d6d8c11f8575e88e46026"
-whole_reason = "The gate's rule, the vendored default it compares, the fake cases and the cell that proves the default against the running Keycloak are one safeguard that is only sound together."
