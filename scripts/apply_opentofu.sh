@@ -30,6 +30,8 @@ case "${2:-}" in
 esac
 
 root_directory="${repository_root}/src/opentofu/${root}"
+# mise looks its tasks up from the current directory, so every mise call runs inside the repository.
+cd "${repository_root}"
 # mise's hidden task opentofu:path owns these paths, which cloudflare:token-absent reads too.
 state_file="$(mise run opentofu:path "${root}" state)"
 cache_directory="$(mise run opentofu:path "${root}" cache)"
@@ -62,7 +64,6 @@ trap 'rm -rf "${private_temporary}" "${plan_file}"' EXIT
 child_environment=(env -i "PATH=${PATH}" "HOME=${HOME}" "LANG=${LANG:-C.UTF-8}" "TMPDIR=${private_temporary}"
   TF_INPUT=0 TF_IN_AUTOMATION=1 TF_CLI_CONFIG_FILE=/dev/null "TF_DATA_DIR=${data_directory}")
 
-cd "${repository_root}"
 mise install --quiet opentofu yq
 tofu="$(mise which tofu)"
 yq="$(mise which yq)"

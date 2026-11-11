@@ -16,6 +16,8 @@ trap 'chmod -R u+rwX "${work_directory}"; rm -rf "${work_directory}"' EXIT
 fake_bin="${work_directory}/bin"
 records="${work_directory}/records"
 mkdir "${fake_bin}" "${records}"
+# The script is run from outside the repository, as an operator may.
+cd "${work_directory}"
 
 # Each fake appends its argv and its own environment to files of its name. The script runs under an environment built
 # here from synthetic values only, so the recorded environments hold nothing of the caller's, and the token file's value
@@ -29,7 +31,7 @@ case "$*" in
   "which tofu") echo "${FAKE_BIN}/tofu" ;;
   "which yq") echo "${REAL_YQ}" ;;
   "run cloudflare:token-file") echo "${FAKE_TOKEN_FILE}" ;;
-  "run opentofu:path "*) exec "${REAL_MISE}" --cd "${REPOSITORY_ROOT}" "$@" ;;
+  "run opentofu:path "*) exec "${REAL_MISE}" "$@" ;;
   *) echo "fake mise: unexpected $*" >&2; exit 1 ;;
 esac
 FAKE

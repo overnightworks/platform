@@ -89,7 +89,7 @@ case "$*" in
   "which tofu") echo "${FAKE_BIN}/tofu" ;;
   "which yq") echo "${REAL_YQ}" ;;
   "run cloudflare:token-file") echo "${FAKE_TOKEN_FILE}" ;;
-  "run opentofu:path "*) exec "${REAL_MISE}" --cd "${REPOSITORY_ROOT}" "$@" ;;
+  "run opentofu:path "*) exec "${REAL_MISE}" "$@" ;;
   *) echo "fake mise: unexpected $*" >&2; exit 1 ;;
 esac
 FAKE
@@ -123,9 +123,9 @@ write_plan() { # <member content>: a plan archive with a deflated member, as tof
   (cd "${work_directory}" && zip --quiet --compression-method deflate in_plan.zip tfplan)
 }
 run_apply_script() {
-  env "PATH=${fake_bin}:${PATH}" "FAKE_BIN=${fake_bin}" "REAL_YQ=${real_yq}" "REAL_MISE=${real_mise}" "REPOSITORY_ROOT=${repository_root}" \
+  (cd "${work_directory}" && env "PATH=${fake_bin}:${PATH}" "FAKE_BIN=${fake_bin}" "REAL_YQ=${real_yq}" "REAL_MISE=${real_mise}" "REPOSITORY_ROOT=${repository_root}" \
     "FAKE_TOKEN_FILE=${token_file}" "${mise_dirs[@]}" \
-    "${repository_root}/scripts/apply_opentofu.sh" cloudflare >/dev/null
+    "${repository_root}/scripts/apply_opentofu.sh" cloudflare >/dev/null)
 }
 
 printf 'clean state\n' >"${work_directory}/in_state"

@@ -19,6 +19,8 @@ work_directory="$(mktemp -d)"
 trap 'rm -rf "${work_directory}"' EXIT
 fake_bin="${work_directory}/bin"
 mkdir "${fake_bin}"
+# The script is run from outside the repository, as an operator may.
+cd "${work_directory}"
 
 # The fake mise installs nothing, names the fake tofu, the real yq and the token file of the case, and lets the real mise
 # say where the root's files are.
@@ -29,7 +31,7 @@ case "$*" in
   "which tofu") echo "${FAKE_BIN}/tofu" ;;
   "which yq") echo "${REAL_YQ}" ;;
   "run cloudflare:token-file") echo "${FAKE_TOKEN_FILE}" ;;
-  "run opentofu:path "*) exec "${REAL_MISE}" --cd "${REPOSITORY_ROOT}" "$@" ;;
+  "run opentofu:path "*) exec "${REAL_MISE}" "$@" ;;
   *) echo "fake mise: unexpected $*" >&2; exit 1 ;;
 esac
 FAKE
@@ -69,6 +71,8 @@ plan_json() {
 apply_checkout="${work_directory}/checkout"
 mkdir -p "${apply_checkout}/scripts" "${apply_checkout}/src/opentofu/github" "${apply_checkout}/src/opentofu/cloudflare"
 cp "${repository_root}/scripts/apply_opentofu.sh" "${apply_checkout}/scripts/"
+cp "${repository_root}/mise.toml" "${repository_root}/mise.lock" "${apply_checkout}/"
+export MISE_TRUSTED_CONFIG_PATHS="${apply_checkout}"
 touch "${apply_checkout}/src/opentofu/github/main.tf" "${apply_checkout}/src/opentofu/cloudflare/main.tf"
 git -C "${apply_checkout}" init --quiet --initial-branch=main
 git -C "${apply_checkout}" add .
