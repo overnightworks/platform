@@ -273,7 +273,7 @@ check_I1() {
     adminnetworkpolicies.policy.networking.k8s.io baselineadminnetworkpolicies.policy.networking.k8s.io \
     --ignore-not-found --output name; then
     [ -z "$crds" ] || doubt "an admin-policy CRD exists: $crds"
-    for namespace in keycloak litellm hopin; do
+    for namespace in keycloak litellm hopin songmaker; do
       if ! render="$(render_of "$namespace")" ||
         ! fetch live kubectl --namespace "$namespace" get networkpolicies --output json; then
         doubt "the render or the read of namespace $namespace failed"
