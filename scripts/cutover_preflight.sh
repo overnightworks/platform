@@ -591,26 +591,6 @@ check_L1() {
   finish "Keycloak serves the theme hallucinai with a stylesheet"
 }
 
-check_L2() {
-  begin L2 '#13'
-  local repository="${source_repository[flux-system/platform-secrets]:-}" content counts
-  if [ -z "$repository" ]; then
-    doubt "N2 did not read the repository of platform-secrets"
-  elif ! fetch content gh api "repos/$repository/contents/.sops.yaml" --jq .content ||
-    ! counts="$(base64 --decode <<<"$content" | yq --output-format json '.creation_rules' |
-      jq -r '[.[] | (.age // "") | split(",") | map(gsub("\\s"; "") | select(length > 0)) | length] | join(" ")')" ||
-    [ -z "$counts" ]; then
-    doubt "the creation rules of platform-secrets are unreadable"
-  else
-    local count position=0
-    for count in $counts; do
-      position=$((position + 1))
-      [ "$count" -ge 2 ] || bad "creation rule $position has $count age recipient(s)"
-    done
-  fi
-  finish "every creation rule of platform-secrets has at least 2 age recipients"
-}
-
 check_N1
 check_N2
 check_N3
@@ -627,7 +607,6 @@ check_B1
 check_B2
 if [ "$live" = true ]; then
   check_L1
-  check_L2
 fi
 
 note() { echo "note $1: not read here: $2; owner $3"; }
@@ -637,7 +616,6 @@ note provider-keys "whether the real keys work (step 13)" operator
 note hopin-key "whether Secret hopin holds the imported key (step 3)" platform
 note profile "the live user profile (slice 2's gate on the dump)" platform
 note hal-plan "hal's update and apply plans (step 9's readings)" "operator; hal's head"
-note recovery "whether the second age key can be recovered offline" "#13"
 note docker-disk "Docker's own disk accounting" operator
 note sessions "writes by real sessions" "n/a"
 

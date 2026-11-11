@@ -97,7 +97,7 @@ while [ $# -gt 0 ]; do
 done
 [ "$method" = GET ] || refuse "gh method $method"
 case "$endpoint" in
-  repos/*/*/commits/* | repos/*/*/contents/.sops.yaml) ;;
+  repos/*/*/commits/*) ;;
   *) refuse "gh endpoint" ;;
 esac
 file="$scenario/gh/$(tr / _ <<<"$endpoint")"
@@ -241,8 +241,6 @@ build_base() {
     kustomization tunnel ./infrastructure/cloudflared flux-system "$head_sha"; } | items >"$base/kustomizations.json"
   echo "$head_sha" >"$base/gh/repos_overnightworks_platform_commits_main"
   echo "$secrets_sha" >"$base/gh/repos_overnightworks_platform-secrets_commits_main"
-  printf 'creation_rules:\n  - path_regex: a\n    age: age1canaryone,age1canarytwo\n  - age: >-\n      age1canarythree,\n      age1canaryfour\n' |
-    base64 >"$base/gh/repos_overnightworks_platform-secrets_contents_.sops.yaml"
   : >"$base/crds.out"
   {
     policy_document keycloak keycloak-egress "$keycloak_egress"; echo ---
@@ -378,13 +376,13 @@ for tool in kubectl flux gh curl docker systemctl lslocks df git; do
 done
 
 # ------------------------------------------------------ case 1: all healthy
-required_ids=(N1 N2 N3 N4 I1 I2 H1 H2 H3 H4 H5 D1 B1 B2 L1 L2)
-note_ids=(pod-logs record provider-keys hopin-key profile hal-plan recovery docker-disk sessions)
+required_ids=(N1 N2 N3 N4 I1 I2 H1 H2 H3 H4 H5 D1 B1 B2 L1)
+note_ids=(pod-logs record provider-keys hopin-key profile hal-plan docker-disk sessions)
 run_case --live --evidence "$case_directory/evidence"
 expect_status 0
 for id in "${required_ids[@]}"; do expect_line "^ok $id: "; done
 for id in "${note_ids[@]}"; do expect_line "^note $id: not read here: .*; owner "; done
-expect_line "^cutover:preflight: 16 ok, 0 FAIL, 0 UNKNOWN; evidence $case_directory/evidence\$"
+expect_line "^cutover:preflight: 15 ok, 0 FAIL, 0 UNKNOWN; evidence $case_directory/evidence\$"
 expect_line "^ok I2: .*auth is not among them"
 expect_line '^ok I1: .*hopin/http-from-traefik-only'
 expect_no_line 'age1canary'
@@ -413,7 +411,6 @@ fail_D1() { printf '        Avail Use%% Mounted on\n1000 40%% /\n100000000000 40
 fail_B1() { edit k8up.json '.items += [{kind: "Backup", metadata: {namespace: "keycloak", name: "b"}, status: {started: true}}]'; }
 fail_B2() { hold_lock 4242 null; }
 fail_L1() { serve "" "http://127.0.0.1:$forward_port/realms/$realm/protocol/openid-connect/auth" 200 text/html <<<'<link href="/resources/abcde/login/keycloak.v2/css/login.css">'; }
-fail_L2() { printf 'creation_rules:\n  - age: age1canaryone\n' | base64 >"$case_directory/gh/repos_overnightworks_platform-secrets_contents_.sops.yaml"; }
 unknown_N1() { touch "$case_directory/fail/kubectl-nodes"; }
 unknown_N2() { touch "$case_directory/fail/gh-repos_overnightworks_platform_commits_main"; }
 unknown_N3() { touch "$case_directory/fail/kubectl-kustomizations"; }
@@ -429,10 +426,9 @@ unknown_D1() { touch "$case_directory/fail/docker-exec"; }
 unknown_B1() { touch "$case_directory/fail/kubectl-k8up"; }
 unknown_B2() { touch "$case_directory/fail/lslocks"; }
 unknown_L1() { touch "$case_directory/fail/kubectl-portforward"; }
-unknown_L2() { touch "$case_directory/fail/gh-repos_overnightworks_platform-secrets_contents_.sops.yaml"; }
 declare -A owner_of=([N1]=platform [N2]='overnightworks/platform-secrets' [N3]=hopin [N4]=platform [I1]='platform, the layer' [I2]=platform
   [H1]="hal's head" [H2]="hal's head" [H3]="hal's head" [H4]="hal's head" [H5]="hal's head; operator" [D1]='platform; operator frees space'
-  [B1]="k8up" [B2]="hal's head" [L1]='#4' [L2]='#13')
+  [B1]="k8up" [B2]="hal's head" [L1]='#4')
 for id in "${required_ids[@]}"; do
   new_case "fail-$id"
   "fail_$id"
@@ -486,11 +482,11 @@ for arguments in "--evidence $case_directory/existing" "--bogus" "--evidence" "-
   empty_logs
 done
 
-# ------------------------------------------------------ case 6: no --live, no L1 or L2
+# ------------------------------------------------------ case 6: no --live, no L1
 new_case without-live
 run_case
 expect_status 0
-expect_no_line '^(ok|FAIL|UNKNOWN) L[12]:'
+expect_no_line '^(ok|FAIL|UNKNOWN) L1:'
 expect_line '^cutover:preflight: 14 ok, 0 FAIL, 0 UNKNOWN; evidence none$'
 [ ! -e "$case_directory/log/kubectl" ] || ! grep -q port-forward "$case_directory/log/kubectl" || fail "without-live: a port-forward was started"
 
