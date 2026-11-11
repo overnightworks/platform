@@ -1,7 +1,0 @@
-claim_id = "87efba436c6647d5913065f040292a3f"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "726673c035f8ae19c9ab7b9d4aa0342d5084a0aa"
-branch = "claude/issue-440-cutover-preflight-live-no-longer-require"
-scope = ["mise.toml", "scripts/cutover_preflight.sh", "tests/cutover/preflight_names_each_missing_precondition.sh"]
-opened_commit = "c841c9f4d93eae5b7bc2bfcd70a45735bfffd65b"
