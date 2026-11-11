@@ -59,33 +59,38 @@ spec:
           configMap:
             name: legal-pages
         - name: assets
-          configMap:
-            name: legal-assets
-            items:
-              - key: design-0.18.0__design.css
-                path: design-0.18.0/design.css
-              - key: design-0.18.0__fonts__open-sans-LICENSE
-                path: design-0.18.0/fonts/open-sans-LICENSE
-              - key: design-0.18.0__fonts__open-sans-latin-400-normal.woff2
-                path: design-0.18.0/fonts/open-sans-latin-400-normal.woff2
-              - key: design-0.18.0__fonts__open-sans-latin-600-normal.woff2
-                path: design-0.18.0/fonts/open-sans-latin-600-normal.woff2
-              - key: design-0.18.0__fonts__open-sans-latin-ext-400-normal.woff2
-                path: design-0.18.0/fonts/open-sans-latin-ext-400-normal.woff2
-              - key: design-0.18.0__fonts__open-sans-latin-ext-600-normal.woff2
-                path: design-0.18.0/fonts/open-sans-latin-ext-600-normal.woff2
-              - key: design-0.18.0__fonts__oswald-LICENSE
-                path: design-0.18.0/fonts/oswald-LICENSE
-              - key: design-0.18.0__fonts__oswald-latin-400-normal.woff2
-                path: design-0.18.0/fonts/oswald-latin-400-normal.woff2
-              - key: design-0.18.0__fonts__oswald-latin-700-normal.woff2
-                path: design-0.18.0/fonts/oswald-latin-700-normal.woff2
-              - key: design-0.18.0__fonts__oswald-latin-ext-400-normal.woff2
-                path: design-0.18.0/fonts/oswald-latin-ext-400-normal.woff2
-              - key: design-0.18.0__fonts__oswald-latin-ext-700-normal.woff2
-                path: design-0.18.0/fonts/oswald-latin-ext-700-normal.woff2
-              - key: legal-2.css
-                path: legal-2.css
+          projected:
+            sources:
+              - configMap:
+                  name: legal-assets
+                  items:
+                    - key: legal-2.css
+                      path: legal-2.css
+              - configMap:
+                  name: design
+                  items:
+                    - key: design-0.18.0__design.css
+                      path: design-0.18.0/design.css
+                    - key: design-0.18.0__fonts__open-sans-LICENSE
+                      path: design-0.18.0/fonts/open-sans-LICENSE
+                    - key: design-0.18.0__fonts__open-sans-latin-400-normal.woff2
+                      path: design-0.18.0/fonts/open-sans-latin-400-normal.woff2
+                    - key: design-0.18.0__fonts__open-sans-latin-600-normal.woff2
+                      path: design-0.18.0/fonts/open-sans-latin-600-normal.woff2
+                    - key: design-0.18.0__fonts__open-sans-latin-ext-400-normal.woff2
+                      path: design-0.18.0/fonts/open-sans-latin-ext-400-normal.woff2
+                    - key: design-0.18.0__fonts__open-sans-latin-ext-600-normal.woff2
+                      path: design-0.18.0/fonts/open-sans-latin-ext-600-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-LICENSE
+                      path: design-0.18.0/fonts/oswald-LICENSE
+                    - key: design-0.18.0__fonts__oswald-latin-400-normal.woff2
+                      path: design-0.18.0/fonts/oswald-latin-400-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-latin-700-normal.woff2
+                      path: design-0.18.0/fonts/oswald-latin-700-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-latin-ext-400-normal.woff2
+                      path: design-0.18.0/fonts/oswald-latin-ext-400-normal.woff2
+                    - key: design-0.18.0__fonts__oswald-latin-ext-700-normal.woff2
+                      path: design-0.18.0/fonts/oswald-latin-ext-700-normal.woff2
         - name: temporary
           emptyDir: {}
 ---
