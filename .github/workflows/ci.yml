@@ -597,6 +597,7 @@ jobs:
         env:
           LEGAL_NAMESPACE: legal
           LEGAL_LAYER_DIRECTORY: infrastructure/legal
+          DESIGN_DIRECTORY: infrastructure/design
           LEGAL_HOST: hallucinai.de
           OTHER_NAMESPACE: legal-client
         run: tests/legal/five_paths_through_traefik.sh
