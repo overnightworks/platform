@@ -81,7 +81,7 @@ spec:
       targetPort: litellm
 ---
 # Only LiteLLM reaches agent-egress, which sends only to cluster DNS and to port 443 outside the pod and service
-# networks, so the Service kubernetes and every other cluster address stay out of reach.
+# networks, so those networks, the Service kubernetes among them, stay out of reach.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

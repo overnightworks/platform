@@ -208,7 +208,8 @@ echo "LiteLLM reaches only its Postgres and agent-egress, agent-egress only the 
 # 30 s dial timeout, so a dropped dial ends in the gateway too. Exit 35 is curl's failed handshake: a refused connection
 # to the gateway (7), a certificate (60) or a timeout (28) fail the cell, and so does a dial error.
 # sni_handshake <SNI>: a Pod with LiteLLM's labels opens TLS with the SNI to agent-egress; sets exit_code, output to
-# curl's error or, when it connected, its verify result, and dial_error to the dial errors the gateway logged since.
+# curl's errors and, when it connected, its verify result as the last line (a refused attempt that a retry followed
+# stays above it), and dial_error to the dial errors the gateway logged since.
 sni_handshake() {
   local start
   start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -225,7 +226,7 @@ sni_handshake "$THIRD_SNI"
   fail "the SNI $THIRD_SNI did not end in the gateway without a dial: exit $exit_code, $output, [$dial_error]"
 echo "agent-egress ends the SNI $THIRD_SNI without a dial: $output"
 sni_handshake "$provider_host"
-[ "$exit_code" = 0 ] && [ "$output" = 0 ] && [ -z "$dial_error" ] ||
+[ "$exit_code" = 0 ] && [ "${output##*$'\n'}" = 0 ] && [ -z "$dial_error" ] ||
   fail "the SNI $provider_host did not complete a verified TLS handshake with the provider: exit $exit_code, $output,
 [$dial_error]"
 echo "agent-egress passes $provider_host to the provider, whose certificate completes the handshake"
