@@ -1,8 +1,0 @@
-claim_id = "84cf3e8f74924cbd938d37ee95c87ac2"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "e7f39cf82b2a346386ab1a58a7bbe71ff1da0b64"
-branch = "claude/issue-461-traefik-s-back-channel-refusal-also-cove"
-scope = ["infrastructure/traefik", "tests/songmaker/route_reaches_the_web.sh", "tests/traefik"]
-opened_commit = "dfc4fbc569a7b93c3cbadba26831c280b8b1a39e"
-whole_reason = "The rule and the cell that proves each spelling against the running Traefik are only sound together."
