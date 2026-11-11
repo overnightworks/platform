@@ -426,6 +426,14 @@ refused_before_the_load() {
   expect_line '; nothing loaded$'
   [ ! -e "$case_directory/log/mise" ] || fail "$case_name: a mise call after a refusal: $(calls_of mise)"
 }
+# refused_at_the_load <case> <setup> <pattern>: a new case, its setup, then the load refused as refused_before_the_load says.
+refused_at_the_load() {
+  new_case "$1"
+  serve_copy
+  "$2"
+  run_load
+  refused_before_the_load "$3"
+}
 
 build_base
 
@@ -518,24 +526,12 @@ run_load
 expect_status 0
 
 # ------------------------------------------------------ case 4: a dump the gate cannot read refuses
-new_case no-profile-component-config
-serve_copy
-grep -v 'cfg-profile' "$case_directory/dump-tables/component_config" >"$case_directory/x" && mv "$case_directory/x" "$case_directory/dump-tables/component_config"
-run_load
-refused_before_the_load "^cutover:load: the dump holds no readable user profile of realm $realm\$"
-new_case no-profile-component
-serve_copy
-drop_rows component 'comp-profile'
-run_load
-refused_before_the_load "^cutover:load: the dump holds no readable user profile of realm $realm\$"
-# More than one storage form or value is no readable profile, whatever it holds: the gate never picks one.
-unreadable_profile_case() {
-  new_case "$1"
-  serve_copy
-  "$2"
-  run_load
-  refused_before_the_load "^cutover:load: the dump holds no readable user profile of realm $realm\$"
-}
+# A missing profile and more than one storage form or value of it are no readable profile, whatever it holds: the gate never picks one.
+unreadable_profile_case() { refused_at_the_load "$1" "$2" "^cutover:load: the dump holds no readable user profile of realm $realm\$"; }
+no_profile_config() { grep -v 'cfg-profile' "$case_directory/dump-tables/component_config" >"$case_directory/x" && mv "$case_directory/x" "$case_directory/dump-tables/component_config"; }
+no_profile_component() { drop_rows component 'comp-profile'; }
+unreadable_profile_case no-profile-component-config no_profile_config
+unreadable_profile_case no-profile-component no_profile_component
 pieces_only() {
   drop_rows component_config cfg-profile
   add_row component_config "cfg-piece-0 | comp-profile | config-piece-0 | $(copy_escape "$stored_profile")"
@@ -548,21 +544,12 @@ unreadable_profile_case profile-in-pieces-only pieces_only
 unreadable_profile_case profile-whole-and-pieces whole_and_pieces
 unreadable_profile_case profile-whole-twice whole_twice
 unreadable_profile_case profile-two-components two_components
-new_case no-realm
-serve_copy
-drop_rows realm "$realm"
-run_load
-refused_before_the_load "^cutover:load: the dump holds no realm $realm\$"
-new_case read-returns-nothing
-serve_copy
-touch "$case_directory/silent-read"
-run_load
-refused_before_the_load '^cutover:load: the read of the dump returned no answer$'
-new_case pg_restore-fails
-serve_copy
-touch "$case_directory/fail/pg_restore"
-run_load
-refused_before_the_load '^cutover:load: reading the dump through Keycloak.s Postgres failed; nothing loaded$'
+drop_realm() { drop_rows realm "$realm"; }
+silent_read() { touch "$case_directory/silent-read"; }
+failing_restore() { touch "$case_directory/fail/pg_restore"; }
+refused_at_the_load no-realm drop_realm "^cutover:load: the dump holds no realm $realm\$"
+refused_at_the_load read-returns-nothing silent_read '^cutover:load: the read of the dump returned no answer$'
+refused_at_the_load pg_restore-fails failing_restore '^cutover:load: reading the dump through Keycloak.s Postgres failed; nothing loaded$'
 
 # ------------------------------------------------------ case 5: the load fails
 new_case load-fails
@@ -577,13 +564,15 @@ expect_no_line 'the copy is loaded'
 [ "$(wc -l <"$case_directory/log/kubectl")" = 1 ] || fail "load-fails: kubectl ran after the failed load: $(calls_of kubectl)"
 
 # ------------------------------------------------------ case 6: the copy against the dump and the evidence
+# copy_case <case> <setup> <pattern> [setup argument]...: the copy check refuses with the pattern, its exit line and the way back.
 copy_case() {
   new_case "copy-$1"
   serve_copy
-  "$2"
+  "$2" "${@:4}"
   run_load
   expect_status 1
   expect_line "$3"
+  expect_line '^cutover:load: the check of the copy against the dump and the evidence exited 1'
   expect_line "the way back is the operator's cd ~/srv/hal && hal start keycloak\$"
   [ "$(wc -l <"$case_directory/log/mise")" = 1 ] || fail "$case_name: the move ran: $(calls_of mise)"
 }
@@ -599,20 +588,10 @@ copy_case other-table other_table '^credential: .*DIFFERS$'
 copy_case temporary-administrator temporary_administrator 'are temporary administrators: DIFFERS'
 
 # ------------------------------------------------------ case 7: a client secret
-secret_case() {
-  new_case "secret-$1"
-  serve_copy
-  "$2"
-  run_load
-  expect_status 1
-  expect_line "^$3: client secret DIFFERS\$"
-  expect_line '^cutover:load: the check of the copy against the dump and the evidence exited 1'
-  [ "$(wc -l <"$case_directory/log/mise")" = 1 ] || fail "$case_name: the move ran"
-}
 other_secret() { sed -i "s/\t$secret_songmaker\$/\t$(random_value)/" "$case_directory/live-tables/client"; }
 missing_client() { sed -i '/\tpresentator\t/d' "$case_directory/live-tables/client"; }
-secret_case differs other_secret songmaker
-secret_case client-missing missing_client presentator
+copy_case secret-differs other_secret "^songmaker: client secret DIFFERS\$"
+copy_case secret-client-missing missing_client "^presentator: client secret DIFFERS\$"
 # A secret whose stored text holds an escaped newline or ends in one is compared as stored and never printed in part.
 planted_values+=(LEAKEDTAILVALUE OTHERTAILVALUE)
 secret_text_case() {
@@ -629,12 +608,8 @@ secret_text_case newline-equal 'firstpart\\nLEAKEDTAILVALUE' 'firstpart\\nLEAKED
 secret_text_case newline-differs 'firstpart\\nLEAKEDTAILVALUE' 'firstpart\\nOTHERTAILVALUE' 1
 secret_text_case trailing-newline-equal 'abc\\n' 'abc\\n' 0
 secret_text_case trailing-newline-differs 'abc\\n' 'abc' 1
-new_case secret-none-in-the-dump
-serve_copy
-sed -i 's/\t'"$secret_songmaker"'$/\t\\N/; s/\t'"$secret_presentator"'$/\t\\N/' "$case_directory/dump-tables/client"
-run_load
-expect_status 1
-expect_line 'the dump holds no client secret of .*DIFFERS'
+dump_without_secrets() { sed -i 's/\t'"$secret_songmaker"'$/\t\\N/; s/\t'"$secret_presentator"'$/\t\\N/' "$case_directory/dump-tables/client"; }
+copy_case secret-none-in-the-dump dump_without_secrets 'the dump holds no client secret of .*DIFFERS'
 
 # ------------------------------------------------------ case 7b: each client's back-channel URL against the realm file
 cleared_line="$(grep -m 1 '|0|' "$base/live-back-channels")" stated_line="$(grep -m 1 '|1|' "$base/live-back-channels")"
@@ -643,19 +618,12 @@ cleared_client="${cleared_line%%|*}" stated_client="${stated_line%%|*}" stated_u
 leaked_url="http://leaked-$(random_value).example.test/auth/backchannel-logout"
 other_url="http://other-$(random_value).example.test/auth/backchannel-logout"
 planted_values+=("$stated_url" "$leaked_url" "$other_url")
-# back_channel_case <name> <client> <rows> <URL> <expected>: the copy's answer for one client becomes "<rows>|<URL>", and the run
-# ends at exit 1 naming that client alone.
+# set_back_channel <client> <rows> <URL>: the copy's answer for that client becomes "<rows>|<URL>", the others stay.
+set_back_channel() { { grep -v "^$1|" "$case_directory/live-back-channels"; printf '%s|%s|%s\n' "$1" "$2" "$3"; } >"$case_directory/x" && mv "$case_directory/x" "$case_directory/live-back-channels"; }
+# back_channel_case <name> <client> <rows> <URL> <expected>: the copy refuses that client alone, the others answer equal.
 back_channel_case() {
-  new_case "back-channel-$1"
-  serve_copy
-  { grep -v "^$2|" "$case_directory/live-back-channels"; printf '%s|%s|%s\n' "$2" "$3" "$4"; } >"$case_directory/live-back-channels.new"
-  mv "$case_directory/live-back-channels.new" "$case_directory/live-back-channels"
-  run_load
-  expect_status 1
-  expect_line "^$2: back-channel URL DIFFERS \\(expected $5\\)\$"
+  copy_case "back-channel-$1" set_back_channel "^$2: back-channel URL DIFFERS \\(expected $5\\)\$" "$2" "$3" "$4"
   [ "$(grep -c 'back-channel URL DIFFERS' <<<"$output")" = 1 ] || fail "$case_name: another client was named: $output"
-  expect_line "the way back is the operator's cd ~/srv/hal && hal start keycloak\$"
-  [ "$(wc -l <"$case_directory/log/mise")" = 1 ] || fail "$case_name: the move ran"
 }
 back_channel_case still-held "$cleared_client" 1 "$leaked_url" absent
 back_channel_case stored-empty "$cleared_client" 1 "" absent
