@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: scoring-worker
-          image: ghcr.io/overnightworks/songmaker/scoring-worker:2026.11.09.1@sha256:b64c27b9c8adc07c19e77fd2ad72b87c39ff6a7839dc4101ae38adfd0c1ced90
+          image: ghcr.io/overnightworks/songmaker/scoring-worker:2026.11.11.1@sha256:04c69e9d7cf043ceb37ca3aba80be5d1b0072c0134d592972148903979a10214
           args: [songmaker_cli.scoring_worker.ScoringWorkerSettings]
           env:
             - name: DATABASE_URL

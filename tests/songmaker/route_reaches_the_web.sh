@@ -4,7 +4,10 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 
 cleanup() {
-  kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod worker-host-client unknown-host-client --ignore-not-found --wait --timeout=2m
+  kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod worker-host-client unknown-host-client backchannel-control \
+    backchannel-public-host backchannel-public-host-port --ignore-not-found --wait --timeout=2m
+  kubectl --namespace "$TUNNEL_NAMESPACE" delete pod backchannel-absolute-form backchannel-internal-origin-form \
+    backchannel-forwarded-host backchannel-public-host-port-through-traefik --ignore-not-found --wait --timeout=2m
   kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
 }
 trap cleanup EXIT
@@ -14,7 +17,12 @@ manifest=apps/songmaker/web.yaml
 public_host="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' "$manifest")"
 worker_host="$(yq 'select(.kind == "Service") | .metadata.name' "$manifest")"
 web_port="$(kubectl --namespace traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
-traefik_url="http://traefik.traefik.svc:${web_port}/health"
+traefik_origin="http://traefik.traefik.svc:${web_port}"
+traefik_url="$traefik_origin/health"
+web_service_port="$(yq 'select(.kind == "Service") | .spec.ports[0].port' "$manifest")"
+backchannel_host="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "web") | .env[] | select(.name == "BACKCHANNEL_LOGOUT_HOST") | .value' "$manifest")"
+backchannel_path=/auth/backchannel-logout
+backchannel_url="http://$worker_host.$SONGMAKER_NAMESPACE.svc.cluster.local:${web_service_port}$backchannel_path"
 web_url="http://web.$SONGMAKER_NAMESPACE.svc.cluster.local:8080/health"
 
 # The web's pod is Ready, so a 404 only means Traefik has not read the Ingress yet.
@@ -31,6 +39,53 @@ request "$SONGMAKER_NAMESPACE" worker-host-client "$worker_host" "$web_url"
 request "$SONGMAKER_NAMESPACE" unknown-host-client "unknown.invalid" "$web_url"
 [ "$status" = 400 ] || fail "a Pod in $SONGMAKER_NAMESPACE got '$status' for /health with a host off the list, not 400"
 echo "the web answers 200 for the host $worker_host and 400 for a host off the list"
+
+# post_malformed_token <namespace> <name> <host> <url> [<curl argument>...]: a POST of a malformed logout_token, so 400 means
+# the route was reached and the token refused; sets answer_status and answer_body from the response.
+# shellcheck disable=SC2034 # the answers are what the sourcing cells below read.
+post_malformed_token() {
+  local response
+  request_body "$@" --request POST --data logout_token=malformed --include
+  [ "$exit_code" = 0 ] || fail "the request of $2 in $1 ended with curl's exit code $exit_code"
+  response="$(tr -d '\r' <<<"$status")"
+  answer_status="$(awk 'NR == 1 { print $2 }' <<<"$response")"
+  answer_body="$(sed '1,/^$/d' <<<"$response")"
+}
+
+# expect_answer <namespace> <name> <host> <url> <status> <body> <curl argument>...: the answer has the status, and the body
+# "empty" (the web's own 404), "text" (a proxy's 404 page) or "any". A Pod in the tunnel's namespace sends through Traefik.
+expect_answer() {
+  local namespace="$1" name="$2" host="$3" url="$4" expected_status="$5" expected_body="$6"
+  shift 6
+  post_malformed_token "$namespace" "$name" "$host" "$url" "$@"
+  [ "$answer_status" = "$expected_status" ] ||
+    fail "a Pod in $namespace got '$answer_status' for the logout with the host $host at $url, not $expected_status"
+  case "$expected_body" in
+    empty) [ -z "$answer_body" ] || fail "the answer to $name carried a body, so it is not the web's empty $expected_status" ;;
+    text) [ -n "$answer_body" ] || fail "the answer to $name had no body, so it is not the proxy's $expected_status" ;;
+    any) ;;
+  esac
+  echo "a Pod in $namespace got $answer_status with a $expected_body body for the logout with the host $host at $url"
+}
+
+[ "$backchannel_host" = "$worker_host.$SONGMAKER_NAMESPACE.svc:$web_service_port" ] ||
+  fail "BACKCHANNEL_LOGOUT_HOST is '$backchannel_host', not the Service's name, namespace and port"
+expect_answer "$SONGMAKER_NAMESPACE" backchannel-control "$backchannel_host" "$backchannel_url" 400 any
+expect_answer "$SONGMAKER_NAMESPACE" backchannel-public-host "$public_host" "$backchannel_url" 404 empty
+expect_answer "$SONGMAKER_NAMESPACE" backchannel-public-host-port "$public_host:$web_service_port" "$backchannel_url" 404 empty
+
+# Through Traefik no request reaches the route: an absolute-form target with the internal Host is routed by its own host
+# (the public one), and the origin-form internal Host matches no router.
+post_malformed_token "$TUNNEL_NAMESPACE" backchannel-absolute-form "$backchannel_host" "$traefik_origin$backchannel_path" \
+  --request-target "http://$public_host$backchannel_path"
+[ "$answer_status" = 404 ] ||
+  fail "a Pod in $TUNNEL_NAMESPACE got '$answer_status' through Traefik for the absolute-form target of $public_host with the host $backchannel_host, not 404"
+if [ -z "$answer_body" ]; then answered_by="the web's empty 404"; else answered_by="Traefik's 404"; fi
+echo "a Pod in $TUNNEL_NAMESPACE got $answered_by through Traefik for the absolute-form target of $public_host with the host $backchannel_host"
+expect_answer "$TUNNEL_NAMESPACE" backchannel-internal-origin-form "$backchannel_host" "$traefik_origin$backchannel_path" 404 text
+expect_answer "$TUNNEL_NAMESPACE" backchannel-forwarded-host "$public_host" "$traefik_origin$backchannel_path" 404 empty \
+  --header "X-Forwarded-Host: $backchannel_host"
+expect_answer "$TUNNEL_NAMESPACE" backchannel-public-host-port-through-traefik "$public_host:$web_service_port" "$traefik_origin$backchannel_path" 404 empty
 
 request "$OTHER_NAMESPACE" other-client "$public_host" "$web_url" --max-time 5 --retry 0
 [ "$status" = 000 ] || fail "a Pod in $OTHER_NAMESPACE got '$status' from the web"
