@@ -136,7 +136,7 @@ github_head() {
   fetch github_sha gh api "repos/$1/commits/$2" --jq .sha && [[ $github_sha =~ ^[0-9a-f]{40}$ ]]
 }
 
-declare -A source_commit=() source_repository=() kustomization_path=() kustomization_revision=()
+declare -A source_commit=() kustomization_path=() kustomization_revision=()
 
 check_N1() {
   begin N1 platform
@@ -183,7 +183,6 @@ check_N2() {
         doubt "$key url is not on github.com" "$key"
         continue
       fi
-      source_repository[$key]="$repository"
       if [ -z "$branch" ]; then
         doubt "$key follows no branch" "$repository"
       elif ! github_head "$repository" "$branch"; then
