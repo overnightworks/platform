@@ -727,6 +727,9 @@ jobs:
       - name: Check the GitHub settings root against its lock and mocked tests
         run: mise run github:test
 
+      - name: Check the Cloudflare root against its lock and mocked tests and that its token reaches no argument, environment or trace
+        run: mise run cloudflare:test
+
   images:
     runs-on: ubuntu-latest
     timeout-minutes: 10
