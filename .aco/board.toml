@@ -1,1 +1,1 @@
-dependency_paths = [".github/workflows/", "src/opentofu/github/main.tf", "src/opentofu/github/.terraform.lock.hcl"]
+dependency_paths = [".github/workflows/", "src/opentofu/github/main.tf", "src/opentofu/github/.terraform.lock.hcl", "src/opentofu/cloudflare/main.tf", "src/opentofu/cloudflare/.terraform.lock.hcl"]
