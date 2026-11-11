@@ -5,14 +5,14 @@ Impact: the security and merge settings of the managed repositories and the orga
 
 ## Check
 
-1. An agent, with the operator's own gh login: `scripts/apply_github_settings.sh`, on any commit. Exit 0: no change;
+1. An agent, with the operator's own gh login: `scripts/apply_opentofu.sh github`, on any commit. Exit 0: no change;
    2: the changes it lists; 1: a failure, a plan that deletes or replaces an object included.
 
 ## Fix
 
-1. An agent, in a clean checkout at `origin/main`: `scripts/apply_github_settings.sh --apply`. It applies the plan
+1. An agent, in a clean checkout at `origin/main`: `scripts/apply_opentofu.sh github --apply`. It applies the plan
    of that same run.
-2. An agent: `scripts/apply_github_settings.sh`. It exits 0.
+2. An agent: `scripts/apply_opentofu.sh github`. It exits 0.
 
 Rollback: a pull request that undoes the change, then steps 1 and 2. A removal follows
 [the GitHub settings reference](../github-settings.md), since a plan that deletes is refused.
