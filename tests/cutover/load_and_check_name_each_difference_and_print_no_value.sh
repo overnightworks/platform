@@ -235,6 +235,7 @@ sql="${5#--command=}"
 case "$5" in
   *is_temporary_admin*) cat "$scenario/temporary-count" ;;
   *service_account_client_link*) cat "$scenario/live-service-accounts" ;;
+  *client_attributes*) cat "$scenario/live-back-channels" ;;
   *) refuse "psql query" ;;
 esac
 FAKE
@@ -310,6 +311,9 @@ ROWS
   append_live_row user_group_membership 'g-services | u-agent'
   echo u-agent >"$base/live-service-accounts"
   echo 0 >"$base/temporary-count"
+  # The healthy copy holds the realm file's back-channel URLs: "<client>|<rows>|<URL>" for every declared client.
+  yq -r '.clients[] | .clientId + "|" + (if (.attributes["backchannel.logout.url"] // "") == "" then "0" else "1" end) + "|" + (.attributes["backchannel.logout.url"] // "")' \
+    "$repository_root/infrastructure/keycloak/realm.yaml" >"$base/live-back-channels"
   cp "$base/dump-tables/realm" "$base/dump-tables/client" "$base/live-tables/"
   append_live_row client "c-agent | agent-mozart | realm-hall | $secret_agent"
   jq -n '{spec: {backoffLimit: 6}, status: {failed: 1, conditions: [{type: "Complete", status: "True"}]}}' >"$base/job.json"
@@ -445,6 +449,7 @@ expect_line '^1 service accounts of declared clients were added since the dump'
 expect_line '^songmaker: client secret equal$'
 expect_line '^presentator: client secret equal$'
 expect_line '^agent-mozart: client secret not in the dump, not compared$'
+while IFS='|' read -r client _; do expect_line "^$client: back-channel URL equal\$"; done <"$base/live-back-channels"
 expect_no_line 'DIFFERS'
 expect_no_line 'admin-cli|hopin-web'
 expect_line '^cutover:load: /services/litellm/admin: 3 members$'
@@ -630,6 +635,32 @@ sed -i 's/\t'"$secret_songmaker"'$/\t\\N/; s/\t'"$secret_presentator"'$/\t\\N/' 
 run_load
 expect_status 1
 expect_line 'the dump holds no client secret of .*DIFFERS'
+
+# ------------------------------------------------------ case 7b: each client's back-channel URL against the realm file
+cleared_line="$(grep -m 1 '|0|' "$base/live-back-channels")" stated_line="$(grep -m 1 '|1|' "$base/live-back-channels")"
+cleared_client="${cleared_line%%|*}" stated_client="${stated_line%%|*}" stated_url="${stated_line#*|1|}"
+[ -n "$cleared_client" ] && [ -n "$stated_url" ] || fail "the realm file states no back-channel URL or clears none"
+leaked_url="http://leaked-$(random_value).example.test/auth/backchannel-logout"
+other_url="http://other-$(random_value).example.test/auth/backchannel-logout"
+planted_values+=("$stated_url" "$leaked_url" "$other_url")
+# back_channel_case <name> <client> <rows> <URL> <expected>: the copy's answer for one client becomes "<rows>|<URL>", and the run
+# ends at exit 1 naming that client alone.
+back_channel_case() {
+  new_case "back-channel-$1"
+  serve_copy
+  { grep -v "^$2|" "$case_directory/live-back-channels"; printf '%s|%s|%s\n' "$2" "$3" "$4"; } >"$case_directory/live-back-channels.new"
+  mv "$case_directory/live-back-channels.new" "$case_directory/live-back-channels"
+  run_load
+  expect_status 1
+  expect_line "^$2: back-channel URL DIFFERS \\(expected $5\\)\$"
+  [ "$(grep -c 'back-channel URL DIFFERS' <<<"$output")" = 1 ] || fail "$case_name: another client was named: $output"
+  expect_line "the way back is the operator's cd ~/srv/hal && hal start keycloak\$"
+  [ "$(wc -l <"$case_directory/log/mise")" = 1 ] || fail "$case_name: the move ran"
+}
+back_channel_case still-held "$cleared_client" 1 "$leaked_url" absent
+back_channel_case stored-empty "$cleared_client" 1 "" absent
+back_channel_case missing-url "$stated_client" 0 "" "the file's URL"
+back_channel_case another-url "$stated_client" 1 "$other_url" "the file's URL"
 
 # ------------------------------------------------------ the digests name a missing column and never read equal
 missing_column_case() {

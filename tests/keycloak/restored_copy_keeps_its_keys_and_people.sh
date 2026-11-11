@@ -3,7 +3,8 @@
 # shows that config-cli's Job completed within its retries, that Keycloak created no temporary administrator, that the
 # copy's issuer and key ids equal those in the evidence file cutover:preflight wrote, that config-cli left the users, their
 # attributes, credentials and group memberships as the dump holds them, and that every client of the realm keeps the
-# secret the dump holds; the first apply on a dump older than an agent client adds only that client's service account and
+# secret the dump holds and that each client of the realm holds the back-channel logout URL realm.yaml states, or none where
+# it states none or ""; the first apply on a dump older than an agent client adds only that client's service account and
 # memberships. A dump holds keys and hashes, so it prints names, counts, key ids and outcomes, never a row, a secret, a
 # digest and never a message of pg_restore or psql. Reads through the PC's k3s kubeconfig unless KUBECONFIG is set; runs
 # with the locked tools: mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump> <evidence>.
@@ -168,5 +169,28 @@ while IFS=$'\t' read -r client digest; do
   unset "copy_digest_of[$client]"
 done <<<"$dumped_digests"
 for client in "${!copy_digest_of[@]}"; do echo "$client: client secret not in the dump, not compared"; done
+# A client's back-channel logout URL on the copy, as "<client>|<rows>|<URL>": a client the file clears holds no row (a stored
+# empty value is a row), one the file states holds one row with its URL. The URLs are compared here and never printed.
+declared_back_channels="$(yq -r '.clients[] | .clientId + "|" + (.attributes["backchannel.logout.url"] // "")' "$realm_file")"
+copy_back_channels="$(in_postgres psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT c.client_id, count(a.client_id), coalesce(max(a.value), '')
+  FROM client c JOIN realm r ON r.id = c.realm_id
+  LEFT JOIN client_attributes a ON a.client_id = c.id AND a.name = 'backchannel.logout.url'
+  WHERE r.name = '$realm' AND c.client_id IN ($declared_clients)
+  GROUP BY c.id, c.client_id" 2>/dev/null)" ||
+  step_failed "$?" "reading the back-channel URLs of the declared clients"
+declare -A copy_rows_of=() copy_url_of=()
+while IFS='|' read -r client rows url; do [ -z "$client" ] || { copy_rows_of[$client]=$rows; copy_url_of[$client]=$url; }; done <<<"$copy_back_channels"
+while IFS='|' read -r client declared_url; do
+  [ -n "$client" ] || continue
+  verdict=equal expected="the file's URL"
+  if [ -n "$declared_url" ]; then
+    [ "${copy_rows_of[$client]-}" = 1 ] && [ "${copy_url_of[$client]-}" = "$declared_url" ] || verdict=DIFFERS
+  else
+    expected=absent
+    [ "${copy_rows_of[$client]-}" = 0 ] || verdict=DIFFERS
+  fi
+  if [ "$verdict" = equal ]; then echo "$client: back-channel URL equal"
+  else echo "$client: back-channel URL DIFFERS (expected $expected)"; outcome=1; fi
+done <<<"$declared_back_channels"
 [ "$outcome" = 0 ] || fail "the restored copy differs from the dump or from the evidence"
-echo "the restored copy kept its issuer, key ids, people, memberships and client secrets through config-cli"
+echo "the restored copy kept its issuer, key ids, people, memberships, client secrets and back-channel URLs through config-cli"
