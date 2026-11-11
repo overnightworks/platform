@@ -607,6 +607,7 @@ version_case no-table 26.8.1 absent unreadable
 version_case null-version 26.8.1 '\N' unreadable
 version_case unparsable 26.8.1 latest unreadable
 version_case unparsable-beside-a-valid-one 26.8.1 "26.8.0 latest" unreadable
+version_case null-beside-a-valid-one 26.8.1 '24.0.0 \N' unreadable
 
 # ------------------------------------------------------ case 5: the load fails
 new_case load-fails

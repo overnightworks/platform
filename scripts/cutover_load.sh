@@ -105,7 +105,7 @@ gate_program='function unescape(text,   result, position, character) {
     } else if (table == "migration_model") {
       version = cell[column["version"]]
       if (match(version, /^[0-9]+[.][0-9]+[.][0-9]+/) && substr(version, RLENGTH + 1) ~ /^([.-]|$)/) versions[++version_count] = substr(version, 1, RLENGTH)
-      else if (version != "\\N") unreadable_versions++
+      else unreadable_versions++
     } else {
       rows++; row_table[rows] = table; row_realm[rows] = cell[column["realm_id"]]
       row_name[rows] = cell[column[table == "client" ? "client_id" : table == "user_entity" ? "username" : "name"]]
