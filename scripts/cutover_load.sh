@@ -156,7 +156,7 @@ profile_differences() {
 # (services/src/main/resources/org/keycloak/userprofile/config/keycloak-default-user-profile.json at the tag 26.8.1); the
 # gate compares that file instead, and a profile it cannot read, or that is no JSON object, refuses.
 gate() {
-  local read_dump findings=0 line kind name stored expected differences
+  local read_dump status findings=0 line kind name stored expected differences
   read_dump="$(timeout "$deadline" kubectl --namespace keycloak exec --stdin postgres-0 --container postgres -- sh -c \
     'set -o pipefail; timeout "$2" pg_restore --data-only --table=realm --table=client --table=client_scope \
       --table=keycloak_group --table=user_entity --table=component --table=component_config --file=- 2>/dev/null |
@@ -167,11 +167,13 @@ gate() {
     say "the dump holds $kind $name, which only realm.yaml declares"
     findings=$((findings + 1))
   done < <(sed -n 's/^object \([a-z]*\) \(.*\)$/\1 \2/p' <<<"$read_dump")
-  if grep -qx unreadable-profile <<<"$read_dump"; then
+  # The status is the first line that is no object line; the stored profile follows it and never decides.
+  status="$(grep -vm1 '^object ' <<<"$read_dump" || true)"
+  if [ "$status" = unreadable-profile ]; then
     say "the dump holds no readable user profile of realm $realm"
     findings=$((findings + 1))
-  elif grep -qxE 'default-profile|profile-begin' <<<"$read_dump"; then
-    if grep -qx default-profile <<<"$read_dump"; then
+  elif [ "$status" = default-profile ] || [ "$status" = profile-begin ]; then
+    if [ "$status" = default-profile ]; then
       say "the dump stores no user profile of realm $realm, so Keycloak's default applies"
       stored="$(cat "$root/infrastructure/keycloak/default-user-profile.json")"
     else
@@ -182,12 +184,12 @@ gate() {
     while IFS= read -r line; do
       [ -z "$line" ] || { say "profile $line"; findings=$((findings + 1)); }
     done <<<"$differences"
-  elif ! grep -qx no-realm <<<"$read_dump"; then
+  elif [ "$status" != no-realm ]; then
     say "the read of the dump returned no answer"
     findings=$((findings + 1))
   fi
   [ "$findings" = 0 ] || fail "the gate refuses the dump with $findings findings"
-  say "the gate passed: the dump's user profile equals realm.yaml's apart from agent_owner, and it holds no console-made object"
+  say "the gate passed: the user profile that applies equals realm.yaml's apart from agent_owner, and it holds no console-made object"
 }
 
 # run_step <what> <command>...: runs the command and passes its lines on unchanged as they come, keeps them in step_output,

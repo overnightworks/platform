@@ -591,9 +591,8 @@ unreadable_profile_case profile-whole-and-pieces whole_and_pieces
 unreadable_profile_case profile-whole-twice whole_twice
 unreadable_profile_case profile-two-components two_components
 non_object() { set_profile "$value"; }
-# A stored value that is no JSON object is refused as such.
-index=0
-for value in '"text"' '[1]' '5' 'null' '{"attributes":'; do
+# A stored value that is no JSON object is refused as such, also one that is the status word the read prints.
+index=0; for value in '"text"' '[1]' '5' 'null' '{"attributes":' 'default-profile'; do
   refused_at_the_load "profile-no-object-$((index += 1))" non_object "^cutover:load: the dump's stored user profile is no JSON object; nothing loaded\$"
 done
 drop_realm() { drop_rows realm "$realm"; }
@@ -743,6 +742,7 @@ planted_values+=(not-a-key-of-the-evidence LEAKEDEVIDENCELINE)
 usage_case unknown-key 'echo "token not-a-key-of-the-evidence" >>"$evidence"'
 # A line of the evidence without a space is a whole value: no output holds it.
 usage_case unknown-key-without-space 'echo "API_KEY=LEAKEDEVIDENCELINE" >>"$evidence"' ' holds a key that the evidence of cutover:preflight does not have'
+usage_case check-no-evidence-file 'load_args=(check "$case_directory/absent")'
 # A relative evidence path would put the move-group dump in the checkout.
 usage_case relative-evidence 'cd "$case_directory"; load_args=(load "$dump" evidence)' 'the evidence path evidence is not absolute'
 
