@@ -1,0 +1,7 @@
+claim_id = "fb68890e7a764ca8a65e028a17010e8b"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "726673c035f8ae19c9ab7b9d4aa0342d5084a0aa"
+branch = "claude/issue-438-p10-5a-cutover-load-reads-each-client-s"
+scope = ["tests/cutover/load_and_check_name_each_difference_and_print_no_value.sh", "tests/keycloak/restored_copy_keeps_its_keys_and_people.sh"]
+opened_commit = "a3d1eba8d583072ae0fbdc50a8374e250dc6a5fd"
