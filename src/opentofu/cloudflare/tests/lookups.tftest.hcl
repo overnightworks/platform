@@ -2,7 +2,7 @@
 mock_provider "cloudflare" {}
 
 variables {
-  api_token_file = "tests/synthetic_token"
+  api_token_file = "tests/synthetic_token.txt"
 }
 
 run "the_tunnel_is_looked_up_in_the_account_of_the_zone" {
