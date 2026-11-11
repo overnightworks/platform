@@ -373,7 +373,8 @@ serve_public() {
 path_pattern='(^|[^A-Za-z_])PATH=|command[[:space:]]+-p|(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec|timeout [0-9]+))[[:space:]]*"?(/[A-Za-z]|\$HOME|\$\{HOME|~)'
 env_pattern='(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec))[[:space:]]*env[[:space:]]'
 # logs_clean [<tree>]: every call was one of the contract's, from the fakes first on PATH by bare name, and none of the
-# tree's scripts could bypass them.
+# tree's scripts could bypass them. The greps read their whole input: a grep -q that quits early breaks the pipe of its
+# writer, and pipefail then hides the match.
 logs_clean() {
   local tree="${1:-$repository_root}" file
   [ ! -s "$case_directory/log/refused" ] || { reason="a call was refused: $(head -n 1 "$case_directory/log/refused")"; return 1; }
@@ -382,10 +383,10 @@ logs_clean() {
     return 1
   fi
   [ ! -s "$case_directory/log/git" ] || { reason="git was called"; return 1; }
-  grep -vE '^[[:space:]]*#' "$tree/scripts/cutover_load.sh" | grep -qE "$env_pattern" &&
+  grep -vE '^[[:space:]]*#' "$tree/scripts/cutover_load.sh" | grep -E "$env_pattern" >/dev/null &&
     { reason="the script runs env, which would bypass the fakes"; return 1; }
   for file in scripts/cutover_load.sh scripts/keycloak_kcadm.sh tests/keycloak/restored_copy_keeps_its_keys_and_people.sh; do
-    grep -vE '^[[:space:]]*#' "$tree/$file" | grep -qE "$path_pattern" &&
+    grep -vE '^[[:space:]]*#' "$tree/$file" | grep -E "$path_pattern" >/dev/null &&
       { reason="$file assigns PATH, uses command -p or calls an executable by an absolute, \$HOME or ~ path"; return 1; }
   done
   return 0
