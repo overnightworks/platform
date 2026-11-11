@@ -57,8 +57,13 @@ echo "the login page of $LOGIN_CLIENT answers 200 and names the asset $asset_pat
 # what is null.
 default_profile="$(dirname "$REALM_FILE")/default-user-profile.json"
 profile_form() { jq --sort-keys '(.attributes[] |= (.multivalued //= false)) | del(..|nulls)'; }
-throwaway_realm="default-profile-probe-$RANDOM"
-# The realm goes on every exit, before the forward it is deleted through ends; a realm already gone is no error.
+throwaway_realm="default-profile-probe-$(openssl rand -hex 8)"
+# The cell deletes only a realm it creates: a name Keycloak already holds stops it before the trap that deletes the name.
+existing_status="$(bearer_curl "$(admin_token)" --silent --output /dev/null --write-out '%{http_code}' \
+  "$local_url/admin/realms/$throwaway_realm")"
+[ "$existing_status" = 404 ] || fail "the throwaway realm name $throwaway_realm answers $existing_status, not 404"
+# The realm goes on every exit, before the forward it is deleted through ends, and also when its creation is cut short;
+# a realm already gone is no error.
 trap 'admin DELETE "$throwaway_realm" >/dev/null 2>&1 || true
   kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"' EXIT
 admin POST "" "{\"realm\": \"$throwaway_realm\", \"enabled\": true}"
