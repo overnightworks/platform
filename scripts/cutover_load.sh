@@ -68,14 +68,15 @@ read_evidence() {
 }
 
 # The awk program the gate runs in the database's container over the dump's COPY streams, which pg_restore writes to
-# stdout without connecting. It prints no-realm, then the console-made objects as `object <kind> <name>`, then no-profile
-# or the realm's stored user profile between profile-begin and profile-end. Keycloak 26 stores the profile as one
-# component of the realm with exactly one config value kc.user.profile.config (DeclarativeUserProfileProvider's
-# UP_COMPONENT_CONFIG_KEY); its migration to 23 merges the older config-piece-<n> values into it only for a realm whose
-# user profile was enabled, so pieces can remain. Any other state, a second component or value, or a leftover piece, is
-# no readable profile. It buffers the rows it needs, so the order of
-# the tables in the dump does not matter, and it holds component_config's other values, among them the realm keys'
-# private parts, without printing any.
+# stdout without connecting. It prints no-realm, then the console-made objects as `object <kind> <name>`, then
+# default-profile, unreadable-profile or the realm's stored user profile between profile-begin and profile-end. Keycloak 26
+# stores the profile as one component of the realm with exactly one config value kc.user.profile.config
+# (DeclarativeUserProfileProvider's UP_COMPONENT_CONFIG_KEY); a realm without that component, or whose value is missing or
+# blank, has Keycloak's built-in default profile, which is default-profile. Its migration to 23 merges the older
+# config-piece-<n> values into the key only for a realm whose user profile was enabled, so pieces can remain. Any other
+# state, a second component or value, or a leftover piece, is an unreadable profile. It buffers the rows it needs, so the
+# order of the tables in the dump does not matter, and it holds component_config's other values, among them the realm
+# keys' private parts, without printing any.
 gate_program='function unescape(text,   result, position, character) {
     result = ""
     for (position = 1; position <= length(text); position++) {
@@ -127,8 +128,10 @@ gate_program='function unescape(text,   result, position, character) {
       if (config_component[i] != profile_component) continue
       if (config_name[i] == "kc.user.profile.config") { wholes++; whole = config_value[i] } else others++
     }
-    text = whole; readable = matches == 1 && wholes == 1 && others == 0
-    if (readable) print "profile-begin\n" unescape(text) "\nprofile-end"; else print "no-profile"
+    text = unescape(whole)
+    if (matches == 0 || (matches == 1 && others == 0 && (wholes == 0 || (wholes == 1 && (whole == "\\N" || text ~ /^[ \t\n\r]*$/))))) print "default-profile"
+    else if (matches == 1 && wholes == 1 && others == 0) print "profile-begin\n" text "\nprofile-end"
+    else print "unreadable-profile"
   }'
 
 # profile_differences <stored profile> <expected profile>: one line per attribute, group or other top-level key that is
@@ -141,14 +144,17 @@ profile_differences() {
       (($expected | keys[]) as $name | select($stored | has($name) | not) | "\($kind) \($name) is missing"),
       (($stored | keys[]) as $name | select($expected | has($name) | not) | "\($kind) \($name) is extra"),
       (($expected | keys[]) as $name | select(($stored | has($name)) and $stored[$name] != $expected[$name]) | "\($kind) \($name) is different");
-    ($stored | normal) as $s | ($expected | normal) as $e
+    ($stored | if type == "object" then . else error("no object") end | normal) as $s | ($expected | normal) as $e
     | differences("attribute"; by_name($s.attributes); by_name($e.attributes)),
       differences("group"; by_name($s.groups); by_name($e.groups)),
       differences("key"; $s | del(.attributes, .groups); $e | del(.attributes, .groups))'
 }
 
 # gate <dump>: refuses before anything is loaded when the dump's user profile differs from realm.yaml's, apart from the
-# attribute agent_owner, which only the platform sets, or when it holds an object only realm.yaml declares.
+# attribute agent_owner, which only the platform sets, or when it holds an object only realm.yaml declares. A realm that
+# stores no profile has Keycloak's built-in default, which default-user-profile.json holds as Keycloak 26.8.1 ships it
+# (services/src/main/resources/org/keycloak/userprofile/config/keycloak-default-user-profile.json at the tag 26.8.1); the
+# gate compares that file instead, and a profile it cannot read, or that is no JSON object, refuses.
 gate() {
   local read_dump findings=0 line kind name stored expected differences
   read_dump="$(timeout "$deadline" kubectl --namespace keycloak exec --stdin postgres-0 --container postgres -- sh -c \
@@ -161,11 +167,16 @@ gate() {
     say "the dump holds $kind $name, which only realm.yaml declares"
     findings=$((findings + 1))
   done < <(sed -n 's/^object \([a-z]*\) \(.*\)$/\1 \2/p' <<<"$read_dump")
-  if grep -qx no-profile <<<"$read_dump"; then
+  if grep -qx unreadable-profile <<<"$read_dump"; then
     say "the dump holds no readable user profile of realm $realm"
     findings=$((findings + 1))
-  elif grep -qx profile-begin <<<"$read_dump"; then
-    stored="$(sed -n '/^profile-begin$/,/^profile-end$/p' <<<"$read_dump" | sed '1d;$d')"
+  elif grep -qxE 'default-profile|profile-begin' <<<"$read_dump"; then
+    if grep -qx default-profile <<<"$read_dump"; then
+      say "the dump stores no user profile of realm $realm, so Keycloak's default applies"
+      stored="$(cat "$root/infrastructure/keycloak/default-user-profile.json")"
+    else
+      stored="$(sed -n '/^profile-begin$/,/^profile-end$/p' <<<"$read_dump" | sed '1d;$d')"
+    fi
     expected="$(yq -o json -I0 '.userProfile | del(.attributes[] | select(.name == "agent_owner"))' "$root/infrastructure/keycloak/realm.yaml")"
     differences="$(profile_differences "$stored" "$expected" 2>/dev/null)" || fail "the dump's stored user profile is no JSON object"
     while IFS= read -r line; do
