@@ -3,6 +3,6 @@ agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
 role = "builder"
 base = "6d0fa986308d6a57a0df367441f8abd33a4adb62"
 branch = "claude/issue-431-p10-4a-the-design-kit-is-a-shared-base-t"
-scope = ["infrastructure/design", "infrastructure/legal", "quality/config.toml", "tests/legal/design_assets_equal_their_release_wheel.sh"]
+scope = [".github/workflows/ci.yml", "infrastructure/design", "infrastructure/legal", "quality/config.toml", "tests/legal", "tests/legal/design_assets_equal_their_release_wheel.sh"]
 opened_commit = "6b8acc52dfe339b1b8168154f581b81951451a77"
 whole_reason = "The kit's move, the legal layer's include and the wheel cell's path are one rename that is only green together."
