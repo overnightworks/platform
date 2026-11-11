@@ -1,5 +1,6 @@
 # The tunnel platform's lines. A host reaches the internet only through a line here, which changes by a pull request;
-# every other host gets the tunnel's 404. A line without an Ingress gets Traefik's 404.
+# every other host gets the tunnel's 404. A line whose host no Ingress and no file-provider router of Traefik routes
+# gets Traefik's 404.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -15,6 +16,8 @@ data:
       - hostname: skat.hallucinai.de
         service: http://traefik.traefik.svc.cluster.local:80
       - hostname: songmaker.hallucinai.de
+        service: http://traefik.traefik.svc.cluster.local:80
+      - hostname: auth.hallucinai.de
         service: http://traefik.traefik.svc.cluster.local:80
       - service: http_status:404
 ---
@@ -37,7 +40,7 @@ spec:
       annotations:
         # cloudflared reads its lines once, when it starts, so a changed line must roll the pod: this is the sha256 of
         # the ConfigMap's data config.yaml, and `cluster` fails with the right value when the two differ.
-        checksum/config: 523b0e2806a230f2ccd169f28126505606d4f2110bccb04acb2e7aad300449a9
+        checksum/config: e42654fc04ab9163765c5effe41233731cc5deceeca92deb41b2fe0e3fc0c5e7
     spec:
       automountServiceAccountToken: false
       securityContext:

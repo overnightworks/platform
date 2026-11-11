@@ -1,0 +1,18 @@
+# The design kit of design's release, the one copy in the tree. A layer that serves its files includes this base and maps
+# each key to its path, as infrastructure/legal does. A key holds no slash, so the volume maps it to its path.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+  - name: design
+    files:
+      - design-0.18.0__design.css=design-0.18.0/design.css
+      - design-0.18.0__fonts__open-sans-LICENSE=design-0.18.0/fonts/open-sans-LICENSE
+      - design-0.18.0__fonts__open-sans-latin-400-normal.woff2=design-0.18.0/fonts/open-sans-latin-400-normal.woff2
+      - design-0.18.0__fonts__open-sans-latin-600-normal.woff2=design-0.18.0/fonts/open-sans-latin-600-normal.woff2
+      - design-0.18.0__fonts__open-sans-latin-ext-400-normal.woff2=design-0.18.0/fonts/open-sans-latin-ext-400-normal.woff2
+      - design-0.18.0__fonts__open-sans-latin-ext-600-normal.woff2=design-0.18.0/fonts/open-sans-latin-ext-600-normal.woff2
+      - design-0.18.0__fonts__oswald-LICENSE=design-0.18.0/fonts/oswald-LICENSE
+      - design-0.18.0__fonts__oswald-latin-400-normal.woff2=design-0.18.0/fonts/oswald-latin-400-normal.woff2
+      - design-0.18.0__fonts__oswald-latin-700-normal.woff2=design-0.18.0/fonts/oswald-latin-700-normal.woff2
+      - design-0.18.0__fonts__oswald-latin-ext-400-normal.woff2=design-0.18.0/fonts/oswald-latin-ext-400-normal.woff2
+      - design-0.18.0__fonts__oswald-latin-ext-700-normal.woff2=design-0.18.0/fonts/oswald-latin-ext-700-normal.woff2

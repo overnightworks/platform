@@ -21,9 +21,9 @@ The ruleset `code scanning: high or higher blocks the merge` requires CodeQL at 
 `none` on the default branch of every `quality_gate=true` repository except one whose `code_scanning_exempt` is `true`,
 which only platform-secrets carries and only organisation actors set. (GH-7)
 
-## How a change reaches GitHub (`scripts/apply_github_settings.sh`)
+## How a change reaches GitHub (`scripts/apply_opentofu.sh github`)
 
-`scripts/apply_github_settings.sh` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
+`scripts/apply_opentofu.sh github` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
 login, on any commit and without writing state (exit 0 no change, 2 changes, 1 failure). (GH-3)
 
 `--apply` applies that run's own plan, only from a clean `origin/main`. (GH-4)
@@ -33,3 +33,6 @@ nothing; a deliberate removal is a `removed` block with `lifecycle { destroy = f
 
 An imported object's state carries no `skip_destroy` until an apply writes it, so removing a block can plan a delete;
 the command refuses any such plan, which closes it for every object of the root. (GH-6)
+
+GH-3 to GH-6 hold equally for `scripts/apply_opentofu.sh cloudflare`, the same code path with its own state, cache,
+lock and kept plan; [the Cloudflare zone reference](cloudflare-zone.md) names its one difference, the credential.

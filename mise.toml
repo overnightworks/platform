@@ -440,7 +440,118 @@ tofu fmt -check -recursive
 tofu init -backend=false -lockfile=readonly -input=false
 tofu validate
 tofu test
-../../../tests/github/plan_with_a_delete_is_refused.sh
+../../../tests/opentofu/plan_with_a_delete_is_refused.sh
+'''
+
+[tasks."cloudflare:test"]
+description = "Check the Cloudflare root: format, init against the committed lock, validate, the mocked tests and the token's shell tests"
+dir = "src/opentofu/cloudflare"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+TF_DATA_DIR="$(mktemp -d)"
+export TF_DATA_DIR
+trap 'rm -rf "$TF_DATA_DIR"' EXIT
+tofu fmt -check -recursive
+tofu init -backend=false -lockfile=readonly -input=false
+tofu validate
+tofu test
+../../../tests/cloudflare/token_stays_out_of_argv_environment_and_trace.sh
+../../../tests/cloudflare/token_is_kept_private_and_counted_in_plan_data_and_state.sh
+'''
+
+# The one owner of where scripts/apply_opentofu.sh keeps a root's state, cache, kept plan and data directory: the command
+# and the count check name them through it.
+[tasks."opentofu:path"]
+description = "Print where a root keeps one of its files: opentofu:path <github|cloudflare> <state|cache|plan|data>"
+hide = true
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" = 2 ] || { echo "opentofu:path: usage: mise run opentofu:path <root> <state|cache|plan|data>" >&2; exit 2; }
+cache_directory="${XDG_CACHE_HOME:-$HOME/.cache}/platform/opentofu/$1"
+case "$2" in
+  state) echo "${XDG_STATE_HOME:-$HOME/.local/state}/platform/opentofu/$1.tfstate" ;;
+  cache) echo "$cache_directory" ;;
+  plan) echo "$cache_directory/last.tfplan" ;;
+  data) echo "$cache_directory/data" ;;
+  *) echo "opentofu:path: no file named $2" >&2; exit 2 ;;
+esac
+'''
+
+# The one owner of the Cloudflare token's path: the command, the writer and the count check name the file through it.
+[tasks."cloudflare:token-file"]
+description = "Print the file that holds the read-only Cloudflare API token"
+hide = true
+quiet = true
+run = 'echo "${XDG_CONFIG_HOME:-$HOME/.config}/platform/cloudflare/token"'
+
+[tasks."cloudflare:token"]
+description = "Read the Cloudflare API token from stdin without echo and keep it at 0600 in the file cloudflare:token-file prints; print only that path"
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# An inherited xtrace would print the value in the assignments below.
+set +x
+fail() { echo "cloudflare:token: $1; nothing changed" >&2; exit 1; }
+token_file="$(mise run cloudflare:token-file)"
+token_directory="$(dirname "$token_file")"
+
+if [ -t 0 ]; then printf 'Cloudflare API token (not shown): ' >&2; fi
+IFS= read -r -s token || true
+if [ -t 0 ]; then echo >&2; fi
+# The provider trims the file's value, so the file holds exactly the trimmed one, and the count check's patterns are lines.
+token="${token#"${token%%[![:space:]]*}"}"
+token="${token%"${token##*[![:space:]]}"}"
+[ -n "$token" ] || fail "no value was read from stdin"
+
+umask 077
+mkdir -p "$token_directory"
+chmod 700 "$token_directory"
+staging="$(mktemp "$token_directory/token.XXXXXX")"
+trap 'rm -f "$staging"' EXIT
+# printf is a builtin, so the value is in no process's argument list.
+printf '%s\n' "$token" >"$staging"
+mv -f "$staging" "$token_file"
+echo "$token_file"
+'''
+
+[tasks."cloudflare:token-absent"]
+description = "Count the lines that hold the token file's value in the kept plan, the data directory and the state of the Cloudflare root; print only the count and fail unless it is 0"
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fail() { echo "cloudflare:token-absent: $1" >&2; exit 1; }
+token_file="$(mise run cloudflare:token-file)"
+# An empty pattern file matches nothing, which would pass every check.
+[ -s "$token_file" ] || fail "the token file $token_file is missing or empty; nothing counted"
+state_file="$(mise run opentofu:path cloudflare state)"
+kept_plan="$(mise run opentofu:path cloudflare plan)"
+data_directory="$(mise run opentofu:path cloudflare data)"
+
+total=0
+# count_lines <grep argument>...: adds the lines of those inputs that hold a line of the token file; -a reads a binary
+# as text, -c prints one count per file and -h no file names.
+count_lines() {
+  local counts count status=0
+  counts="$(grep --count --text --no-filename --fixed-strings --file="$token_file" "$@")" || status=$?
+  [ "$status" -le 1 ] || fail "grep failed with status $status"
+  while IFS= read -r count; do total=$((total + count)); done <<<"$counts"
+}
+# A file the plan should have left is no proof of absence when it is missing; only the state may not exist yet.
+rerun="run scripts/apply_opentofu.sh cloudflare first"
+[ -e "$kept_plan" ] || fail "the kept plan $kept_plan is missing; nothing counted; $rerun"
+[ -d "$data_directory" ] || fail "the data directory $data_directory is missing; nothing counted; $rerun"
+# The members are deflated, so the archive is read decompressed.
+unzip -tq "$kept_plan" >/dev/null || fail "$kept_plan is no intact zip archive"
+count_lines - < <(unzip -p "$kept_plan")
+count_lines --recursive "$data_directory"
+if [ -e "$state_file" ]; then count_lines "$state_file"; fi
+echo "$total"
+[ "$total" -eq 0 ]
 '''
 
 [tasks."legal:test"]

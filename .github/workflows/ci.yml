@@ -84,7 +84,7 @@ jobs:
       - name: Check that the app texts under infrastructure/legal equal their apps' files and dates at the release each names
         run: mise exec -- tests/legal/app_texts_equal_their_release.sh
 
-      - name: Check that the vendored design files equal their release wheel and that infrastructure/legal/assets holds nothing else
+      - name: Check that the design kit under infrastructure/design equals its release wheel and holds nothing else, and that infrastructure/legal/assets holds nothing else than legal-2.css
         run: tests/legal/design_assets_equal_their_release_wheel.sh
 
       - name: Check that a failed LiteLLM write stops the rest and names what was made, and that no key value reaches an argument or an output
@@ -597,6 +597,7 @@ jobs:
         env:
           LEGAL_NAMESPACE: legal
           LEGAL_LAYER_DIRECTORY: infrastructure/legal
+          DESIGN_DIRECTORY: infrastructure/design
           LEGAL_HOST: hallucinai.de
           OTHER_NAMESPACE: legal-client
         run: tests/legal/five_paths_through_traefik.sh
@@ -725,6 +726,9 @@ jobs:
 
       - name: Check the GitHub settings root against its lock and mocked tests
         run: mise run github:test
+
+      - name: Check the Cloudflare root against its lock and mocked tests and that its token reaches no argument, environment or trace
+        run: mise run cloudflare:test
 
   images:
     runs-on: ubuntu-latest

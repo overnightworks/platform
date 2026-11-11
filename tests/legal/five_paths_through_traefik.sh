@@ -5,6 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=../client_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 layer="$LEGAL_LAYER_DIRECTORY"
+design="$DESIGN_DIRECTORY"
 traefik_url="http://traefik.traefik.svc:80"
 asset_prefix="/_rechtliches/"
 pages=(impressum datenschutz nutzungsbedingungen)
@@ -42,7 +43,13 @@ declare -A served_sum
 for page in "${pages[@]}"; do
   served_sum["/$page"]="$(sha256sum <"$layer/built/$page.html" | cut -d' ' -f1)"
 done
-asset_directory="$(find "$layer/assets" -mindepth 1 -maxdepth 1 -type d -printf '%f')"
+asset_directory="$(find "$design" -mindepth 1 -maxdepth 1 -type d -printf '%f')"
+# The design kit's files (its version directory, not the kustomization beside it) and the legal layer's own files are
+# served under one prefix.
+while IFS= read -r -d '' file; do
+  relative="${file#"$design"/}"
+  served_sum["$asset_prefix$relative"]="$(sha256sum <"$file" | cut -d' ' -f1)"
+done < <(find "$design/$asset_directory" -type f -print0)
 while IFS= read -r -d '' file; do
   relative="${file#"$layer"/assets/}"
   served_sum["$asset_prefix$relative"]="$(sha256sum <"$file" | cut -d' ' -f1)"
@@ -54,12 +61,12 @@ while IFS= read -r reference; do references+=("$reference"); done < <(
   grep -oh "${asset_prefix}[^\"' )<>]*" "$layer"/built/*.html | sort -u)
 while IFS= read -r font; do
   references+=("$asset_prefix$asset_directory/$font")
-done < <(sed -n "s/.*url('\\([^']*\\)').*/\\1/p" "$layer/assets/$asset_directory/design.css" | sort -u)
+done < <(sed -n "s/.*url('\\([^']*\\)').*/\\1/p" "$design/$asset_directory/design.css" | sort -u)
 [ "${#references[@]}" -gt 0 ] || fail "the built pages name no file under $asset_prefix"
 for reference in "${references[@]}"; do
-  [ -n "${served_sum[$reference]:-}" ] || fail "$reference is named by a built page or design.css and is no file under $layer/assets"
+  [ -n "${served_sum[$reference]:-}" ] || fail "$reference is named by a built page or design.css and is no file under $design or $layer/assets"
 done
-echo "the ${#references[@]} references of the pages and of design.css name files under $layer/assets"
+echo "the ${#references[@]} references of the pages and of design.css name files under $design or $layer/assets"
 
 # nginx's 404s, and the paths Traefik's own 404 and 400 answer (they reach no nginx location).
 nginx_missing=(/favicon.ico "$asset_prefix" "$asset_prefix$asset_directory/" "$asset_prefix$asset_directory/fonts"
