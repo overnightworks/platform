@@ -1,0 +1,8 @@
+claim_id = "4b662db9d08a430c9271fd332da8424b"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "6d0fa986308d6a57a0df367441f8abd33a4adb62"
+branch = "claude/issue-423-keycloak-agent-owner-says-that-agent-add"
+scope = ["docs", "mise.toml"]
+opened_commit = "b5dc5f104acf75c3ca7721ca6d97c3041758ed37"
+whole_reason = "The description and its one document sentence state the same fact."
