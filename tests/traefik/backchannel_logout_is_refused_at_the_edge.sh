@@ -100,7 +100,10 @@ prove_hosts() {
   for host in "${routed_hosts[@]}"; do
     control_path="$(kubectl get ingresses -A -o jsonpath="{range .items[*]}{range .spec.rules[?(@.host==\"$host\")]}{.http.paths[0].path}{\"\n\"}{end}{end}" | head -n 1)"
     until_true 120 "Traefik refuses the back-channel route on $host and routes $control_path" refused_on "$host" "$control_path" "$round"
-    echo "a Pod in $TUNNEL_NAMESPACE gets Traefik's answer with the host $host, by POST and GET, for ${#cleaned_paths[@]} cleaned or decoded spellings of $backchannel_path, ${#ended_paths[@]} ended by whitespace or a control character, ${#parameter_paths[@]} ended by a path parameter and ${#encoded_paths[@]} the entrypoint refuses"
+    echo "a Pod in $TUNNEL_NAMESPACE gets Traefik's answer with the host $host, by POST and GET, for the cleaned or decoded spellings ${cleaned_paths[*]}"
+    echo "a Pod in $TUNNEL_NAMESPACE gets Traefik's answer with the host $host, by POST and GET, for the spellings ended by whitespace or a control character ${ended_paths[*]}"
+    echo "a Pod in $TUNNEL_NAMESPACE gets Traefik's answer with the host $host, by POST and GET, for the spellings ended by a path parameter ${parameter_paths[*]}"
+    echo "a Pod in $TUNNEL_NAMESPACE gets 400 or Traefik's 404 with the host $host, by POST and GET, for the spellings the entrypoint refuses ${encoded_paths[*]}"
     echo "a Pod in $TUNNEL_NAMESPACE gets no refusal with the host $host for ${#neighbour_paths[@]} neighbouring paths, the app's answer for $control_path and, on a host that routes Exact paths, Traefik's 404 for the others"
   done
 }
