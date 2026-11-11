@@ -253,8 +253,7 @@ planted_values=("$secret_songmaker" "$secret_presentator" "$secret_master" "$sec
 copy_table() {
   { printf 'COPY public.%s (%s) FROM stdin;\n' "$2" "$3"; sed 's/ | /\t/g'; printf '\\.\n'; } >"$1/$2"
 }
-# copy_escape <text>: the text as one COPY field, a backslash and a line break written as pg_dump writes them.
-copy_escape() { sed -e 's/\\/\\\\/g' <<<"$1" | sed -e ':join' -e 'N' -e '$!b join' -e 's/\n/\\n/g'; }
+copy_escape() { sed -e 's/\\/\\\\/g' <<<"$1" | sed -e ':join' -e 'N' -e '$!b join' -e 's/\n/\\n/g'; }  # copy_escape <text>: the text as one COPY field, a backslash and a line break written as pg_dump writes them.
 # store_profile <directory> <profile json>: the component_config of the user-profile component, the profile in its one value,
 # beside the realm key's private part, which the gate never prints.
 store_profile() {
@@ -374,8 +373,7 @@ serve_public() {
 path_pattern='(^|[^A-Za-z_])PATH=|command[[:space:]]+-p|(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec|timeout [0-9]+))[[:space:]]*"?(/[A-Za-z]|\$HOME|\$\{HOME|~)'
 env_pattern='(^|[;&|!{]|\$\(|[[:space:]](then|do|else|exec))[[:space:]]*env[[:space:]]'
 # logs_clean [<tree>]: every call was one of the contract's, from the fakes first on PATH by bare name, and none of the
-# tree's scripts could bypass them. The greps read their whole input: a grep -q that quits early breaks the pipe of its
-# writer, and pipefail then hides the match.
+# tree's scripts could bypass them. The greps read their whole input: a grep -q that quits early breaks its writer's pipe and pipefail hides the match.
 logs_clean() {
   local tree="${1:-$repository_root}" file
   [ ! -s "$case_directory/log/refused" ] || { reason="a call was refused: $(head -n 1 "$case_directory/log/refused")"; return 1; }
