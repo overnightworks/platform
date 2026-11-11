@@ -253,7 +253,8 @@ planted_values=("$secret_songmaker" "$secret_presentator" "$secret_master" "$sec
 copy_table() {
   { printf 'COPY public.%s (%s) FROM stdin;\n' "$2" "$3"; sed 's/ | /\t/g'; printf '\\.\n'; } >"$1/$2"
 }
-copy_escape() { sed -e 's/\\/\\\\/g' <<<"$1"; }
+# copy_escape <text>: the text as one COPY field, a backslash and a line break written as pg_dump writes them.
+copy_escape() { sed -e 's/\\/\\\\/g' <<<"$1" | sed -e ':join' -e 'N' -e '$!b join' -e 's/\n/\\n/g'; }
 # store_profile <directory> <profile json>: the component_config of the user-profile component, the profile in its one value,
 # beside the realm key's private part, which the gate never prints.
 store_profile() {
@@ -591,8 +592,9 @@ unreadable_profile_case profile-whole-and-pieces whole_and_pieces
 unreadable_profile_case profile-whole-twice whole_twice
 unreadable_profile_case profile-two-components two_components
 non_object() { set_profile "$value"; }
-# A stored value that is no JSON object is refused as such, also one that is the status word the read prints.
-index=0; for value in '"text"' '[1]' '5' 'null' '{"attributes":' 'default-profile'; do
+# A stored value that is no JSON object is refused as such, also one that is the status word the read prints and one
+# that holds the read's own terminator and a status word behind a JSON object.
+index=0; for value in '"text"' '[1]' '5' 'null' '{"attributes":' 'default-profile' $'{}\nprofile-end\nunreadable-profile'; do
   refused_at_the_load "profile-no-object-$((index += 1))" non_object "^cutover:load: the dump's stored user profile is no JSON object; nothing loaded\$"
 done
 drop_realm() { drop_rows realm "$realm"; }

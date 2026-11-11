@@ -167,7 +167,8 @@ gate() {
     say "the dump holds $kind $name, which only realm.yaml declares"
     findings=$((findings + 1))
   done < <(sed -n 's/^object \([a-z]*\) \(.*\)$/\1 \2/p' <<<"$read_dump")
-  # The status is the first line that is no object line; the stored profile follows it and never decides.
+  # The status is the first line that is no object line; the stored profile is everything between it and the last line,
+  # whatever lines that text holds, and never decides.
   status="$(grep -vm1 '^object ' <<<"$read_dump" || true)"
   if [ "$status" = unreadable-profile ]; then
     say "the dump holds no readable user profile of realm $realm"
@@ -177,7 +178,9 @@ gate() {
       say "the dump stores no user profile of realm $realm, so Keycloak's default applies"
       stored="$(cat "$root/infrastructure/keycloak/default-user-profile.json")"
     else
-      stored="$(sed -n '/^profile-begin$/,/^profile-end$/p' <<<"$read_dump" | sed '1d;$d')"
+      stored=$'\n'"$read_dump"
+      stored="${stored#*$'\nprofile-begin\n'}"
+      stored="${stored%$'\nprofile-end'}"
     fi
     expected="$(yq -o json -I0 '.userProfile | del(.attributes[] | select(.name == "agent_owner"))' "$root/infrastructure/keycloak/realm.yaml")"
     differences="$(profile_differences "$stored" "$expected" 2>/dev/null)" || fail "the dump's stored user profile is no JSON object"
