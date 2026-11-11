@@ -6,6 +6,8 @@ resources:
   - keycloak-egress.yaml
   - keycloak.yaml
   - config-cli.yaml
+  # The design kit's one copy, served beside the theme's own files.
+  - ../design
 components:
   - ../postgres/backup
 configMapGenerator:
@@ -19,6 +21,20 @@ configMapGenerator:
     files:
       - master.yaml
       - realm.yaml
+  # hal's theme hallucinai, verbatim but for the stylesheet line of its two theme.properties. A key holds no slash, so
+  # keycloak.yaml's volume maps each key to its path; the favicon is binary and lands in binaryData.
+  - name: keycloak-theme
+    files:
+      - account__resources__content.json=themes/hallucinai/account/resources/content.json
+      - account__resources__css__edge-2.css=themes/hallucinai/account/resources/css/edge-2.css
+      - account__resources__favicon.svg=themes/hallucinai/account/resources/favicon.svg
+      - account__theme.properties=themes/hallucinai/account/theme.properties
+      - login__footer.ftl=themes/hallucinai/login/footer.ftl
+      - login__messages__messages_de.properties=themes/hallucinai/login/messages/messages_de.properties
+      - login__messages__messages_en.properties=themes/hallucinai/login/messages/messages_en.properties
+      - login__resources__css__edge-3.css=themes/hallucinai/login/resources/css/edge-3.css
+      - login__resources__img__favicon.ico=themes/hallucinai/login/resources/img/favicon.ico
+      - login__theme.properties=themes/hallucinai/login/theme.properties
 replacements:
   - source:
       kind: ConfigMap

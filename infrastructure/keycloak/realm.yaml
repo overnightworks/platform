@@ -12,8 +12,7 @@
 # The public client `agents` is the one sign-in of a person's own AI agents.
 realm: hallucinai
 enabled: true
-# The pages' look lives in the theme hallucinai, so changing it is no realm change; until an image carries
-# it, Keycloak shows its own theme.
+# The pages' look lives in the theme hallucinai (themes/hallucinai beside this file), so changing it is no realm change.
 loginTheme: hallucinai
 accountTheme: hallucinai
 # German and English, the browser decides, English when neither is asked for.
