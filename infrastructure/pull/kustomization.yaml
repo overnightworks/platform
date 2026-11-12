@@ -1,0 +1,6 @@
+# The base an app's pull layer includes, no Flux layer of its own: it sets its namespace and adds, for each image of the
+# release, a volume and its mount to the Job pull (see pull.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - pull.yaml

@@ -1,0 +1,12 @@
+# The release of presentator's image, the full app ref of a release that changes only in a pull request: its one owner,
+# included by the layer and by its pull layer, so that the web, the worker, the restore test and the pull layer's image
+# volume run one ref. A bump changes tag and digest together. The field spec makes the transform rewrite the reference of
+# a Job's image volume too, which it leaves alone by default.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: ghcr.io/overnightworks/presentator
+    newTag: 2026.11.12.4
+    digest: sha256:2bde54ee343ed0d43d1ad9a3d0efbf925e7a29e14115a0acdb47cfbbe2dcf07c
+configurations:
+  - image-volume.yaml

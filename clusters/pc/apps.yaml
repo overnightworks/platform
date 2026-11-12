@@ -2,6 +2,9 @@
 # objects share one owner that db:load-dump can suspend. Each starts from Secrets in platform-secrets, so it waits for
 # that layer, and runs workloads, so it waits for admission. skat, songmaker and presentator also wait for storage, as
 # their databases claim volumes, and for k8up, whose CRDs their backup objects need.
+# An app that has a pull layer, apps/<app>/pull, has a second Kustomization <app>-pull, which the app's layer waits for:
+# its Job pulls the release's images onto the node before the app's layer rolls them. A timeout of the layer does not
+# cancel the pull, so the roll follows at the next retry.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -49,11 +52,31 @@ spec:
     - name: admission
     - name: storage
     - name: k8up
+    - name: presentator-pull
   interval: 10m0s
   path: ./apps/presentator
   prune: true
   wait: true
   timeout: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: presentator-pull
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: platform-secrets
+    - name: admission
+  interval: 10m0s
+  retryInterval: 2m0s
+  path: ./apps/presentator/pull
+  prune: true
+  wait: true
+  timeout: 30m0s
   sourceRef:
     kind: GitRepository
     name: flux-system

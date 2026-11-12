@@ -1,0 +1,1 @@
+problem: the image volume prepare of apps/demo/pull is mounted by no container

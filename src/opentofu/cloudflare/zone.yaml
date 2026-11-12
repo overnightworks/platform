@@ -1,0 +1,41 @@
+# The zone's facts that only Cloudflare holds, by hostname. The root reads them for the deny and the redirect rulesets,
+# and scripts/cloudflare_edge_probe.sh requests the same facts from outside, so the two cannot differ. Only the probe
+# reads health_path and redirect.serve.not_found; the root declares nothing from them.
+#
+# Every hostname of the tunnel's lines has an entry, and no other name has one; the plan fails otherwise.
+#   denied_paths: the paths the public may never reach on that host, an empty list for a host that denies nothing, so
+#                 a new host never silently gets no deny rule.
+#   health_path:  a path of that host that answers 200 at the edge, which the probe requests.
+hosts:
+  hallucinai.de:
+    denied_paths: []
+    health_path: /impressum
+  auth.hallucinai.de:
+    denied_paths: []
+    health_path: /realms/hallucinai/.well-known/openid-configuration
+  hopin.hallucinai.de:
+    denied_paths: [/auth/backchannel-logout]
+    health_path: /health
+  presentator.hallucinai.de:
+    denied_paths: [/auth/backchannel-logout]
+    health_path: /health
+  presentator-talk.hallucinai.de:
+    denied_paths: [/auth/backchannel-logout]
+    health_path: /health
+  skat.hallucinai.de:
+    denied_paths: [/auth/backchannel-logout]
+    health_path: /health
+  songmaker.hallucinai.de:
+    denied_paths: [/auth/backchannel-logout, /metrics]
+    health_path: /health
+
+# The names that answer 302 at the edge and never reach the tunnel; the apex also has a line, and the pages it serves
+# and the prefix of its files are left to the tunnel. not_found lists the pages that the origin deliberately answers 404,
+# which the redirect leaves to it all the same, so the browser's own request is not redirected.
+redirect:
+  hostnames: [hallucinai.de, www.hallucinai.de]
+  target: https://auth.hallucinai.de/
+  serve:
+    pages: [/impressum, /datenschutz, /nutzungsbedingungen, /favicon.ico]
+    not_found: [/favicon.ico]
+    files: /_rechtliches/

@@ -1,0 +1,18 @@
+ingress:
+  - hostname: hallucinai.de
+    service: http://synthetic.invalid:80
+  - hostname: auth.hallucinai.de
+    service: http://synthetic.invalid:80
+  - hostname: hopin.hallucinai.de
+    service: http://synthetic.invalid:80
+  - hostname: presentator.hallucinai.de
+    service: http://synthetic.invalid:80
+  - hostname: presentator-talk.hallucinai.de
+    service: http://synthetic.invalid:80
+  - hostname: skat.hallucinai.de
+    service: http://synthetic.invalid:80
+  - hostname: songmaker.hallucinai.de
+    service: http://synthetic.invalid:80
+  - hostname: unlisted.hallucinai.de
+    service: http://synthetic.invalid:80
+  - service: http_status:404

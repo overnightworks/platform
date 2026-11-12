@@ -64,6 +64,10 @@ spec:
                 secretKeyRef:
                   name: hopin
                   key: agent_adders
+            # The URL prefixes an agent's figure is fetched under, a JSON list: personas' release assets, which the
+            # runner's figure lines name. A prefix holds no secret, so the value stands in the manifest.
+            - name: HOPIN_FIGURE_SOURCES
+              value: '["https://github.com/overnightworks/personas/releases/download/"]'
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicies below admit
             # only Traefik's and Keycloak's, so no other pod can name a client address in X-Forwarded-For.
             - name: HOPIN_TRUSTED_PROXIES

@@ -1,0 +1,27 @@
+# The volume and the mount of presentator's image in the Job pull. Both lists merge by name, so the Job of the base is not
+# restated; the reference carries no version, which release/ adds.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: Job
+      name: pull
+    patch: |-
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: pull
+      spec:
+        template:
+          spec:
+            containers:
+              - name: pull
+                volumeMounts:
+                  - name: presentator
+                    mountPath: /images/presentator
+                    readOnly: true
+            volumes:
+              - name: presentator
+                image:
+                  reference: ghcr.io/overnightworks/presentator
+                  pullPolicy: IfNotPresent

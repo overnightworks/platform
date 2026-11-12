@@ -444,7 +444,7 @@ tofu test
 '''
 
 [tasks."cloudflare:test"]
-description = "Check the Cloudflare root: format, init against the committed lock, validate, the mocked tests and the token's shell tests"
+description = "Check the Cloudflare root: format, init against the committed lock, validate, the mocked tests, the dependency graph of the records, the token's shell tests, the plan guard's and the edge probe's"
 dir = "src/opentofu/cloudflare"
 run = '''
 #!/usr/bin/env bash
@@ -458,7 +458,15 @@ tofu validate
 tofu test
 ../../../tests/cloudflare/token_stays_out_of_argv_environment_and_trace.sh
 ../../../tests/cloudflare/token_is_kept_private_and_counted_in_plan_data_and_state.sh
+../../../tests/cloudflare/records_wait_on_the_deny_and_redirect_rulesets.sh
+../../../tests/cloudflare/adoption_plan_is_exactly_the_imports_and_at_most_the_www_content.sh
+../../../tests/cloudflare/edge_probe_reports_each_miss_of_the_edge_and_prints_the_same_before_and_after.sh
 '''
+
+[tasks."cloudflare:edge-probe"]
+description = "Request the zone's public edge from outside, with no credential, and print one line per check of the denied paths, redirects, legal pages, health paths and HSTS; fails on any miss. Run it before and after an apply: the two outputs are equal"
+quiet = true
+run = "scripts/cloudflare_edge_probe.sh"
 
 # The one owner of where scripts/apply_opentofu.sh keeps a root's state, cache, kept plan and data directory: the command
 # and the count check name them through it.

@@ -1,0 +1,8 @@
+ingress:
+  - hostname: example.test
+    service: http://synthetic.invalid:80
+  - hostname: auth.example.test
+    service: http://synthetic.invalid:80
+  - hostname: app.example.test
+    service: http://synthetic.invalid:80
+  - service: http_status:404

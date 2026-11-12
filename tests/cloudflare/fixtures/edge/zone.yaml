@@ -1,0 +1,18 @@
+hosts:
+  example.test:
+    denied_paths: []
+    health_path: /legal
+  auth.example.test:
+    denied_paths: []
+    health_path: /realms/synthetic/.well-known/openid-configuration
+  app.example.test:
+    denied_paths: [/hook/logout, /metrics]
+    health_path: /health
+
+redirect:
+  hostnames: [example.test, www.example.test]
+  target: https://auth.example.test/
+  serve:
+    pages: [/legal, /terms, /icon]
+    not_found: [/icon]
+    files: /files/
