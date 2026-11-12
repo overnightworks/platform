@@ -80,13 +80,6 @@ roles:
   realm:
     - name: speech-workload
       description: Service-account-only marker of an app workload calling the speech service.
-      composites:
-        realm: [speech-service-user]
-    # The condition of the scope speech-service-audience (scopeMappings below): Keycloak applies the scope only to a
-    # principal that holds it, which the group /services/speech-service and the role speech-workload give. It is a realm
-    # role, since a client role of speech-service would make the audience of every token of a member of the group.
-    - name: speech-service-user
-      description: Holds the right to the audience of the speech service.
 groups:
   - name: apps
     subGroups:
@@ -114,7 +107,6 @@ groups:
     subGroups:
       # Exactly this path is the speech service's right; it has no subgroup.
       - name: speech-service
-        realmRoles: [speech-service-user]
       # Exactly this path is the AI right. keycloak:move-group moves the members of
       # /services/agent-service/api here; no realm file declares that group, so no apply creates it.
       - name: litellm
@@ -477,10 +469,6 @@ clientScopes:
           id.token.claim: "false"
           userinfo.token.claim: "false"
           introspection.token.claim: "true"
-# The scope's role scope mapping: Keycloak applies speech-service-audience only to a principal that holds this role.
-scopeMappings:
-  - clientScope: speech-service-audience
-    roles: [speech-service-user]
 # Every new account is asked once to accept the terms of use.
 # `priority` is stated because config-cli writes 0 for a missing one. Deleting this block does not
 # switch the action off (IMPORT_MANAGED_REQUIREDACTION is no-delete in config-cli.yaml): set `enabled: false`.
