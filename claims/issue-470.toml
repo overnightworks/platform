@@ -1,8 +1,0 @@
-claim_id = "6e4c5f7aa8bf466d90cb52c4dfd3e219"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "1146b59d294e3a2cc3610efdd69cfcef2d3d5294"
-branch = "claude/issue-470-songmaker-runs-its-release-2026-11-11-2"
-scope = [".github/workflows/ci.yml", "apps/songmaker", "infrastructure/legal/sections", "tests/songmaker/route_reaches_the_web.sh", "tests/traefik/backchannel_logout_is_refused_at_the_edge.sh"]
-opened_commit = "13cffb22a40ae4cc7cb54c0a2633679520470f82"
-whole_reason = "The pin, the dropped setting and the cell that proves the route change only together; a legal copy the release changes must ride in the same pull request."
