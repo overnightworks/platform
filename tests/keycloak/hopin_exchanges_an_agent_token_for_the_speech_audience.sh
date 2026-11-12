@@ -171,7 +171,8 @@ expect_refusal "the exchange of an expired token" 400 invalid_request
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 expect_refusal "the exchange of $agent's token asked without mcp-hopin" 403 access_denied
 
-# A person's token holds no hopin audience, so it is not exchangeable either.
+# A person's token holds no hopin audience, so it is not exchangeable either; a member of the speech group signs in
+# without the speech audience, which only the scope asks for.
 create_person_body() {
   jq --null-input --arg username "$person" --rawfile password "$password_file" \
     '{username: $username, enabled: true, email: ($username + "@example.invalid"), emailVerified: true,
@@ -183,6 +184,8 @@ rm -f -- "$scratch/body"
 # A create adds the realm's default actions whatever it names, so only an update clears the terms.
 person_id="$(admin GET "$realm/users?exact=true&username=$person" | jq --raw-output '.[0].id')"
 admin PUT "$realm/users/$person_id" '{"requiredActions": []}' >/dev/null
+group_id="$(admin GET "$realm/group-by-path$speech_group" | jq --raw-output .id)"
+admin PUT "$realm/users/$person_id/groups/$group_id" >/dev/null
 admin POST "$realm/clients" "$(jq --null-input --arg id "$password_client" '{clientId: $id, publicClient: true,
   directAccessGrantsEnabled: true, standardFlowEnabled: false,
   defaultClientScopes: ["basic", "profile", "email", "roles", "groups"], optionalClientScopes: []}')" >/dev/null
@@ -192,12 +195,13 @@ curl --silent --show-error --fail --data grant_type=password --data-urlencode "c
 person_claims="$(jwt_part 2 "$(<"$scratch/person-token")")"
 [ "$(jq '[.aud] | flatten | index("'"$exchanger"'") == null' <<<"$person_claims")" = true ] ||
   fail "a person's token names $exchanger in its audience"
+[ "$(jq --arg audience "$speech_audience" '([.aud] | flatten | index($audience)) == null and ((.resource_access // {}) | has($audience) | not)' \
+  <<<"$person_claims")" = true ] || fail "the token of a member of $speech_group names $speech_audience without asking for it"
 exchange "$exchanger" "$exchanger_secret_file" "$scratch/person-token" --data "scope=$exchange_scope"
 expect_refusal "the exchange of a person's token" 403 access_denied
 
 # The speech audience follows the group: outside /services/speech-service the exchange still answers, with a token that
 # names neither the group nor the audience.
-group_id="$(admin GET "$realm/group-by-path$speech_group" | jq --raw-output .id)"
 removed_membership_path="$account_path/groups/$group_id"
 admin DELETE "$removed_membership_path"
 [ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant outside $speech_group was refused"
