@@ -13,7 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 apply_stand_in() {
   local generation
   flux suspend kustomization flux-system >/dev/null
-  wait_for_the_root_to_stop_reconciling
+  until_true 240 "the reconcile of the root Kustomization flux-system ends" the_root_is_not_reconciling
   generation="$(kubectl apply --output jsonpath='{.metadata.generation}' -f - <<'YAML'
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -41,16 +41,16 @@ YAML
     { show_why_the_stand_in_is_not_ready; fail "within the time: the stand-in Kustomization presentator is Ready"; }
 }
 
-# wait_for_the_root_to_stop_reconciling: the root is suspended, so a reconcile already running is the last one, and it
-# would put the layer's own path back over the stand-in. The root's Ready is no sign of it, since a suspended
-# root was seen never Ready; the controller marks a running reconcile with the condition Reconciling.
-wait_for_the_root_to_stop_reconciling() {
-  local deadline=$((SECONDS + 240))
-  while [[ "$(kubectl --namespace flux-system get kustomization flux-system \
-    --output jsonpath='{.status.conditions[?(@.type=="Reconciling")].status}')" == True ]]; do
-    [ "$SECONDS" -lt "$deadline" ] || fail "within the time: the reconcile of the root Kustomization flux-system ends"
-    sleep 1
-  done
+# the_root_is_not_reconciling: the root is suspended, so a reconcile already running is the last one, and it would put
+# the layer's own path back over the stand-in. The root's Ready is no sign of it, since a suspended root was seen never
+# Ready; the controller marks a running reconcile with the condition Reconciling. A failed read fails the cell, since an
+# empty answer would read as no reconcile.
+the_root_is_not_reconciling() {
+  local status
+  status="$(kubectl --namespace flux-system get kustomization flux-system \
+    --output jsonpath='{.status.conditions[?(@.type=="Reconciling")].status}')" ||
+    fail "reading the conditions of the root Kustomization flux-system failed"
+  [ "$status" != True ]
 }
 
 # show_why_the_stand_in_is_not_ready: the Kustomization's verdict, the namespace's Pods and its Warning events, which
