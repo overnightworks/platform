@@ -3,6 +3,6 @@ agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
 role = "builder"
 base = "2b2e5a0b83564834b3fa269c5fb6024c70c952e4"
 branch = "claude/issue-513-presentator-pull-layer"
-scope = [".github/workflows/ci.yml", "apps/presentator", "clusters/pc/apps.yaml", "docs/app.md", "infrastructure/pull", "tests/flux", "tests/images", "tests/presentator", "tests/workloads"]
+scope = [".github/workflows/ci.yml", "apps/presentator", "clusters/pc/apps.yaml", "docs/app.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/namespaces/namespaces.yaml", "infrastructure/pull", "tests/flux", "tests/images", "tests/presentator", "tests/workloads"]
 opened_commit = "da737d2d45d27dbcfe636a043b62b13ccf9542b3"
 whole_reason = "The Job base, the Component, the pull layer and the checks that hold them prove the ordering only together."
