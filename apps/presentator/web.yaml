@@ -209,3 +209,27 @@ spec:
       ports:
         - port: http
           protocol: TCP
+---
+# Keycloak's back-channel logout reaches the web's port through the Service, never through Traefik, whose router refuses
+# the path on every host. The route answers it under any Host but the talk host's and judges the signed Logout Token
+# alone, so only Keycloak's labelled pods may send it; it adds to http-from-traefik-only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backchannel-from-keycloak
+  namespace: presentator
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - port: http
+          protocol: TCP
