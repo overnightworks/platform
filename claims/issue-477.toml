@@ -1,8 +1,0 @@
-claim_id = "fb81bb2f521244a79ce7095cb284ecc0"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "83e8457e76ae63386d4a0b22df28ab4913509848"
-branch = "claude/issue-477-presentator-2026-11-12-1"
-scope = ["apps/presentator/kustomization.yaml", "infrastructure/legal", "tests/legal"]
-opened_commit = "4b06a5e0408d58ef0b1d89ec2a4b94b8b1f5e561"
-whole_reason = "An image bump whose release changes its legal text carries the refreshed copy in the same pull request."
