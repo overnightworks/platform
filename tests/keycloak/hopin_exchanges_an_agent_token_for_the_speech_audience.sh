@@ -22,8 +22,10 @@ agent_secret_file="$scratch/agent-secret"
 exchanger_secret_file="$scratch/exchanger-secret"
 refused_secret_file="$scratch/refused-secret"
 subject_file="$scratch/subject-token"
-agent_uuid=""
-exchanger_uuid=""
+# Admin paths of what the cell switches off, set once they exist, so the exit restores them.
+agent_path=""
+account_path=""
+exchanger_path=""
 remove_throwaways() {
   local id
   id="$(admin GET "$realm/users?exact=true&username=$person" | jq --raw-output '.[0].id // empty')" || id=""
@@ -31,15 +33,17 @@ remove_throwaways() {
   id="$(admin GET "$realm/clients?clientId=$password_client" | jq --raw-output '.[0].id // empty')" || id=""
   [ -z "$id" ] || admin DELETE "$realm/clients/$id" || echo "::warning::the throwaway client $password_client was not deleted"
   # A switch-off left by a failing step must not outlive the cell.
-  [ -z "$agent_uuid" ] || set_enabled "$realm/clients/$agent_uuid" true || echo "::warning::$agent was not re-enabled"
-  [ -z "$exchanger_uuid" ] || set_enabled "$realm/clients/$exchanger_uuid" true || echo "::warning::$exchanger was not re-enabled"
+  local switched_off
+  for switched_off in "$agent_path" "$account_path" "$exchanger_path"; do
+    [ -z "$switched_off" ] || set_enabled "$switched_off" true || echo "::warning::$switched_off was not re-enabled"
+  done
   rm -rf -- "$scratch" "$admin_secret_file"
   kill "$forward_pid" 2>/dev/null || true
 }
 trap remove_throwaways EXIT
 trap 'exit 143' TERM INT
 
-# set_enabled <admin path of a client> <true|false>
+# set_enabled <admin path of a client or user> <true|false>
 set_enabled() {
   admin GET "$1" | jq --argjson enabled "$2" '.enabled = $enabled' >"$scratch/enabled-body" &&
     admin PUT "$1" "@$scratch/enabled-body" >/dev/null
@@ -47,7 +51,7 @@ set_enabled() {
 }
 
 sorted_list() { tr ' ' '\n' | grep . | LC_ALL=C sort; }
-speech_audience="$(yq --exit-status '.clientScopes[] | select(.name == "'"$exchange_scope"'") | .protocolMappers[0].config."included.client.audience"' "$REALM_FILE")"
+speech_audience="$(yq --exit-status '.clientScopes[] | select(.name == "'"$exchange_scope"'") | .protocolMappers[].config."included.client.audience" | select(. != null)' "$REALM_FILE")"
 speech_group="/services/$speech_audience"
 exchange_enabled_in_file="$(yq '[.clients[] | select(.attributes."standard.token.exchange.enabled" == "true") | .clientId] | join(" ")' "$REALM_FILE")"
 [ "$exchange_enabled_in_file" = "$exchanger" ] ||
@@ -66,8 +70,9 @@ mask_secret "$(<"$password_file")"
 live_exchangers="$(admin GET "$realm/clients" |
   jq --raw-output '[.[] | select(.attributes["standard.token.exchange.enabled"] == "true") | .clientId] | sort | join(" ")')"
 [ "$live_exchangers" = "$exchanger" ] || fail "the live realm lets '$live_exchangers' exchange, not $exchanger alone"
-agent_uuid="$(admin GET "$realm/clients?clientId=$agent" | jq --raw-output '.[0].id')"
-exchanger_uuid="$(admin GET "$realm/clients?clientId=$exchanger" | jq --raw-output '.[0].id')"
+agent_path="$realm/clients/$(admin GET "$realm/clients?clientId=$agent" | jq --raw-output '.[0].id')"
+account_path="$realm/users/$(admin GET "$agent_path/service-account-user" | jq --raw-output .id)"
+exchanger_path="$realm/clients/$(admin GET "$realm/clients?clientId=$exchanger" | jq --raw-output '.[0].id')"
 echo "the file and the live realm let $exchanger alone exchange a token"
 
 token_endpoint="$local_url/realms/$realm/protocol/openid-connect/token"
@@ -116,7 +121,7 @@ exchanged() { jq --raw-output "$1" <<<"$exchanged_claims"; }
   fail "the exchanged token still names the MCP audience"
 [ "$(exchanged '.groups | sort | join(" ")')" = "${file_groups//$'\n'/ }" ] ||
   fail "the exchanged token's groups are '$(exchanged '.groups | sort | join(" ")')', not the file's '${file_groups//$'\n'/ }'"
-[ "$(exchanged 'has("agent_name") and has("agent_owner")')" = false ] ||
+[ "$(exchanged 'has("agent_name") or has("agent_owner")')" = false ] ||
   fail "the exchanged token carries the agent's own claims, which only the agent client's mappers write"
 expiry_gap="$(jq --null-input --argjson exchanged "$exchanged_claims" --argjson subject "$subject_claims" '$exchanged.exp - $subject.exp')"
 [ "$expiry_gap" -le 1 ] || fail "the exchanged token outlives the subject token by $expiry_gap s"
@@ -155,12 +160,21 @@ person_claims="$(jwt_part 2 "$(<"$scratch/person-token")")"
 exchange "$exchanger" "$exchanger_secret_file" "$scratch/person-token" --data "scope=$exchange_scope"
 expect_refusal "the exchange of a person's token" 403 access_denied
 
-# A switch-off of the exchanging client or of the agent client stops the exchange of a token minted before.
+# A switch-off of the exchanging client, the agent client or its service account stops the exchange of a token minted
+# before.
 [ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant with scope=mcp-hopin was refused"
-set_enabled "$realm/clients/$exchanger_uuid" false
+set_enabled "$exchanger_path" false
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 expect_refusal "a disabled $exchanger's exchange" 401 invalid_client
-set_enabled "$realm/clients/$exchanger_uuid" true
+set_enabled "$exchanger_path" true
+set_enabled "$agent_path" false
+exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
+expect_refusal "the exchange of a token of the disabled $agent" 400 invalid_request
+set_enabled "$agent_path" true
+set_enabled "$account_path" false
+exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
+expect_refusal "the exchange of a token of $agent's disabled service account" 400 invalid_request
+set_enabled "$account_path" true
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 [ "$exchange_status" = 200 ] || fail "after re-enabling, $exchanger's exchange got $exchange_status '$(exchange_error)'"
 echo "re-enabled, $exchanger's exchange answers 200"
