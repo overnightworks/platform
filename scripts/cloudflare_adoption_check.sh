@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Judge the Cloudflare root's plan, as `tofu show -json <plan>` prints it on stdin, before anything is applied.
-# While the plan holds no object the state already holds (the adoption), it must be exactly an import of every declared
-# object, each at no-op, with at most one update: the content of the record www. Once the state holds the objects the
-# adoption rules do not apply, and an update of a ruleset stops unless --allow-ruleset-update names it.
+# While the plan imports any object (the adoption, a half-finished one included), it passes only without a create or a
+# delete, with every imported ruleset and setting at no-op, at most one update, the content of the record www, and every
+# declared object the state does not hold among the imports. A plan that cannot be read, an empty one or one with a
+# resource change without an address or an action included, fails. Only a plan without any import is a later plan, to
+# which the adoption rules do not apply and in which an update of a ruleset stops unless --allow-ruleset-update names it.
 # The output holds addresses, actions and attribute names, never a value of the plan.
 # Usage: scripts/cloudflare_adoption_check.sh [--allow-ruleset-update] < plan.json
 # Exit: 0 the plan passes, 1 it does not or the call is wrong.
