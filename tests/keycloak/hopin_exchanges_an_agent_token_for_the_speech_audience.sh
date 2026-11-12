@@ -131,7 +131,7 @@ echo "$exchanger's exchange of $agent's mcp-hopin token with scope=$exchange_sco
 exchange "$refused_exchanger" "$refused_secret_file" "$subject_file" --data "scope=$exchange_scope"
 expect_refusal "$refused_exchanger's exchange of the same token" 400 invalid_request
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data scope=mcp-hopin
-expect_refusal "$exchanger's exchange for the scope mcp-hopin, which is no scope of its own" 400 invalid_scope
+expect_refusal "$exchanger's exchange for the scope mcp-hopin, none of its own" 400 invalid_scope
 [ "$(agent_token)" = 200 ] || fail "$agent's grant without a scope was refused"
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 expect_refusal "the exchange of $agent's token asked without mcp-hopin" 403 access_denied
