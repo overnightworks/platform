@@ -43,7 +43,7 @@ printf '%s\n' "$*" >>"${records}/tofu.argv"
 env >>"${records}/tofu.environment"
 case "$2" in
   init | plan) ;;
-  show) echo '{"resource_changes":[{"address":"unchanged.thing","change":{"actions":["no-op"]}}]}' ;;
+  show) echo '{"resource_changes":[{"address":"unchanged.thing","change":{"actions":["no-op"]}}],"prior_state":{"values":{"root_module":{"resources":[{"mode":"managed","type":"cloudflare_dns_record","address":"unchanged.thing"}]}}}}' ;;
   *) echo "fake tofu: unexpected $*" >&2; exit 1 ;;
 esac
 FAKE

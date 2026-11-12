@@ -113,7 +113,7 @@ case "$2" in
       case "${argument}" in -out=*) cp "${work_directory}/in_plan.zip" "${argument#-out=}" ;; esac
     done
     ;;
-  show) echo '{"resource_changes":[{"address":"unchanged.thing","change":{"actions":["no-op"]}}]}' ;;
+  show) echo '{"resource_changes":[{"address":"unchanged.thing","change":{"actions":["no-op"]}}],"prior_state":{"values":{"root_module":{"resources":[{"mode":"managed","type":"cloudflare_dns_record","address":"unchanged.thing"}]}}}}' ;;
 esac
 FAKE
 chmod +x "${fake_bin}/mise" "${fake_bin}/tofu"
