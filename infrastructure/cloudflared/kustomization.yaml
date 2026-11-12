@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cloudflared
+resources:
+  - cloudflared.yaml
+# The tunnel platform's lines. A host reaches the internet only through a line in config.yaml, which changes by a pull
+# request; every other host gets the tunnel's 404. A line whose host no Ingress and no file-provider router of Traefik
+# routes gets Traefik's 404. The name carries no hash: the Deployment's checksum/config rolls the pod, and src/opentofu/
+# cloudflare reads the same file for the zone's records.
+configMapGenerator:
+  - name: cloudflared
+    files:
+      - config.yaml
+    options:
+      disableNameSuffixHash: true

@@ -1,30 +1,3 @@
-# The tunnel platform's lines. A host reaches the internet only through a line here, which changes by a pull request;
-# every other host gets the tunnel's 404. A line whose host no Ingress and no file-provider router of Traefik routes
-# gets Traefik's 404.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cloudflared
-  namespace: cloudflared
-data:
-  config.yaml: |
-    ingress:
-      - hostname: hallucinai.de
-        service: http://traefik.traefik.svc.cluster.local:80
-      - hostname: hopin.hallucinai.de
-        service: http://traefik.traefik.svc.cluster.local:80
-      - hostname: skat.hallucinai.de
-        service: http://traefik.traefik.svc.cluster.local:80
-      - hostname: songmaker.hallucinai.de
-        service: http://traefik.traefik.svc.cluster.local:80
-      - hostname: auth.hallucinai.de
-        service: http://traefik.traefik.svc.cluster.local:80
-      - hostname: presentator.hallucinai.de
-        service: http://traefik.traefik.svc.cluster.local:80
-      - hostname: presentator-talk.hallucinai.de
-        service: http://traefik.traefik.svc.cluster.local:80
-      - service: http_status:404
----
 # The token in the Secret tunnel-token, applied from platform-secrets, names the tunnel and carries its credential, so
 # this tree holds neither.
 apiVersion: apps/v1
