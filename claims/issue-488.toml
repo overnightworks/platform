@@ -1,8 +1,0 @@
-claim_id = "f77dc65523d14c119fec2bf117223ffc"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "8d3fd11367411ed955c7cc43995e754088d080dd"
-branch = "claude/issue-488-hopin-2026-11-13-1"
-scope = [".github/workflows/ci.yml", "apps/hopin/hopin.yaml", "infrastructure/legal", "tests/legal", "tests/secrets"]
-opened_commit = "1ef78c00729922b1f01bc70b0eca2b8f174fb362"
-whole_reason = "The image, the setting it reads, the dummy Secret CI starts it from and the legal copy of the same release land together."
