@@ -1,0 +1,8 @@
+claim_id = "a9ba034496d249e493877c238684c54e"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "b6f71f3798186fb8be35bad8bc084ab7e63a5822"
+branch = "claude/issue-506-personas-figures"
+scope = ["apps/hopin", "apps/personas"]
+opened_commit = "cb2b6b7d1aacfcba622dc00eba2e1fec8f81fe2c"
+whole_reason = "The pin, the two figure lines and hopin's allowed source take effect only together; both paths are directories."
