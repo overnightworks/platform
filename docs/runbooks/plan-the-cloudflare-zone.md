@@ -1,7 +1,8 @@
 # Runbook: plan the Cloudflare zone
 
-Symptom: the Cloudflare root's lookups must be read on the live zone, or the token's rights must be measured.
-Impact: nothing; the root declares no resource and writes nothing to Cloudflare.
+Symptom: the Cloudflare root's lookups and imports must be read on the live zone, or the token's rights measured.
+Impact: nothing; the root declares the zone's records and its two settings and writes nothing to Cloudflare with the
+read-only token.
 
 ## Check
 
@@ -13,8 +14,8 @@ Impact: nothing; the root declares no resource and writes nothing to Cloudflare.
    DNS, Zone Settings, Single Redirect, Transform Rules, Zone WAF, Account Rulesets and Cloudflare Tunnel set to Read,
    and stores it with `mise run cloudflare:token`. It reads the token from stdin without echo and prints only the path
    of its file.
-2. The operator: `scripts/apply_opentofu.sh cloudflare`. Exit 0: both lookups were read; 1: a failure, a 403
-   included, which shows a right the token lacks.
+2. The operator: `scripts/apply_opentofu.sh cloudflare`. Exit 0: no change; 2: the imports are planned, which the
+   plan lists; 1: a failure, a 403 included, which shows a right the token lacks.
 3. The operator: `mise run cloudflare:token-absent` (the Check).
 
 Rollback: delete the token's file, and the token in the dashboard; the root holds nothing else.
