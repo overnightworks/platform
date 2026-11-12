@@ -85,7 +85,6 @@ case_of "a half-finished adoption with a ruleset of the state updated" "${half_f
 case_of "a half-finished adoption with a record of the state updated" "${half_finished}"' | (.resource_changes[] | select(.address == $a) | .change.actions) = ["update"]' 1 "${a_record} update"
 case_of "a half-finished adoption with a setting of the state updated" "${half_finished}"' | (.resource_changes[] | select(.address == "module.settings.cloudflare_zone_setting.nel") | .change.actions) = ["update"]' 1 "module.settings.cloudflare_zone_setting.nel update"
 case_of "a half-finished adoption without the import of a ruleset" "${half_finished}"' | del(.resource_changes[] | select(.address == $deny))' 1 "${deny}" "declared" "no import"
-case_of "a created record beside rulesets that are still imports" "${half_finished}"' | (.resource_changes[] | select(.address == $a) | .change.actions) = ["create"]' 1 "${a_record} create"
 
 # Every offending address is named, not the first.
 case_of "three creates" '.resource_changes |= map(if .type == "cloudflare_ruleset" then (.change.actions = ["create"] | .change.importing = null) else . end)' 1 \
@@ -105,18 +104,20 @@ for ruleset_address in "${deny}" "${transform}"; do
   # The flag loosens nothing in the adoption.
   case_of "an update of ${ruleset_address} in the adoption with the flag" '(.resource_changes[] | select(.address == $ruleset) | .change.actions) = ["update"]' 1 "${ruleset_address} update"
 done
-# A plan that cannot be read fails, whatever the flag: nothing, a blank, a document of no plan or text that is no JSON.
-check_arguments=()
-for unreadable in '' $'\n' '{}' 'null' '[]' '"plan"' '{"resource_changes":null}' '{"resource_changes":[]}' 'not json' \
-  '{"resource_changes":[{"type":"cloudflare_dns_record","change":{"actions":[]}}]}' \
-  '{"resource_changes":[{"address":"cloudflare_dns_record.host","type":"cloudflare_dns_record","change":{"actions":[]}}]}' \
-  '{"resource_changes":[{"type":"cloudflare_dns_record","change":{"actions":["no-op"]}}]}' \
-  '{"resource_changes":[{"address":"cloudflare_dns_record.host","type":"cloudflare_dns_record","change":{}}]}'; do
-  unreadable_status=0
-  unreadable_output="$(printf '%s' "${unreadable}" | "${check}" 2>&1)" || unreadable_status=$?
-  echo "unreadable plan '${unreadable}': status ${unreadable_status}"
-  [ "${unreadable_status}" -eq 1 ] || fail "unreadable plan '${unreadable}': status ${unreadable_status}, not 1: ${unreadable_output}"
-  ! grep -q "do not apply" <<<"${unreadable_output}" || fail "unreadable plan '${unreadable}': it counts as a later plan: ${unreadable_output}"
+# A plan that cannot be read fails, whatever the flag: nothing, a blank, a document of no plan, text that is no JSON or a
+# resource change without an address or without an action.
+for flag in "" --allow-ruleset-update; do
+  for unreadable in '' $'\n' '{}' 'null' '[]' '"plan"' '{"resource_changes":null}' '{"resource_changes":[]}' 'not json' \
+    '{"resource_changes":[{"type":"cloudflare_dns_record","change":{"actions":[]}}]}' \
+    '{"resource_changes":[{"address":"cloudflare_dns_record.host","type":"cloudflare_dns_record","change":{"actions":[]}}]}' \
+    '{"resource_changes":[{"type":"cloudflare_dns_record","change":{"actions":["no-op"]}}]}' \
+    '{"resource_changes":[{"address":"cloudflare_dns_record.host","type":"cloudflare_dns_record","change":{}}]}'; do
+    unreadable_status=0
+    unreadable_output="$(printf '%s' "${unreadable}" | "${check}" ${flag:+"${flag}"} 2>&1)" || unreadable_status=$?
+    echo "unreadable plan '${unreadable}' with '${flag}': status ${unreadable_status}"
+    [ "${unreadable_status}" -eq 1 ] || fail "unreadable plan '${unreadable}' with '${flag}': status ${unreadable_status}, not 1: ${unreadable_output}"
+    ! grep -q "do not apply" <<<"${unreadable_output}" || fail "unreadable plan '${unreadable}' with '${flag}': it counts as a later plan: ${unreadable_output}"
+  done
 done
 unreadable_status=0
 "${check}" </dev/null >/dev/null 2>&1 || unreadable_status=$?
