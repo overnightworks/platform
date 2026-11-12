@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # hopin_exchanges_an_agent_token_for_the_speech_audience.sh: EXCHANGING_CLIENT of REALM_FILE, as config-cli applied it,
 # trades the mcp-hopin token of the agent client AGENT_CLIENT for a token of its own with the scope EXCHANGE_SCOPE, and
-# no other client, scope, subject, subject token or switch-off lets a token through. Prints names and outcomes, never a token or a
-# secret; every throwaway user and client is deleted on every exit.
+# no other client, scope, subject, subject token or switch-off lets a token through, and a person's token at every client is
+# what the base of BASE_REF gave. Prints names and outcomes, never a token or a secret; every throwaway user, client and
+# realm is deleted on every exit.
 set -euo pipefail
 umask 077
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
@@ -10,12 +11,15 @@ namespace="$KEYCLOAK_NAMESPACE"
 agent="$AGENT_CLIENT"
 exchanger="$EXCHANGING_CLIENT"
 refused_exchanger="$REFUSED_CLIENT"
+base_ref="$BASE_REF"
 exchange_scope="$EXCHANGE_SCOPE"
 # shellcheck source=admin_api.sh
 source "$(dirname "${BASH_SOURCE[0]}")/admin_api.sh"
 
 person=p2-exchange-person
 password_client=p2-exchange-password
+twin_client=p2-exchange-twin
+base_realm=p2-exchange-base
 scratch="$(mktemp -d "$RUNNER_TEMP/p2-exchange-cells.XXXXXX")"
 password_file="$scratch/password"
 agent_secret_file="$scratch/agent-secret"
@@ -32,8 +36,14 @@ remove_throwaways() {
   local id
   id="$(admin GET "$realm/users?exact=true&username=$person" | jq --raw-output '.[0].id // empty')" || id=""
   [ -z "$id" ] || admin DELETE "$realm/users/$id" || echo "::warning::the throwaway user $person was not deleted"
-  id="$(admin GET "$realm/clients?clientId=$password_client" | jq --raw-output '.[0].id // empty')" || id=""
-  [ -z "$id" ] || admin DELETE "$realm/clients/$id" || echo "::warning::the throwaway client $password_client was not deleted"
+  local throwaway_client
+  for throwaway_client in "$password_client" "$twin_client"; do
+    id="$(admin GET "$realm/clients?clientId=$throwaway_client" | jq --raw-output '.[0].id // empty')" || id=""
+    [ -z "$id" ] || admin DELETE "$realm/clients/$id" || echo "::warning::the throwaway client $throwaway_client was not deleted"
+  done
+  if admin GET "$base_realm" >/dev/null 2>&1; then
+    admin DELETE "$base_realm" || echo "::warning::the throwaway realm $base_realm was not deleted"
+  fi
   # A switch-off left by a failing step must not outlive the cell.
   local switched_off
   for switched_off in "$agent_path" "$account_path" "$exchanger_path"; do
@@ -178,30 +188,45 @@ create_person_body() {
     '{username: $username, enabled: true, email: ($username + "@example.invalid"), emailVerified: true,
       firstName: "Probe", lastName: "Person", credentials: [{type: "password", value: $password, temporary: false}]}'
 }
-create_person_body >"$scratch/body"
-admin POST "$realm/users" "@$scratch/body" >/dev/null
-rm -f -- "$scratch/body"
-# A create adds the realm's default actions whatever it names, so only an update clears the terms.
-person_id="$(admin GET "$realm/users?exact=true&username=$person" | jq --raw-output '.[0].id')"
-admin PUT "$realm/users/$person_id" '{"requiredActions": []}' >/dev/null
-group_id="$(admin GET "$realm/group-by-path$speech_group" | jq --raw-output .id)"
-person_membership_path="$realm/users/$person_id/groups/$group_id"
-admin PUT "$person_membership_path" >/dev/null
+# add_member <realm>: the throwaway person in the realm and in the speech group; sets person_id, group_id and
+# person_membership_path.
+add_member() {
+  create_person_body >"$scratch/body"
+  admin POST "$1/users" "@$scratch/body" >/dev/null
+  rm -f -- "$scratch/body"
+  # A create adds the realm's default actions whatever it names, so only an update clears the terms.
+  person_id="$(admin GET "$1/users?exact=true&username=$person" | jq --raw-output '.[0].id')"
+  admin PUT "$1/users/$person_id" '{"requiredActions": []}' >/dev/null
+  group_id="$(admin GET "$1/group-by-path$speech_group" | jq --raw-output .id)"
+  person_membership_path="$1/users/$person_id/groups/$group_id"
+  admin PUT "$person_membership_path" >/dev/null
+}
+add_member "$realm"
 # The throwaway client has the scopes presentator signs a person in with that matter here: the roles scope, and the speech
 # audience as an optional one.
 admin POST "$realm/clients" "$(jq --null-input --arg id "$password_client" --arg scope "$exchange_scope" '{clientId: $id,
   publicClient: true, directAccessGrantsEnabled: true, standardFlowEnabled: false,
   defaultClientScopes: ["basic", "profile", "email", "roles", "groups"], optionalClientScopes: [$scope]}')" >/dev/null
-# person_claims <curl argument>...: a person's password grant at the throwaway client; the access token goes to
-# person-token, the claims to stdout.
-person_claims() {
-  curl --silent --show-error --fail --data grant_type=password --data-urlencode "client_id=$password_client" \
-    --data-urlencode "username=$person" --data-urlencode "password@$password_file" "$@" "$token_endpoint" |
-    jq --raw-output .access_token | tr -d '\n' >"$scratch/person-token"
+# person_claims_at <token endpoint> <client> <curl argument>...: a person's password grant at the client; the access token
+# goes to person-token, the claims to stdout.
+person_claims_at() {
+  local endpoint="$1" client="$2"
+  shift 2
+  curl --silent --show-error --fail --output "$scratch/person-answer" --data grant_type=password \
+    --data-urlencode "client_id=$client" --data-urlencode "username=$person" --data-urlencode "password@$password_file" \
+    "$@" "$endpoint" || return
+  jq --raw-output .access_token "$scratch/person-answer" | tr -d '\n' >"$scratch/person-token"
   jwt_part 2 "$(<"$scratch/person-token")"
 }
-# The claims a role or a scope would change, as the speech group must not.
-audience_and_roles() { jq --compact-output '{aud: ([.aud] | flatten | sort), realm_access, resource_access}' <<<"$1"; }
+person_claims() { person_claims_at "$token_endpoint" "$password_client" "$@"; }
+# audience_and_roles <claims> [<audience to leave out>]: the claims a role or a scope would change, as the speech group
+# must not. A realm's default role carries the realm's name, which the base's realm does not share.
+audience_and_roles() {
+  jq --compact-output --arg left_out "${2:-}" 'def roles: if . == null then null
+      else .roles |= (map(if startswith("default-roles-") then "default-roles" else . end) | sort) end;
+    {aud: (([.aud] | flatten | sort) - [$left_out]), realm_access: (.realm_access | roles),
+     resource_access: ((.resource_access // {}) | map_values(roles))}' <<<"$1"
+}
 member_claims="$(person_claims)"
 [ "$(jq '[.aud] | flatten | index("'"$exchanger"'") == null' <<<"$member_claims")" = true ] ||
   fail "a person's token names $exchanger in its audience"
@@ -247,3 +272,47 @@ done < <(printf '%s|%s|%s|%s\n' \
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 [ "$exchange_status" = 200 ] || fail "after re-enabling, $exchanger's exchange got $exchange_status '$(exchange_error)'"
 echo "re-enabled, $exchanger's exchange answers 200"
+
+# A person's token at every client, with no scope and with each optional scope, is what the base gave: the same
+# audiences, realm roles and client roles, but for the audience the exchange adds to mcp-hopin. The base is the realm
+# file at the merge base with BASE_REF, imported as a throwaway realm with the scopes Keycloak ships and the file does not
+# declare, which an import that names client scopes does not create; a client is compared through a twin of its
+# representation that takes the password grant.
+git show "$(git merge-base HEAD "$base_ref"):$REALM_FILE" >"$scratch/base-realm.yaml"
+shipped_scopes="$(admin GET "$realm/client-scopes" | jq --argjson declared "$(yq --output-format json '[.clientScopes[].name]' "$scratch/base-realm.yaml")" \
+  '[.[] | select(.name as $name | $declared | index($name) | not) | del(.id) | del(.protocolMappers[]?.id)]')"
+BASE_REALM="$base_realm" yq --output-format json '.realm = strenv(BASE_REALM) | del(.users) | del(.userProfile)
+  | (.clients[] | select(has("secret")) | .secret) = "unused"' "$scratch/base-realm.yaml" |
+  jq --argjson shipped "$shipped_scopes" '.clientScopes += $shipped' >"$scratch/base-realm.json"
+admin POST "" "@$scratch/base-realm.json" >/dev/null
+add_member "$base_realm"
+base_token_endpoint="$local_url/realms/$base_realm/protocol/openid-connect/token"
+# add_twin <realm> <realm file> <client>: the client as the file states it, under the twin's id, public, with the password
+# grant and without what a password grant never reads or refuses.
+add_twin() {
+  TWIN="$twin_client" CLIENT="$3" yq --output-format json '.clients[] | select(.clientId == strenv(CLIENT))
+    | .clientId = strenv(TWIN) | .publicClient = true | .directAccessGrantsEnabled = true | .standardFlowEnabled = false
+    | .serviceAccountsEnabled = false | .consentRequired = false | del(.secret) | del(.attributes["standard.token.exchange.enabled"])' "$2" >"$scratch/body"
+  admin POST "$1/clients" "@$scratch/body" >/dev/null
+  rm -f -- "$scratch/body"
+}
+# remove_twin <realm>
+remove_twin() { admin DELETE "$1/clients/$(admin GET "$1/clients?clientId=$twin_client" | jq --raw-output '.[0].id')"; }
+for compared in $(yq '.clients[] | select(.bearerOnly != true) | .clientId' "$REALM_FILE"); do
+  add_twin "$realm" "$REALM_FILE" "$compared"
+  add_twin "$base_realm" "$scratch/base-realm.yaml" "$compared"
+  compared_scopes="$(CLIENT="$compared" yq '.clients[] | select(.clientId == strenv(CLIENT)) | (.optionalClientScopes // []) | join(" ")' "$REALM_FILE")"
+  for scope in "" $compared_scopes; do
+    scope_arguments=()
+    [ -z "$scope" ] || scope_arguments=(--data "scope=$scope")
+    left_out=""
+    [ "$scope" != mcp-hopin ] || left_out="$exchanger"
+    candidate_claims="$(person_claims_at "$token_endpoint" "$twin_client" "${scope_arguments[@]}")"
+    base_claims="$(person_claims_at "$base_token_endpoint" "$twin_client" "${scope_arguments[@]}")"
+    [ "$(audience_and_roles "$candidate_claims" "$left_out")" = "$(audience_and_roles "$base_claims" "$left_out")" ] ||
+      fail "the audiences or roles of a person's sign-in at $compared with scope '$scope' are $(audience_and_roles "$candidate_claims" "$left_out"), not the base's $(audience_and_roles "$base_claims" "$left_out")"
+  done
+  remove_twin "$realm"
+  remove_twin "$base_realm"
+  echo "a person's audiences and roles at $compared with no scope and with '$compared_scopes' equal the base's"
+done

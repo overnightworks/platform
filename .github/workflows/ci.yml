@@ -467,6 +467,8 @@ jobs:
           EXCHANGING_CLIENT: hopin
           EXCHANGE_SCOPE: speech-service-audience
           REFUSED_CLIENT: presentator
+          # The ref whose merge base holds the realm file a person's token is compared with.
+          BASE_REF: origin/main
         run: |
           tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
           # The agent client whose tokens the cells mint, once for each.
