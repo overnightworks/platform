@@ -55,6 +55,30 @@ patches:
                       - op: replace
                         path: /spec/replicas
                         value: 0
+          # The acestep-worker runs no pod in k3d, so its image stays off the node, as it does without a pull layer: the
+          # pull layer's Job mounts the other three, which the pods of songmaker's other Deployments run.
+          - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: songmaker-pull}
+            patch: |
+              - op: add
+                path: /spec/patches
+                value:
+                  - target: {group: batch, kind: Job, name: pull}
+                    patch: |
+                      apiVersion: batch/v1
+                      kind: Job
+                      metadata:
+                        name: pull
+                      spec:
+                        template:
+                          spec:
+                            containers:
+                              - name: pull
+                                volumeMounts:
+                                  - mountPath: /images/acestep-worker
+                                    $patch: delete
+                            volumes:
+                              - name: acestep-worker
+                                $patch: delete
           # k3d resolves the public MCP URLs of hopin and skat to the live apps, so a pod of the personas runner would
           # either never turn Ready or call the PC's apps with a dummy secret; the Deployment applies and runs no pod.
           - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: personas}
