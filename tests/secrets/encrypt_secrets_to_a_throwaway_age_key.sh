@@ -34,7 +34,8 @@ printf '%s' "$dummy" > "$dummy_file"
 plain_secret "$PROOF_SECRET_NAME" "$PROOF_SECRET_NAMESPACE" Opaque
 
 # Each app's files as dummies, one per key the PC's Secret holds, for an app that mounts a Secret; hex meets
-# the TURN files' grammar, and 64 characters the session secret's minimum.
+# the TURN files' grammar, and 64 characters the session secret's minimum; agent_adders is the JSON object hopin reads,
+# which names no person.
 auth="$(printf '%s:%s' "$PULL_USER" "$PULL_TOKEN" | base64 --wrap=0)"
 echo "::add-mask::$auth"
 for manifest in $APP_MANIFESTS; do
@@ -51,10 +52,13 @@ for manifest in $APP_MANIFESTS; do
       songmaker) app_keys="oidc_client_secret session_secret songmaker_internal_token litellm_key songmaker_monitoring_token" ;;
       presentator) app_keys="presentator_secret_key oidc_client_secret litellm_key" ;;
       personas) app_keys="litellm_key mozart_client_secret leonardo_client_secret" ;;
-      *) app_keys="oidc_client_secret session_secret turn_key_id turn_api_token" ;;
+      *) app_keys="oidc_client_secret session_secret turn_key_id turn_api_token agent_adders" ;;
     esac
     for key in $app_keys; do
-      value="$(openssl rand -hex 32)"
+      case "$key" in
+        agent_adders) value='{"00000000-0000-4000-8000-000000000000":"/agent-adders"}' ;;
+        *) value="$(openssl rand -hex 32)" ;;
+      esac
       echo "::add-mask::$value"
       printf '%s' "$value" > "$app_files/$key"
     done
