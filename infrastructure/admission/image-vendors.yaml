@@ -28,7 +28,8 @@ data:
   # infrastructure/storage/kustomization.yaml; https://github.com/rancher/local-path-provisioner#installation
   local-path-provisioner: docker.io/rancher/local-path-provisioner
   # infrastructure/storage/kustomization.yaml, local-path's helper pod, infrastructure/prometheus/rendered.yaml, the init
-  # container of Alertmanager, and .github/workflows/ci.yml, the cluster job's env PROBE_IMAGE; https://hub.docker.com/_/busybox
+  # container of Alertmanager, infrastructure/pull/pull.yaml, the shared pull Job, and .github/workflows/ci.yml, the
+  # cluster job's env PROBE_IMAGE; https://hub.docker.com/_/busybox
   busybox: docker.io/library/busybox
   # infrastructure/legal/legal.yaml; https://hub.docker.com/r/nginxinc/nginx-unprivileged
   nginx-unprivileged: docker.io/nginxinc/nginx-unprivileged
