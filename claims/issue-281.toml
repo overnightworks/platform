@@ -1,0 +1,8 @@
+claim_id = "808f65da7ebb421a9ca2e5262085fa13"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "1146b59d294e3a2cc3610efdd69cfcef2d3d5294"
+branch = "claude/issue-281-the-agents-runner-runs-mozart-on-the-pla"
+scope = [".github/workflows/ci.yml", "apps/personas", "clusters/pc/apps.yaml", "docs/personal-data.md", "infrastructure/litellm/front.yaml", "infrastructure/litellm/keys.yaml", "infrastructure/namespaces", "tests/flux/reconcile_the_candidate_tree.sh", "tests/flux/root_and_tunnel_carry_no_spec_patches.sh", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh", "tests/workloads/apps_run_at_their_full_ref.sh"]
+opened_commit = "19e524884839d13921dbb2dfc252a3a193cb8c53"
+whole_reason = "One app's first deployment: its manifests, its Namespace, its Kustomization, its key row and front admission and the cluster job's 0-replica patch and dummy Secret are one change, since a part alone either never turns Ready, fails the cluster job or admits a sender that runs nothing."
