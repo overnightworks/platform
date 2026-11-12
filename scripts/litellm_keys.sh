@@ -4,8 +4,11 @@
 # ConfigMap litellm-keys carries.
 #   scripts/litellm_keys.sh keys [--plan]  sends only the fields that differ; --plan writes nothing and exits 0 with no
 #                                          change, 2 with changes, 1 on a failure or a table row without a key
-#   scripts/litellm_keys.sh key <app>      registers the value of key litellm_key in Secret <app> of namespace <app> as
-#                                          the key of the table's row <app>
+#   scripts/litellm_keys.sh key <app> [--replace]
+#                                          registers the value of key litellm_key in Secret <app> of namespace <app> as
+#                                          the key of the table's row <app>; another value under the alias is refused,
+#                                          and with --replace its one key is deleted first, by its hash, and the
+#                                          alias holds no key until the registration, which the same command completes
 #   scripts/litellm_keys.sh admin <user>   puts the person on the unlimited admin budget and into the admin group of
 #                                          Keycloak, each step written and read back
 # A key's value and the master key travel from kubectl's stdout through shell variables to curl's stdin, never into an
@@ -29,8 +32,14 @@ key_minimum_length=16
 
 exec {kcadm_diagnostics_fd}>/dev/null {kcadm_update_output_fd}>/dev/null
 command_name="" task_name=litellm:admin realm="" username="" reported=false
-# The admin command's writes, each recorded before it is sent, since an answer lost on the way leaves it unknown.
+# The writes of the admin and key commands, each recorded before it is sent, since an answer lost on the way leaves it
+# unknown; a key registration the server answered with a failure is taken out again.
 attempted=()
+# What the key command's failure says of the alias it was replacing: empty unless its old key was deleted or may be.
+alias_state=""
+# What the key command's failure says of the way on: the same command completes a write that did not come to the
+# registration.
+key_way_on="the same command again completes it"
 # written_list: what the admin command wrote or may have written.
 written_list() {
   local written
@@ -39,10 +48,14 @@ written_list() {
 }
 # written_text: the list as a failure reports it, with how to finish.
 written_text() { echo "written or possibly written: $(written_list); run again to complete it"; }
+# key_written_text: the same for the key command, whose way to finish is the command itself.
+key_written_text() { echo "${alias_state:+$alias_state; }written or possibly written: $(written_list); $key_way_on"; }
 fail() {
   local suffix=""
   if [ "$command_name" = admin ]; then
     if [ "${#attempted[@]}" = 0 ]; then suffix="; nothing changed"; else suffix="; $(written_text)"; fi
+  elif [ "$command_name" = key ] && [ "${#attempted[@]}" != 0 ]; then
+    suffix="; $(key_written_text)"
   fi
   reported=true
   echo "litellm:${command_name:-keys}: $1$suffix" >&2
@@ -67,12 +80,15 @@ json() { printf '%s' "$reply" | yq --input-format json "$@"; }
 
 scratch="$(mktemp -d)"
 forwards=()
-# on_exit: ends the port-forwards and the Keycloak sign-in; an admin run that sent a write and ends without having said
-# so (a signal) names it.
+# on_exit: ends the port-forwards and the Keycloak sign-in; an admin or key run that sent a write and ends without having
+# said so (a signal) names it.
 on_exit() {
   local exit_status=$? pid
-  if [ "$command_name" = admin ] && [ "$reported" = false ] && [ "$exit_status" != 0 ] && [ "${#attempted[@]}" != 0 ]; then
-    echo "litellm:admin: interrupted; $(written_text)" >&2
+  if [ "$reported" = false ] && [ "$exit_status" != 0 ] && [ "${#attempted[@]}" != 0 ]; then
+    case "$command_name" in
+      admin) echo "litellm:admin: interrupted; $(written_text)" >&2 ;;
+      key) echo "litellm:key: interrupted; $(key_written_text)" >&2 ;;
+    esac
   fi
   for pid in "${forwards[@]}"; do kill "$pid" 2>/dev/null || true; done
   remove_config
@@ -337,9 +353,46 @@ keys_command() {
   [ "$missing" = 0 ] || exit 1
 }
 
+# replace_key <app>: deletes the one key found_keys found under the alias, by its hash, which cannot reach another
+# alias's key; the alias holds no key afterwards, or may not when the answer is lost.
+replace_key() {
+  alias_state="the alias $1 may hold no key"
+  attempted+=("delete of the old key of $1")
+  ask "deleting the old key of $1" /key/delete "{\"keys\":[\"$(key_hash)\"]}" discard
+  alias_state="the alias $1 now holds no key"
+}
+# register_key <app> <value> <hash>: makes the key with the table row's fields, then reads it back as the only key of
+# the alias, with the value's hash and those fields.
+register_key() {
+  local app="$1" value="$2" desired body state_before="$alias_state"
+  desired="$(desired_key "$app")"
+  body="{\"key\":\"$(quote_inner "$value")\",\"key_alias\":\"$app\",${desired#\{}"
+  attempted+=("registration of the key of $app")
+  alias_state="the alias $app holds no key or the new one"
+  request "making the key of $app" /key/generate "$body" discard || {
+    # An answered failure made no key; a lost answer leaves the registration possibly made.
+    if [ "$status" != 000 ]; then
+      unset 'attempted[-1]'
+      alias_state="$state_before"
+    fi
+    fail "$failure"
+  }
+  # The alias holds the new key from here on, so running the command again completes nothing.
+  alias_state="the alias $app was given the new key"
+  key_way_on="mise run litellm:keys reports the keys of the alias and corrects their fields"
+  found_keys "$app"
+  [ "$key_count" = 1 ] && [ "$(key_hash)" = "$3" ] || fail "the alias $app did not read back with the registered value"
+  differences "$desired" "$found_row"
+  [ "$change_fields" = "{}" ] || fail "the key of $app did not read back with the table's fields"
+}
+
 key_command() {
-  local app="${1-}" secret_data value value_hash desired body table_app has_row=false
-  [ "$#" = 1 ] || fail "usage: scripts/litellm_keys.sh key <app>"
+  local app="${1-}" secret_data value value_hash table_app has_row=false replace=false verb=made
+  case "$#:${2-}" in
+    1:) ;;
+    2:--replace) replace=true ;;
+    *) fail "usage: scripts/litellm_keys.sh key <app> [--replace]" ;;
+  esac
   connect
   read_table
   for table_app in "${app_names[@]}"; do
@@ -361,16 +414,18 @@ key_command() {
   case "$key_count" in
     0) ;;
     1)
-      [ "$(key_hash)" = "$value_hash" ] || fail "another key value holds the alias $app; nothing changed"
-      echo "litellm:key: $app unchanged"
-      return 0
+      if [ "$(key_hash)" = "$value_hash" ]; then
+        echo "litellm:key: $app unchanged"
+        return 0
+      fi
+      [ "$replace" = true ] || fail "another key value holds the alias $app; nothing changed; run again with --replace to replace it"
+      replace_key "$app"
+      verb=replaced
       ;;
     *) fail "$key_count keys hold the alias $app; nothing changed" ;;
   esac
-  desired="$(desired_key "$app")"
-  body="{\"key\":\"$(quote_inner "$value")\",\"key_alias\":\"$app\",${desired#\{}"
-  ask "making the key of $app" /key/generate "$body" discard
-  echo "litellm:key: $app made"
+  register_key "$app" "$value" "$value_hash"
+  echo "litellm:key: $app $verb"
 }
 
 # The admin budget has no limit and resets monthly; its group marks who is on it.
@@ -460,5 +515,5 @@ case "${1-}" in
     shift
     admin_command "$@"
     ;;
-  *) fail "usage: scripts/litellm_keys.sh keys [--plan] | key <app> | admin <username>" ;;
+  *) fail "usage: scripts/litellm_keys.sh keys [--plan] | key <app> [--replace] | admin <username>" ;;
 esac

@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Drive `mise run litellm:keys` and `mise run litellm:key` against a fake kubectl and a fake curl, for the outcomes the
 # cluster cannot arrange: a write that fails midway stops the rest, names what was made, which one failed and what was
-# not made, and prints no reply body, a lost answer included; a failed key registration names the step and the status; a
-# budget-only change sends no period; a table that is no table of numbers, a revision that is absent or changes while the
-# table is read and a value with a newline are refused before any write; and neither a key's value, the master key nor
-# the value's sha256 reaches an argument or any output, tracing included, while the value does reach curl's stdin.
+# not made, and prints no reply body, a lost answer included; a failed key registration names the step and the status;
+# another value under the alias is refused without --replace and replaced with it by deleting that one key by its hash
+# and registering the Secret's value; a failure between the delete and the registration says that the alias holds no key
+# and the same command completes it, a lost answer that it may hold the new one; a failed delete says the alias may hold
+# no key, and a signal or a read-back that differs after the registration says the alias may hold or was given the new key
+# and names no command that completes it; a budget-only change sends no period; a table that is no table of numbers, a revision that is absent or changes
+# while the table is read and a value with a newline are refused before any write; and neither a key's value, the master
+# key nor the value's sha256 reaches an argument or any output, tracing included, while the value does reach curl's stdin.
 # Usage: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
-# Proves docs/operations.md OPS-14.
+# Proves docs/operations.md OPS-14, OPS-16.
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -47,11 +51,13 @@ case "$*" in
   *) echo "fake kubectl: unexpected $*" >&2; exit 1 ;;
 esac
 FAKE
-# The fake LiteLLM lists one model and keeps what it is told in FAKE_STATE: the person budget, and for each app but hopin
-# a key, which starts with fields that all differ from the table. A write named by FAKE_FAILING_WRITE (a path and a
-# body marker) is answered with 500 and a body, or with FAKE_TRANSPORT_FAILURE after it was applied with a lost answer;
-# every other write is applied and answered 200. It records each write's path, the body of the updates, and whether the
-# key value reached its stdin.
+# The fake LiteLLM lists one model and keeps what it is told in FAKE_STATE: the person budget, and for each app a key,
+# which starts with fields that all differ from the table; hopin's starts absent, or held by another value when
+# FAKE_HOPIN_HOLDER is set. A write named by FAKE_FAILING_WRITE (a path and a body marker) is answered with 500 and a
+# body, or with FAKE_TRANSPORT_FAILURE after it was applied with a lost answer; every other write is applied and
+# answered 200. It records each write's path, the body of the updates, registrations and deletions, and whether the key
+# value reached its stdin. After it applied a registration, FAKE_GENERATE_DRIFT=field reads the row back with another
+# limit and =token under another value, and FAKE_SIGNAL_TERM sends TERM to the script before the answer arrives.
 cat >"$fake_bin/curl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -70,7 +76,12 @@ case "$path" in
   /budget/list)
     reply='[]'
     [ ! -f "$FAKE_STATE/budget.json" ] || reply="[$(cat "$FAKE_STATE/budget.json")]" ;;
-  "/key/list?key_alias=hopin"*) reply='{"keys":[]}' ;;
+  "/key/list?key_alias=hopin"*)
+    row="$FAKE_STATE/row-hopin.json"
+    [ -z "$FAKE_HOPIN_HOLDER" ] || [ -f "$row" ] || [ -f "$FAKE_STATE/hopin-deleted" ] ||
+      printf '{"key_alias":"hopin","token":"hash-old-hopin","max_budget":1,"budget_duration":"1d","max_parallel_requests":1,"models":[],"allowed_routes":[]}' >"$row"
+    reply='{"keys":[]}'
+    [ ! -f "$row" ] || reply="{\"keys\":[$(cat "$row")]}" ;;
   "/key/list?key_alias="*)
     alias="${path#*key_alias=}"
     alias="${alias%%&*}"
@@ -89,8 +100,25 @@ case "$path" in
       case "$path" in
         /key/update)
           echo "update $data" >>"$FAKE_STATE/bodies"
-          target="$(yq --input-format json '.key | sub("^hash-"; "")' <<<"$data")"
-          json -i ". * $data" "$FAKE_STATE/row-$target.json" ;;
+          for row in "$FAKE_STATE"/row-*.json; do
+            [ "$(yq --output-format yaml '.token' "$row")" != "$(yq --input-format json '.key' <<<"$data")" ] || json -i ". * $data" "$row"
+          done ;;
+        /key/generate)
+          echo "register $data" >>"$FAKE_STATE/bodies"
+          value="$(yq --input-format json '.key' <<<"$data")"
+          token="$(printf '%s' "$value" | sha256sum)"
+          row="$FAKE_STATE/row-$(yq --input-format json '.key_alias' <<<"$data").json"
+          json "del(.key) | .token = \"${token%% *}\"" <<<"$data" >"$row"
+          case "$FAKE_GENERATE_DRIFT" in
+            field) json -i '.max_parallel_requests += 1' "$row" ;;
+            token) json -i '.token = "hash-another"' "$row" ;;
+          esac
+          [ -z "$FAKE_SIGNAL_TERM" ] || kill -TERM "$(ps -o ppid= -p "$PPID" | tr -d ' ')" ;;
+        /key/delete)
+          echo "delete $data" >>"$FAKE_STATE/bodies"
+          for row in "$FAKE_STATE"/row-*.json; do
+            [ "$(yq --output-format yaml '.token' "$row")" != "$(yq --input-format json '.keys[0]' <<<"$data")" ] || { rm "$row"; touch "$FAKE_STATE/hopin-deleted"; }
+          done ;;
         /budget/new | /budget/update)
           echo "budget $data" >>"$FAKE_STATE/bodies"
           [ -f "$FAKE_STATE/budget.json" ] || echo '{}' >"$FAKE_STATE/budget.json"
@@ -108,7 +136,7 @@ export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux,flux2 KUBECONFIG=/
 [ "$(command -v kubectl)" = "$fake_bin/kubectl" ] || fail "kubectl on PATH is not the fake"
 [ "$(command -v curl)" = "$fake_bin/curl" ] || fail "curl on PATH is not the fake"
 export FAKE_MASTER_KEY="$master_key" FAKE_APP_KEY="$app_key" FAKE_SECRET_VALUE="$app_key" FAKE_REPLY_BODY="$reply_body"
-export FAKE_REVISION=applied FAKE_TRANSPORT_FAILURE=""
+export FAKE_REVISION=applied FAKE_TRANSPORT_FAILURE="" FAKE_HOPIN_HOLDER="" FAKE_GENERATE_DRIFT="" FAKE_SIGNAL_TERM=""
 
 budget_id="$(yq '.litellm_settings.max_end_user_budget_id' "$layer/litellm-config.yaml")"
 # use_table [<yq expression>]: the layer's files with the table reduced to the test's own rows and then edited, which the
@@ -230,3 +258,89 @@ grep -q '^update .*"max_budget"' "$FAKE_STATE/bodies" || fail "budget-only: the 
   fail "budget-only: the update holds more than the budget: $(cat "$FAKE_STATE/bodies")"
 use_table
 echo "a changed budget alone sends the budget and no period"
+
+# Another value under the alias is refused without --replace, naming the flag, and nothing is written.
+FAKE_HOPIN_HOLDER=other run_task refused-without-flag 1 "" litellm:key hopin
+grep -q 'another key value holds the alias hopin; nothing changed; run again with --replace to replace it$' <<<"$output" ||
+  fail "refused-without-flag: the refusal does not name --replace: $output"
+[ -z "$writes" ] || fail "refused-without-flag: a write ran: $writes"
+echo "another value under the alias is refused without --replace, naming the flag, and nothing is written"
+
+# With --replace the one key that holds the alias is deleted by its hash, never by the alias, and the Secret's value
+# is registered with the row's fields and read back; a second run changes nothing.
+FAKE_HOPIN_HOLDER=other run_task replacement 0 "" litellm:key hopin --replace
+grep -q '^litellm:key: hopin replaced$' <<<"$output" || fail "replacement: the alias is not reported as replaced: $output"
+[ "$(grep '^write \|^app-key' <<<"$writes" | paste -sd,)" = 'write /key/delete,app-key-on-stdin /key/generate,write /key/generate' ] ||
+  fail "replacement: not one delete and then one registration carrying the value on stdin: $writes"
+[ "$(grep '^delete ' "$FAKE_STATE/bodies")" = 'delete {"keys":["hash-old-hopin"]}' ] ||
+  fail "replacement: the delete does not name the old key by its hash alone: $(cat "$FAKE_STATE/bodies")"
+FAKE_HOPIN_HOLDER=other run_task replacement 0 "" litellm:key hopin --replace
+grep -q '^litellm:key: hopin unchanged$' <<<"$output" && [ -z "$writes" ] ||
+  fail "replacement: a second run did not leave the alias unchanged: $output $writes"
+echo "--replace deletes the one old key by its hash, registers the Secret's value and reports it; a second run is unchanged"
+
+# An alias without a key is made as without the flag.
+run_task replace-nothing 0 "" litellm:key hopin --replace
+grep -q '^litellm:key: hopin made$' <<<"$output" && ! grep -q '^write /key/delete' <<<"$writes" ||
+  fail "replace-nothing: an alias without a key was not simply made: $output $writes"
+echo "--replace on an alias without a key makes the key and deletes nothing"
+
+# A failure between the delete and the registration says that the alias holds no key and that the same command
+# completes it, and the same command does.
+FAKE_HOPIN_HOLDER=other run_task failed-replacement 1 /key/generate litellm:key hopin --replace
+grep -q 'making the key of hopin answered with status 500, not 200; the alias hopin now holds no key; written or possibly written: delete of the old key of hopin; the same command again completes it$' \
+  <<<"$output" || fail "failed-replacement: the output does not say the alias holds no key and how to finish: $output"
+FAKE_HOPIN_HOLDER=other run_task failed-replacement 0 "" litellm:key hopin --replace
+grep -q '^litellm:key: hopin made$' <<<"$output" || fail "failed-replacement: the same command did not complete it: $output"
+FAKE_TRANSPORT_FAILURE=1 FAKE_HOPIN_HOLDER=other run_task lost-registration 1 /key/generate litellm:key hopin --replace
+grep -q 'answered with status 000, not 200; the alias hopin holds no key or the new one; written or possibly written: delete of the old key of hopin, registration of the key of hopin; the same command again completes it$' \
+  <<<"$output" || fail "lost-registration: the output does not name the unknown state: $output"
+echo "a failure after the delete says the alias holds no key and the same command completes it, a lost answer that it may hold the new one"
+
+# Once the registration answered 200 the alias holds the new key, so a read-back that differs does not say that the
+# same command completes it; litellm:keys is the way on.
+for drift in field token; do
+  for flag in "" --replace; do
+    FAKE_GENERATE_DRIFT="$drift" FAKE_HOPIN_HOLDER="${flag:+other}" run_task "readback-$drift$flag" 1 "" litellm:key hopin $flag
+    grep -q 'did not read back with the ' <<<"$output" || fail "readback-$drift$flag: no read-back failure: $output"
+    grep -q "; the alias hopin was given the new key; written or possibly written: .*registration of the key of hopin; mise run litellm:keys reports the keys of the alias and corrects their fields\$" \
+      <<<"$output" || fail "readback-$drift$flag: the output does not name the real way on: $output"
+    ! grep -q 'the same command again completes it' <<<"$output" || fail "readback-$drift$flag: the output promises the same command completes it: $output"
+  done
+done
+run_task readback-field 0 "" litellm:keys
+run_task readback-field 0 "" litellm:keys --plan
+grep -q ' 0 changes planned' <<<"$output" || fail "readback-field: litellm:keys left the drifted fields: $output"
+echo "a read-back that differs after the registration names the new key and litellm:keys, never the same command"
+
+# A signal while the registration is in flight names the registration and that the alias may hold the new key, which the
+# fake applied before the signal reached the script.
+runner=(bash "$repository_root/scripts/litellm_keys.sh")
+FAKE_SIGNAL_TERM=1 FAKE_HOPIN_HOLDER=other run_task signalled-registration 143 "" key hopin --replace
+grep -q 'interrupted; the alias hopin holds no key or the new one; written or possibly written: delete of the old key of hopin, registration of the key of hopin; the same command again completes it$' \
+  <<<"$output" || fail "signalled-registration: the output does not name the registration and the unknown alias: $output"
+FAKE_SIGNAL_TERM=1 run_task signalled-made 143 "" key hopin
+grep -q 'interrupted; the alias hopin holds no key or the new one; written or possibly written: registration of the key of hopin; the same command again completes it$' \
+  <<<"$output" || fail "signalled-made: the output does not name the registration and the unknown alias: $output"
+runner=(mise run)
+echo "a signal during the registration names it and says the alias may hold the new key"
+
+# A failed delete leaves the old key and says the alias may hold no key.
+FAKE_HOPIN_HOLDER=other run_task failed-delete 1 /key/delete litellm:key hopin --replace
+grep -q 'deleting the old key of hopin answered with status 500, not 200; the alias hopin may hold no key; written or possibly written: delete of the old key of hopin; the same command again completes it$' \
+  <<<"$output" || fail "failed-delete: the output does not name the possible delete: $output"
+! grep -q '^write /key/generate' <<<"$writes" || fail "failed-delete: a registration ran after the failed delete: $writes"
+echo "a failed delete stops before the registration and says the alias may hold no key"
+
+runner=(bash -x "$repository_root/scripts/litellm_keys.sh")
+FAKE_HOPIN_HOLDER=other run_task traced-replacement 0 "" key hopin --replace
+runner=(mise run)
+echo "a --replace run under bash -x prints no value"
+
+for usage in "hopin --replace extra" "hopin --other"; do
+  # shellcheck disable=SC2086 # the arguments are words
+  run_task usage 1 "" litellm:key $usage
+  grep -q 'usage: scripts/litellm_keys.sh key <app> \[--replace\]' <<<"$output" || fail "usage: '$usage' was not refused as usage: $output"
+  [ -z "$writes" ] || fail "usage: '$usage' wrote: $writes"
+done
+echo "an unknown flag or a second argument is refused as usage before any write"

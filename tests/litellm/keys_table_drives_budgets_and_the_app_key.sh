@@ -5,11 +5,13 @@
 # nothing; a changed budget changes only that field and keeps the period's reset; the person budget takes its declared
 # number under the id LiteLLM's configuration names; litellm:key registers the value of the app's Secret so that it
 # passes the front, a second run reports unchanged, and a changed value, one without sk-, a missing key and an app
-# outside the table are refused and change no row; no output holds a value, the master key or the value's sha256. The
-# rows carry the models LiteLLM lists and the routes the front's rules name, read from their owners.
+# outside the table are refused and change no row; with --replace a changed value replaces the old one, which the front
+# then refuses while it admits the new one, with the table's budget, and a second run reports unchanged; no output holds
+# a value, the master key or the value's sha256. The rows carry the models LiteLLM lists and the routes the front's
+# rules name, read from their owners.
 # The Kustomizations litellm and platform-secrets are suspended meanwhile, so that neither restores the table or the
 # Secret hopin, and resumed on every exit.
-# Proves docs/operations.md OPS-13, OPS-14.
+# Proves docs/operations.md OPS-13, OPS-14, OPS-16.
 set -euo pipefail
 # No value of this cell reaches a trace.
 { set +x; } 2>/dev/null
@@ -212,24 +214,30 @@ equal_numbers "$(row hopin max_budget)" "$(yq '.apps.hopin.budget' <<<"$table_or
 set_table "$(yq 'del(.apps.personas)' <<<"$table_original")"
 run_task after-registration 0 litellm:keys --plan
 grep -q ' 0 changes planned' <<<"$output" || fail "the new row differs from the table: $output"
-client_pod="${CLIENT_POD//@NAME@/keys-client}"
-client_pod="${client_pod//@IMAGE@/$CLIENT_IMAGE}"
-# The header line reaches curl as a file of a Secret mounted in the Pod, so neither the Pod's arguments nor its stored
-# specification hold the value, and the Secret takes it by stdin.
-printf '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"keys-client-header"},"data":{"header":"%s"}}' \
-  "$(printf 'Authorization: Bearer %s\n' "$app_key" | base64 --wrap=0)" |
-  kubectl --namespace "$app_namespace" create -f - >/dev/null
-client_pod="$(URL="$front_url/v1/models" yq '
-  .spec.volumes = [{"name": "header", "secret": {"secretName": "keys-client-header", "defaultMode": 292}}] |
-  .spec.containers[0].volumeMounts = [{"name": "header", "mountPath": "/header", "readOnly": true}] |
-  .spec.containers[0].args = ["--silent", "--output", "/dev/null", "--write-out", "%{http_code}",
-  "--max-time", "10", "--retry", "5", "--retry-connrefused", "--retry-delay", "2", "--retry-max-time", "30",
-  "--header", "@/header/header", strenv(URL)]' <<<"$client_pod")"
-printf '%s\n' "$client_pod" | kubectl --namespace "$app_namespace" create -f - >/dev/null
-kubectl --namespace "$app_namespace" wait pod/keys-client --timeout=3m \
-  --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' >/dev/null
-client_status="$(kubectl --namespace "$app_namespace" logs pod/keys-client)"
-kubectl --namespace "$app_namespace" delete pod keys-client --wait --timeout=2m >/dev/null
+# front_status <key>: the status the front gives a Pod in the app's namespace for GET /v1/models with the key. The header
+# line reaches curl as a file of a Secret mounted in the Pod, so neither the Pod's arguments nor its stored specification
+# hold the value, and the Secret takes it by stdin.
+front_status() {
+  local pod
+  pod="${CLIENT_POD//@NAME@/keys-client}"
+  pod="${pod//@IMAGE@/$CLIENT_IMAGE}"
+  kubectl --namespace "$app_namespace" delete secret keys-client-header --ignore-not-found >/dev/null
+  printf '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"keys-client-header"},"data":{"header":"%s"}}' \
+    "$(printf 'Authorization: Bearer %s\n' "$1" | base64 --wrap=0)" |
+    kubectl --namespace "$app_namespace" create -f - >/dev/null
+  pod="$(URL="$front_url/v1/models" yq '
+    .spec.volumes = [{"name": "header", "secret": {"secretName": "keys-client-header", "defaultMode": 292}}] |
+    .spec.containers[0].volumeMounts = [{"name": "header", "mountPath": "/header", "readOnly": true}] |
+    .spec.containers[0].args = ["--silent", "--output", "/dev/null", "--write-out", "%{http_code}",
+    "--max-time", "10", "--retry", "5", "--retry-connrefused", "--retry-delay", "2", "--retry-max-time", "30",
+    "--header", "@/header/header", strenv(URL)]' <<<"$pod")"
+  printf '%s\n' "$pod" | kubectl --namespace "$app_namespace" create -f - >/dev/null
+  kubectl --namespace "$app_namespace" wait pod/keys-client --timeout=3m \
+    --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' >/dev/null
+  kubectl --namespace "$app_namespace" logs pod/keys-client
+  kubectl --namespace "$app_namespace" delete pod keys-client --wait --timeout=2m >/dev/null
+}
+client_status="$(front_status "$app_key")"
 [ "$client_status" = 200 ] || fail "the front answered a Pod in $app_namespace with $client_status, not 200, for the registered value"
 echo "litellm:key makes the row with the table's fields and a Pod in $app_namespace gets 200 from the front with the value"
 
@@ -242,7 +250,8 @@ other_key="sk-$(openssl rand -hex 24)"
 forbid "$other_key"
 put_secret_key "$other_key"
 run_task changed-value 1 litellm:key hopin
-grep -q 'another key value holds the alias hopin' <<<"$output" || fail "a changed value was not refused as such: $output"
+grep -q 'another key value holds the alias hopin; nothing changed; run again with --replace to replace it' <<<"$output" ||
+  fail "a changed value was not refused as such, naming --replace: $output"
 no_prefix_key="no-prefix-$(openssl rand -hex 24)"
 forbid "$no_prefix_key"
 put_secret_key "$no_prefix_key"
@@ -255,4 +264,20 @@ run_task outside-table 1 litellm:key not-in-the-table
 grep -q 'has no row in the table' <<<"$output" || fail "an app outside the table was not refused as such: $output"
 [ "$(snapshot)" = "$before" ] || fail "a refusal changed a row"
 echo "a changed value, one without sk-, a Secret without the key and an app outside the table are refused and change no row"
+
+# With --replace the changed value takes the alias: the old value is refused at the front, the new one admitted, the row
+# is the table's, and a second run changes nothing.
+put_secret_key "$other_key"
+run_task replacement 0 litellm:key hopin --replace
+grep -q '^litellm:key: hopin replaced$' <<<"$output" || fail "the alias was not reported as replaced: $output"
+[ "$(front_status "$app_key")" = 401 ] || fail "the front admitted the old value after the replacement"
+[ "$(front_status "$other_key")" = 200 ] || fail "the front refused the new value after the replacement"
+equal_numbers "$(row hopin max_budget)" "$(yq '.apps.hopin.budget' <<<"$table_original")" &&
+  equal_numbers "$(row hopin max_parallel_requests)" "$(yq '.apps.hopin.parallel' <<<"$table_original")" &&
+  [ "$(row hopin budget_duration)" = "$period" ] || fail "the replacing key is not the table's row"
+run_task replacement-unchanged 0 litellm:key hopin --replace
+grep -q '^litellm:key: hopin unchanged$' <<<"$output" || fail "a second --replace did not print unchanged: $output"
+run_task after-replacement 0 litellm:keys --plan
+grep -q ' 0 changes planned' <<<"$output" || fail "the replacing key differs from the table: $output"
+echo "--replace deletes the old value and registers the Secret's: the front refuses the old one and admits the new one, with the table's budget, and a second run is unchanged"
 echo "no output of any run holds a key's value, the master key or a value's sha256"
