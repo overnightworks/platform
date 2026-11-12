@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: ghcr.io/overnightworks/skat:2026.11.09.1@sha256:269294a74f12030ce89f6b7ac8b7b481e98a73086157aa19e8bbd266dd55d516
+          image: ghcr.io/overnightworks/skat:2026.11.13.1@sha256:b6425348c69292627ff3e4f523ddb9468f91d91bdc3d0a4620eaedf46741f7dc
           args: [skat, migrate]
           env:
             # The URL names no password: the file below is the password's one owner, the namespace's Postgres.
@@ -38,6 +38,11 @@ spec:
               value: postgresql://skat@postgres:5432/skat
             - name: SKAT_DATABASE_PASSWORD_FILE
               value: /run/secrets/postgres/password
+            - name: SKAT_OPERATOR_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: skat
+                  key: operator_account_id
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -51,7 +56,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: skat
-          image: ghcr.io/overnightworks/skat:2026.11.09.1@sha256:269294a74f12030ce89f6b7ac8b7b481e98a73086157aa19e8bbd266dd55d516
+          image: ghcr.io/overnightworks/skat:2026.11.13.1@sha256:b6425348c69292627ff3e4f523ddb9468f91d91bdc3d0a4620eaedf46741f7dc
           args: [skat, serve]
           ports:
             - name: http
@@ -69,6 +74,11 @@ spec:
               value: postgresql://skat@postgres:5432/skat
             - name: SKAT_DATABASE_PASSWORD_FILE
               value: /run/secrets/postgres/password
+            - name: SKAT_OPERATOR_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: skat
+                  key: operator_account_id
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicy below admits
             # only Traefik's, so no other pod can name a client address in X-Forwarded-For.
             - name: SKAT_TRUSTED_PROXIES
