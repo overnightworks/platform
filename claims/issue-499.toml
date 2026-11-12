@@ -1,0 +1,8 @@
+claim_id = "8c8923fb5f7a4dd4a5fc1bc0f2b33085"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "a1c43b19e1801d3257d926aa49aa93d30b915e86"
+branch = "claude/issue-499-songmaker-2026-11-12-1"
+scope = ["apps/songmaker", "infrastructure/legal", "tests/legal"]
+opened_commit = "54d6335001dc49719719cd9f0c3b8ef07f28c366"
+whole_reason = "The four images of one release move together."
