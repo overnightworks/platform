@@ -58,7 +58,11 @@ judgement="$(jq --slurp --argjson allow "${allow_ruleset_update}" '
       unreadable("the plan is empty or holds no list of resource changes, so it cannot be judged")
     else
       [$plan.resource_changes[] | select((.mode // "managed") == "managed")] as $changes
-      | (($plan.planned_values // null) | if . == null then [] else planned(.root_module // {}) end) as $instances
+      | if ($changes | all(((.address | type) == "string" and (.address | length) > 0)
+          and ((.change.actions | type) == "array" and (.change.actions | length) > 0 and (.change.actions | all(type == "string"))))) | not then
+          unreadable("a resource change of the plan has no address or no action, so it cannot be judged")
+        else
+      (($plan.planned_values // null) | if . == null then [] else planned(.root_module // {}) end) as $instances
       | if ($changes | length) == 0 and ($instances | length) == 0 then
           unreadable("the plan holds no resource, so it cannot be judged")
         elif ($changes | any(.change.importing != null) | not) then
@@ -96,6 +100,7 @@ judgement="$(jq --slurp --argjson allow "${allow_ruleset_update}" '
                   | {address, actions: actions_text, reason: "is imported and declared nowhere"}]
               )
             }
+        end
         end
     end
 ' 2>&1)" || fail "the plan could not be read"

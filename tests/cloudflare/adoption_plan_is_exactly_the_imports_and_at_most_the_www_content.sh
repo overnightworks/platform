@@ -107,7 +107,11 @@ for ruleset_address in "${deny}" "${transform}"; do
 done
 # A plan that cannot be read fails, whatever the flag: nothing, a blank, a document of no plan or text that is no JSON.
 check_arguments=()
-for unreadable in '' $'\n' '{}' 'null' '[]' '"plan"' '{"resource_changes":null}' '{"resource_changes":[]}' 'not json'; do
+for unreadable in '' $'\n' '{}' 'null' '[]' '"plan"' '{"resource_changes":null}' '{"resource_changes":[]}' 'not json' \
+  '{"resource_changes":[{"type":"cloudflare_dns_record","change":{"actions":[]}}]}' \
+  '{"resource_changes":[{"address":"cloudflare_dns_record.host","type":"cloudflare_dns_record","change":{"actions":[]}}]}' \
+  '{"resource_changes":[{"type":"cloudflare_dns_record","change":{"actions":["no-op"]}}]}' \
+  '{"resource_changes":[{"address":"cloudflare_dns_record.host","type":"cloudflare_dns_record","change":{}}]}'; do
   unreadable_status=0
   unreadable_output="$(printf '%s' "${unreadable}" | "${check}" 2>&1)" || unreadable_status=$?
   echo "unreadable plan '${unreadable}': status ${unreadable_status}"
