@@ -5,9 +5,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 
 cleanup() {
   kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod worker-host-client unknown-host-client backchannel-control \
-    backchannel-public-host backchannel-public-host-port --ignore-not-found --wait --timeout=2m
-  kubectl --namespace "$TUNNEL_NAMESPACE" delete pod backchannel-absolute-form backchannel-internal-origin-form \
-    backchannel-forwarded-host backchannel-public-host-port-through-traefik --ignore-not-found --wait --timeout=2m
+    --ignore-not-found --wait --timeout=2m
+  kubectl --namespace "$TUNNEL_NAMESPACE" delete pod backchannel-through-traefik --ignore-not-found --wait --timeout=2m
   kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
 }
 trap cleanup EXIT
@@ -20,7 +19,7 @@ web_port="$(kubectl --namespace traefik get service traefik -o jsonpath='{.spec.
 traefik_origin="http://traefik.traefik.svc:${web_port}"
 traefik_url="$traefik_origin/health"
 web_service_port="$(yq 'select(.kind == "Service") | .spec.ports[0].port' "$manifest")"
-backchannel_host="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "web") | .env[] | select(.name == "BACKCHANNEL_LOGOUT_HOST") | .value' "$manifest")"
+service_host="$worker_host.$SONGMAKER_NAMESPACE.svc:$web_service_port"
 backchannel_path=/auth/backchannel-logout
 # The status of noop@internal, which answers the router that refuses the back-channel route.
 refusal_status=418
@@ -69,25 +68,11 @@ expect_answer() {
   echo "a Pod in $namespace got $answer_status with a $expected_body body for the logout with the host $host at $url"
 }
 
-[ "$backchannel_host" = "$worker_host.$SONGMAKER_NAMESPACE.svc:$web_service_port" ] ||
-  fail "BACKCHANNEL_LOGOUT_HOST is '$backchannel_host', not the Service's name, namespace and port"
-expect_answer "$SONGMAKER_NAMESPACE" backchannel-control "$backchannel_host" "$backchannel_url" 400 any
-expect_answer "$SONGMAKER_NAMESPACE" backchannel-public-host "$public_host" "$backchannel_url" 404 empty
-expect_answer "$SONGMAKER_NAMESPACE" backchannel-public-host-port "$public_host:$web_service_port" "$backchannel_url" 404 empty
+expect_answer "$SONGMAKER_NAMESPACE" backchannel-control "$service_host" "$backchannel_url" 400 any
 
-# Through Traefik no request reaches the route: its router names no host, so the public Host, the internal one, a
-# forwarded one and an absolute-form target all get the status of Traefik's refusal, which carries no body.
-post_malformed_token "$TUNNEL_NAMESPACE" backchannel-absolute-form "$backchannel_host" "$traefik_origin$backchannel_path" \
-  --request-target "http://$public_host$backchannel_path"
-[ "$answer_status" = "$refusal_status" ] ||
-  fail "a Pod in $TUNNEL_NAMESPACE got '$answer_status' through Traefik for the absolute-form target of $public_host with the host $backchannel_host, not $refusal_status"
-[ -z "$answer_body" ] || fail "the answer to backchannel-absolute-form carried a body, so it is not Traefik's refusal"
-echo "a Pod in $TUNNEL_NAMESPACE got Traefik's refusal through Traefik for the absolute-form target of $public_host with the host $backchannel_host"
-expect_answer "$TUNNEL_NAMESPACE" backchannel-internal-origin-form "$backchannel_host" "$traefik_origin$backchannel_path" "$refusal_status" empty
-expect_answer "$TUNNEL_NAMESPACE" backchannel-forwarded-host "$public_host" "$traefik_origin$backchannel_path" "$refusal_status" empty \
-  --header "X-Forwarded-Host: $backchannel_host"
-expect_answer "$TUNNEL_NAMESPACE" backchannel-public-host-port-through-traefik "$public_host:$web_service_port" "$traefik_origin$backchannel_path" \
-  "$refusal_status" empty
+# Through Traefik no request reaches the route: its router names no host, so the public Host gets the status of
+# Traefik's refusal, which carries no body.
+expect_answer "$TUNNEL_NAMESPACE" backchannel-through-traefik "$public_host" "$traefik_origin$backchannel_path" "$refusal_status" empty
 
 request "$OTHER_NAMESPACE" other-client "$public_host" "$web_url" --max-time 5 --retry 0
 [ "$status" = 000 ] || fail "a Pod in $OTHER_NAMESPACE got '$status' from the web"

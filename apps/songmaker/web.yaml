@@ -33,7 +33,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: ghcr.io/overnightworks/songmaker/web:2026.11.11.1@sha256:787159d8a3eb32e7b8b243c83c86b58dcd7f96a91a2e7e70c10ba498418d0c7e
+          image: ghcr.io/overnightworks/songmaker/web:2026.11.11.2@sha256:1213687dde972091df54c8c80e7720af11f9ab987de29cbd44c0c7c164c9c534
           command: [/app/.venv/bin/alembic, upgrade, head]
           env:
             # The URL names no password: the file in /run/secrets is the password's one owner, the namespace's Postgres.
@@ -52,7 +52,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: web
-          image: ghcr.io/overnightworks/songmaker/web:2026.11.11.1@sha256:787159d8a3eb32e7b8b243c83c86b58dcd7f96a91a2e7e70c10ba498418d0c7e
+          image: ghcr.io/overnightworks/songmaker/web:2026.11.11.2@sha256:1213687dde972091df54c8c80e7720af11f9ab987de29cbd44c0c7c164c9c534
           command: [/app/.venv/bin/songmaker, server, --port, '8080']
           ports:
             - name: http
@@ -70,10 +70,6 @@ spec:
             # GPU worker sends with its control-plane URL, and the Service's name Prometheus scrapes it by.
             - name: ALLOWED_HOSTS
               value: songmaker.hallucinai.de,web,web.songmaker.svc,localhost
-            # The one Host the route /auth/backchannel-logout answers, the Service's name and port Keycloak posts to from
-            # inside the cluster; any other admitted Host, the public one included, gets an empty 404.
-            - name: BACKCHANNEL_LOGOUT_HOST
-              value: web.songmaker.svc:8080
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicies below admit
             # only Traefik's, Prometheus's, Keycloak's and the namespace's own pods, so their forwarded headers are
             # trusted too.
@@ -97,7 +93,7 @@ spec:
             - name: AGENT__GATEWAY__KEY_FILE
               value: /run/secrets/litellm_key
             - name: AGENT__API_GROUP
-              value: /services/agent-service/api
+              value: /services/litellm
           # The start runs the migrations under a lock before it serves, so a slow one is not a failed start.
           startupProbe:
             httpGet:
@@ -219,7 +215,9 @@ spec:
         - port: http
           protocol: TCP
 ---
-# Keycloak posts its back-channel logout here, from its own pods and no others of its namespace.
+# Keycloak posts its back-channel logout here, from its own pods and no others of its namespace. The web does not
+# check the Host of that route: Traefik's router refuses the path on every public host, and this policy and the one
+# above keep every other sender off the Service.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
