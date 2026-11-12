@@ -55,8 +55,11 @@ patches:
                       - op: replace
                         path: /spec/replicas
                         value: 0
-          # The acestep-worker runs no pod in k3d, so its image stays off the node, as it does without a pull layer: the
-          # pull layer's Job mounts the other three, which the pods of songmaker's other Deployments run.
+          # The acestep-worker runs no pod in k3d, so its image stays off the node. The scoring-worker's, about 4 GB and
+          # most of the pull time, stays off the Job too: the Job would pull it before songmaker's layer starts, and the
+          # wait for every Kustomization would then run that pull and the layer's start one after the other. Its own pod
+          # pulls it beside the rest of the layer's start, as without a pull layer; the Job mounts web and music-worker,
+          # which pods of the layer run.
           - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: songmaker-pull}
             patch: |
               - op: add
@@ -76,8 +79,12 @@ patches:
                                 volumeMounts:
                                   - mountPath: /images/acestep-worker
                                     $patch: delete
+                                  - mountPath: /images/scoring-worker
+                                    $patch: delete
                             volumes:
                               - name: acestep-worker
+                                $patch: delete
+                              - name: scoring-worker
                                 $patch: delete
           # k3d resolves the public MCP URLs of hopin and skat to the live apps, so a pod of the personas runner would
           # either never turn Ready or call the PC's apps with a dummy secret; the Deployment applies and runs no pod.
