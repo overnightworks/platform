@@ -412,7 +412,7 @@ jobs:
           OTHER_NAMESPACE: songmaker-web-client
         run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
 
-      - name: Assert that songmaker's route reaches its web through Traefik for the tunnel's Pods, that the web answers the host the GPU worker sends and refuses another, that its back-channel logout answers only the Service's host and no request through Traefik reaches it, and that a Pod in another namespace gets no answer
+      - name: Assert that songmaker's route reaches its web through Traefik for the tunnel's Pods, that the web answers the host the GPU worker sends and refuses another, that its back-channel logout answers a malformed token with 400 inside the namespace and no request through Traefik reaches it, and that a Pod in another namespace gets no answer
         if: matrix.part == 'load-1'
         env:
           SONGMAKER_NAMESPACE: songmaker
