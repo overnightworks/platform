@@ -1,0 +1,8 @@
+claim_id = "f0465b9e3757478b8b116d9393430674"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "40dc09bb389aa4385d582b49ffade45195f948b2"
+branch = "claude/issue-474-presentator-wiring"
+scope = [".github/workflows/ci.yml", "apps/presentator", "clusters/pc/apps.yaml", "tests/flux", "tests/presentator", "tests/secrets", "tests/workloads"]
+opened_commit = "3f48f9e71fc1566373342fe63814bb56a6cbb1f9"
+whole_reason = "The wiring is one decision: the layer, its ref, its route and the CI cells that prove them cannot land apart without leaving an unproven or unreferenced half."
