@@ -1,0 +1,39 @@
+# Pulls the images of an app's release onto the node before the app's layer rolls them. The including layer adds one
+# image volume and one mount in the container pull for each image of the release; the kubelet pulls an image volume with
+# the pod's pull Secret before the container starts, so the Job completes only once every image is on the node. The Job
+# has no ttlSecondsAfterFinished: its finished pod keeps the new image in use for the node's image collection until the
+# next release replaces the Job. Flux re-creates the Job whenever its template changes, as a Job's template is immutable.
+# The kubelet reports a failed pull of an image volume only for a container that mounts it, so every volume is mounted;
+# tests/workloads/pull_layers_mount_every_app_ref_their_app_runs.sh holds that for each pull layer.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pull
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pull
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pull
+          image: docker.io/library/busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
+          command: ["true"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

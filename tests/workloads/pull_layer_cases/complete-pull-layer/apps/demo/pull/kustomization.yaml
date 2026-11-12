@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: demo
+resources:
+  - ../../../infrastructure/pull
+patches:
+  - target:
+      kind: Job
+      name: pull
+    patch: |-
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: pull
+      spec:
+        template:
+          spec:
+            containers:
+              - name: pull
+                volumeMounts:
+                  - name: prepare
+                    mountPath: /images/prepare
+                  - name: web
+                    mountPath: /images/web
+            volumes:
+              - name: prepare
+                image:
+                  reference: ghcr.io/overnightworks/demo-prepare:1.0.0@sha256:1111111111111111111111111111111111111111111111111111111111111111
+              - name: web
+                image:
+                  reference: ghcr.io/overnightworks/demo-web:1.0.0@sha256:2222222222222222222222222222222222222222222222222222222222222222

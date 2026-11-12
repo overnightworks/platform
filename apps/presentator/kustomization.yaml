@@ -7,6 +7,8 @@ resources:
   - web.yaml
   - worker.yaml
   - ../../infrastructure/sqlite
+components:
+  - release
 configMapGenerator:
   - name: sqlite
     behavior: merge
@@ -58,8 +60,3 @@ replacements:
           name: restore-test
         fieldPaths:
           - spec.jobTemplate.spec.template.spec.securityContext.runAsGroup
-# The image of the web and the worker, the full app ref of a release; a bump changes tag and digest together, in a pull request.
-images:
-  - name: ghcr.io/overnightworks/presentator
-    newTag: 2026.11.12.4
-    digest: sha256:2bde54ee343ed0d43d1ad9a3d0efbf925e7a29e14115a0acdb47cfbbe2dcf07c
