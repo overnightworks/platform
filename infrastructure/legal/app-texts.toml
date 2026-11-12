@@ -13,11 +13,11 @@ date = 2026-11-09
 sha256 = "901d03ad3bf0907bf65fb1431c39d9dc4f8ab5c3819fbc8b808af2683a096083"
 
 [presentator]
-tag = "v2026.11.10.1"
+tag = "v2026.11.12.1"
 
 [presentator.datenschutz]
-date = 2026-11-10
-sha256 = "f2d7e60ef58ea54e26f67c7b73155e07e779d4d7613d37a111e87dc5547eed50"
+date = 2026-11-12
+sha256 = "072ce272cda22ad29ca258de003072a3ace2c53c5d0624949378962b085b3bab"
 
 [presentator.nutzungsbedingungen]
 date = 2026-11-09
