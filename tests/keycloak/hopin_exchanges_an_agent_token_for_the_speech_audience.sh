@@ -223,11 +223,10 @@ while IFS='|' read -r switched_off description status error; do
   exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
   expect_refusal "$description" "$status" "$error"
   set_enabled "${!switched_off}" true
-done <<EOF_CASES
-exchanger_path|a disabled $exchanger's exchange|401|invalid_client
-agent_path|the exchange of a token of the disabled $agent|400|invalid_request
-account_path|the exchange of a token of $agent's disabled service account|400|invalid_request
-EOF_CASES
+done < <(printf '%s|%s|%s|%s\n' \
+  exchanger_path "a disabled $exchanger's exchange" 401 invalid_client \
+  agent_path "the exchange of a token of the disabled $agent" 400 invalid_request \
+  account_path "the exchange of a token of $agent's disabled service account" 400 invalid_request)
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 [ "$exchange_status" = 200 ] || fail "after re-enabling, $exchanger's exchange got $exchange_status '$(exchange_error)'"
 echo "re-enabled, $exchanger's exchange answers 200"
