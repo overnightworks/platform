@@ -190,8 +190,9 @@ spec:
                 port:
                   number: 8000
 ---
-# presentator trusts the X-Forwarded-For of the pod network, so only Traefik's pods may reach it; the kubelet's probe
-# comes from the node, which a NetworkPolicy never blocks.
+# presentator trusts the X-Forwarded-For of the pod network. Traefik's pods and Keycloak's labelled pods can reach the
+# web's port, the second admitted for its back-channel logout (backchannel-from-keycloak below), which admits every path
+# of that port; the kubelet's probe comes from the node, which a NetworkPolicy never blocks.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -206,6 +207,30 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: traefik
+      ports:
+        - port: http
+          protocol: TCP
+---
+# Keycloak's back-channel logout reaches the web's port through the Service, never through Traefik, whose router refuses
+# the path on every host. The route answers it under any Host but the talk host's and judges the signed Logout Token
+# alone, so only Keycloak's labelled pods may send it; it adds to http-from-traefik-only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backchannel-from-keycloak
+  namespace: presentator
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
       ports:
         - port: http
           protocol: TCP

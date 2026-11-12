@@ -529,7 +529,7 @@ jobs:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
           # The files that hold the apps' side of the pair and Keycloak's, whose three policies the cell names.
-          POLICY_MANIFESTS: apps/hopin/hopin.yaml apps/songmaker/web.yaml infrastructure/keycloak/keycloak-egress.yaml
+          POLICY_MANIFESTS: apps/hopin/hopin.yaml apps/presentator/web.yaml apps/songmaker/web.yaml infrastructure/keycloak/keycloak-egress.yaml
         run: tests/keycloak/backchannel_reaches_only_its_apps.sh
 
       - name: P7d cells

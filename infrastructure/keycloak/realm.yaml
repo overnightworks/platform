@@ -592,10 +592,10 @@ clients:
       - service_account
     optionalClientScopes:
       - speech-service-audience
-  # One client for presentator's two hosts. It has no back-channel logout, so a sign-out in Keycloak ends a
-  # presentator session only at its lifetime, until presentator runs beside Keycloak. Its service account
-  # is a workload of the speech service, whose audience it asks for by the optional scope
-  # speech-service-audience.
+  # One client for presentator's two hosts. A sign-out in Keycloak calls presentator's back-channel logout at
+  # its web Service; the route answers under any Host but the talk host's, and the NetworkPolicies decide
+  # whether the call arrives. Its service account is a workload of the speech service, whose audience it asks
+  # for by the optional scope speech-service-audience.
   # It has songmaker's default scopes and service_account.
   - clientId: presentator
     name: presentator
@@ -615,7 +615,7 @@ clients:
     attributes:
       post.logout.redirect.uris: "https://presentator.hallucinai.de/login"
       pkce.code.challenge.method: "S256"
-      backchannel.logout.url: ""
+      backchannel.logout.url: "http://web.presentator.svc:8000/auth/backchannel-logout"
       backchannel.logout.session.required: "false"
     defaultClientScopes:
       - basic
@@ -629,7 +629,8 @@ clients:
     optionalClientScopes:
       - speech-service-audience
   # skat signs people in like hopin and holds a refresh token per session the same way. It has no
-  # back-channel logout, so a sign-out in Keycloak ends a Skat session only at its lifetime.
+  # back-channel logout, so a sign-out in Keycloak ends a Skat session only at its lifetime; the file clears
+  # the URL, so one the console filled is removed.
   # Skat calls neither the speech service nor an AI service, so it has no service account and no
   # optional scope.
   - clientId: skat
@@ -649,6 +650,7 @@ clients:
     attributes:
       post.logout.redirect.uris: "https://skat.hallucinai.de/login"
       pkce.code.challenge.method: "S256"
+      backchannel.logout.url: ""
       use.refresh.tokens: "true"
     defaultClientScopes:
       - basic
