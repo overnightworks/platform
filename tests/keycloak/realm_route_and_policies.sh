@@ -238,7 +238,7 @@ for stylesheet in "${login_list[@]}"; do expect_stylesheet login "$login_theme" 
 for stylesheet in "${account_list[@]}"; do expect_stylesheet account "$account_theme" "$stylesheet"; done
 
 # B3: only Traefik and Keycloak's own namespace reach it. Keycloak reaches its Postgres and, for its back-channel
-# logout, hopin and songmaker; the cells below check that skat, the caller, gets no answer from it and what
+# logout, hopin, songmaker and presentator; the cells below check that skat, the caller, gets no answer from it and what
 # keycloak-egress alone keeps Keycloak from.
 keycloak_service_url="http://keycloak.$namespace.svc:$(kubectl -n "$namespace" get service keycloak -o jsonpath='{.spec.ports[0].port}')"
 request "$namespace" own-namespace-request "$public_host" "$keycloak_service_url/realms/$realm/.well-known/openid-configuration"
