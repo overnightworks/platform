@@ -25,7 +25,7 @@ Reader: whoever changes `src/opentofu/cloudflare`.
   - `apex redirect`, phase `http_request_dynamic_redirect`: the apex and `www` answer 302 to `auth.hallucinai.de`
     over https and drop path and query, except the apex's legal pages (`/impressum`, `/datenschutz`,
     `/nutzungsbedingungen`, `/favicon.ico`) and its `/_rechtliches/` files, which the tunnel serves.
-- **Where a host's deny paths live.** In the variable `denied_paths_by_host` of `rulesets.tf`, keyed by hostname. Every
+- **Where a host's deny paths live.** In the local `denied_paths_by_host` of `rulesets.tf`, keyed by hostname. Every
   hostname of the tunnel's lines has an entry, an empty list for a host that denies nothing, and the plan fails for a
   tunnel host without one and for a key that is no tunnel host. A new host therefore never gets no deny rule by
   omission. The redirected names are the local `redirect`; each is a record name, so the zone check covers it.

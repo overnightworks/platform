@@ -3,12 +3,9 @@
 # holds none for is created.
 
 # Cloudflare-only facts, keyed by hostname. Every hostname of the tunnel's lines has an entry, an empty list for a host
-# with no denied path, so a new host never silently gets no deny rule; the output below fails the plan otherwise. A
-# variable with a default, since a test plans other hosts than the platform's.
-variable "denied_paths_by_host" {
-  type        = map(list(string))
-  description = "The paths each tunnel host refuses from the public, at Cloudflare's edge before the tunnel."
-  default = {
+# with no denied path, so a new host never silently gets no deny rule; the output below fails the plan otherwise.
+locals {
+  denied_paths_by_host = {
     "hallucinai.de"                  = []
     "auth.hallucinai.de"             = []
     "hopin.hallucinai.de"            = ["/auth/backchannel-logout"]
@@ -17,9 +14,7 @@ variable "denied_paths_by_host" {
     "skat.hallucinai.de"             = ["/auth/backchannel-logout"]
     "songmaker.hallucinai.de"        = ["/auth/backchannel-logout", "/metrics"]
   }
-}
 
-locals {
   # The names that answer 302 at the edge and never reach the tunnel; the apex also has a line, and the pages it serves
   # and the prefix of its files are left to the tunnel.
   redirect = {
@@ -114,12 +109,12 @@ resource "cloudflare_ruleset" "client_address" {
 # One rule per distinct path covers every host that lists it, so Free's 5 custom rules serve five
 # paths, not five hosts.
 locals {
-  denied_paths = distinct(sort(flatten(values(var.denied_paths_by_host))))
+  denied_paths = distinct(sort(flatten(values(local.denied_paths_by_host))))
   deny_rule_expressions = {
     for path in local.denied_paths : path => join(" ", [
       "(",
       join(" or ", [
-        for fqdn in sort([for name, paths in var.denied_paths_by_host : name if contains(paths, path)]) :
+        for fqdn in sort([for name, paths in local.denied_paths_by_host : name if contains(paths, path)]) :
         "lower(http.host) eq \"${fqdn}\" or starts_with(lower(http.host), \"${fqdn}:\")"
       ]),
       ") and url_decode(http.request.uri.path, \"r\") wildcard \"/*${join("/*", split("/", trimprefix(path, "/")))}*\"",
@@ -230,12 +225,12 @@ output "ruleset_ids_to_import" {
   value       = local.ruleset_ids_to_import
 
   precondition {
-    condition     = length(setsubtract(toset(local.tunnel_hostnames), toset(keys(var.denied_paths_by_host)))) == 0
-    error_message = "No entry in denied_paths_by_host for the tunnel host(s) ${join(", ", sort(setsubtract(toset(local.tunnel_hostnames), toset(keys(var.denied_paths_by_host)))))}; an empty list is an entry."
+    condition     = length(setsubtract(toset(local.tunnel_hostnames), toset(keys(local.denied_paths_by_host)))) == 0
+    error_message = "No entry in denied_paths_by_host for the tunnel host(s) ${join(", ", sort(setsubtract(toset(local.tunnel_hostnames), toset(keys(local.denied_paths_by_host)))))}; an empty list is an entry."
   }
 
   precondition {
-    condition     = length(setsubtract(toset(keys(var.denied_paths_by_host)), toset(local.tunnel_hostnames))) == 0
-    error_message = "denied_paths_by_host names ${join(", ", sort(setsubtract(toset(keys(var.denied_paths_by_host)), toset(local.tunnel_hostnames))))}, which is no host of the tunnel's lines."
+    condition     = length(setsubtract(toset(keys(local.denied_paths_by_host)), toset(local.tunnel_hostnames))) == 0
+    error_message = "denied_paths_by_host names ${join(", ", sort(setsubtract(toset(keys(local.denied_paths_by_host)), toset(local.tunnel_hostnames))))}, which is no host of the tunnel's lines."
   }
 }

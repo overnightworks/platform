@@ -284,27 +284,11 @@ run "two_rulesets_in_the_redirect_phase_fail_the_plan" {
   expect_failures = [data.cloudflare_rulesets.zone]
 }
 
-run "a_tunnel_host_without_an_explicit_deny_entry_fails_the_plan" {
+run "a_tunnel_file_the_deny_facts_do_not_cover_fails_the_plan" {
   command = plan
 
   variables {
-    tunnel_lines_file    = "tests/hosts_two.yaml"
-    denied_paths_by_host = { "first.hallucinai.de" = [] }
-  }
-
-  plan_options {
-    target = [data.cloudflare_rulesets.zone]
-  }
-
-  expect_failures = [output.ruleset_ids_to_import]
-}
-
-run "a_deny_entry_for_a_name_that_is_no_tunnel_host_fails_the_plan" {
-  command = plan
-
-  variables {
-    tunnel_lines_file    = "tests/hosts_two.yaml"
-    denied_paths_by_host = { "first.hallucinai.de" = [], "second.hallucinai.de" = [], "third.hallucinai.de" = [] }
+    tunnel_lines_file = "tests/hosts_two.yaml"
   }
 
   plan_options {
