@@ -1,0 +1,8 @@
+claim_id = "bdfa83190cff4269b4b7c04814ccd77f"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "958d55268891524585b3694ad141b4a04a17ceec"
+branch = "claude/issue-301-agent-token-exchange"
+scope = [".github/workflows/ci.yml", "infrastructure/keycloak/realm.yaml", "tests/keycloak"]
+opened_commit = "f385e5ae8cd8da22d95095d40e2404fdeeebaebf"
+whole_reason = "The realm change and the cells that pin its tokens change together"
