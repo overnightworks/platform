@@ -4,7 +4,8 @@
 # every imported ruleset and setting at no-op, at most one update, the content of the record www, and every declared
 # object the state does not hold among the imports; every other plan fails naming each offending address with its action
 # and no value. A plan that cannot be read, an empty one included, fails. A plan without any import is a later plan, to
-# which the adoption rules do not apply and in which an update of a ruleset needs --allow-ruleset-update.
+# which the adoption rules do not apply, which needs a prior state that already holds zone objects, and in which the
+# update or the creation of a ruleset or a setting needs --allow-ruleset-update.
 # Usage: tests/cloudflare/adoption_plan_is_exactly_the_imports_and_at_most_the_www_content.sh
 # Proves docs/cloudflare-zone.md: the adoption check and the ruleset update flag.
 set -euo pipefail
@@ -30,8 +31,9 @@ transform='cloudflare_ruleset.client_address'
 # $ruleset is the one the case is about.
 ruleset_address="${deny}"
 update_www='(.resource_changes[] | select(.address == $www) | .change) |= (.actions = ["update"] | .after.content = "other-tunnel.cfargotunnel.com" | .after_unknown.modified_on = true)'
-# A plan of a state that holds the objects: nothing is an import any more.
-adopted='.resource_changes |= map(.change.importing = null)'
+# A plan of a state that holds the objects: nothing is an import any more, and the plan's prior state lists every
+# object, as `tofu show -json` prints it.
+adopted="$(<"$(dirname "${BASH_SOURCE[0]}")/fixtures/adopted_plan.jq")"
 ruleset_update="${adopted}"' | (.resource_changes[] | select(.address == $ruleset) | .change.actions) = ["update"]'
 
 # case_of <name> <jq program over the baseline> <status> <text the output holds>...: the output never holds a value.
@@ -91,9 +93,35 @@ case_of "three creates" '.resource_changes |= map(if .type == "cloudflare_rulese
   "cloudflare_ruleset.client_address create" "cloudflare_ruleset.deny_public create" "cloudflare_ruleset.apex_redirect create"
 
 # Once the state holds the objects, the adoption rules do not apply: a created record and an updated record pass.
-case_of "a new host after the adoption" "${adopted}"' | .resource_changes += [{address: "cloudflare_dns_record.host[\"new.example.test\"]", mode: "managed", type: "cloudflare_dns_record", index: "new.example.test", change: {actions: ["create"], importing: null, before: null, after: {}, after_unknown: {}}}]' 0 "state holds"
-case_of "no change after the adoption" "${adopted}" 0 "state holds"
-case_of "an update of a record after the adoption" "${adopted}"' | (.resource_changes[] | select(.address == $a) | .change.actions) = ["update"]' 0 "state holds"
+case_of "a new host after the adoption" "${adopted}"' | .resource_changes += [{address: "cloudflare_dns_record.host[\"new.example.test\"]", mode: "managed", type: "cloudflare_dns_record", index: "new.example.test", change: {actions: ["create"], importing: null, before: null, after: {}, after_unknown: {}}}]' 0 "prior state holds 8 zone objects"
+case_of "no change after the adoption" "${adopted}" 0 "prior state holds 8 zone objects"
+case_of "an update of a record after the adoption" "${adopted}"' | (.resource_changes[] | select(.address == $a) | .change.actions) = ["update"]' 0 "prior state holds 8 zone objects"
+
+# A plan that imports nothing needs a prior state that holds zone objects: with an empty or lost state, or lookups that
+# found nothing, the first write must be the adoption, whatever the plan creates.
+created='.resource_changes |= map(.change.actions = ["create"] | .change.importing = null)'
+case_of "every object created with no prior state" "${created}" 1 "the first write must be the adoption" "prior state"
+case_of "every object created with a prior state without a resource" "${created}"' | .prior_state = {format_version: "1.0", values: {root_module: {}}}' 1 "the first write must be the adoption"
+case_of "every object created with a prior state of another provider only" "${created}"' | .prior_state = {values: {root_module: {resources: [{address: "terraform_data.other", mode: "managed", type: "terraform_data"}]}}}' 1 "the first write must be the adoption"
+case_of "a prior state with a data source only" "${created}"' | .prior_state = {values: {root_module: {resources: [{address: "data.cloudflare_zone.zone", mode: "data", type: "cloudflare_zone"}]}}}' 1 "the first write must be the adoption"
+check_arguments=(--allow-ruleset-update)
+case_of "a prior state holding one setting in a child module only" "${created}"' | .prior_state = {values: {root_module: {child_modules: [{address: "module.settings", resources: [{address: "module.settings.cloudflare_zone_setting.nel", mode: "managed", type: "cloudflare_zone_setting"}]}]}}}' 0 "prior state holds 1 zone objects"
+check_arguments=()
+case_of "a prior state with objects and a created record" "${adopted}"' | (.resource_changes[] | select(.address == $a) | .change) |= (.actions = ["create"] | .before = null)' 0 "prior state holds 8 zone objects"
+case_of "no change with no prior state" '.resource_changes |= map(.change.importing = null)' 1 "the first write must be the adoption"
+
+# In a later plan the creation of a ruleset or a setting is refused like a ruleset update, unless the flag names it; a
+# record may be created, which is how a host is added.
+for created_address in "${deny}" "${transform}" "module.settings.cloudflare_zone_setting.nel"; do
+  created_object="${adopted}"' | (.resource_changes[] | select(.address == "'"${created_address}"'") | .change) |= (.actions = ["create"] | .before = null)'
+  check_arguments=()
+  case_of "a creation of ${created_address} after the adoption" "${created_object}" 1 "${created_address} create" "--allow-ruleset-update"
+  check_arguments=(--allow-ruleset-update)
+  case_of "a creation of ${created_address} after the adoption with the flag" "${created_object}" 0 "${created_address} create"
+  # The flag loosens nothing in the adoption.
+  case_of "a creation of ${created_address} in the adoption with the flag" "${created_object}"' | (.resource_changes[] | select(.address == $a) | .change.importing) = {id: "synthetic"}' 1 "${created_address} create"
+  check_arguments=()
+done
 
 # After the adoption an update of the deny or the transform ruleset needs the flag, whose name the refusal holds.
 for ruleset_address in "${deny}" "${transform}"; do

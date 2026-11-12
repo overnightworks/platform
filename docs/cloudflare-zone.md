@@ -94,9 +94,13 @@ What each stop means, and what to do: nothing is applied and nothing is changed 
 ## Later plans
 
 A plan without any import is a later plan: the adoption rules do not apply and the command behaves as it does for any plan: a delete or a
-replacement is refused. An update of a ruleset (the deny, the transform or the redirect) is also refused, and the refusal names
-`--allow-ruleset-update`, the one flag the operator or platform's head passes for a reviewed change, in a plan-only run
-and in an apply alike. The flag allows no delete and loosens nothing in the adoption.
+replacement is refused. A later plan needs a prior state that already holds zone objects, read from the plan's own
+`prior_state`: a plan that imports nothing and starts from an empty or lost state, or from lookups that found nothing,
+fails the run, since the first write to the zone must be the adoption. In a later plan the update or creation of a ruleset (the
+deny, the transform or the redirect) and the creation of a zone setting are refused, and the
+refusal names `--allow-ruleset-update`, the one flag the operator or platform's head passes for a reviewed change, in a
+plan-only run and in an apply alike; a record may be created, which is how a host is added. The flag allows no delete
+and loosens nothing in the adoption.
 
 ## The edge probe
 

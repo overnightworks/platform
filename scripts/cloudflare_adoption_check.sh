@@ -4,7 +4,9 @@
 # delete, with every imported ruleset and setting at no-op, at most one update, the content of the record www, and every
 # declared object the state does not hold among the imports. A plan that cannot be read, an empty one or one with a
 # resource change without an address or an action included, fails. Only a plan without any import is a later plan, to
-# which the adoption rules do not apply and in which an update of a ruleset stops unless --allow-ruleset-update names it.
+# which the adoption rules do not apply. It needs a prior state (the plan's own `prior_state`) that already holds a
+# managed zone object, since the first write to the zone must be the adoption; in it the update or the creation of a ruleset
+# or the creation of a setting stops unless --allow-ruleset-update names it, while a record may be created.
 # The output holds addresses, actions and attribute names, never a value of the plan.
 # Usage: scripts/cloudflare_adoption_check.sh [--allow-ruleset-update] < plan.json
 # Exit: 0 the plan passes, 1 it does not or the call is wrong.
@@ -26,7 +28,9 @@ command -v jq >/dev/null || fail "jq is not installed"
 # The adoption rules apply while the plan imports any object, a half-finished adoption included: then the plan creates
 # and deletes nothing, imports every ruleset and setting at no-op, updates at most the content of the record www, and
 # imports every declared object the state does not hold (an object the state holds is at no-op without an import).
-# A plan without any import is a later plan.
+# A plan without any import is a later plan: its prior state must already hold zone objects, read from the plan's
+# `prior_state` as OpenTofu documents it (`values.root_module` and its `child_modules` list the resources of the state
+# the plan starts from; the key is absent when that state is empty).
 # A delete, forget or replacement beside an import stops here; in a plan without any import, apply_opentofu.sh's
 # refusal stops a delete or a replacement, and a forget passes as the deliberate removal that keeps the object.
 judgement="$(jq --slurp --argjson allow "${allow_ruleset_update}" '
@@ -51,6 +55,12 @@ judgement="$(jq --slurp --argjson allow "${allow_ruleset_update}" '
     . as $change | $declared | map(select(.address == ($change.address | strip_index))) | .[0].expressions;
   def is_www_record_update:
     .type == "cloudflare_dns_record" and .change.actions == ["update"] and ((.index // "") | type == "string" and startswith("www."));
+  def state_objects($module):
+    [($module.resources // [])[] | select(.mode == "managed" and (.type | startswith("cloudflare_")))]
+    + ([($module.child_modules // [])[] | state_objects(.)] | add // []);
+  def is_ruleset_or_setting_write:
+    (.type == "cloudflare_ruleset" and (.change.actions | index("update") or index("create")))
+    or (.type == "cloudflare_zone_setting" and (.change.actions | index("create")));
   def unreadable($reason): {adoption: false, listed: [], stops: [{address: "(plan)", actions: "none", reason: $reason}]};
 
   (.[0] // null) as $plan
@@ -62,18 +72,22 @@ judgement="$(jq --slurp --argjson allow "${allow_ruleset_update}" '
           and ((.change.actions | type) == "array" and (.change.actions | length) > 0 and (.change.actions | all(type == "string"))))) | not then
           unreadable("a resource change of the plan has no address or no action, so it cannot be judged")
         else
-      (($plan.planned_values // null) | if . == null then [] else planned(.root_module // {}) end) as $instances
+      (($plan.prior_state.values.root_module // null) | if . == null then 0 else state_objects(.) | length end) as $prior_objects
+      | (($plan.planned_values // null) | if . == null then [] else planned(.root_module // {}) end) as $instances
       | if ($changes | length) == 0 and ($instances | length) == 0 then
           unreadable("the plan holds no resource, so it cannot be judged")
         elif ($changes | any(.change.importing != null) | not) then
           {
             adoption: false,
-            listed: [$changes[] | select(.type == "cloudflare_ruleset" and (.change.actions | index("update"))) | {address, actions: actions_text}],
+            listed: [$changes[] | select(is_ruleset_or_setting_write) | {address, actions: actions_text}],
+            prior_objects: $prior_objects,
             stops: (
-              [$instances[] | select(. as $address | $changes | any(.address == $address) | not)
+              (if $prior_objects == 0
+                then [{address: "(plan)", actions: "none", reason: "imports nothing and its prior state holds no zone object; the first write must be the adoption"}] else [] end)
+              + [$instances[] | select(. as $address | $changes | any(.address == $address) | not)
                 | {address: ., actions: "none", reason: "is declared and the plan holds no import for it"}]
-              + (if $allow then [] else [$changes[] | select(.type == "cloudflare_ruleset" and (.change.actions | index("update")))
-                | {address, actions: actions_text, reason: "is a ruleset update; pass --allow-ruleset-update for a reviewed change"}] end))
+              + (if $allow then [] else [$changes[] | select(is_ruleset_or_setting_write)
+                | {address, actions: actions_text, reason: "is a write of a ruleset or a setting; pass --allow-ruleset-update for a reviewed change"}] end))
           }
         elif $plan.configuration == null or $plan.planned_values == null then
           unreadable("the plan carries no configuration or no planned values, so the declared objects cannot be judged")
@@ -119,6 +133,6 @@ if [ "$(jq -r .adoption <<<"${judgement}")" = true ]; then
   jq -r '"cloudflare_adoption_check: adoption plan: \([.listed[] | select(.imported)] | length) imports, \([.listed[] | select(.actions == "no-op")] | length) no-op, \([.listed[] | select(.actions != "no-op")] | length) update",
     (.listed[] | "  \(.address) \(if .imported then "import " else "" end)\(.actions)" + (if (.changes | length) > 0 then " (changes \(.changes | join(", ")))" else "" end))' <<<"${judgement}"
 else
-  echo "cloudflare_adoption_check: the state holds zone objects; the adoption rules do not apply"
+  echo "cloudflare_adoption_check: the prior state holds $(jq -r .prior_objects <<<"${judgement}") zone objects; the adoption rules do not apply"
   jq -r '.listed[] | "  \(.address) \(.actions) (--allow-ruleset-update)"' <<<"${judgement}"
 fi

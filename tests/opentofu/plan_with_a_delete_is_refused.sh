@@ -66,7 +66,8 @@ plan_json() {
   local address_and_actions
   address_and_actions=""
   [ "$#" -eq 0 ] || address_and_actions="$(printf '{"address":"%s","change":{"actions":%s}},' "$@")"
-  printf '{"resource_changes":[%s{"address":"unchanged.thing","change":{"actions":["no-op"]}}]}' "${address_and_actions}"
+  # The prior state holds one zone object: the Cloudflare guard judges a plan without an import only on a state that holds some.
+  printf '{"prior_state":{"values":{"root_module":{"resources":[{"address":"cloudflare_dns_record.kept","mode":"managed","type":"cloudflare_dns_record"}]}}},"resource_changes":[%s{"address":"unchanged.thing","change":{"actions":["no-op"]}}]}' "${address_and_actions}"
 }
 
 # A checkout whose HEAD is its origin/main and clean, so --apply gets past its own guards to the plan.
@@ -177,7 +178,7 @@ done
 # The Cloudflare root's plans: the guard's own cases are tests/cloudflare/adoption_plan_is_exactly_the_imports_and_at_most_the_www_content.sh.
 root=cloudflare
 adoption_plan="${repository_root}/tests/cloudflare/fixtures/adoption_plan.json"
-adopted_plan="$(jq -c '.resource_changes |= map(.change.importing = null)' "${adoption_plan}")"
+adopted_plan="$(jq -c -f "${repository_root}/tests/cloudflare/fixtures/adopted_plan.jq" "${adoption_plan}")"
 ruleset_update_plan() {
   jq -c --arg ruleset "$1" '(.resource_changes[] | select(.address == $ruleset) | .change.actions) = ["update"]' <<<"${adopted_plan}"
 }
@@ -187,6 +188,11 @@ run_script "adoption plan with a created record" 2 "${created_record_plan}"
 expect_refused "adoption plan with a created record" 'a.example.test"\] create'
 run_script "adoption plan with a created record under --apply" 2 "${created_record_plan}" --apply
 expect_refused "adoption plan with a created record under --apply" 'a.example.test"\] create'
+
+# A plan that imports nothing on an empty state is refused whatever the flags: the first write must be the adoption.
+lost_state_plan="$(jq -c 'del(.prior_state)' <<<"${adopted_plan}")"
+run_script "plan without an import on an empty state under --apply" 2 "${lost_state_plan}" --apply --allow-ruleset-update
+expect_refused "plan without an import on an empty state under --apply" "first write must be the adoption"
 
 run_script "adoption plan of imports" 2 "$(jq -c . "${adoption_plan}")"
 [ "${script_status}" -eq 2 ] || fail "adoption plan of imports: status ${script_status}, not 2: ${output}"
