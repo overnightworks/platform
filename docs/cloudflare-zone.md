@@ -11,8 +11,8 @@ Reader: whoever changes `src/opentofu/cloudflare`.
   redirected names, the apex and `www`. A name outside the zone `hallucinai.de` fails the plan. Each record waits for
   the deny and the redirect ruleset, so no name answers before its protection exists. The tunnel's lines are the one
   list of public hosts: the plain file `infrastructure/cloudflared/config.yaml`, which the root reads and from which
-  `infrastructure/cloudflared/` builds the ConfigMap `cloudflared`. A hostname added to that file adds a record, and
-  its entry in `denied_paths_by_host`; there is no second list of hosts.
+  `infrastructure/cloudflared/` builds the ConfigMap `cloudflared`. A hostname added to that file adds a record
+  and needs its entry in `denied_paths_by_host`, which the plan fails without; there is no second list of hosts.
 - **Adoption.** Each name is looked up in the zone first. A name with a single CNAME is imported and never created
   twice; a name with two CNAMEs or with an A or AAAA record fails the plan, since only a single CNAME is adopted and
   a record is never converted. The adopted ids are the output `record_ids_to_import`.

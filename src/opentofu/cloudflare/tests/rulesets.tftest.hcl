@@ -222,6 +222,15 @@ run "a_phase_without_a_ruleset_is_created_by_the_plan" {
     condition     = length(output.ruleset_ids_to_import) == 0
     error_message = "The plan adopts a ruleset the zone does not hold."
   }
+
+  assert {
+    condition = (
+      cloudflare_ruleset.deny_public.phase == "http_request_firewall_custom"
+      && cloudflare_ruleset.client_address.phase == "http_request_late_transform"
+      && cloudflare_ruleset.apex_redirect.phase == "http_request_dynamic_redirect"
+    )
+    error_message = "A phase the zone holds no ruleset for is not planned as a ruleset of its own."
+  }
 }
 
 run "two_rulesets_in_the_deny_phase_fail_the_plan" {
