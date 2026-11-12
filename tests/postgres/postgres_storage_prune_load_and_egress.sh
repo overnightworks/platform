@@ -41,7 +41,8 @@ done
 
 # A1b: each Postgres namespace's Kustomization, named like it as db:load-dump assumes, holds the base's objects of the
 # namespace and depends on every layer in POSTGRES_LAYER_DEPENDENCIES; no other Kustomization holds an object of
-# the namespace but the Secrets platform-secrets serves.
+# the namespace but the Secrets platform-secrets serves and the Job `pull` that the namespace's own pull layer
+# `<namespace>-pull` holds, which lives in the app namespace since `ghcr-pull` does.
 inventory_ids() { kubectl --namespace flux-system get kustomization "$1" \
   -o jsonpath='{range .status.inventory.entries[*]}{.id}{"\n"}{end}'; }
 all_kustomizations="$(kubectl --namespace flux-system get kustomizations -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
@@ -58,13 +59,14 @@ for namespace in $POSTGRES_NAMESPACES; do
     other_ids="$(inventory_ids "$other")"
     foreign="$(grep "^${namespace}_" <<<"$other_ids" || true)"
     [ "$other" != "${SECRETS_LAYER#*/}" ] || foreign="$(grep -v '__Secret$' <<<"$foreign" || true)"
+    [ "$other" != "$namespace-pull" ] || foreign="$(grep -vxF "${namespace}_pull_batch_Job" <<<"$foreign" || true)"
     [ -z "$foreign" ] || fail "the Kustomization $other holds ${foreign//$'\n'/ } of namespace $namespace, which $namespace owns"
   done <<<"$all_kustomizations"
   dependencies="$(kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.spec.dependsOn[*].name}')"
   for dependency in $POSTGRES_LAYER_DEPENDENCIES; do
     [[ " $dependencies " == *" $dependency "* ]] || fail "the Kustomization $namespace does not depend on $dependency"
   done
-  echo "the Kustomization $namespace holds the objects of $POSTGRES_BASE, alone but for Secrets, and depends on $POSTGRES_LAYER_DEPENDENCIES"
+  echo "the Kustomization $namespace holds the objects of $POSTGRES_BASE, alone but for Secrets and its pull Job, and depends on $POSTGRES_LAYER_DEPENDENCIES"
 done
 
 # A2: a deleted Kustomization takes its inventory with it and leaves the claim, its volume and the Namespace.
