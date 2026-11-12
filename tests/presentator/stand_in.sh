@@ -2,7 +2,8 @@
 # Sourced by the cells that load into presentator's database: points the layer's Kustomization presentator at
 # tests/presentator/stand_in, so the commands under test suspend and resume the real one over a web that holds no database
 # open, and removes it with the claim database, which Flux never prunes, on the cell's exit. The job's root
-# is suspended meanwhile, since it would put the layer's own path back, and resumed last, so it puts the layer back.
+# is suspended meanwhile, since it would put the layer's own path back, and resumed last, so it puts the layer back, which
+# the cell then waits for: the next cell takes the node's state, which a layer still starting would change.
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 
@@ -12,6 +13,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 apply_stand_in() {
   local generation
   flux suspend kustomization flux-system >/dev/null
+  # A reconcile of the root already running ends first, since it would put the layer's own path back over the stand-in.
+  kubectl --namespace flux-system wait kustomization/flux-system --for=condition=Ready --timeout=4m ||
+    fail "within the time: no reconcile of the root Kustomization flux-system is running"
   generation="$(kubectl apply --output jsonpath='{.metadata.generation}' -f - <<'YAML'
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -50,13 +54,26 @@ show_why_the_stand_in_is_not_ready() {
 }
 
 # remove_stand_in: for the cell's exit trap, which ends with end_deletions, after the cell removed its own Pods that mount
-# the claim: a claim stays Terminating while any Pod uses it.
+# the claim: a claim stays Terminating while any Pod uses it. It ends once the layer the root puts back is Ready at the
+# revision the root applied and its workloads are rolled out, so no Pod, sandbox or lease is still being made.
 remove_stand_in() {
+  local revision
   flux resume kustomization presentator >/dev/null 2>&1 || true
   delete_object --namespace flux-system delete kustomization presentator --ignore-not-found --wait --timeout=5m
   delete_object --namespace presentator delete pvc database --ignore-not-found --wait --timeout=2m
   if ! flux resume kustomization flux-system >/dev/null; then
     echo "::error::resuming the root Kustomization flux-system failed"
+    deletion_failures=$((deletion_failures + 1))
+    return
+  fi
+  if ! revision="$(kubectl --namespace flux-system get kustomization flux-system --output jsonpath='{.status.lastAppliedRevision}')" ||
+    ! kubectl --namespace flux-system wait kustomization/presentator --for=create --timeout=2m ||
+    ! kubectl --namespace flux-system wait kustomization/presentator \
+      --for=jsonpath="{.status.lastAppliedRevision}=$revision" --timeout=10m ||
+    ! kubectl --namespace flux-system wait kustomization/presentator --for=condition=Ready --timeout=4m ||
+    ! kubectl --namespace presentator rollout status deployment/web --timeout=4m ||
+    ! kubectl --namespace presentator rollout status statefulset/build-worker --timeout=4m; then
+    echo "::error::within the time: the layer presentator the root put back is Ready at '$revision' and its workloads are rolled out"
     deletion_failures=$((deletion_failures + 1))
   fi
 }
