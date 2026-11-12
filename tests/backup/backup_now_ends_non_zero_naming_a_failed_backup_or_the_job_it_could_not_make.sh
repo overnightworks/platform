@@ -2,7 +2,7 @@
 # Drive `mise run backup:now` against a fake kubectl, for the outcome the cluster cannot arrange: a Backup that ends in a
 # reason other than Succeeded, or does not complete within the wait, ends the task non-zero, names the Backup and its
 # reason, and makes no restore test Job; and a Backup that succeeded followed by a Job that cannot be made names both.
-# Usage: mise exec -- tests/backup/backup_now_names_a_failed_backup_and_makes_no_restore_job.sh
+# Usage: mise exec -- tests/backup/backup_now_ends_non_zero_naming_a_failed_backup_or_the_job_it_could_not_make.sh
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
