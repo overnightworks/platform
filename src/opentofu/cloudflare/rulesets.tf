@@ -2,29 +2,13 @@
 # one entry point per phase, so the one the zone already holds is imported, never created beside it, and a phase the zone
 # holds none for is created.
 
-# Cloudflare-only facts, keyed by hostname. Every hostname of the tunnel's lines has an entry, an empty list for a host
-# with no denied path, so a new host never silently gets no deny rule; the output below fails the plan otherwise.
+# Cloudflare-only facts, keyed by hostname, in zone.yaml, which the edge probe reads too. Every hostname of the tunnel's
+# lines has an entry, an empty list for a host with no denied path, so a new host never silently gets no deny rule; the
+# output below fails the plan otherwise.
 locals {
-  denied_paths_by_host = {
-    "hallucinai.de"                  = []
-    "auth.hallucinai.de"             = []
-    "hopin.hallucinai.de"            = ["/auth/backchannel-logout"]
-    "presentator.hallucinai.de"      = ["/auth/backchannel-logout"]
-    "presentator-talk.hallucinai.de" = ["/auth/backchannel-logout"]
-    "skat.hallucinai.de"             = ["/auth/backchannel-logout"]
-    "songmaker.hallucinai.de"        = ["/auth/backchannel-logout", "/metrics"]
-  }
-
-  # The names that answer 302 at the edge and never reach the tunnel; the apex also has a line, and the pages it serves
-  # and the prefix of its files are left to the tunnel.
-  redirect = {
-    hostnames = [local.zone_name, "www.${local.zone_name}"]
-    target    = "https://auth.${local.zone_name}/"
-    serve = {
-      pages = ["/impressum", "/datenschutz", "/nutzungsbedingungen", "/favicon.ico"]
-      files = "/_rechtliches/"
-    }
-  }
+  zone_facts           = yamldecode(file("${path.module}/zone.yaml"))
+  denied_paths_by_host = { for host, facts in local.zone_facts.hosts : host => facts.denied_paths }
+  redirect             = local.zone_facts.redirect
 
   ruleset_phases = {
     client_address = "http_request_late_transform"
@@ -226,11 +210,11 @@ output "ruleset_ids_to_import" {
 
   precondition {
     condition     = length(setsubtract(toset(local.tunnel_hostnames), toset(keys(local.denied_paths_by_host)))) == 0
-    error_message = "No entry in denied_paths_by_host for the tunnel host(s) ${join(", ", sort(setsubtract(toset(local.tunnel_hostnames), toset(keys(local.denied_paths_by_host)))))}; an empty list is an entry."
+    error_message = "No entry in zone.yaml for the tunnel host(s) ${join(", ", sort(setsubtract(toset(local.tunnel_hostnames), toset(keys(local.denied_paths_by_host)))))}; an empty list is an entry."
   }
 
   precondition {
     condition     = length(setsubtract(toset(keys(local.denied_paths_by_host)), toset(local.tunnel_hostnames))) == 0
-    error_message = "denied_paths_by_host names ${join(", ", sort(setsubtract(toset(keys(local.denied_paths_by_host)), toset(local.tunnel_hostnames))))}, which is no host of the tunnel's lines."
+    error_message = "zone.yaml names ${join(", ", sort(setsubtract(toset(keys(local.denied_paths_by_host)), toset(local.tunnel_hostnames))))}, which is no host of the tunnel's lines."
   }
 }

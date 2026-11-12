@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Drive scripts/apply_opentofu.sh for each root against a fake mise, tofu and gh on plans that delete, replace, forget
 # or change nothing: a delete or replacement fails naming its address and applies nothing, a forget passes, and each
-# root keeps its own state file and cache directory.
+# root keeps its own state file and cache directory. For the Cloudflare root it also drives the plan guard through the
+# script: a first plan that is more than the imports and the content of www is refused and applies nothing, one that is
+# not passes, and an update of a ruleset is refused unless --allow-ruleset-update names it, a delete never passing.
 # Usage: tests/opentofu/plan_with_a_delete_is_refused.sh
 # Proves docs/github-settings.md GH-5, GH-6.
 set -euo pipefail
@@ -64,13 +66,14 @@ plan_json() {
   local address_and_actions
   address_and_actions=""
   [ "$#" -eq 0 ] || address_and_actions="$(printf '{"address":"%s","change":{"actions":%s}},' "$@")"
-  printf '{"resource_changes":[%s{"address":"unchanged.thing","change":{"actions":["no-op"]}}]}' "${address_and_actions}"
+  # The prior state holds one zone object: the Cloudflare guard judges a plan without an import only on a state that holds some.
+  printf '{"prior_state":{"values":{"root_module":{"resources":[{"address":"cloudflare_dns_record.kept","mode":"managed","type":"cloudflare_dns_record"}]}}},"resource_changes":[%s{"address":"unchanged.thing","change":{"actions":["no-op"]}}]}' "${address_and_actions}"
 }
 
 # A checkout whose HEAD is its origin/main and clean, so --apply gets past its own guards to the plan.
 apply_checkout="${work_directory}/checkout"
 mkdir -p "${apply_checkout}/scripts" "${apply_checkout}/src/opentofu/github" "${apply_checkout}/src/opentofu/cloudflare" "${apply_checkout}/infrastructure/cloudflared"
-cp "${repository_root}/scripts/apply_opentofu.sh" "${apply_checkout}/scripts/"
+cp "${repository_root}/scripts/apply_opentofu.sh" "${repository_root}/scripts/cloudflare_adoption_check.sh" "${apply_checkout}/scripts/"
 cp "${repository_root}/mise.toml" "${repository_root}/mise.lock" "${apply_checkout}/"
 export MISE_TRUSTED_CONFIG_PATHS="${apply_checkout}"
 touch "${apply_checkout}/src/opentofu/github/main.tf" "${apply_checkout}/src/opentofu/cloudflare/main.tf" "${apply_checkout}/infrastructure/cloudflared/config.yaml"
@@ -86,7 +89,7 @@ run_script() {
   printf '%s' "$2" >"${work_directory}/plan_status"
   printf '%s' "$3" >"${work_directory}/plan.json"
   shift 3
-  [ "$*" != --apply ] || script="${apply_checkout}/scripts/apply_opentofu.sh"
+  case " $* " in *" --apply "*) script="${apply_checkout}/scripts/apply_opentofu.sh" ;; esac
   rm -f "${apply_marker}"
   script_status=0
   output="$("${script}" "${root}" "$@" 2>&1)" || script_status=$?
@@ -160,13 +163,75 @@ for root in github cloudflare; do
   [ -e "${XDG_CACHE_HOME}/platform/opentofu/${root}/lock" ] || fail "${root}: no lock in the root's own cache directory"
 done
 
-usage_refusals=("" "other" "cloudflare extra" "--apply")
+# The flag names a Cloudflare ruleset, so the GitHub root refuses it.
+usage_refusals=("" "other" "cloudflare extra" "--apply" "github --allow-ruleset-update")
 for arguments in "${usage_refusals[@]}"; do
   usage_status=0
   # shellcheck disable=SC2086 # the words are the arguments under test
   usage_output="$("${repository_root}/scripts/apply_opentofu.sh" ${arguments} 2>&1)" || usage_status=$?
   echo "usage with '${arguments}': status ${usage_status}"
   [ "${usage_status}" -eq 1 ] || fail "usage with '${arguments}': status ${usage_status}, not 1: ${usage_output}"
-  grep -q "usage: scripts/apply_opentofu.sh <github|cloudflare> \\[--apply\\]" <<<"${usage_output}" ||
+  grep -q "usage: scripts/apply_opentofu.sh <github|cloudflare> \\[--apply\\] \\[--allow-ruleset-update\\]" <<<"${usage_output}" ||
     fail "usage with '${arguments}': no usage line: ${usage_output}"
 done
+
+# The Cloudflare root's plans: the guard's own cases are tests/cloudflare/adoption_plan_is_exactly_the_imports_and_at_most_the_www_content.sh.
+root=cloudflare
+adoption_plan="${repository_root}/tests/cloudflare/fixtures/adoption_plan.json"
+adopted_plan="$(jq -c -f "${repository_root}/tests/cloudflare/fixtures/adopted_plan.jq" "${adoption_plan}")"
+ruleset_update_plan() {
+  jq -c --arg ruleset "$1" '(.resource_changes[] | select(.address == $ruleset) | .change.actions) = ["update"]' <<<"${adopted_plan}"
+}
+created_record_plan="$(jq -c '(.resource_changes[] | select(.index == "a.example.test") | .change) |= (.actions = ["create"] | .importing = null)' "${adoption_plan}")"
+
+run_script "adoption plan with a created record" 2 "${created_record_plan}"
+expect_refused "adoption plan with a created record" 'a.example.test"\] create'
+run_script "adoption plan with a created record under --apply" 2 "${created_record_plan}" --apply
+expect_refused "adoption plan with a created record under --apply" 'a.example.test"\] create'
+
+# A plan that imports nothing on an empty state is refused whatever the flags: the first write must be the adoption.
+lost_state_plan="$(jq -c 'del(.prior_state)' <<<"${adopted_plan}")"
+run_script "plan without an import on an empty state under --apply" 2 "${lost_state_plan}" --apply --allow-ruleset-update
+expect_refused "plan without an import on an empty state under --apply" "first write must be the adoption"
+
+run_script "adoption plan of imports" 2 "$(jq -c . "${adoption_plan}")"
+[ "${script_status}" -eq 2 ] || fail "adoption plan of imports: status ${script_status}, not 2: ${output}"
+grep -q "8 imports" <<<"${output}" || fail "adoption plan of imports: the counts are not printed: ${output}"
+run_script "adoption plan of imports under --apply" 2 "$(jq -c . "${adoption_plan}")" --apply
+[ "${script_status}" -eq 0 ] || fail "adoption plan of imports under --apply: status ${script_status}, not 0: ${output}"
+[ -e "${apply_marker}" ] || fail "adoption plan of imports under --apply: apply did not run"
+
+for ruleset in cloudflare_ruleset.deny_public cloudflare_ruleset.client_address; do
+  ruleset_update="$(ruleset_update_plan "${ruleset}")"
+  run_script "update of ${ruleset} without the flag" 2 "${ruleset_update}"
+  expect_refused "update of ${ruleset} without the flag" "--allow-ruleset-update"
+  grep -qF -- "${ruleset} update" <<<"${output}" || fail "update of ${ruleset} without the flag: the refusal does not name it: ${output}"
+  run_script "update of ${ruleset} without the flag under --apply" 2 "${ruleset_update}" --apply
+  expect_refused "update of ${ruleset} without the flag under --apply" "--allow-ruleset-update"
+  run_script "update of ${ruleset} with the flag" 2 "${ruleset_update}" --allow-ruleset-update
+  [ "${script_status}" -eq 2 ] || fail "update of ${ruleset} with the flag: status ${script_status}, not 2: ${output}"
+  run_script "update of ${ruleset} with the flag under --apply" 2 "${ruleset_update}" --apply --allow-ruleset-update
+  [ "${script_status}" -eq 0 ] || fail "update of ${ruleset} with the flag under --apply: status ${script_status}, not 0: ${output}"
+  [ -e "${apply_marker}" ] || fail "update of ${ruleset} with the flag under --apply: apply did not run"
+done
+
+# A plan that tofu shows as nothing cannot be read, so it is refused whatever it is for and nothing is applied.
+for blank_root in github cloudflare; do
+  root="${blank_root}"
+  run_script "plan that shows as nothing" 2 ""
+  expect_refused "plan that shows as nothing" "could not be read"
+  run_script "plan that shows as nothing under --apply" 2 "" --apply
+  expect_refused "plan that shows as nothing under --apply" "could not be read"
+done
+root=cloudflare
+
+# A half-finished adoption keeps the adoption's rules: a created record beside imports is refused.
+half_finished_created_plan="$(jq -c '.resource_changes |= map(if .type == "cloudflare_ruleset" then . else .change.importing = null end)
+  | (.resource_changes[] | select(.index == "a.example.test") | .change.actions) = ["create"]' "${adoption_plan}")"
+run_script "half-finished adoption with a created record under --apply" 2 "${half_finished_created_plan}" --apply
+expect_refused "half-finished adoption with a created record under --apply" 'a.example.test"\] create'
+
+# The flag allows no delete.
+deleting_ruleset_plan="$(jq -c '(.resource_changes[] | select(.address == "cloudflare_ruleset.deny_public") | .change.actions) = ["delete", "create"]' <<<"${adopted_plan}")"
+run_script "ruleset replacement with the flag" 2 "${deleting_ruleset_plan}" --allow-ruleset-update
+expect_refused "ruleset replacement with the flag" "cloudflare_ruleset.deny_public"
