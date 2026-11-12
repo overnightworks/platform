@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: speech-runtime
-          image: ghcr.io/overnightworks/speech:2026.11.11.1@sha256:20e35b35a75d3972b2d3eb386bf8eeb73be4fdac8e9da55ee6e4874896b03208
+          image: ghcr.io/overnightworks/speech:2026.11.12.1@sha256:f03d737ffa12118318d10e04ea1b6dd04769b0a0c6ed1f9f29f277ddfec889d3
           ports:
             - name: http
               containerPort: 8080
@@ -47,6 +47,13 @@ spec:
               value: /opt/hearing
             - name: SPEECH_HEARING_MODEL
               value: small
+          # Four Piper voices and the small hearing model peak at 1.7 to 1.9 GB, and the memory-backed /tmp counts too: the
+          # request holds that peak, and the limit leaves room above it.
+          resources:
+            requests:
+              memory: 2Gi
+            limits:
+              memory: 3Gi
           # /health answers 200 while the models still load, so ready decides: both the voices and the hearing.
           readinessProbe:
             exec:
