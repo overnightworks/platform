@@ -43,7 +43,7 @@ printf '%s\n' "$*" >>"${records}/tofu.argv"
 env >>"${records}/tofu.environment"
 case "$2" in
   init | plan) ;;
-  show) echo '{"resource_changes":[]}' ;;
+  show) echo '{"resource_changes":[{"address":"unchanged.thing","change":{"actions":["no-op"]}}]}' ;;
   *) echo "fake tofu: unexpected $*" >&2; exit 1 ;;
 esac
 FAKE
