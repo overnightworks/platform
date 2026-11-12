@@ -451,12 +451,20 @@ jobs:
         env:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
-          # The agent client whose tokens the cells mint, and the allowlist of its service account's groups.
-          AGENT_CLIENT: agent-mozart
-          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /agent-owners
+          # The allowlist of an agent service account's groups, the same for both agents.
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /agent-owners /services/speech-service
+          # The client that exchanges an agent's token, the scope it asks for, and a client that must be refused.
+          EXCHANGING_CLIENT: hopin
+          EXCHANGE_SCOPE: speech-service-audience
+          REFUSED_CLIENT: presentator
         run: |
           tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
-          tests/keycloak/agent_client_tokens_and_groups.sh
+          # The agent client whose tokens the cells mint, once for each.
+          for AGENT_CLIENT in agent-mozart agent-leonardo; do
+            export AGENT_CLIENT
+            tests/keycloak/agent_client_tokens_and_groups.sh
+            tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
+          done
           tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh
 
       - name: Assert that cutover:load refuses the cluster's own Keycloak dump, naming agent_owner and the platform's six objects, before it loads anything

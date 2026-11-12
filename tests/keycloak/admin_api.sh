@@ -58,3 +58,14 @@ rerun_config_cli() {
   flux reconcile kustomization "$namespace" --timeout=10m
   kubectl -n "$namespace" wait job/config-cli --for=condition=Complete --timeout=10m
 }
+# client_secret_to_file <clientId> <file>: the client's secret as realm.yaml names it, read from the Secret keycloak under
+# the key the Job config-cli took it from, straight into the file; masked in Actions' logs.
+client_secret_to_file() {
+  local secret_variable key
+  secret_variable="$(CLIENT="$1" yq '.clients[] | select(.clientId == strenv(CLIENT)) | .secret' "$REALM_FILE" |
+    sed 's/^$(env:\(.*\))$/\1/')"
+  key="$(kubectl -n "$namespace" get job/config-cli -o json | NAME="$secret_variable" yq -p json \
+    '.spec.template.spec.containers[0].env[] | select(.name == strenv(NAME)) | .valueFrom.secretKeyRef.key')"
+  kubectl -n "$namespace" get secret keycloak -o go-template="{{index .data \"$key\" | base64decode}}" >"$2"
+  mask_secret "$(<"$2")"
+}
