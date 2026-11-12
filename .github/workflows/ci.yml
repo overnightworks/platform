@@ -612,6 +612,10 @@ jobs:
         if: matrix.part == 'presentator'
         run: tests/presentator/a_used_worker_pod_is_replaced_by_a_fresh_one.sh
 
+      - name: Assert that a release with a changed reference replaces the pull layer's Job, that the app's layer applies it only after the new Job completed and that the app's pods find the image already present
+        if: matrix.part == 'presentator'
+        run: tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh
+
       # After the restore test's step, whose repository this one adds snapshots to.
       - name: Assert that a Backup under a concurrent writer leaves one consistent copy of presentator's database that its restore test passes and backup:fetch writes at 0600, refuses to overwrite and refuses when the latest snapshot is no SQLite copy, and that presentator:load-database loads it through a loader without the backup annotation
         if: matrix.part == 'presentator-backup'

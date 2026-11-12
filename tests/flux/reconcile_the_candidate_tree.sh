@@ -108,5 +108,7 @@ YAML
 )"
 candidate_patches="${candidate_patches//@CANDIDATE_REF@/${candidate_ref}}"
 printf '%s\n' "${candidate_patches//@CANDIDATE_URL@/${CANDIDATE_SOURCE_URL}}" >> "$overlay/kustomization.yaml"
-kubectl apply --server-side -k "$overlay"
+# A second run, which moves the candidate to a child commit, takes spec.ref and spec.patches over from the field manager
+# of Flux's own apply of the first run.
+kubectl apply --server-side --force-conflicts -k "$overlay"
 kubectl -n flux-system get kustomization flux-system -o yaml
