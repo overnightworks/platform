@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Usage: CANDIDATE_REVISION=<sha> tests/workloads/pull_layers_finish_before_their_app_rolls.sh
 # For every Kustomization whose path is ./apps/<app>/pull: it applied the candidate, waits for its objects, and the app's
-# Kustomization depends on it; its Job completed with its pod kept and no time to live; the layer turned Ready before
-# the app's first object, the Deployment of the app's image, was created; the Job completed before the ReplicaSet of
-# that Deployment's current revision was created; and the pods of every workload that runs an image the Job mounts
-# report that image as already present on the node. The order is read from the objects' own timestamps and conditions.
+# Kustomization depends on it; its Job completed with its pod kept and no time to live; the Job completed before the
+# ReplicaSet of the current revision of each Deployment that runs an image the Job mounts was created; and the pods of
+# every workload that runs such an image report it as already present on the node. The order is read from the objects'
+# creation and completion times, which a later reconcile does not move, never from a condition's lastTransitionTime,
+# which every reconcile of a layer resets.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -36,8 +37,6 @@ while read -r pull_layer path; do
     --field-selector=status.phase=Succeeded -o name)" ] || fail "the finished pod of the Job $namespace/pull is gone"
   echo "the Job $namespace/pull completed at $completed and its finished pod stays"
 
-  pull_ready="$(layer "$pull_layer" '{.status.conditions[?(@.type=="Ready")].lastTransitionTime}')"
-  [ -n "$pull_ready" ] || fail "the Kustomization $pull_layer has no Ready condition"
   mapfile -t references < <(yq '.spec.template.spec.volumes[].image.reference' <<<"$job")
   workloads="$(kubectl --namespace "$namespace" get deployments.apps,statefulsets.apps -o yaml)"
   for reference in "${references[@]}"; do
@@ -49,9 +48,6 @@ while read -r pull_layer path; do
     for runner in "${runners[@]}"; do
       workload="${runner%%|*}" selector="${runner#*|}"
       if [[ $workload == Deployment/* ]]; then
-        created="$(kubectl --namespace "$namespace" get "$workload" -o jsonpath='{.metadata.creationTimestamp}')"
-        [[ ! $created < "$pull_ready" ]] ||
-          fail "the $workload was created at $created, before the Kustomization $pull_layer turned Ready at $pull_ready"
         revision="$(kubectl --namespace "$namespace" get "$workload" -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}')"
         replica_set_created="$(kubectl --namespace "$namespace" get replicasets --selector="$selector" -o yaml |
           REVISION="$revision" yq '[.items[] | select(.metadata.annotations["deployment.kubernetes.io/revision"] == strenv(REVISION))
@@ -59,7 +55,7 @@ while read -r pull_layer path; do
         [ "$replica_set_created" != null ] || fail "the $workload has no ReplicaSet at its revision $revision"
         [[ ! $replica_set_created < "$completed" ]] ||
           fail "the ReplicaSet of the $workload at revision $revision was created at $replica_set_created, before the Job $namespace/pull completed at $completed"
-        echo "the Kustomization $pull_layer turned Ready at $pull_ready, the Job completed at $completed, the ReplicaSet of the $workload at revision $revision was created at $replica_set_created"
+        echo "the Job completed at $completed, the ReplicaSet of the $workload at revision $revision was created at $replica_set_created"
       fi
       pods="$(kubectl --namespace "$namespace" get pods --selector="$selector" -o name)"
       [ -n "$pods" ] || fail "the $workload has no pod"
