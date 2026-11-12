@@ -72,8 +72,6 @@ spec:
               value: http://speech-runtime.speech-runtime.svc.cluster.local:8080
             - name: PRESENTATOR_SPEECH_SERVICE_SCOPE
               value: speech-service-audience
-            - name: PRESENTATOR_SPEECH_VOICE
-              value: de_DE-thorsten-medium
             - name: PRESENTATOR_BUILD_RUNNER
               value: worker
           # The web refuses to start unless the worker answers within 70 seconds, which the pod's first start may need

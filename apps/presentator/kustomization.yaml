@@ -61,5 +61,5 @@ replacements:
 # The image of the web and the worker, the full app ref of a release; a bump changes tag and digest together, in a pull request.
 images:
   - name: ghcr.io/overnightworks/presentator
-    newTag: 2026.11.12.3
-    digest: sha256:fdb22165186ff013e8e9d26218242fb3f764cb3eefe5481e31d9d6223da4db6c
+    newTag: 2026.11.12.4
+    digest: sha256:2bde54ee343ed0d43d1ad9a3d0efbf925e7a29e14115a0acdb47cfbbe2dcf07c
