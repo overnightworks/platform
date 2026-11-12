@@ -103,6 +103,10 @@ created='.resource_changes |= map(.change.actions = ["create"] | .change.importi
 case_of "every object created with no prior state" "${created}" 1 "the first write must be the adoption" "prior state"
 case_of "every object created with a prior state without a resource" "${created}"' | .prior_state = {format_version: "1.0", values: {root_module: {}}}' 1 "the first write must be the adoption"
 case_of "every object created with a prior state of another provider only" "${created}"' | .prior_state = {values: {root_module: {resources: [{address: "terraform_data.other", mode: "managed", type: "terraform_data"}]}}}' 1 "the first write must be the adoption"
+case_of "a prior state with an account-level Cloudflare resource only" "${created}"' | .prior_state = {values: {root_module: {resources: [{address: "cloudflare_zero_trust_tunnel_cloudflared.tunnel", mode: "managed", type: "cloudflare_zero_trust_tunnel_cloudflared"}]}}}' 1 "the first write must be the adoption"
+check_arguments=(--allow-ruleset-update)
+case_of "an account-level Cloudflare resource only with the flag" "${created}"' | .prior_state = {values: {root_module: {resources: [{address: "cloudflare_zero_trust_tunnel_cloudflared.tunnel", mode: "managed", type: "cloudflare_zero_trust_tunnel_cloudflared"}]}}}' 1 "the first write must be the adoption"
+check_arguments=()
 case_of "a prior state with a data source only" "${created}"' | .prior_state = {values: {root_module: {resources: [{address: "data.cloudflare_zone.zone", mode: "data", type: "cloudflare_zone"}]}}}' 1 "the first write must be the adoption"
 check_arguments=(--allow-ruleset-update)
 case_of "a prior state holding one setting in a child module only" "${created}"' | .prior_state = {values: {root_module: {child_modules: [{address: "module.settings", resources: [{address: "module.settings.cloudflare_zone_setting.nel", mode: "managed", type: "cloudflare_zone_setting"}]}]}}}' 0 "prior state holds 1 zone objects"

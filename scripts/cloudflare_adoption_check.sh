@@ -5,8 +5,9 @@
 # declared object the state does not hold among the imports. A plan that cannot be read, an empty one or one with a
 # resource change without an address or an action included, fails. Only a plan without any import is a later plan, to
 # which the adoption rules do not apply. It needs a prior state (the plan's own `prior_state`) that already holds a
-# managed zone object, since the first write to the zone must be the adoption; in it the update or the creation of a ruleset
-# or the creation of a setting stops unless --allow-ruleset-update names it, while a record may be created.
+# managed zone object (a record, a ruleset or a setting; an account-level resource is none), since the first write to
+# the zone must be the adoption; in it the update or the creation of a ruleset or the creation of a setting stops unless
+# --allow-ruleset-update names it, while a record may be created.
 # The output holds addresses, actions and attribute names, never a value of the plan.
 # Usage: scripts/cloudflare_adoption_check.sh [--allow-ruleset-update] < plan.json
 # Exit: 0 the plan passes, 1 it does not or the call is wrong.
@@ -55,8 +56,9 @@ judgement="$(jq --slurp --argjson allow "${allow_ruleset_update}" '
     . as $change | $declared | map(select(.address == ($change.address | strip_index))) | .[0].expressions;
   def is_www_record_update:
     .type == "cloudflare_dns_record" and .change.actions == ["update"] and ((.index // "") | type == "string" and startswith("www."));
+  # The zone objects the root declares; an account-level resource (a tunnel) is no zone object.
   def state_objects($module):
-    [($module.resources // [])[] | select(.mode == "managed" and (.type | startswith("cloudflare_")))]
+    [($module.resources // [])[] | select(.mode == "managed" and (.type | IN("cloudflare_dns_record", "cloudflare_ruleset", "cloudflare_zone_setting")))]
     + ([($module.child_modules // [])[] | state_objects(.)] | add // []);
   def is_ruleset_or_setting_write:
     (.type == "cloudflare_ruleset" and (.change.actions | index("update") or index("create")))
