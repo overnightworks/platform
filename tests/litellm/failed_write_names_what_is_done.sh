@@ -5,7 +5,8 @@
 # another value under the alias is refused without --replace and replaced with it by deleting that one key by its hash
 # and registering the Secret's value; a failure between the delete and the registration says that the alias holds no key
 # and the same command completes it, a lost answer that it may hold the new one; a failed delete says the alias may hold
-# no key; a budget-only change sends no period; a table that is no table of numbers, a revision that is absent or changes
+# no key, and a signal or a read-back that differs after the registration says the alias may hold or was given the new key
+# and names no command that completes it; a budget-only change sends no period; a table that is no table of numbers, a revision that is absent or changes
 # while the table is read and a value with a newline are refused before any write; and neither a key's value, the master
 # key nor the value's sha256 reaches an argument or any output, tracing included, while the value does reach curl's stdin.
 # Usage: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
@@ -55,7 +56,8 @@ FAKE
 # FAKE_HOPIN_HOLDER is set. A write named by FAKE_FAILING_WRITE (a path and a body marker) is answered with 500 and a
 # body, or with FAKE_TRANSPORT_FAILURE after it was applied with a lost answer; every other write is applied and
 # answered 200. It records each write's path, the body of the updates, registrations and deletions, and whether the key
-# value reached its stdin.
+# value reached its stdin. After it applied a registration, FAKE_GENERATE_DRIFT=field reads the row back with another
+# limit and =token under another value, and FAKE_SIGNAL_TERM sends TERM to the script before the answer arrives.
 cat >"$fake_bin/curl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -98,13 +100,20 @@ case "$path" in
       case "$path" in
         /key/update)
           echo "update $data" >>"$FAKE_STATE/bodies"
-          target="$(yq --input-format json '.key | sub("^hash-"; "")' <<<"$data")"
-          json -i ". * $data" "$FAKE_STATE/row-$target.json" ;;
+          for row in "$FAKE_STATE"/row-*.json; do
+            [ "$(yq --output-format yaml '.token' "$row")" != "$(yq --input-format json '.key' <<<"$data")" ] || json -i ". * $data" "$row"
+          done ;;
         /key/generate)
           echo "register $data" >>"$FAKE_STATE/bodies"
           value="$(yq --input-format json '.key' <<<"$data")"
           token="$(printf '%s' "$value" | sha256sum)"
-          json "del(.key) | .token = \"${token%% *}\"" <<<"$data" >"$FAKE_STATE/row-$(yq --input-format json '.key_alias' <<<"$data").json" ;;
+          row="$FAKE_STATE/row-$(yq --input-format json '.key_alias' <<<"$data").json"
+          json "del(.key) | .token = \"${token%% *}\"" <<<"$data" >"$row"
+          case "$FAKE_GENERATE_DRIFT" in
+            field) json -i '.max_parallel_requests += 1' "$row" ;;
+            token) json -i '.token = "hash-another"' "$row" ;;
+          esac
+          [ -z "$FAKE_SIGNAL_TERM" ] || kill -TERM "$(ps -o ppid= -p "$PPID" | tr -d ' ')" ;;
         /key/delete)
           echo "delete $data" >>"$FAKE_STATE/bodies"
           for row in "$FAKE_STATE"/row-*.json; do
@@ -127,7 +136,7 @@ export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux,flux2 KUBECONFIG=/
 [ "$(command -v kubectl)" = "$fake_bin/kubectl" ] || fail "kubectl on PATH is not the fake"
 [ "$(command -v curl)" = "$fake_bin/curl" ] || fail "curl on PATH is not the fake"
 export FAKE_MASTER_KEY="$master_key" FAKE_APP_KEY="$app_key" FAKE_SECRET_VALUE="$app_key" FAKE_REPLY_BODY="$reply_body"
-export FAKE_REVISION=applied FAKE_TRANSPORT_FAILURE="" FAKE_HOPIN_HOLDER=""
+export FAKE_REVISION=applied FAKE_TRANSPORT_FAILURE="" FAKE_HOPIN_HOLDER="" FAKE_GENERATE_DRIFT="" FAKE_SIGNAL_TERM=""
 
 budget_id="$(yq '.litellm_settings.max_end_user_budget_id' "$layer/litellm-config.yaml")"
 # use_table [<yq expression>]: the layer's files with the table reduced to the test's own rows and then edited, which the
@@ -287,6 +296,34 @@ FAKE_TRANSPORT_FAILURE=1 FAKE_HOPIN_HOLDER=other run_task lost-registration 1 /k
 grep -q 'answered with status 000, not 200; the alias hopin holds no key or the new one; written or possibly written: delete of the old key of hopin, registration of the key of hopin; the same command again completes it$' \
   <<<"$output" || fail "lost-registration: the output does not name the unknown state: $output"
 echo "a failure after the delete says the alias holds no key and the same command completes it, a lost answer that it may hold the new one"
+
+# Once the registration answered 200 the alias holds the new key, so a read-back that differs does not say that the
+# same command completes it; litellm:keys is the way on.
+for drift in field token; do
+  for flag in "" --replace; do
+    FAKE_GENERATE_DRIFT="$drift" FAKE_HOPIN_HOLDER="${flag:+other}" run_task "readback-$drift$flag" 1 "" litellm:key hopin $flag
+    grep -q 'did not read back with the ' <<<"$output" || fail "readback-$drift$flag: no read-back failure: $output"
+    grep -q "; the alias hopin was given the new key; written or possibly written: .*registration of the key of hopin; mise run litellm:keys reports the keys of the alias and corrects their fields\$" \
+      <<<"$output" || fail "readback-$drift$flag: the output does not name the real way on: $output"
+    ! grep -q 'the same command again completes it' <<<"$output" || fail "readback-$drift$flag: the output promises the same command completes it: $output"
+  done
+done
+run_task readback-field 0 "" litellm:keys
+run_task readback-field 0 "" litellm:keys --plan
+grep -q ' 0 changes planned' <<<"$output" || fail "readback-field: litellm:keys left the drifted fields: $output"
+echo "a read-back that differs after the registration names the new key and litellm:keys, never the same command"
+
+# A signal while the registration is in flight names the registration and that the alias may hold the new key, which the
+# fake applied before the signal reached the script.
+runner=(bash "$repository_root/scripts/litellm_keys.sh")
+FAKE_SIGNAL_TERM=1 FAKE_HOPIN_HOLDER=other run_task signalled-registration 143 "" key hopin --replace
+grep -q 'interrupted; the alias hopin holds no key or the new one; written or possibly written: delete of the old key of hopin, registration of the key of hopin; the same command again completes it$' \
+  <<<"$output" || fail "signalled-registration: the output does not name the registration and the unknown alias: $output"
+FAKE_SIGNAL_TERM=1 run_task signalled-made 143 "" key hopin
+grep -q 'interrupted; the alias hopin holds no key or the new one; written or possibly written: registration of the key of hopin; the same command again completes it$' \
+  <<<"$output" || fail "signalled-made: the output does not name the registration and the unknown alias: $output"
+runner=(mise run)
+echo "a signal during the registration names it and says the alias may hold the new key"
 
 # A failed delete leaves the old key and says the alias may hold no key.
 FAKE_HOPIN_HOLDER=other run_task failed-delete 1 /key/delete litellm:key hopin --replace

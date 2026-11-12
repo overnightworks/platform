@@ -33,10 +33,13 @@ key_minimum_length=16
 exec {kcadm_diagnostics_fd}>/dev/null {kcadm_update_output_fd}>/dev/null
 command_name="" task_name=litellm:admin realm="" username="" reported=false
 # The writes of the admin and key commands, each recorded before it is sent, since an answer lost on the way leaves it
-# unknown.
+# unknown; a key registration the server answered with a failure is taken out again.
 attempted=()
 # What the key command's failure says of the alias it was replacing: empty unless its old key was deleted or may be.
 alias_state=""
+# What the key command's failure says of the way on: the same command completes a write that did not come to the
+# registration.
+key_way_on="the same command again completes it"
 # written_list: what the admin command wrote or may have written.
 written_list() {
   local written
@@ -46,7 +49,7 @@ written_list() {
 # written_text: the list as a failure reports it, with how to finish.
 written_text() { echo "written or possibly written: $(written_list); run again to complete it"; }
 # key_written_text: the same for the key command, whose way to finish is the command itself.
-key_written_text() { echo "${alias_state:+$alias_state; }written or possibly written: $(written_list); the same command again completes it"; }
+key_written_text() { echo "${alias_state:+$alias_state; }written or possibly written: $(written_list); $key_way_on"; }
 fail() {
   local suffix=""
   if [ "$command_name" = admin ]; then
@@ -361,18 +364,22 @@ replace_key() {
 # register_key <app> <value> <hash>: makes the key with the table row's fields, then reads it back as the only key of
 # the alias, with the value's hash and those fields.
 register_key() {
-  local app="$1" value="$2" desired body
+  local app="$1" value="$2" desired body state_before="$alias_state"
   desired="$(desired_key "$app")"
   body="{\"key\":\"$(quote_inner "$value")\",\"key_alias\":\"$app\",${desired#\{}"
+  attempted+=("registration of the key of $app")
+  alias_state="the alias $app holds no key or the new one"
   request "making the key of $app" /key/generate "$body" discard || {
-    if [ "$status" = 000 ]; then
-      attempted+=("registration of the key of $app")
-      [ -z "$alias_state" ] || alias_state="the alias $app holds no key or the new one"
+    # An answered failure made no key; a lost answer leaves the registration possibly made.
+    if [ "$status" != 000 ]; then
+      unset 'attempted[-1]'
+      alias_state="$state_before"
     fi
     fail "$failure"
   }
-  attempted+=("registration of the key of $app")
-  alias_state=""
+  # The alias holds the new key from here on, so running the command again completes nothing.
+  alias_state="the alias $app was given the new key"
+  key_way_on="mise run litellm:keys reports the keys of the alias and corrects their fields"
   found_keys "$app"
   [ "$key_count" = 1 ] && [ "$(key_hash)" = "$3" ] || fail "the alias $app did not read back with the registered value"
   differences "$desired" "$found_row"
