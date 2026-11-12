@@ -1,0 +1,8 @@
+claim_id = "21d2727f7b0c40c8b63609ae6802ad9a"
+agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
+role = "builder"
+base = "0d252328122ecdbe4da42116de1b57a090bab8f1"
+branch = "claude/issue-525-skat-release-2026-11-13-3"
+scope = ["apps/skat/skat.yaml", "infrastructure/legal"]
+opened_commit = "ea9f8aebe4bde37c9e754eeea1900b665bc17d21"
+whole_reason = "The release pin and the legal text it carries change together, or the legal cell is red."
