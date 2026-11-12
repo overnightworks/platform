@@ -240,3 +240,8 @@ if mise run backup:fetch "$first" "$fetched"; then fail "backup:fetch overwrote 
 [ "$(sha256sum <"$fetched")" = "$fetched_before" ] || fail "backup:fetch changed the existing file $fetched while refusing it"
 echo "backup:fetch wrote the latest dump of $first at mode 0600 and refuses an existing file"
 rm -f -- "$fetched"
+
+# backup:now: the shipped task takes a Backup of the namespace's Schedule and runs the restore test on it, which
+# passes on the filled first key table.
+now_output="$(mise run backup:now "$first" 2>&1)" || fail "backup:now $first failed: $now_output"
+echo "$now_output"
