@@ -21,8 +21,9 @@ Cloudflare with the read-only token. The apply is the zone's first write and run
 2. The operator: `scripts/apply_opentofu.sh cloudflare`. Exit 0: no change; 2: the imports are planned, which the
    plan lists; 1: a failure, a 403 included, which shows a right the token lacks, and the plan guard's refusal, which
    names each address with its action. While the plan imports any object the guard passes only the imports with
-   the one change of `www`'s content; a later update of a ruleset needs `--allow-ruleset-update`, passed only for a
-   reviewed change. A plan that changes a ruleset or removes one of its rules is a stop, since a deny rule must never
+   the one change of `www`'s content; a later plan needs a prior state that holds a zone object, and the creation or
+   update of a ruleset or the creation of a zone setting needs `--allow-ruleset-update`, passed only for a reviewed
+   change ([later plans](../cloudflare-zone.md#later-plans)). A plan that changes a ruleset or removes one of its rules is a stop, since a deny rule must never
    be absent: keep the plan, tell platform's head which ruleset and rule, and apply nothing.
 3. The operator: `mise run cloudflare:token-absent` (the Check).
 4. For the adoption's apply: `mise run cloudflare:edge-probe`, the plan above, `scripts/apply_opentofu.sh cloudflare

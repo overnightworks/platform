@@ -5,8 +5,9 @@
 # Exit: 0 no change, 2 changes planned (without --apply), 1 failure, which includes a plan that deletes an object (a
 # deliberate removal is a `removed` block with destroy = false, which plans a forget) and, for cloudflare, a plan that
 # scripts/cloudflare_adoption_check.sh refuses: the adoption of the zone that is more than its imports and the content
-# of www, and a later update of a ruleset unless --allow-ruleset-update names it for a reviewed change. A plan-only run
-# works on any commit and writes no state; --apply runs only at a clean origin/main.
+# of www; a later plan (docs/cloudflare-zone.md, "Later plans") needs a prior state that holds a zone object and refuses
+# the creation or update of a ruleset and the creation of a zone setting unless --allow-ruleset-update names it for a
+# reviewed change. A plan-only run works on any commit and writes no state; --apply runs only at a clean origin/main.
 set -euo pipefail
 
 LOCK_WAIT_SECONDS=30

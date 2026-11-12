@@ -135,6 +135,6 @@ if [ "$(jq -r .adoption <<<"${judgement}")" = true ]; then
   jq -r '"cloudflare_adoption_check: adoption plan: \([.listed[] | select(.imported)] | length) imports, \([.listed[] | select(.actions == "no-op")] | length) no-op, \([.listed[] | select(.actions != "no-op")] | length) update",
     (.listed[] | "  \(.address) \(if .imported then "import " else "" end)\(.actions)" + (if (.changes | length) > 0 then " (changes \(.changes | join(", ")))" else "" end))' <<<"${judgement}"
 else
-  echo "cloudflare_adoption_check: the prior state holds $(jq -r .prior_objects <<<"${judgement}") zone objects; the adoption rules do not apply"
+  jq -r '"cloudflare_adoption_check: the prior state holds \(.prior_objects) zone object\(if .prior_objects == 1 then "" else "s" end); the adoption rules do not apply"' <<<"${judgement}"
   jq -r '.listed[] | "  \(.address) \(.actions) (--allow-ruleset-update)"' <<<"${judgement}"
 fi

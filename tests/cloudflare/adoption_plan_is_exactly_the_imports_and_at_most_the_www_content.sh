@@ -109,7 +109,7 @@ case_of "an account-level Cloudflare resource only with the flag" "${created}"' 
 check_arguments=()
 case_of "a prior state with a data source only" "${created}"' | .prior_state = {values: {root_module: {resources: [{address: "data.cloudflare_zone.zone", mode: "data", type: "cloudflare_zone"}]}}}' 1 "the first write must be the adoption"
 check_arguments=(--allow-ruleset-update)
-case_of "a prior state holding one setting in a child module only" "${created}"' | .prior_state = {values: {root_module: {child_modules: [{address: "module.settings", resources: [{address: "module.settings.cloudflare_zone_setting.nel", mode: "managed", type: "cloudflare_zone_setting"}]}]}}}' 0 "prior state holds 1 zone objects"
+case_of "a prior state holding one setting in a child module only" "${created}"' | .prior_state = {values: {root_module: {child_modules: [{address: "module.settings", resources: [{address: "module.settings.cloudflare_zone_setting.nel", mode: "managed", type: "cloudflare_zone_setting"}]}]}}}' 0 "prior state holds 1 zone object;"
 check_arguments=()
 case_of "a prior state with objects and a created record" "${adopted}"' | (.resource_changes[] | select(.address == $a) | .change) |= (.actions = ["create"] | .before = null)' 0 "prior state holds 8 zone objects"
 case_of "no change with no prior state" '.resource_changes |= map(.change.importing = null)' 1 "the first write must be the adoption"
