@@ -1025,6 +1025,18 @@ chmod 0600 "$file"
 say "wrote the latest $kind of $namespace to $file ($(stat --format=%s "$file") bytes, mode 0600)"
 '''
 
+[tasks."backup:now"]
+description = "Take one Backup of a namespace's k8up Schedule now and run its restore test on it, so a backup is proven the same hour"
+usage = '''
+arg "<namespace>" help="The namespace with a k8up Schedule and the CronJob restore-test"
+'''
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+exec scripts/backup_now.sh "${usage_namespace?}"
+'''
+
 # Replaces presentator's live SQLite file with a verified copy at the go; every line it prints is a name, a count or an
 # outcome, never a row.
 [tasks."presentator:load-database"]
