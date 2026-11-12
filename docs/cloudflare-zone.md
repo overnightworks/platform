@@ -54,10 +54,12 @@ of `www`'s record (below) and needs a token with Edit on DNS. A removed host is 
 The root declares what the zone already holds, so its first plan imports every object and writes at most one thing, the
 `content` of `www`'s record, onto the platform's tunnel. `scripts/apply_opentofu.sh cloudflare` runs
 `scripts/cloudflare_adoption_check.sh` on the kept plan after the plan and before any apply, a plan-only run included.
-While the plan holds no object the state already holds, the plan passes only as an import of every declared record,
-ruleset and setting, each at no-op, with at most one update, the `content` of the record whose name starts with `www.`;
-a create, a delete, a forget, a replacement, a second update, an update of another record, a change of another
-attribute of `www` and a declared object without an import all stop it. The output lists the counts and each address
+While the plan imports any object, a half-finished adoption included, it passes only without a create or a delete,
+with every imported ruleset and setting at no-op, at most one update, the `content` of the record whose name starts with
+`www.`, and with every declared object that the state does not hold yet among the imports (an object the state holds
+is at no-op without an import and passes). A create, a delete, a forget, a replacement, a second update, an update of
+another record, ruleset or setting, a change of another attribute of `www` and a declared object without an import all
+stop it. A plan that cannot be read, an empty one included, fails the run. The output lists the counts and each address
 with its action, never a value.
 
 The order:
@@ -83,12 +85,15 @@ What each stop means, and what to do: nothing is applied and nothing is changed 
 - A `MISS` line of the probe in step 1 or 5 names the host, the path and the form that failed. A miss in step 1 is the
   edge as it was before the write; a difference between the two outputs is the write's effect and is undone by
   restoring `www`'s record to the content that step 2's plan printed as its earlier value.
-- An apply that fails after it wrote leaves a state that holds some objects, so the guard no longer sees an adoption:
-  run nothing further and read the plan by hand.
+- `the plan is empty or holds no list of resource changes` or `the plan holds no resource`: the plan could not be
+  read; nothing was judged.
+- An apply that fails after it wrote leaves a state that holds some objects and a plan that imports the rest: the
+  adoption rules go on applying to it, so a create or an update beside the imports stops it. Run nothing further until
+  the plan has been read by hand.
 
 ## Later plans
 
-After the adoption the adoption rules do not apply and the command behaves as it does for any plan: a delete or a
+A plan without any import is a later plan: the adoption rules do not apply and the command behaves as it does for any plan: a delete or a
 replacement is refused. An update of a ruleset (the deny, the transform or the redirect) is also refused, and the refusal names
 `--allow-ruleset-update`, the one flag the operator or platform's head passes for a reviewed change, in a plan-only run
 and in an apply alike. The flag allows no delete and loosens nothing in the adoption.

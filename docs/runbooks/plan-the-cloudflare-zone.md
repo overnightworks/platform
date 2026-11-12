@@ -20,7 +20,7 @@ Cloudflare with the read-only token. The apply is the zone's first write and run
    of its file.
 2. The operator: `scripts/apply_opentofu.sh cloudflare`. Exit 0: no change; 2: the imports are planned, which the
    plan lists; 1: a failure, a 403 included, which shows a right the token lacks, and the plan guard's refusal, which
-   names each address with its action. While the state holds no zone object the guard passes only the imports with
+   names each address with its action. While the plan imports any object the guard passes only the imports with
    the one change of `www`'s content; a later update of a ruleset needs `--allow-ruleset-update`, passed only for a
    reviewed change. A plan that changes a ruleset or removes one of its rules is a stop, since a deny rule must never
    be absent: keep the plan, tell platform's head which ruleset and rule, and apply nothing.
