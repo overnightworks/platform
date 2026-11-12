@@ -1,0 +1,6 @@
+ingress:
+  - hostname: hallucinai.de
+    service: http://synthetic.invalid:80
+  - hostname: auth.hallucinai.de
+    service: http://synthetic.invalid:80
+  - service: http_status:404
