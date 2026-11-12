@@ -1,8 +1,0 @@
-claim_id = "8ff8d7110e804a7790de32e828b98abc"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "25c84bb130fc307f3e91f4c6147b57f16f8e8160"
-branch = "claude/issue-510-zone-adoption-guard"
-scope = [".github/workflows/ci.yml", "docs/cloudflare-zone.md", "docs/runbooks/plan-the-cloudflare-zone.md", "mise.toml", "scripts/apply_opentofu.sh", "scripts/cloudflare_adoption_check.sh", "scripts/cloudflare_edge_probe.sh", "src/opentofu/cloudflare", "tests/cloudflare", "tests/opentofu"]
-opened_commit = "9ca6082ea5375c079f2faec2e3ed390fcf6d502b"
-whole_reason = "The check, the flag, the probe and the documents that say what each stop means are one guard and are reviewed as one."
