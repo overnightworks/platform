@@ -1,0 +1,8 @@
+claim_id = "4b3001e9e85144919ce09b4eae7ed65a"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "8d3fd11367411ed955c7cc43995e754088d080dd"
+branch = "claude/issue-486-skat-2026-11-13-1"
+scope = ["apps/personas/personas.toml", "apps/skat/skat.yaml", "infrastructure/legal", "tests/legal"]
+opened_commit = "5377278034e610dc7c8a71d4364d1e2d5893dd66"
+whole_reason = "The image, the tools bound against it and the legal copy of the same release land together: apart, the runner holds every turn or the page names another release."
