@@ -1,0 +1,8 @@
+claim_id = "168f93ce8b644e25bd1838f56e7dfe09"
+agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
+role = "builder"
+base = "5b533c583358d6553bc77a417d623e78c819497a"
+branch = "claude/issue-518-presentator-2026-11-12-5"
+scope = ["apps/presentator/release/kustomization.yaml", "infrastructure/legal"]
+opened_commit = "027ca099b8036adbe54a5ed96d5cf812602a8fea"
+whole_reason = "The release pin and the legal texts it carries change together, or the legal cell is red."
