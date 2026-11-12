@@ -190,8 +190,9 @@ spec:
                 port:
                   number: 8000
 ---
-# presentator trusts the X-Forwarded-For of the pod network, so only Traefik's pods may reach it; the kubelet's probe
-# comes from the node, which a NetworkPolicy never blocks.
+# presentator trusts the X-Forwarded-For of the pod network, so its senders are Traefik's pods, and Keycloak's pods only
+# for the back-channel logout (backchannel-from-keycloak below); the kubelet's probe comes from the node, which a
+# NetworkPolicy never blocks.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
