@@ -1,0 +1,262 @@
+{
+  "resource_changes": [
+    {
+      "address": "cloudflare_dns_record.host[\"a.example.test\"]",
+      "mode": "managed",
+      "type": "cloudflare_dns_record",
+      "name": "host",
+      "index": "a.example.test",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "importing": {
+          "id": "zone/synthetic-secret-value"
+        },
+        "before": {
+          "name": "a.example.test",
+          "type": "CNAME",
+          "content": "synthetic-secret-value.cfargotunnel.com",
+          "proxied": true,
+          "ttl": 1,
+          "modified_on": "then"
+        },
+        "after": {
+          "name": "a.example.test",
+          "type": "CNAME",
+          "content": "synthetic-secret-value.cfargotunnel.com",
+          "proxied": true,
+          "ttl": 1,
+          "modified_on": "then"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "cloudflare_dns_record.host[\"b.example.test\"]",
+      "mode": "managed",
+      "type": "cloudflare_dns_record",
+      "name": "host",
+      "index": "b.example.test",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "importing": {
+          "id": "zone/synthetic-secret-value"
+        },
+        "before": {
+          "name": "b.example.test",
+          "type": "CNAME",
+          "content": "synthetic-secret-value.cfargotunnel.com",
+          "proxied": true,
+          "ttl": 1,
+          "modified_on": "then"
+        },
+        "after": {
+          "name": "b.example.test",
+          "type": "CNAME",
+          "content": "synthetic-secret-value.cfargotunnel.com",
+          "proxied": true,
+          "ttl": 1,
+          "modified_on": "then"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "cloudflare_dns_record.host[\"www.example.test\"]",
+      "mode": "managed",
+      "type": "cloudflare_dns_record",
+      "name": "host",
+      "index": "www.example.test",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "importing": {
+          "id": "zone/synthetic-secret-value"
+        },
+        "before": {
+          "name": "www.example.test",
+          "type": "CNAME",
+          "content": "synthetic-secret-value.cfargotunnel.com",
+          "proxied": true,
+          "ttl": 1,
+          "modified_on": "then"
+        },
+        "after": {
+          "name": "www.example.test",
+          "type": "CNAME",
+          "content": "synthetic-secret-value.cfargotunnel.com",
+          "proxied": true,
+          "ttl": 1,
+          "modified_on": "then"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "cloudflare_ruleset.client_address",
+      "mode": "managed",
+      "type": "cloudflare_ruleset",
+      "name": "client_address",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "importing": {
+          "id": "zone/synthetic-secret-value"
+        },
+        "before": {
+          "id": "synthetic-secret-value"
+        },
+        "after": {
+          "id": "synthetic-secret-value"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "cloudflare_ruleset.deny_public",
+      "mode": "managed",
+      "type": "cloudflare_ruleset",
+      "name": "deny_public",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "importing": {
+          "id": "zone/synthetic-secret-value"
+        },
+        "before": {
+          "id": "synthetic-secret-value"
+        },
+        "after": {
+          "id": "synthetic-secret-value"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "cloudflare_ruleset.apex_redirect",
+      "mode": "managed",
+      "type": "cloudflare_ruleset",
+      "name": "apex_redirect",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "importing": {
+          "id": "zone/synthetic-secret-value"
+        },
+        "before": {
+          "id": "synthetic-secret-value"
+        },
+        "after": {
+          "id": "synthetic-secret-value"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.settings.cloudflare_zone_setting.hsts",
+      "mode": "managed",
+      "type": "cloudflare_zone_setting",
+      "name": "hsts",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "importing": {
+          "id": "zone/synthetic-secret-value"
+        },
+        "before": {
+          "id": "synthetic-secret-value"
+        },
+        "after": {
+          "id": "synthetic-secret-value"
+        },
+        "after_unknown": {}
+      }
+    },
+    {
+      "address": "module.settings.cloudflare_zone_setting.nel",
+      "mode": "managed",
+      "type": "cloudflare_zone_setting",
+      "name": "nel",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "importing": {
+          "id": "zone/synthetic-secret-value"
+        },
+        "before": {
+          "id": "synthetic-secret-value"
+        },
+        "after": {
+          "id": "synthetic-secret-value"
+        },
+        "after_unknown": {}
+      }
+    }
+  ],
+  "configuration": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "cloudflare_dns_record.host",
+          "mode": "managed",
+          "type": "cloudflare_dns_record",
+          "expressions": {
+            "name": {},
+            "type": {},
+            "content": {},
+            "proxied": {},
+            "ttl": {},
+            "zone_id": {}
+          }
+        },
+        {
+          "address": "cloudflare_ruleset.client_address",
+          "mode": "managed",
+          "type": "cloudflare_ruleset"
+        },
+        {
+          "address": "cloudflare_ruleset.deny_public",
+          "mode": "managed",
+          "type": "cloudflare_ruleset"
+        },
+        {
+          "address": "cloudflare_ruleset.apex_redirect",
+          "mode": "managed",
+          "type": "cloudflare_ruleset"
+        },
+        {
+          "address": "data.cloudflare_zone.hallucinai",
+          "mode": "data",
+          "type": "cloudflare_zone"
+        }
+      ],
+      "module_calls": {
+        "settings": {
+          "module": {
+            "resources": [
+              {
+                "address": "cloudflare_zone_setting.hsts",
+                "mode": "managed",
+                "type": "cloudflare_zone_setting"
+              },
+              {
+                "address": "cloudflare_zone_setting.nel",
+                "mode": "managed",
+                "type": "cloudflare_zone_setting"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
