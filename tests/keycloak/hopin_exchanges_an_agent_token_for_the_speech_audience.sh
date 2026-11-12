@@ -212,18 +212,16 @@ echo "the exchanged token names $speech_group only while $agent is in it"
 # A switch-off of the exchanging client, the agent client or its service account stops the exchange of a token minted
 # before.
 [ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant with scope=mcp-hopin was refused"
-set_enabled "$exchanger_path" false
-exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
-expect_refusal "a disabled $exchanger's exchange" 401 invalid_client
-set_enabled "$exchanger_path" true
-set_enabled "$agent_path" false
-exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
-expect_refusal "the exchange of a token of the disabled $agent" 400 invalid_request
-set_enabled "$agent_path" true
-set_enabled "$account_path" false
-exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
-expect_refusal "the exchange of a token of $agent's disabled service account" 400 invalid_request
-set_enabled "$account_path" true
+while IFS='|' read -r switched_off description status error; do
+  set_enabled "${!switched_off}" false
+  exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
+  expect_refusal "$description" "$status" "$error"
+  set_enabled "${!switched_off}" true
+done <<EOF_CASES
+exchanger_path|a disabled $exchanger's exchange|401|invalid_client
+agent_path|the exchange of a token of the disabled $agent|400|invalid_request
+account_path|the exchange of a token of $agent's disabled service account|400|invalid_request
+EOF_CASES
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 [ "$exchange_status" = 200 ] || fail "after re-enabling, $exchanger's exchange got $exchange_status '$(exchange_error)'"
 echo "re-enabled, $exchanger's exchange answers 200"
