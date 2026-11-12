@@ -33,7 +33,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: acestep-worker
-          image: ghcr.io/overnightworks/songmaker/acestep-worker:2026.11.11.2@sha256:04a07dd94eb1baa36be52a6825753e70e9b4a55450c580da88b5152887bb8c19
+          image: ghcr.io/overnightworks/songmaker/acestep-worker:2026.11.12.1@sha256:4544032fe0d3ffa7962073d9d9f41ef9a2383ec401f44d0edc0519bc1e92a15a
           env:
             - name: WORKER_ID
               value: acestep-worker-0
