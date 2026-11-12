@@ -47,7 +47,7 @@ declared_mappers="$(yq '[.clientScopes[] | select(.name == "profile" or .name ==
   fail "the live mappers hold $live_mappers mappers but name $(jq length <<<"$claim_names") distinct claims"
 echo "the live scopes profile and email hold $live_mappers mappers naming $(jq length <<<"$claim_names") claims"
 
-speech_audience="$(yq --exit-status '.clientScopes[] | select(.name == "speech-service-audience") | .protocolMappers[0].config."included.client.audience"' "$REALM_FILE")"
+speech_audience="$(audience_of_scope speech-service-audience)"
 speech_group="/services/$speech_audience"
 openssl rand -hex 24 | tr -d '\n' >"$password_file"
 mask_secret "$(<"$password_file")"

@@ -87,3 +87,8 @@ set_enabled() { put_changed "$1" '.enabled = $enabled' --argjson enabled "$2"; }
 sorted_list() { tr ' ' '\n' | grep . | LC_ALL=C sort; }
 # file_groups_of <username>: the groups REALM_FILE gives the user, sorted, one per line.
 file_groups_of() { USER="$1" yq '.users[] | select(.username == strenv(USER)) | .groups[]' "$REALM_FILE" | sorted_list; }
+# audience_of_scope <client scope>: the client whose role the scope maps, the audience the scope resolves for a token that
+# carries that role; fails when the file maps none.
+audience_of_scope() {
+  SCOPE="$1" yq --exit-status '.clientScopeMappings | to_entries[] | select(.value[].clientScope == strenv(SCOPE)) | .key' "$REALM_FILE"
+}

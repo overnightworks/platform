@@ -80,6 +80,15 @@ roles:
   realm:
     - name: speech-workload
       description: Service-account-only marker of an app workload calling the speech service.
+      composites:
+        client:
+          speech-service: [user]
+  client:
+    speech-service:
+      # The right the audience follows: the scope speech-service-audience names the client as audience only for a token
+      # that carries this role, which the group /services/speech-service and the role speech-workload give.
+      - name: user
+        description: May call the speech service.
 groups:
   - name: apps
     subGroups:
@@ -105,8 +114,10 @@ groups:
           - name: mcp
   - name: services
     subGroups:
-      # Exactly this path is the speech service's right; it has no subgroup.
+      # Exactly this path is the speech service's right; it has no subgroup. Its client role makes the audience.
       - name: speech-service
+        clientRoles:
+          speech-service: [user]
       # Exactly this path is the AI right. keycloak:move-group moves the members of
       # /services/agent-service/api here; no realm file declares that group, so no apply creates it.
       - name: litellm
@@ -348,7 +359,7 @@ clientScopes:
           userinfo.token.claim: "true"
           introspection.token.claim: "true"
   - name: speech-service-audience
-    description: Adds speech-service to the access token audience
+    description: Adds speech-service to the access token audience of a principal that holds its client role
     protocol: openid-connect
     attributes:
       include.in.token.scope: "false"
@@ -356,10 +367,9 @@ clientScopes:
     protocolMappers:
       - name: speech-service-audience
         protocol: openid-connect
-        protocolMapper: oidc-audience-mapper
+        protocolMapper: oidc-audience-resolve-mapper
         consentRequired: false
         config:
-          included.client.audience: speech-service
           id.token.claim: "false"
           access.token.claim: "true"
           # Stated, because Keycloak would otherwise default it on create and the next apply flip it.
@@ -469,6 +479,11 @@ clientScopes:
           id.token.claim: "false"
           userinfo.token.claim: "false"
           introspection.token.claim: "true"
+# The scope's role scope mapping: Keycloak applies speech-service-audience only to a principal that holds this role.
+clientScopeMappings:
+  speech-service:
+    - clientScope: speech-service-audience
+      roles: [user]
 # Every new account is asked once to accept the terms of use.
 # `priority` is stated because config-cli writes 0 for a missing one. Deleting this block does not
 # switch the action off (IMPORT_MANAGED_REQUIREDACTION is no-delete in config-cli.yaml): set `enabled: false`.

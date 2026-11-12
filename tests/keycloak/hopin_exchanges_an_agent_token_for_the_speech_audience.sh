@@ -52,7 +52,7 @@ remove_throwaways() {
 trap remove_throwaways EXIT
 trap 'exit 143' TERM INT
 
-speech_audience="$(yq --exit-status '.clientScopes[] | select(.name == "'"$exchange_scope"'") | .protocolMappers[].config."included.client.audience" | select(. != null)' "$REALM_FILE")"
+speech_audience="$(audience_of_scope "$exchange_scope")"
 speech_group="/services/$speech_audience"
 exchange_enabled_in_file="$(yq '[.clients[] | select(.attributes."standard.token.exchange.enabled" == "true") | .clientId] | join(" ")' "$REALM_FILE")"
 [ "$exchange_enabled_in_file" = "$exchanger" ] ||
@@ -195,19 +195,25 @@ person_claims="$(jwt_part 2 "$(<"$scratch/person-token")")"
 exchange "$exchanger" "$exchanger_secret_file" "$scratch/person-token" --data "scope=$exchange_scope"
 expect_refusal "the exchange of a person's token" 403 access_denied
 
-# The exchanged token names the speech service's group only while the principal is in it, which is all the realm adds: the
-# service decides by the group.
+# The speech audience follows the group: outside /services/speech-service the exchange still answers, with a token that
+# names neither the group nor the audience.
 group_id="$(admin GET "$realm/group-by-path$speech_group" | jq --raw-output .id)"
 removed_membership_path="$account_path/groups/$group_id"
 admin DELETE "$removed_membership_path"
 [ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant outside $speech_group was refused"
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 [ "$exchange_status" = 200 ] || fail "the exchange of $agent's token outside $speech_group got $exchange_status '$(exchange_error)'"
-[ "$(jwt_part 2 "$(jq --raw-output .access_token "$scratch/answer")" | jq --arg group "$speech_group" '.groups | index($group) == null')" = true ] ||
-  fail "the exchanged token names $speech_group though $agent is not in it"
+outside_claims="$(jwt_part 2 "$(jq --raw-output .access_token "$scratch/answer")")"
+[ "$(jq --arg audience "$speech_audience" --arg group "$speech_group" \
+  '([.aud] | flatten | index($audience)) == null and (.groups | index($group)) == null' <<<"$outside_claims")" = true ] ||
+  fail "the exchanged token names $speech_audience or $speech_group though $agent is not in $speech_group"
 admin PUT "$removed_membership_path"
 removed_membership_path=""
-echo "the exchanged token names $speech_group only while $agent is in it"
+exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
+[ "$exchange_status" = 200 ] || fail "after the membership is restored, the exchange got $exchange_status '$(exchange_error)'"
+[ "$(jwt_part 2 "$(jq --raw-output .access_token "$scratch/answer")" | jq --arg audience "$speech_audience" '[.aud] | flatten | index($audience) != null')" = true ] ||
+  fail "the exchanged token does not name $speech_audience again after $agent is back in $speech_group"
+echo "the exchanged token names $speech_audience and $speech_group only while $agent is in $speech_group"
 
 # A switch-off of the exchanging client, the agent client or its service account stops the exchange of a token minted
 # before.
