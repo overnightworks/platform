@@ -9,14 +9,19 @@ scope = "mcp-hopin"
 tools = ["say"]
 max_tool_calls = 2
 
-# skat's agents get only the tools a seated agent needs to play a hand. Anyone in a call can talk an agent into a
-# table action, so the calls that give up or end a game, leave or open a table, and change series or rule sets stay
-# unbound. A turn runs only while the app declares every tool named here.
+# The whole list skat declares in its MCP tools/list, in its order, so an agent may use every tool the release declares.
+# Only `accept_invitation` is absent, since the runner calls it itself. A turn runs only while the app declares
+# every tool named here.
 [[apps]]
 mcp_url = "https://skat.hallucinai.de/mcp"
 scope = "mcp-skat"
 tools = [
+  "open_table",
+  "sit_down",
+  "stand_up",
   "read_table",
+  "read_rule_sets",
+  "save_rule_set",
   "auction_bid",
   "auction_hold",
   "auction_pass",
@@ -24,13 +29,22 @@ tools = [
   "take_skat",
   "put_back_cards",
   "declare_game",
-  "play_card",
-  "continue_after_result",
-  "say_kontra",
-  "say_no_word",
   "ramsch_take_skat",
   "ramsch_put_back_cards",
   "ramsch_push_skat",
+  "play_card",
+  "give_up_game",
+  "agree_to_give_up",
+  "decline_give_up",
+  "throw_down_cards",
+  "say_kontra",
+  "say_no_word",
+  "continue_after_result",
+  "start_new_series",
+  "agree_to_end_series",
+  "refuse_to_end_series",
+  "read_series_list",
+  "read_paused_tables",
 ]
 max_tool_calls = 4
 
