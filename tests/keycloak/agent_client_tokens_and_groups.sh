@@ -75,9 +75,12 @@ members_of() {
 # sorted_words <word>...: the words in the order members_of prints.
 sorted_words() { printf '%s\n' "$@" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'; }
 agent_account="service-account-$client"
+# agent-leonardo's service account is declared in /agent-owners too, as agent-mozart's is.
+leonardo_account=service-account-agent-leonardo
 [ -z "$(members_of /agent-adders)" ] || fail "/agent-adders has members before the command"
-[ "$(members_of /agent-owners)" = "$agent_account" ] || fail "/agent-owners holds more than $agent_account before the command"
-echo "before the command /agent-adders is empty and /agent-owners holds $agent_account alone"
+[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$leonardo_account")" ] ||
+  fail "/agent-owners holds '$(members_of /agent-owners)', not exactly $agent_account and $leonardo_account, before the command"
+echo "before the command /agent-adders is empty and /agent-owners holds $agent_account and $leonardo_account alone"
 
 # create_person <username> <attributes as JSON>: a person with the probe password, no required action and every profile
 # field set; the body with the password goes through a file.
@@ -133,21 +136,21 @@ refused "the service-account client $undeclared_client, which exists in Keycloak
 owner_command "$client" "$stand_in"
 [ "$command_status" = 0 ] || fail "keycloak:agent-owner failed for $stand_in"
 [ "$(agent_owner)" = "$stand_in_id" ] || fail "agent_owner does not name $stand_in"
-[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$stand_in")" ] ||
-  fail "/agent-owners holds '$(members_of /agent-owners)', not exactly $agent_account and $stand_in"
+[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$leonardo_account" "$stand_in")" ] ||
+  fail "/agent-owners holds '$(members_of /agent-owners)', not exactly $agent_account, $leonardo_account and $stand_in"
 [ -z "$(members_of /agent-adders)" ] || fail "/agent-adders gained a member without --adder"
-echo "the command set agent_owner and /agent-owners to $agent_account and $stand_in; /agent-adders stayed empty"
+echo "the command set agent_owner and /agent-owners to $agent_account, $leonardo_account and $stand_in; /agent-adders stayed empty"
 
 owner_command "$client" "$stand_in"
 [ "$command_status" = 0 ] && grep -q 'nothing changed' <<<"$command_output" || fail "a second run did not report nothing changed"
 owner_command "$client" "$other_owner"
 refused "another owner" "$stand_in_id"
-[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$stand_in")" ] || fail "the refused owner changed /agent-owners"
+[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$leonardo_account" "$stand_in")" ] || fail "the refused owner changed /agent-owners"
 
 owner_command --adder "$client" "$stand_in"
 [ "$command_status" = 0 ] || fail "keycloak:agent-owner --adder failed for $stand_in"
 [ "$(members_of /agent-adders)" = "$stand_in" ] || fail "/agent-adders does not hold exactly $stand_in"
-[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$stand_in")" ] || fail "--adder changed /agent-owners"
+[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$leonardo_account" "$stand_in")" ] || fail "--adder changed /agent-owners"
 echo "--adder added exactly $stand_in to /agent-adders; a second owner stays refused, a second run changes nothing"
 
 token_endpoint="$local_url/realms/$realm/protocol/openid-connect/token"

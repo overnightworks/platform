@@ -99,6 +99,10 @@ groups:
           - name: admin
           - name: mcp
       - name: skat
+        subGroups:
+          # skat's MCP right: an agent token reaches /mcp only for a member. The agents' service accounts are members
+          # through users below; no person is declared.
+          - name: mcp
   - name: services
     subGroups:
       # Exactly this path is the speech service's right; it has no subgroup.
@@ -415,6 +419,24 @@ clientScopes:
           access.token.claim: "true"
           userinfo.token.claim: "false"
           introspection.token.claim: "true"
+  - name: mcp-skat
+    description: An agent's access to skat's MCP front
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "true"
+      display.on.consent.screen: "true"
+      consent.screen.text: skat
+    protocolMappers:
+      - name: mcp-skat-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          included.custom.audience: https://skat.hallucinai.de/mcp
+          id.token.claim: "false"
+          access.token.claim: "true"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
   # The owner of an autonomous agent's service account, which webauth requires; agents only.
   - name: agent-identity
     description: An agent's owner, read from its service account
@@ -465,6 +487,15 @@ users:
       - /agents
       - /apps/hopin
       - /apps/hopin/mcp
+      - /apps/skat/mcp
+      - /agent-owners
+  - username: service-account-agent-leonardo
+    serviceAccountClientId: agent-leonardo
+    groups:
+      - /agents
+      - /apps/hopin
+      - /apps/hopin/mcp
+      - /apps/skat/mcp
       - /agent-owners
 clients:
   # Audience only: the speech service accepts tokens issued for it and never signs anyone in.
@@ -640,9 +671,9 @@ clients:
       - mcp-hopin
       - offline_access
   # An autonomous agent's own confidential client: client credentials only, no refresh token, the type header
-  # webauth requires, and the audience of hopin's /mcp only for the optional scope mcp-hopin. It has no roles scope, so
-  # its tokens carry no realm or client role. enabled is left out, so a switch-off in the console survives every
-  # apply.
+  # webauth requires, and the audiences of hopin's and skat's /mcp only for the optional scopes mcp-hopin and
+  # mcp-skat. It has no roles scope, so its tokens carry no realm or client role. enabled is left out, so a switch-off
+  # in the console survives every apply.
   - clientId: agent-mozart
     name: agent-mozart
     publicClient: false
@@ -690,3 +721,54 @@ clients:
       - agent-identity
     optionalClientScopes:
       - mcp-hopin
+      - mcp-skat
+  # The same declaration as agent-mozart, with its own agent_name: the client secret comes from its own key of the
+  # Secret keycloak, and its service account has the same groups and the same agent-identity scope.
+  - clientId: agent-leonardo
+    name: agent-leonardo
+    publicClient: false
+    secret: $(env:AGENT_LEONARDO_CLIENT_SECRET)
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    frontchannelLogout: false
+    attributes:
+      use.refresh.tokens: "false"
+      client_credentials.use_refresh_token: "false"
+      access.token.header.type.rfc9068: "true"
+    protocolMappers:
+      - name: agent_name
+        protocol: openid-connect
+        protocolMapper: oidc-hardcoded-claim-mapper
+        consentRequired: false
+        config:
+          claim.name: agent_name
+          claim.value: Leonardo
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+          access.tokenResponse.claim: "false"
+      # The realm's own unique username; the name people see is agent_name.
+      - name: preferred_username
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: username
+          claim.name: preferred_username
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+    defaultClientScopes:
+      - basic
+      - groups
+      - service_account
+      - agent-identity
+    optionalClientScopes:
+      - mcp-hopin
+      - mcp-skat

@@ -136,6 +136,11 @@ spec:
                 secretKeyRef:
                   name: keycloak
                   key: client-agent-mozart
+            - name: AGENT_LEONARDO_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak
+                  key: client-agent-leonardo
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
