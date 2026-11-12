@@ -17,9 +17,13 @@ for manifest in $APP_MANIFESTS; do
   namespace="${deployment%/*}" name="${deployment#*/}"
   markers="$(kubectl get namespace "$namespace" \
     -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}|{.metadata.annotations.kustomize\.toolkit\.fluxcd\.io/prune}')"
-  [ "$markers" = "restricted|disabled" ] ||
-    fail "the Namespace $namespace reads '$markers', not Pod Security restricted and prune disabled"
-  echo "the Namespace $namespace enforces restricted, and Flux never prunes it"
+  # presentator's Namespace enforces no level, as its build worker's init container holds NET_ADMIN; its warn and audit
+  # labels are read by tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh.
+  expected_markers=restricted
+  [ "$namespace" != presentator ] || expected_markers=
+  [ "$markers" = "$expected_markers|disabled" ] ||
+    fail "the Namespace $namespace reads '$markers', not Pod Security '${expected_markers:-none}' enforced and prune disabled"
+  echo "the Namespace $namespace enforces '${expected_markers:-no level}', and Flux never prunes it"
 
   # A Deployment at 0 replicas has no pod to be Available; its strategy and image are still judged.
   replicas="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.replicas}')"

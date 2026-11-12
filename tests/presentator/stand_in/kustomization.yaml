@@ -1,7 +1,7 @@
-# presentator's layer as a cell applies it: the placeholder release refuses to start under Kubernetes, so the web sleeps
-# without its probes and the worker runs no replica; everything else, the claim, the Secrets, the ConfigMap sqlite and
-# the Deployment's template the loader is built from, is the layer's own. As PID 1 `sleep` ignores SIGTERM, so each stop of the web would take the whole
-# grace period; the stand-in's is 1 second.
+# presentator's layer as a cell applies it: the web sleeps without its probes, so that the cell holds the database file,
+# and the worker runs no replica; everything else, the claim, the Secrets, the ConfigMap sqlite and the Deployment's
+# template the loader is built from, is the layer's own. As PID 1 `sleep` ignores SIGTERM, so each stop of the web would
+# take the whole grace period; the stand-in's is 1 second.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

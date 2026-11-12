@@ -34,11 +34,10 @@ printf '%s' "$dummy" > "$dummy_file"
 plain_secret "$PROOF_SECRET_NAME" "$PROOF_SECRET_NAMESPACE" Opaque
 
 # Each app's files as dummies, one per key the PC's Secret holds, for an app that mounts a Secret; hex meets
-# the TURN files' grammar, and 64 characters the session secret's minimum. STAND_IN_MANIFESTS names the apps that
-# only a cell's stand-in layer runs.
+# the TURN files' grammar, and 64 characters the session secret's minimum.
 auth="$(printf '%s:%s' "$PULL_USER" "$PULL_TOKEN" | base64 --wrap=0)"
 echo "::add-mask::$auth"
-for manifest in $APP_MANIFESTS $STAND_IN_MANIFESTS; do
+for manifest in $APP_MANIFESTS; do
   deployment="$(yq 'select(.kind == "Deployment")' "$manifest")"
   app_namespace="$(yq '.metadata.namespace' <<<"$deployment")"
   # The app's own Secret is the volume's Secret, or the first source of a projected volume, which then adds the Postgres password.
