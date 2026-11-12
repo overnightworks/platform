@@ -1,8 +1,0 @@
-claim_id = "12607e63ad644830821d54d68b8344c0"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "5fde59c1353638361bee4699a4d4140a543c6a01"
-branch = "claude/issue-436-p10-3b-keycloak-s-back-channel-to-hopin"
-scope = [".github/workflows/ci.yml", "apps/hopin/hopin.yaml", "apps/songmaker/web.yaml", "infrastructure/keycloak/keycloak-egress.yaml", "tests/keycloak/backchannel_reaches_only_its_apps.sh", "tests/keycloak/realm_route_and_policies.sh"]
-opened_commit = "5a8e2c1f636d6f35d6750fbdb2c9f48241a1d695"
-whole_reason = "Keycloak's egress and each app's ingress open the path only together, the cell proves the pair end to end, and P7b's caller moves off hopin because this opening makes hopin reachable."
