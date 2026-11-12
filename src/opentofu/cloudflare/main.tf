@@ -17,13 +17,23 @@ variable "api_token_file" {
   description = "The file holding the read-only API token, which the command names and never reads."
 }
 
+variable "tunnel_lines_file" {
+  type        = string
+  description = "The tunnel's lines, the one list of public hosts; relative to this root."
+  default     = "../../../infrastructure/cloudflared/config.yaml"
+}
+
 provider "cloudflare" {
   api_token = sensitive(trimspace(file(var.api_token_file)))
 }
 
+locals {
+  zone_name = "hallucinai.de"
+}
+
 data "cloudflare_zone" "hallucinai" {
   filter = {
-    name = "hallucinai.de"
+    name = local.zone_name
   }
 }
 

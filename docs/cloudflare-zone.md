@@ -4,17 +4,32 @@ Reader: whoever changes `src/opentofu/cloudflare`.
 
 ## What `src/opentofu/cloudflare` holds
 
-`src/opentofu/cloudflare/`: the Cloudflare provider at one pinned version, the local backend, and two lookups, the zone
-`hallucinai.de` and the tunnel `platform` in that zone's account, found by name. It declares no resource, so a plan
-changes nothing and an apply writes nothing to Cloudflare; both only read, to measure what the token may see.
+`src/opentofu/cloudflare/`: the Cloudflare provider at one pinned version, the local backend, two lookups (the zone
+`hallucinai.de` and the tunnel `platform` in that zone's account, found by name) and what the zone holds for the hosts.
+
+- **Records.** One proxied CNAME to the tunnel `platform` for each hostname of the tunnel's lines and for the
+  redirect-only name `www`. The tunnel's lines are the one list of public hosts: the plain file
+  `infrastructure/cloudflared/config.yaml`, which the root reads and from which `infrastructure/cloudflared/` builds
+  the ConfigMap `cloudflared`. A hostname added to that file adds a record; there is no second list.
+- **Adoption.** Each name is looked up in the zone first. A name with a single CNAME is imported and never created
+  twice; a name with two CNAMEs or with an A or AAAA record fails the plan, since only a single CNAME is adopted and
+  a record is never converted. The adopted ids are the output `record_ids_to_import`.
+- **Settings.** HSTS (the `security_header` setting) with subdomains and preload, and Network Error Logging off. They
+  are the resources of the module `settings/`, both always imported, because `tofu test` cannot plan a resource an
+  import block names.
+
+The token is read-only, so a plan shows the imports and an apply writes nothing to Cloudflare. A removed host is a
+`removed` block with `destroy = false`, since the command refuses a delete.
 
 ## Who runs it
 
 Only the operator, in his terminal: `scripts/apply_opentofu.sh cloudflare`, the command that also plans the GitHub
 settings, with the guarantees of [GH-3 to GH-6](github-settings.md). Its state, kept plan, data directory and lock
 live outside the checkout under `platform/opentofu/` and are separate from the GitHub root's. CI has no token and no
-network to Cloudflare; `mise run cloudflare:test` checks the root's format, lock and validity, its lookups under a
-mocked provider, and the token's path with a fake tofu.
+network to Cloudflare; `mise run cloudflare:test` checks the root's format, lock and validity, its lookups, records,
+import map and settings under a mocked provider, and the token's path with a fake tofu. The mocks cannot run an import:
+which names a plan adopts is read from the import map, and the plan with the read-only token is where the imports run.
+`--apply` also refuses an uncommitted change to the host file, which the root reads.
 
 ## The token
 

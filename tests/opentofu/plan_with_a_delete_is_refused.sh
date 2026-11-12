@@ -69,11 +69,11 @@ plan_json() {
 
 # A checkout whose HEAD is its origin/main and clean, so --apply gets past its own guards to the plan.
 apply_checkout="${work_directory}/checkout"
-mkdir -p "${apply_checkout}/scripts" "${apply_checkout}/src/opentofu/github" "${apply_checkout}/src/opentofu/cloudflare"
+mkdir -p "${apply_checkout}/scripts" "${apply_checkout}/src/opentofu/github" "${apply_checkout}/src/opentofu/cloudflare" "${apply_checkout}/infrastructure/cloudflared"
 cp "${repository_root}/scripts/apply_opentofu.sh" "${apply_checkout}/scripts/"
 cp "${repository_root}/mise.toml" "${repository_root}/mise.lock" "${apply_checkout}/"
 export MISE_TRUSTED_CONFIG_PATHS="${apply_checkout}"
-touch "${apply_checkout}/src/opentofu/github/main.tf" "${apply_checkout}/src/opentofu/cloudflare/main.tf"
+touch "${apply_checkout}/src/opentofu/github/main.tf" "${apply_checkout}/src/opentofu/cloudflare/main.tf" "${apply_checkout}/infrastructure/cloudflared/config.yaml"
 git -C "${apply_checkout}" init --quiet --initial-branch=main
 git -C "${apply_checkout}" add .
 git -C "${apply_checkout}" -c core.hooksPath=/dev/null -c user.name=test -c user.email=test@example.invalid commit --quiet --message test
@@ -123,7 +123,7 @@ for root in github cloudflare; do
   run_script "plan with no change" 0 "$(plan_json)"
   [ "${script_status}" -eq 0 ] || fail "plan with no change: status ${script_status}, not 0: ${output}"
 
-  # --apply refuses off origin/main and with an unreviewed file in the roots, and applies nothing.
+  # --apply refuses off origin/main and with an unreviewed file in the roots or the host file, and applies nothing.
   git -C "${apply_checkout}" -c core.hooksPath=/dev/null -c user.name=test -c user.email=test@example.invalid commit --quiet --allow-empty --message ahead
   run_script "--apply ahead of origin/main" 2 "$(plan_json d.forgotten '["forget"]')" --apply
   expect_refused "--apply ahead of origin/main" "HEAD is origin/main"
@@ -139,6 +139,12 @@ for root in github cloudflare; do
   run_script "--apply with a changed mise.toml" 2 "$(plan_json d.forgotten '["forget"]')" --apply
   expect_refused "--apply with a changed mise.toml" "unchanged"
   git -C "${apply_checkout}" checkout --quiet -- mise.toml
+
+  # The Cloudflare root reads the tunnel's lines for its records, so an edit of them is unreviewed too.
+  echo "# unreviewed" >>"${apply_checkout}/infrastructure/cloudflared/config.yaml"
+  run_script "--apply with a changed host file" 2 "$(plan_json d.forgotten '["forget"]')" --apply
+  expect_refused "--apply with a changed host file" "unchanged"
+  git -C "${apply_checkout}" checkout --quiet -- infrastructure/cloudflared/config.yaml
 
   # The refusal comes before any path from mise.toml is used: an edit that moves the cache to a new place leaves that place unmade.
   hijacked_cache="${work_directory}/hijacked/${root}"
