@@ -1,5 +1,6 @@
 # The zone's facts that only Cloudflare holds, by hostname. The root reads them for the deny and the redirect rulesets,
-# and scripts/cloudflare_edge_probe.sh requests the same facts from outside, so the two cannot differ.
+# and scripts/cloudflare_edge_probe.sh requests the same facts from outside, so the two cannot differ. Only the probe
+# reads health_path and redirect.serve.not_found; the root declares nothing from them.
 #
 # Every hostname of the tunnel's lines has an entry, and no other name has one; the plan fails otherwise.
 #   denied_paths: the paths the public may never reach on that host, an empty list for a host that denies nothing, so

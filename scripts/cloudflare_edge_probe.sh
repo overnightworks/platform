@@ -6,7 +6,7 @@
 # lines and the paths from src/opentofu/cloudflare/zone.yaml, the files the root reads, so no list is restated here. The
 # probe sends no credential and its lines hold no timing or id, so a run before and a run after an apply are equal when
 # the edge is.
-# Usage: scripts/cloudflare_edge_probe.sh
+# Usage: mise run cloudflare:edge-probe (it needs the locked yq, which mise puts on the path)
 # Exit: 0 every check holds, 1 a check misses (its line starts with MISS) or a declaration cannot be read.
 # EDGE_PROBE_LOOPBACK_PORT sends plain HTTP to that port of this machine instead of https to the public edge, for tests.
 set -euo pipefail
