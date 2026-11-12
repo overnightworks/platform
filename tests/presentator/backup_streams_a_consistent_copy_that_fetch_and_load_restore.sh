@@ -10,8 +10,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/../backup/restic_pod.sh"
 # writes that copy at mode 0600 and refuses an existing file, and the copy holds whole transactions only; a latest
 # snapshot of neither format is refused and its file deleted, and a second Backup supersedes it; `presentator:load-database`
 # then loads the first copy through a loader that carries no label or annotation, and the live key table equals the copy.
-# It runs after restore_test_reads_the_latest_copy.sh in the same part and adds to its repository. Prints names, counts and
-# verdicts, never a row.
+# Every Backup here is `backup:now`, which also runs the restore test on it; that task refuses a namespace without exactly
+# one Schedule or without the CronJob, and fails on an empty key table. It runs after restore_test_reads_the_latest_copy.sh
+# in the same part and adds to its repository. Prints names, counts and verdicts, never a row.
 export KUBECONFIG="$HOME/.kube/config"
 namespace=presentator
 
@@ -22,12 +23,19 @@ marker="row-$(openssl rand -hex 4)"
 writer=
 held_pid=
 shape_namespace=presentator-backup-shape
+bare_namespace=presentator-backup-now-bare
+made_backups=()
+made_jobs=()
 cleanup() {
   local cell_status=$?
   [ -z "$writer" ] || kill "$writer" 2>/dev/null || true
   [ -z "$held_pid" ] || pkill -KILL --session "$held_pid" 2>/dev/null || true
   delete_restic_objects
-  delete_object delete namespace "$shape_namespace" --ignore-not-found --wait --timeout=2m
+  delete_object delete namespace "$shape_namespace" "$bare_namespace" --ignore-not-found --wait --timeout=2m
+  [ "${#made_backups[@]}" = 0 ] ||
+    delete_object --namespace "$namespace" delete backup.k8up.io "${made_backups[@]}" --ignore-not-found --wait --timeout=2m
+  [ "${#made_jobs[@]}" = 0 ] ||
+    delete_object --namespace "$namespace" delete job "${made_jobs[@]}" --ignore-not-found --cascade=foreground --wait --timeout=2m
   remove_stand_in
   rm -rf "$scratch"
   end_deletions "$cell_status"
@@ -95,19 +103,24 @@ until_true 120 "the writer in the web committed 50 transactions" writer_is_commi
 echo "a writer in the web commits one row and one counter step per transaction"
 
 # --- the Backup, as the Schedule would start it ---
-backup_reason() { kubectl --namespace "$namespace" get backup "$1" --output jsonpath='{.status.conditions[?(@.type=="Completed")].reason}'; }
-backup_ended() { [ -n "$(backup_reason "$1")" ]; }
-# run_backup <name>: one Backup of the Schedule backup's backend, to its end; fails unless it succeeded.
+# backup_now <namespace>: the task under test; sets now_status and now_output, which hold no row, and the names of the
+# objects it made for the exit trap to delete.
+now_status=0
+now_output=
+backup_now() {
+  now_status=0
+  now_output="$(mise run backup:now "$1" 2>&1)" || now_status=$?
+  echo "$now_output"
+  [[ $now_output != *"$marker"* ]] || fail "backup:now printed a row"
+  if [ "$1" = "$namespace" ]; then
+    mapfile -t -O "${#made_backups[@]}" made_backups < <(grep -oE 'backup-now-[a-z0-9]+' <<<"$now_output" | sort -u)
+    mapfile -t -O "${#made_jobs[@]}" made_jobs < <(grep -oE 'restore-test-now-[a-z0-9]+' <<<"$now_output" | sort -u)
+  fi
+}
+# run_backup: one Backup of presentator and its restore test, to their end; fails unless the Backup succeeded and the test completed.
 run_backup() {
-  kubectl --namespace "$namespace" get schedule backup --output json | yq --output-format json \
-    --input-format json "{ \"apiVersion\": \"k8up.io/v1\", \"kind\": \"Backup\", \"metadata\": { \"name\": \"$1\" },
-       \"spec\": { \"backend\": .spec.backend, \"podConfigRef\": .spec.podConfigRef } }" |
-    kubectl --namespace "$namespace" create --filename - >/dev/null
-  until_true 600 "the Backup $1 ended" backup_ended "$1"
-  [ "$(backup_reason "$1")" = Succeeded ] || {
-    kubectl --namespace "$namespace" describe backup "$1"
-    fail "the Backup $1 ended with reason $(backup_reason "$1")"
-  }
+  backup_now "$namespace"
+  [ "$now_status" = 0 ] || fail "backup:now exited $now_status"
 }
 # snapshots_script: the snapshots of the stream file and, one per line after the count, the files of the latest.
 # shellcheck disable=SC2016 # the Pod's shell expands the variable
@@ -118,7 +131,7 @@ restic --no-cache ls --json --path "/$SNAPSHOT_FILE" latest 2>/dev/null | jq --r
 run_restic "$namespace" snapshots-before "$snapshots_script"
 snapshots_before="$(head -n 1 <<<"$restic_output")"
 read -r rows_before _ <<<"$(live_report)"
-run_backup stream-backup
+run_backup
 read -r rows_after _ <<<"$(live_report)"
 run_restic "$namespace" snapshots-after "$snapshots_script"
 mapfile -t listing <<<"$restic_output"
@@ -209,11 +222,8 @@ run_fetch "$scratch/foreign.sqlite3"
   fail "backup:fetch of a latest snapshot of neither format exited $fetch_status and left the file '$(ls "$scratch")'"
 echo "a latest snapshot whose header differs from SQLite's in one byte is refused and its file is deleted"
 
-run_backup second-backup
-run_restore_test "$namespace" restore-after-second-backup
-[ "$status $restore_exits" = "passed dump 0 check 0" ] ||
-  fail "the restore test after a second Backup ended '$status $restore_exits', so it did not read the latest snapshot"
-echo "a second Backup superseded the foreign snapshot and the restore test passes on it: it reads the latest"
+run_backup
+echo "a second Backup superseded the foreign snapshot and the restore test completes on it: it reads the latest"
 
 # --- presentator:load-database loads the first copy ---
 real_kubectl="$(mise which kubectl 2>/dev/null || command -v kubectl)"
@@ -256,4 +266,39 @@ read -r live_rows live_counter live_integrity <<<"$(live_report)"
 { [ "$live_rows" = "$copy_rows" ] && [ "$live_counter" = "$copy_counter" ] && [ "$live_integrity" = ok ]; } ||
   fail "the live file holds $live_rows rows, counter $live_counter, integrity $live_integrity; the copy $copy_rows, $copy_counter"
 echo "presentator:load-database made the live key table equal to the copy's $copy_rows rows, and the web is back"
+
+# --- backup:now refuses what it cannot run and fails on an empty key table ---
+# A namespace with no Schedule, then one Schedule without the CronJob, then two Schedules: each refusal makes no Backup.
+refuses_with() {
+  backup_now "$bare_namespace"
+  [ "$now_status" != 0 ] && [[ $now_output == *"$1"* ]] || fail "backup:now in $bare_namespace exited $now_status, not a refusal that says '$1'"
+  [ -z "$(kubectl --namespace "$bare_namespace" get backups.k8up.io,jobs --output name)" ] ||
+    fail "the refusal in $bare_namespace left a Backup or a Job"
+}
+kubectl create namespace "$bare_namespace" >/dev/null
+refuses_with "holds 0 k8up Schedules"
+schedule_copy() {
+  kubectl --namespace "$namespace" get schedule backup --output json | NAME="$1" yq --input-format json --output-format json \
+    '{ "apiVersion": .apiVersion, "kind": .kind, "metadata": { "name": strenv(NAME) }, "spec": .spec }' |
+    kubectl --namespace "$bare_namespace" create --filename - >/dev/null
+}
+schedule_copy backup
+refuses_with "holds no CronJob restore-test"
+schedule_copy backup-second
+refuses_with "holds 2 k8up Schedules"
+echo "backup:now refuses a namespace with no Schedule, one without the CronJob and one with two Schedules, and makes no object"
+
+read -r -d '' empty_script <<'PYTHON' || true
+import os, sqlite3
+connection = sqlite3.connect(os.environ["PRESENTATOR_DATABASE"], isolation_level=None, timeout=30)
+connection.execute('DELETE FROM "' + os.environ["TABLE"].replace('"', '""') + '"')
+PYTHON
+in_web python3 -I -c "$empty_script"
+read -r live_rows _ <<<"$(live_report)"
+[ "$live_rows" = 0 ] || fail "the key table of the live file holds $live_rows rows after it was emptied"
+backup_now "$namespace"
+{ [ "$now_status" != 0 ] && [[ $now_output =~ Backup\ backup-now-[a-z0-9]+\ of\ $namespace\ Succeeded ]] &&
+  [[ $now_output =~ restore\ test\ Job\ restore-test-now-[a-z0-9]+\ of\ $namespace\ Failed ]]; } ||
+  fail "backup:now on an empty key table exited $now_status, not a succeeded Backup and a failed restore test"
+echo "backup:now fails naming the restore test Job on an empty key table, after a Backup that succeeded"
 echo "the cell took $SECONDS seconds"

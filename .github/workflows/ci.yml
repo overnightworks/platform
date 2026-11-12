@@ -599,7 +599,7 @@ jobs:
         run: tests/presentator/a_used_worker_pod_is_replaced_by_a_fresh_one.sh
 
       # After the restore test's step, whose repository this one adds snapshots to.
-      - name: Assert that a Backup under a concurrent writer leaves one consistent copy of presentator's database that its restore test passes and backup:fetch writes at 0600, refuses to overwrite and refuses when the latest snapshot is no SQLite copy, and that presentator:load-database loads it through a loader without the backup annotation
+      - name: Assert that a Backup under a concurrent writer leaves one consistent copy of presentator's database that its restore test passes and backup:fetch writes at 0600, refuses to overwrite and refuses when the latest snapshot is no SQLite copy, and that backup:now refuses a namespace without one Schedule or without the CronJob and fails on an empty key table, and that presentator:load-database loads it through a loader without the backup annotation
         if: matrix.part == 'presentator-backup'
         run: tests/presentator/backup_streams_a_consistent_copy_that_fetch_and_load_restore.sh
 
