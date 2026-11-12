@@ -36,8 +36,7 @@ jobs:
         # pipefail: a find or yq that fails after printing its names must fail the step, not pass the comparison.
         shell: bash
         run: |
-          # presentator's manifests stand unwired until its wiring, which removes this exception.
-          directories="$(find apps -mindepth 1 -maxdepth 1 -type d -not -name presentator -printf '%f\n' | sort)"
+          directories="$(find apps -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)"
           kustomizations="$(yq --no-doc 'select(.kind == "Kustomization" and .spec.path == "./apps/" + .metadata.name) | .metadata.name' clusters/pc/apps.yaml | sort)"
           every="$(yq --no-doc 'select(.kind == "Kustomization") | .metadata.name' clusters/pc/apps.yaml | sort)"
           [ "$directories" = "$kustomizations" ] && [ "$every" = "$kustomizations" ] || {
@@ -166,10 +165,7 @@ jobs:
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
       # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
-      APP_MANIFESTS: apps/hopin/hopin.yaml apps/personas/personas.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml apps/songmaker/music-worker.yaml apps/songmaker/scoring-worker.yaml apps/songmaker/acestep-worker.yaml
-      # The apps only a cell's stand-in layer runs: their Secrets are served beside the apps' above, and no check of the
-      # apps' full refs reads them.
-      STAND_IN_MANIFESTS: apps/presentator/web.yaml
+      APP_MANIFESTS: apps/hopin/hopin.yaml apps/personas/personas.yaml apps/presentator/web.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml apps/songmaker/music-worker.yaml apps/songmaker/scoring-worker.yaml apps/songmaker/acestep-worker.yaml
       # The Kustomization that serves the Secrets of every namespace, so that no other layer holds one of them.
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
@@ -579,6 +575,13 @@ jobs:
       - name: Assert that presentator's Namespace enforces nothing and warns and audits at restricted, and that no Pod template of a layer runs as 61001 or 61002
         if: matrix.part == 'apps'
         run: tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh
+
+      - name: Assert that a Pod beside cloudflared gets presentator's health answer through Traefik for the host its probe names, that its Ingress holds exactly the web's two origins and that no Pod reaches its Service directly
+        if: matrix.part == 'apps'
+        env:
+          # A namespace that is neither Traefik's nor the tunnel's, created and deleted by the cell.
+          OTHER_NAMESPACE: presentator-client
+        run: tests/presentator/web_answers_only_through_traefik.sh
 
       - name: Assert that presentator:load-database refuses before any change, replaces the live file whole or leaves the old one, keeps a suspension it found, and that a killed run and a second run at once converge on the same command
         if: matrix.part == 'presentator'

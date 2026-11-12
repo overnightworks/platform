@@ -144,3 +144,68 @@ spec:
         - name: sqlite
           configMap:
             name: sqlite
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: presentator
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+# Cloudflare terminates TLS, so the route is plain HTTP on Traefik's web port, and it names its two hosts, so every other
+# host keeps Traefik's 404. The talk host serves the built talks from the same process.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: presentator
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: presentator.hallucinai.de
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 8000
+    - host: presentator-talk.hallucinai.de
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 8000
+---
+# presentator trusts the X-Forwarded-For of the pod network, so only Traefik's pods may reach it; the kubelet's probe
+# comes from the node, which a NetworkPolicy never blocks.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: http-from-traefik-only
+  namespace: presentator
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - port: http
+          protocol: TCP

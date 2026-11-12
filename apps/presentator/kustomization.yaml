@@ -58,8 +58,8 @@ replacements:
           name: restore-test
         fieldPaths:
           - spec.jobTemplate.spec.template.spec.securityContext.runAsGroup
-# The image of the web and the worker, a placeholder release; a bump changes tag and digest together, in a pull request.
+# The image of the web and the worker, the full app ref of a release; a bump changes tag and digest together, in a pull request.
 images:
   - name: ghcr.io/overnightworks/presentator
-    newTag: 2026.11.09.4
-    digest: sha256:14096c0a510de70c0169cdeff36a76ea312fdf54912d7ffb49eccb8b47252158
+    newTag: 2026.11.11.2
+    digest: sha256:6cb6e974a69a30ed200abd69115f208447f636bd9d1d30a78e865b3b0aed019c

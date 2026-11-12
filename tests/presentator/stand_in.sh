@@ -1,12 +1,14 @@
 # shellcheck shell=bash
-# Sourced by the cells that load into presentator's database: applies tests/presentator/stand_in as a throwaway Flux
-# Kustomization named presentator, so the commands under test suspend and resume a real one, and removes it with the claim
-# database, which Flux never prunes, on the cell's exit.
+# Sourced by the cells that load into presentator's database: points the layer's Kustomization presentator at
+# tests/presentator/stand_in, so the commands under test suspend and resume the real one over a web that holds no database
+# open, and removes it with the claim database, which Flux never prunes, on the cell's exit. The job's root
+# is suspended meanwhile, since it would put the layer's own path back.
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 
 # apply_stand_in: the Kustomization is applied and Ready, so the web and the claim exist.
 apply_stand_in() {
+  flux suspend kustomization flux-system >/dev/null
   kubectl apply -f - <<'YAML'
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

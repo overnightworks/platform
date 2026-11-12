@@ -41,6 +41,26 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: presentator
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: platform-secrets
+    - name: admission
+    - name: storage
+    - name: k8up
+  interval: 10m0s
+  path: ./apps/presentator
+  prune: true
+  wait: true
+  timeout: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: speech-runtime
   namespace: flux-system
 spec:
