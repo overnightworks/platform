@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Drive scripts/cloudflare_adoption_check.sh against synthetic plan JSON, as `tofu show -json` gives it: while the plan
-# holds no object the state already holds (the adoption), it passes only as an import of every declared record, ruleset
-# and setting, each at no-op, with at most one update, the content of the record www; every other plan fails naming each
-# offending address with its action and no value. Once the state holds the objects, the adoption rules do not apply and
-# an update of a ruleset needs --allow-ruleset-update.
+# imports any object (the adoption, a half-finished one included), it passes only without a create or a delete, with
+# every imported ruleset and setting at no-op, at most one update, the content of the record www, and every declared
+# object the state does not hold among the imports; every other plan fails naming each offending address with its action
+# and no value. A plan that cannot be read, an empty one included, fails. A plan without any import is a later plan, to
+# which the adoption rules do not apply and in which an update of a ruleset needs --allow-ruleset-update.
 # Usage: tests/cloudflare/adoption_plan_is_exactly_the_imports_and_at_most_the_www_content.sh
 # Proves docs/cloudflare-zone.md: the adoption check and the ruleset update flag.
 set -euo pipefail
@@ -72,6 +73,20 @@ case_of "every declared ruleset absent from the plan" '.resource_changes |= map(
 case_of "a plan without any change" '.resource_changes = []' 1 "declared" "no import"
 case_of "a plan without its configuration" 'del(.configuration)' 1 "no configuration"
 
+# A half-finished adoption: the records and settings are in the state (no-op, imported nowhere) and the rulesets are
+# still imports. The adoption rules go on applying to it.
+half_finished='.resource_changes |= map(if .type == "cloudflare_ruleset" then . else .change.importing = null end)'
+case_of "a half-finished adoption that imports the rest" "${half_finished}" 0 "3 imports" "3 no-op" "${deny}"
+case_of "a half-finished adoption with the content of www updated" "${half_finished}"' | (.resource_changes[] | select(.address == $www) | .change) |= (.actions = ["update"] | .after.content = "other-tunnel.cfargotunnel.com" | .after_unknown.modified_on = true)' 0 "1 update" "content" "${www}"
+case_of "a half-finished adoption with a created record" "${half_finished}"' | (.resource_changes[] | select(.address == $a) | .change.actions) = ["create"]' 1 "${a_record} create"
+case_of "a half-finished adoption with a deleted record" "${half_finished}"' | (.resource_changes[] | select(.address == $a) | .change.actions) = ["delete"]' 1 "${a_record} delete"
+case_of "a half-finished adoption with an imported ruleset updated" "${half_finished}"' | (.resource_changes[] | select(.address == $deny) | .change.actions) = ["update"]' 1 "${deny} update"
+case_of "a half-finished adoption with a ruleset of the state updated" "${half_finished}"' | (.resource_changes[] | select(.address == $deny) | .change) |= (.importing = null | .actions = ["update"])' 1 "${deny} update"
+case_of "a half-finished adoption with a record of the state updated" "${half_finished}"' | (.resource_changes[] | select(.address == $a) | .change.actions) = ["update"]' 1 "${a_record} update"
+case_of "a half-finished adoption with a setting of the state updated" "${half_finished}"' | (.resource_changes[] | select(.address == "module.settings.cloudflare_zone_setting.nel") | .change.actions) = ["update"]' 1 "module.settings.cloudflare_zone_setting.nel update"
+case_of "a half-finished adoption without the import of a ruleset" "${half_finished}"' | del(.resource_changes[] | select(.address == $deny))' 1 "${deny}" "declared" "no import"
+case_of "a created record beside rulesets that are still imports" "${half_finished}"' | (.resource_changes[] | select(.address == $a) | .change.actions) = ["create"]' 1 "${a_record} create"
+
 # Every offending address is named, not the first.
 case_of "three creates" '.resource_changes |= map(if .type == "cloudflare_ruleset" then (.change.actions = ["create"] | .change.importing = null) else . end)' 1 \
   "cloudflare_ruleset.client_address create" "cloudflare_ruleset.deny_public create" "cloudflare_ruleset.apex_redirect create"
@@ -90,5 +105,18 @@ for ruleset_address in "${deny}" "${transform}"; do
   # The flag loosens nothing in the adoption.
   case_of "an update of ${ruleset_address} in the adoption with the flag" '(.resource_changes[] | select(.address == $ruleset) | .change.actions) = ["update"]' 1 "${ruleset_address} update"
 done
+# A plan that cannot be read fails, whatever the flag: nothing, a blank, a document of no plan or text that is no JSON.
+check_arguments=()
+for unreadable in '' $'\n' '{}' 'null' '[]' '"plan"' '{"resource_changes":null}' '{"resource_changes":[]}' 'not json'; do
+  unreadable_status=0
+  unreadable_output="$(printf '%s' "${unreadable}" | "${check}" 2>&1)" || unreadable_status=$?
+  echo "unreadable plan '${unreadable}': status ${unreadable_status}"
+  [ "${unreadable_status}" -eq 1 ] || fail "unreadable plan '${unreadable}': status ${unreadable_status}, not 1: ${unreadable_output}"
+  ! grep -q "do not apply" <<<"${unreadable_output}" || fail "unreadable plan '${unreadable}': it counts as a later plan: ${unreadable_output}"
+done
+unreadable_status=0
+"${check}" </dev/null >/dev/null 2>&1 || unreadable_status=$?
+[ "${unreadable_status}" -eq 1 ] || fail "a closed stdin: status ${unreadable_status}, not 1"
+
 check_arguments=(--unknown-flag)
 case_of "an unknown flag" '.' 1 "usage"

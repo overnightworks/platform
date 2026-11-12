@@ -209,6 +209,22 @@ for ruleset in cloudflare_ruleset.deny_public cloudflare_ruleset.client_address;
   [ -e "${apply_marker}" ] || fail "update of ${ruleset} with the flag under --apply: apply did not run"
 done
 
+# A plan that tofu shows as nothing cannot be read, so it is refused whatever it is for and nothing is applied.
+for blank_root in github cloudflare; do
+  root="${blank_root}"
+  run_script "plan that shows as nothing" 2 ""
+  expect_refused "plan that shows as nothing" "could not be read"
+  run_script "plan that shows as nothing under --apply" 2 "" --apply
+  expect_refused "plan that shows as nothing under --apply" "could not be read"
+done
+root=cloudflare
+
+# A half-finished adoption keeps the adoption's rules: a created record beside imports is refused.
+half_finished_created_plan="$(jq -c '.resource_changes |= map(if .type == "cloudflare_ruleset" then . else .change.importing = null end)
+  | (.resource_changes[] | select(.index == "a.example.test") | .change.actions) = ["create"]' "${adoption_plan}")"
+run_script "half-finished adoption with a created record under --apply" 2 "${half_finished_created_plan}" --apply
+expect_refused "half-finished adoption with a created record under --apply" 'a.example.test"\] create'
+
 # The flag allows no delete.
 deleting_ruleset_plan="$(jq -c '(.resource_changes[] | select(.address == "cloudflare_ruleset.deny_public") | .change.actions) = ["delete", "create"]' <<<"${adopted_plan}")"
 run_script "ruleset replacement with the flag" 2 "${deleting_ruleset_plan}" --allow-ruleset-update

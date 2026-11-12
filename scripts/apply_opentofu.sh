@@ -114,6 +114,7 @@ run_tofu plan -input=false -detailed-exitcode "${plan_variables[@]}" -out="${pla
 # An object's state may lack skip_destroy (an import does not write it), so only the plan shows whether a removal
 # destroys; `delete` is also half of a replacement, in either order, and `forget` is the removal that keeps the object.
 plan_json="$(run_tofu show -json "${plan_file}")" || fail "the plan could not be read"
+[ -n "${plan_json}" ] || fail "the plan could not be read"
 planned_deletions="$("${yq}" --input-format json --output-format tsv '.resource_changes[] | select(.change.actions[] == "delete") | .address' <<<"${plan_json}")" ||
   fail "the plan could not be read"
 if [ -n "${planned_deletions}" ]; then
