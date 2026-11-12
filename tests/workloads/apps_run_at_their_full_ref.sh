@@ -37,21 +37,32 @@ for manifest in $APP_MANIFESTS; do
       kubectl --namespace "$namespace" create --dry-run=server -f - ||
       fail "the Pod template of the Deployment $deployment is refused by $namespace's admission"
     echo "the Deployment $deployment has no pod and its Pod template passes server-side dry-run in $namespace"
-    # The worker's reach, read from the applied policy: each rule as its sources and ports, sorted.
-    sources='(.from // .to) | map((.namespaceSelector.matchLabels["kubernetes.io/metadata.name"] // "") + "/" + (.podSelector.matchLabels | to_entries | .[0].value)) | sort | join(",")'
+    # The Deployment's reach, read from the applied policy: each rule as its sources and ports, sorted; a rule's source
+    # is a namespace and a pod's first label value, or an address block with its exceptions.
+    case "$deployment" in
+      songmaker/acestep-worker)
+        expected_ingress="/music-worker,/web -> 8001/TCP"
+        expected_egress="/redis -> 6379/TCP;/web -> 8080/TCP;kube-system/kube-dns -> 53/TCP,53/UDP" ;;
+      personas/personas)
+        expected_ingress=""
+        expected_egress="0.0.0.0/0 except 10.42.0.0/16,10.43.0.0/16 -> 443/TCP;kube-system/kube-dns -> 53/TCP,53/UDP;litellm/litellm-front -> 4000/TCP" ;;
+      *) fail "the Deployment $deployment runs no pod and no reach is expected of it" ;;
+    esac
+    sources='(.from // .to) | map(
+      (.ipBlock | select(. != null) | .cidr + " except " + (.except | sort | join(",")))
+      // ((.namespaceSelector.matchLabels["kubernetes.io/metadata.name"] // "") + "/" + (.podSelector.matchLabels | to_entries | .[0].value))) | sort | join(",")'
     ports='[.ports[] | (.port | tostring) + "/" + .protocol] | sort | join(",")'
     rules='map((('"$sources"') + " -> " + ('"$ports"'))) | sort | join(";")'
     policy="$(kubectl --namespace "$namespace" get networkpolicy "$name" -o yaml)"
-    for direction in ingress:"/music-worker,/web -> 8001/TCP" \
-      egress:"/redis -> 6379/TCP;/web -> 8080/TCP;kube-system/kube-dns -> 53/TCP,53/UDP"; do
+    for direction in ingress:"$expected_ingress" egress:"$expected_egress"; do
       expected="${direction#*:}"
-      actual="$(yq ".spec.${direction%%:*} | $rules" <<<"$policy")"
+      actual="$(yq "(.spec.${direction%%:*} // []) | $rules" <<<"$policy")"
       [ "$actual" = "$expected" ] ||
         fail "the NetworkPolicy $namespace/$name reads '$actual' for ${direction%%:*}, not '$expected'"
     done
     [ "$(yq '.spec.policyTypes | sort | join(",")' <<<"$policy")" = "Egress,Ingress" ] ||
       fail "the NetworkPolicy $namespace/$name does not govern exactly Ingress and Egress"
-    echo "the NetworkPolicy $namespace/$name admits only music-worker and web to 8001 and sends only to DNS, Redis and web"
+    echo "the NetworkPolicy $namespace/$name admits '${expected_ingress:-nobody}' and sends only '$expected_egress'"
   else
     kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
     state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"

@@ -47,8 +47,9 @@ admits only the front and sends only to cluster DNS, its Postgres and agent-egre
 provider hosts at the fixed ClusterIP of agent-egress's Service, in k3s's default service CIDR. (PD-4)
 The promise: [litellm](../infrastructure/legal/sections/litellm/datenschutz.html#agent-dienst).
 
-The front, a Traefik on port 4000, admits only the namespaces `hopin`, `presentator`, `songmaker` and `gatus` and passes
-only `POST /v1/chat/completions`, `POST /v1/images/generations` and `GET /v1/models` without a query string. (PD-5)
+The front, a Traefik on port 4000, admits only the namespaces `hopin`, `personas`, `presentator`, `songmaker` and
+`gatus` and passes only `POST /v1/chat/completions`, `POST /v1/images/generations` and `GET /v1/models` without a query
+string. (PD-5)
 The promise: [litellm](../infrastructure/legal/sections/litellm/datenschutz.html#agent-dienst).
 
 agent-egress, a Traefik on 443 that admits only LiteLLM, passes TLS only for the SNIs of `egress-allowed.yml` and sends

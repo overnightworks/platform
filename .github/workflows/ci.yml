@@ -166,7 +166,7 @@ jobs:
       TUNNEL_NAMESPACE: cloudflared
       UNROUTED_HOST: unrouted.invalid
       # The apps whose pull Secret and files the job's platform-secrets serves, by the names their Deployments read.
-      APP_MANIFESTS: apps/hopin/hopin.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml apps/songmaker/music-worker.yaml apps/songmaker/scoring-worker.yaml apps/songmaker/acestep-worker.yaml
+      APP_MANIFESTS: apps/hopin/hopin.yaml apps/personas/personas.yaml apps/speech-runtime/speech-runtime.yaml apps/skat/skat.yaml apps/songmaker/web.yaml apps/songmaker/music-worker.yaml apps/songmaker/scoring-worker.yaml apps/songmaker/acestep-worker.yaml
       # The apps only a cell's stand-in layer runs: their Secrets are served beside the apps' above, and no check of the
       # apps' full refs reads them.
       STAND_IN_MANIFESTS: apps/presentator/web.yaml
