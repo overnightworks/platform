@@ -1,0 +1,8 @@
+claim_id = "b802fdad3f404db28cd3991ae6c5bc34"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "83e8457e76ae63386d4a0b22df28ab4913509848"
+branch = "claude/issue-476-presentator-tunnel-lines"
+scope = ["infrastructure/cloudflared/cloudflared.yaml", "scripts/cutover_preflight.sh", "tests/cloudflared", "tests/cutover", "tests/presentator"]
+opened_commit = "3c09de9e82c893658182dd4d89f85f5ed23779cd"
+whole_reason = "The two lines, the checksum and the cells that pin the tunnel's host list change together or cluster is red."
