@@ -1,0 +1,7 @@
+claim_id = "35e22164f9ff47e693782ea14f24dc72"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "cab6f9de29e094673ee7cea08261cccc01836cd1"
+branch = "claude/issue-482-runner-skat-tools"
+scope = ["apps/personas/personas.toml"]
+opened_commit = "341b90e06385a21e8760ce151f3de4bda736767d"
