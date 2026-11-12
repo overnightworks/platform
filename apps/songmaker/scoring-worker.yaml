@@ -1,7 +1,7 @@
 # songmaker's scoring worker, started like the music worker from the two files of the Secret songmaker it reads and the
-# namespace's Postgres password. Whisper large-v3 and the audio model are baked into its image under HF_HUB_CACHE, which
-# stays unmounted so the weights are not hidden, and HF_HUB_OFFLINE makes a missing model fail at once. It reads the
-# audio claim of the music worker.
+# namespace's Postgres password. Whisper large-v3 and the audio model are baked into its image under /opt/songmaker/models,
+# and the image sets their paths (SCORING_WHISPER_MODEL_DIR, SCORING_AUDIOBOX_CHECKPOINT); the scorers refuse a missing
+# path before a library could fetch from the Hub, so no offline switch is set. It reads the audio claim of the music worker.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: scoring-worker
-          image: ghcr.io/overnightworks/songmaker/scoring-worker:2026.11.11.2@sha256:8e422a7ef3f4e0d23d915524c97f316346dec662954ce66153a062d3f3f4c1c3
+          image: ghcr.io/overnightworks/songmaker/scoring-worker:2026.11.12.1@sha256:f122d5444313a977e9b989131a04dd166d6ce9f02ff1182b49b873f778f3269b
           args: [songmaker_cli.scoring_worker.ScoringWorkerSettings]
           env:
             - name: DATABASE_URL
@@ -39,8 +39,6 @@ spec:
               value: redis://redis:6379/0
             - name: LOG_FORMAT
               value: json
-            - name: HF_HUB_OFFLINE
-              value: '1'
             # numba, which audio_engine's mastering and librosa use with cache=True, writes its cache beside the source
             # or under HOME, and the root is read-only.
             - name: NUMBA_CACHE_DIR
