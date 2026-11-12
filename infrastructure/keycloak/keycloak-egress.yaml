@@ -1,5 +1,6 @@
-# Keycloak's pods send only to cluster DNS and to their own Postgres, so no Docker bridge of hal, no app Service and no
-# host outside the cluster is reachable from them.
+# Keycloak's pods send only to cluster DNS, to their own Postgres and, through keycloak-backchannel below, to the two
+# ports that take a back-channel logout, so no Docker bridge of hal, no other app Service and no host outside the cluster
+# is reachable from them.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -29,4 +30,38 @@ spec:
               app.kubernetes.io/name: postgres
       ports:
         - port: 5432
+          protocol: TCP
+---
+# The back-channel logout Keycloak posts to hopin and to songmaker's web. A NetworkPolicy only adds what its egress lists, so
+# this one opens those two ports and no other; each app's own policy admits these pods in turn.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-backchannel
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: hopin
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: hopin
+      ports:
+        - port: http
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: songmaker
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+      ports:
+        - port: http
           protocol: TCP

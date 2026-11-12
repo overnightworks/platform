@@ -57,7 +57,8 @@ case "$namespace|$*" in
     failing kubectl-kustomizations; cat "$scenario/kustomizations.json" ;;
   "|get customresourcedefinitions.apiextensions.k8s.io adminnetworkpolicies.policy.networking.k8s.io baselineadminnetworkpolicies.policy.networking.k8s.io --ignore-not-found --output name")
     failing kubectl-crd; cat "$scenario/crds.out" ;;
-  "keycloak|get networkpolicies --output json" | "litellm|get networkpolicies --output json" | "hopin|get networkpolicies --output json")
+  "keycloak|get networkpolicies --output json" | "litellm|get networkpolicies --output json" \
+    | "hopin|get networkpolicies --output json" | "songmaker|get networkpolicies --output json")
     failing "kubectl-networkpolicies-$namespace"; cat "$scenario/networkpolicies-$namespace.json" ;;
   "cloudflared|get configmap cloudflared --output json") failing kubectl-configmap; cat "$scenario/configmap.json" ;;
   "cloudflared|get deployment cloudflared --output json") failing kubectl-deployment; cat "$scenario/deployment.json" ;;
@@ -191,6 +192,8 @@ traefik_only_served='{"podSelector":{},"policyTypes":["Ingress"],"ingress":[{"fr
 keycloak_egress='{"podSelector":{"matchLabels":{"app":"keycloak"}},"egress":[{"to":[{"podSelector":{"matchLabels":{"app":"postgres"}}}],"ports":[{"port":5432}]}]}'
 keycloak_egress_served='{"podSelector":{"matchLabels":{"app":"keycloak"}},"policyTypes":["Ingress","Egress"],"egress":[{"to":[{"podSelector":{"matchLabels":{"app":"postgres"}}}],"ports":[{"port":5432,"protocol":"TCP"}]}]}'
 litellm_policy='{"podSelector":{"matchLabels":{"app":"litellm"}},"policyTypes":["Ingress","Egress"],"ingress":[{"ports":[{"port":4000,"protocol":"TCP"}]}],"egress":[{"ports":[{"port":53,"protocol":"UDP"}]}]}'
+songmaker_redis='{"podSelector":{"matchLabels":{"app":"redis"}},"ingress":[{"from":[{"podSelector":{}}],"ports":[{"port":6379}]}]}'
+songmaker_redis_served='{"podSelector":{"matchLabels":{"app":"redis"}},"policyTypes":["Ingress"],"ingress":[{"from":[{"podSelector":{}}],"ports":[{"port":6379,"protocol":"TCP"}]}]}'
 
 # policy_document <namespace> <name> <spec json>: a rendered object as YAML; policy_item likewise as the API prints it.
 policy_document() {
@@ -238,6 +241,7 @@ build_base() {
     kustomization keycloak ./infrastructure/keycloak flux-system "$head_sha"
     kustomization litellm ./infrastructure/litellm flux-system "$head_sha"
     kustomization hopin ./apps/hopin flux-system "$head_sha"
+    kustomization songmaker ./apps/songmaker flux-system "$head_sha"
     kustomization tunnel ./infrastructure/cloudflared flux-system "$head_sha"; } | items >"$base/kustomizations.json"
   echo "$head_sha" >"$base/gh/repos_overnightworks_platform_commits_main"
   echo "$secrets_sha" >"$base/gh/repos_overnightworks_platform-secrets_commits_main"
@@ -249,10 +253,12 @@ build_base() {
   } >"$base/render-keycloak.yaml"
   policy_document litellm litellm "$litellm_policy" >"$base/render-litellm.yaml"
   policy_document hopin http-from-traefik-only "${traefik_only//PORT/8000}" >"$base/render-hopin.yaml"
+  policy_document songmaker redis "$songmaker_redis" >"$base/render-songmaker.yaml"
   { policy_item keycloak keycloak-egress "$keycloak_egress_served"
     policy_item keycloak http-from-traefik-only "${traefik_only_served//PORT/8080}"; } | items >"$base/networkpolicies-keycloak.json"
   policy_item litellm litellm "$litellm_policy" | items >"$base/networkpolicies-litellm.json"
   policy_item hopin http-from-traefik-only "${traefik_only_served//PORT/8000}" | items >"$base/networkpolicies-hopin.json"
+  policy_item songmaker redis "$songmaker_redis_served" | items >"$base/networkpolicies-songmaker.json"
   tunnel_lines=$'ingress:\n  - hostname: hopin.'"$zone"$'\n    service: http://traefik.traefik:80\n  - service: http_status:404\n'
   jq -n --arg lines "$tunnel_lines" '{apiVersion: "v1", kind: "ConfigMap", metadata: {name: "cloudflared", namespace: "cloudflared"}, data: {"config.yaml": $lines}}' |
     yq --prettyPrint '.' >"$base/render-tunnel.yaml"
@@ -385,6 +391,7 @@ for id in "${note_ids[@]}"; do expect_line "^note $id: not read here: .*; owner 
 expect_line "^cutover:preflight: 15 ok, 0 FAIL, 0 UNKNOWN; evidence $case_directory/evidence\$"
 expect_line "^ok I2: .*auth is not among them"
 expect_line '^ok I1: .*hopin/http-from-traefik-only'
+expect_line '^ok I1: .*songmaker/redis'
 expect_no_line 'age1canary'
 [ "$(stat -c %a "$case_directory/evidence")" = 600 ] || fail "healthy: the evidence file is not mode 600"
 expected_evidence="issuer https://auth.$zone/realms/$realm
@@ -544,6 +551,10 @@ new_case policy-changed
 edit networkpolicies-litellm.json '.items[0].spec.ingress[0].ports[0].port = 4001'
 run_case
 expect_line '^FAIL I1: differs litellm/litellm;'
+new_case policy-changed-songmaker
+edit networkpolicies-songmaker.json '.items[0].spec.ingress[0].ports[0].port = 6380'
+run_case
+expect_line '^FAIL I1: differs songmaker/redis;'
 new_case policy-same-name-elsewhere
 fail_I1
 run_case

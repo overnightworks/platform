@@ -57,8 +57,8 @@ spec:
               value: /run/secrets/litellm_key
             - name: HOPIN_AGENT__API_GROUP
               value: /services/litellm
-            # The pod network, where Traefik's pods change address on every restart; the NetworkPolicy below admits
-            # only Traefik's, so no other pod can name a client address in X-Forwarded-For.
+            # The pod network, where Traefik's pods change address on every restart; the NetworkPolicies below admit
+            # only Traefik's and Keycloak's, so no other pod can name a client address in X-Forwarded-For.
             - name: HOPIN_TRUSTED_PROXIES
               value: 10.42.0.0/16
           # No liveness probe: a restart ends every call and session.
@@ -120,8 +120,8 @@ spec:
                 port:
                   number: 8080
 ---
-# hopin trusts the X-Forwarded-For of the pod network, so only Traefik's pods may reach it; the kubelet's probe comes
-# from the node, which a NetworkPolicy never blocks.
+# hopin trusts the X-Forwarded-For of the pod network, so only Traefik's pods and, through the next policy, Keycloak's
+# may reach it; the kubelet's probe comes from the node, which a NetworkPolicy never blocks.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -136,6 +136,28 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: traefik
+      ports:
+        - port: http
+          protocol: TCP
+---
+# Keycloak posts its back-channel logout here, from its own pods and no others of its namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backchannel-from-keycloak
+  namespace: hopin
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
       ports:
         - port: http
           protocol: TCP

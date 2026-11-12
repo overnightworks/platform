@@ -237,7 +237,9 @@ expect_stylesheet() {
 for stylesheet in "${login_list[@]}"; do expect_stylesheet login "$login_theme" "$stylesheet"; done
 for stylesheet in "${account_list[@]}"; do expect_stylesheet account "$account_theme" "$stylesheet"; done
 
-# B3: only Traefik and Keycloak's own namespace reach it; Keycloak reaches its Postgres and nothing else.
+# B3: only Traefik and Keycloak's own namespace reach it. Keycloak reaches its Postgres and, for its back-channel
+# logout, hopin and songmaker; the cells below check that skat, the caller, gets no answer from it and what
+# keycloak-egress alone keeps Keycloak from.
 keycloak_service_url="http://keycloak.$namespace.svc:$(kubectl -n "$namespace" get service keycloak -o jsonpath='{.spec.ports[0].port}')"
 request "$namespace" own-namespace-request "$public_host" "$keycloak_service_url/realms/$realm/.well-known/openid-configuration"
 [ "$status" = 200 ] || fail "Keycloak answered $status, not 200, to a Pod in $namespace"
@@ -256,9 +258,10 @@ request "$namespace" free-egress-request "${cluster_target%:*}" "https://$cluste
 [ "$status" != 000 ] || fail "a Pod in $namespace without Keycloak's labels got no answer from $cluster_target, curl exit \
 code $exit_code, so the probe below proves no policy"
 echo "a Pod in $namespace without Keycloak's labels got $status from $cluster_target"
-# hopin's own policy refuses every sender but Traefik, so only a throwaway target in hopin's namespace, with hopin's
-# labels and port and a throwaway policy admitting Keycloak's namespace to it alone, leaves keycloak-egress as the one
-# thing that can keep Keycloak from that namespace. It never turns ready, so hopin's Service never routes to it.
+# The caller's own policy refuses every sender but Traefik, so only a throwaway target in the caller's namespace, with
+# the caller's labels and port and a throwaway policy admitting Keycloak's namespace to it alone, leaves Keycloak's
+# egress policies as the one thing that can keep Keycloak from that namespace. It never turns ready, so the caller's
+# Service never routes to it.
 target_name="keycloak-egress-target"
 target_objects=("pod/$target_name" "networkpolicy/$target_name")
 remove_target() {
