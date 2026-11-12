@@ -122,9 +122,9 @@ prove_hosts first
 manifest=apps/songmaker/web.yaml
 service_name="$(yq 'select(.kind == "Service") | .metadata.name' "$manifest")"
 service_port="$(yq 'select(.kind == "Service") | .spec.ports[0].port' "$manifest")"
-backchannel_host="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[] | select(.name == "web") | .env[] | select(.name == "BACKCHANNEL_LOGOUT_HOST") | .value' "$manifest")"
+service_host="$service_name.$SONGMAKER_NAMESPACE.svc:$service_port"
 service_url="http://$service_name.$SONGMAKER_NAMESPACE.svc.cluster.local:$service_port$backchannel_path"
-request "$SONGMAKER_NAMESPACE" backchannel-in-namespace "$backchannel_host" "$service_url" --data logout_token=malformed
+request "$SONGMAKER_NAMESPACE" backchannel-in-namespace "$service_host" "$service_url" --data logout_token=malformed
 [ "$status" = 400 ] || fail "a Pod in $SONGMAKER_NAMESPACE got '$status' from the Service $service_name for the malformed logout, not 400"
 echo "a Pod in $SONGMAKER_NAMESPACE gets 400 from the Service $service_name for the malformed logout, so the route is untouched"
 
