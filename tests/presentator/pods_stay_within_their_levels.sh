@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# pods_stay_within_their_levels.sh <rendered manifest>: holds presentator's pods to the levels they may run at, on any
-# cluster with `kubectl` and `yq` and no layer of ours. The argument is `kubectl kustomize` of apps/presentator, or of
-# an overlay that changes only its images or class. Each Pod template of the render becomes a Pod, created with
+# pods_stay_within_their_levels.sh <rendered manifest> [<rendered pull layer>]: holds presentator's pods to the levels
+# they may run at, on any cluster with `kubectl` and `yq` and no layer of ours. The first argument is `kubectl kustomize`
+# of apps/presentator, or of an overlay that changes only its images or class. The second, which presentator's own
+# call at a pinned commit does not pass, is that of apps/presentator/pull, whose Job is judged at restricted as the
+# Namespace enforces no level for it. Each Pod template of the render becomes a Pod, created with
 # --dry-run=server in throwaway Namespaces that enforce the level: every template but the build worker's at
 # restricted, the worker's at baseline once the init container's NET_ADMIN is removed from the copy. The rest of the
 # contract is read from the render, and each rule is proven by mutants: a copy of the render changed to break exactly
@@ -12,8 +14,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=../no_network/pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../no_network/pod.sh"
 
-[ $# -eq 1 ] && [ -f "$1" ] || fail "usage: $0 <rendered manifest>"
+[ $# -ge 1 ] && [ $# -le 2 ] && [ -f "$1" ] && { [ $# -eq 1 ] || [ -f "$2" ]; } ||
+  fail "usage: $0 <rendered manifest> [<rendered pull layer>]"
 rendered="$1"
+pull_rendered="${2:-}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 restricted_namespace=presentator-levels-restricted
 baseline_namespace=presentator-levels-baseline
@@ -49,7 +53,7 @@ for level in restricted baseline; do
   created_namespaces+=("$namespace")
   kubectl label namespace "$namespace" "pod-security.kubernetes.io/enforce=$level"
   kubectl -n "$namespace" wait serviceaccount/default --for=create --timeout=1m
-  for account in $(yq --no-doc "$SPECS | .serviceAccountName | select(. != null)" "$rendered"); do
+  for account in $(yq --no-doc "$SPECS | .serviceAccountName | select(. != null)" "$rendered" ${pull_rendered:+"$pull_rendered"}); do
     kubectl -n "$namespace" create serviceaccount "$account"
   done
 done
@@ -159,6 +163,12 @@ judge() { judge_levels "$1"; judge_structure "$1"; }
 problems="$(judge "$rendered")"
 [ -z "$problems" ] || fail "the render breaks its contract: $problems"
 echo "the web and every other template pass restricted, the worker passes baseline without its init's NET_ADMIN and is refused with it, and the render holds its contract"
+
+if [ -n "$pull_rendered" ]; then
+  problems="$(judge_levels "$pull_rendered")"
+  [ -z "$problems" ] || fail "the pull layer breaks its level: $problems"
+  echo "the Job of the pull layer passes restricted"
+fi
 
 # named_by <expected text> <description>: the mutant in $work/mutant.yaml must make the check
 # print a problem that contains the text.
@@ -345,4 +355,11 @@ mutant "is not the web's" "($on_worker | $worker_container | .securityContext.ru
 mutant "the worker has no command" "del($on_worker | $worker_container | .command)"
 mutant "the worker's seal is not set" "del($on_worker | $worker_container | .env[] | select(.name == \"PRESENTATOR_WORKER_SEAL\"))"
 mutant "the worker has no memory limit" "del($on_worker | $worker_container | .resources)"
+# The pull layer's Job at uid 0 is refused at restricted.
+if [ -n "$pull_rendered" ]; then
+  yq '(select(.kind == "Job") | .spec.template.spec.securityContext) |= (.runAsUser = 0 | .runAsNonRoot = false)' "$pull_rendered" >"$work/mutant.yaml"
+  [[ "$(judge_levels "$work/mutant.yaml")" == *"the Pod pull is refused at restricted"* ]] ||
+    fail "the pull layer's Job at uid 0 was not named as refused at restricted"
+  echo "the check names 'the Pod pull is refused at restricted' for the pull layer's Job at uid 0"
+fi
 echo "every mutant was named by the check"
