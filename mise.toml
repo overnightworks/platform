@@ -1093,7 +1093,7 @@ quiet = true
 run = "scripts/cutover_load.sh check"
 
 [tasks."litellm:key"]
-description = "Register the litellm_key of Secret <app> as the key of the row <app> in infrastructure/litellm/keys.yaml"
+description = "Register the litellm_key of Secret <app> as the key of the row <app> in infrastructure/litellm/keys.yaml; --replace first deletes another value's key under the alias"
 quiet = true
 run = "scripts/litellm_keys.sh key"
 
