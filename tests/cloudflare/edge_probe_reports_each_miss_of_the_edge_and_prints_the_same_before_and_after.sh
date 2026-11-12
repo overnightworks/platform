@@ -13,7 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 
 tests_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "${tests_directory}/../.." && pwd)"
-# The probe and the fake edge read the declarations with the locked yq.
+# The probe and the test read the declarations with the locked yq.
 PATH="$(dirname "$(cd "${repository_root}" && mise which yq)"):${PATH}"
 work_directory="$(mktemp -d)"
 server_pid=""
@@ -36,8 +36,10 @@ cp "${tests_directory}/fixtures/edge/zone.yaml" "${checkout}/src/opentofu/cloudf
 # start_edge <overrides json>: sets edge_port.
 start_edge() {
   printf '%s' "$1" >"${work_directory}/overrides.json"
-  coproc python3 -I "${tests_directory}/fake_edge.py" "${checkout}/infrastructure/cloudflared/config.yaml" \
-    "${checkout}/src/opentofu/cloudflare/zone.yaml" "${work_directory}/overrides.json"
+  # The fake edge reads the declarations the probe reads, as JSON.
+  yq --output-format json . "${checkout}/infrastructure/cloudflared/config.yaml" >"${work_directory}/tunnel_lines.json"
+  yq --output-format json . "${checkout}/src/opentofu/cloudflare/zone.yaml" >"${work_directory}/zone.json"
+  coproc python3 -I "${tests_directory}/fake_edge.py" "${work_directory}/tunnel_lines.json" "${work_directory}/zone.json" "${work_directory}/overrides.json"
   server_pid="${COPROC_PID}"
   read -r -u "${COPROC[0]}" edge_port
 }

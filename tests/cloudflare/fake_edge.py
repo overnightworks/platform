@@ -1,23 +1,23 @@
 """A stand-in for the zone's public edge, for tests/cloudflare/: it answers as the declared edge should, from the same
 two files the edge probe reads, except where an override of the test names a host, a raw request path and the answer.
 
-Usage: fake_edge.py <tunnel lines> <zone facts> <overrides json>
+Usage: fake_edge.py <tunnel lines json> <zone facts json> <overrides json>
 Writes the loopback port it listens on as its first line, then serves until it is ended.
 """
 
 import fnmatch
 import json
-import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import unquote
 
 
-def read_yaml(path):
-    return json.loads(subprocess.run(["yq", "--output-format", "json", ".", path], check=True, capture_output=True).stdout)
+def read_json(path):
+    with open(path) as handle:
+        return json.load(handle)
 
 
-tunnel_lines, zone, overrides = read_yaml(sys.argv[1]), read_yaml(sys.argv[2]), json.load(open(sys.argv[3]))
+tunnel_lines, zone, overrides = read_json(sys.argv[1]), read_json(sys.argv[2]), read_json(sys.argv[3])
 tunnel_hosts = [rule["hostname"] for rule in tunnel_lines["ingress"] if "hostname" in rule]
 redirect = zone["redirect"]
 apex = [host for host in redirect["hostnames"] if host in tunnel_hosts]
