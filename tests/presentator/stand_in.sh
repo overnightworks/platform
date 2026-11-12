@@ -2,7 +2,7 @@
 # Sourced by the cells that load into presentator's database: points the layer's Kustomization presentator at
 # tests/presentator/stand_in, so the commands under test suspend and resume the real one over a web that holds no database
 # open, and removes it with the claim database, which Flux never prunes, on the cell's exit. The job's root
-# is suspended meanwhile, since it would put the layer's own path back.
+# is suspended meanwhile, since it would put the layer's own path back, and resumed last, so it puts the layer back.
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 
@@ -48,4 +48,8 @@ remove_stand_in() {
   flux resume kustomization presentator >/dev/null 2>&1 || true
   delete_object --namespace flux-system delete kustomization presentator --ignore-not-found --wait --timeout=5m
   delete_object --namespace presentator delete pvc database --ignore-not-found --wait --timeout=2m
+  if ! flux resume kustomization flux-system >/dev/null; then
+    echo "::error::resuming the root Kustomization flux-system failed"
+    deletion_failures=$((deletion_failures + 1))
+  fi
 }

@@ -1,7 +1,7 @@
 # One Kustomization per directory under apps/, named like the directory and the app's namespace, so that an app's
 # objects share one owner that db:load-dump can suspend. Each starts from Secrets in platform-secrets, so it waits for
-# that layer, and runs workloads, so it waits for admission. skat and songmaker also wait for storage, as their Postgres
-# claims a volume, and skat and songmaker wait for k8up, whose CRDs their backup objects need.
+# that layer, and runs workloads, so it waits for admission. skat, songmaker and presentator also wait for storage, as
+# their Postgres claims a volume, and for k8up, whose CRDs their backup objects need.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
