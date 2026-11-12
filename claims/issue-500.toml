@@ -1,8 +1,0 @@
-claim_id = "3a31819b9d46451285ef0fa5f29bd3d8"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "9f338c3de0a066ba06fd0984207c95210db1a228"
-branch = "claude/issue-500-presentator-backchannel"
-scope = [".github/workflows/ci.yml", "apps/presentator/kustomization.yaml", "apps/presentator/web.yaml", "infrastructure/keycloak/keycloak-egress.yaml", "infrastructure/keycloak/realm.yaml", "tests/keycloak", "tests/presentator", "tests/traefik"]
-opened_commit = "d3abe9a6300c50c7b9327eb77c8bc53237b4a15f"
-whole_reason = "The URL, the route's release and the two policy halves work only together; apart, Keycloak posts into a closed door."
