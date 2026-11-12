@@ -55,6 +55,18 @@ patches:
                       - op: replace
                         path: /spec/replicas
                         value: 0
+          # k3d resolves the public MCP URLs of hopin and skat to the live apps, so a pod of the personas runner would
+          # either never turn Ready or call the PC's apps with a dummy secret; the Deployment applies and runs no pod.
+          - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: personas}
+            patch: |
+              - op: add
+                path: /spec/patches
+                value:
+                  - target: {group: apps, kind: Deployment, name: personas}
+                    patch: |
+                      - op: replace
+                        path: /spec/replicas
+                        value: 0
           # k3d has no card: the device plugin's DaemonSet applies and schedules nowhere.
           - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: nvidia}
             patch: |

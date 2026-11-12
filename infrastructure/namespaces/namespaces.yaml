@@ -29,6 +29,15 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: personas
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: speech-runtime
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled

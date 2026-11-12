@@ -8,6 +8,9 @@ apps:
   hopin:
     budget: 10
     parallel: 5
+  personas:
+    budget: 10
+    parallel: 2
   presentator:
     budget: 10
     parallel: 5

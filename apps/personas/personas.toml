@@ -1,0 +1,65 @@
+# The runner's configuration, whose fields personas' README and src/personas/config.py own. The realm, the apps and the
+# gateway are the platform's; the persona files ship in the image. No turn cap is set until the operator turns one on.
+token_endpoint = "https://auth.hallucinai.de/realms/hallucinai/protocol/openid-connect/token"
+ready_file = "/tmp/ready"
+
+[[apps]]
+mcp_url = "https://hopin.hallucinai.de/mcp"
+scope = "mcp-hopin"
+tools = ["say"]
+max_tool_calls = 2
+
+# A turn runs only while the app declares every tool named here, so each name is one that skat's pinned release lists.
+[[apps]]
+mcp_url = "https://skat.hallucinai.de/mcp"
+scope = "mcp-skat"
+tools = [
+  "read_table",
+  "read_series_list",
+  "read_paused_tables",
+  "play_card",
+  "auction_bid",
+  "auction_hold",
+  "auction_pass",
+  "auction_play",
+  "give_up_game",
+  "throw_down_cards",
+  "agree_to_give_up",
+  "decline_give_up",
+  "continue_after_result",
+  "agree_to_end_series",
+  "refuse_to_end_series",
+  "start_new_series",
+  "take_skat",
+  "put_back_cards",
+  "declare_game",
+  "ramsch_take_skat",
+  "ramsch_put_back_cards",
+  "ramsch_push_skat",
+  "say_kontra",
+  "open_table",
+  "sit_down",
+  "stand_up",
+  "read_rule_sets",
+  "save_rule_set",
+]
+max_tool_calls = 4
+
+# Every agent's token carries /agents, and the gateway refuses a turn whose person is outside the group.
+[gateway]
+backend = "litellm"
+api_group = "/agents"
+
+[gateway.gateway]
+origin = "http://litellm-front.litellm:4000"
+key_file = "/run/secrets/litellm_key"
+
+[[agents]]
+client_id = "agent-mozart"
+secret_file = "/run/secrets/mozart_client_secret"
+persona_file = "/app/characters/mozart.md"
+
+[[agents]]
+client_id = "agent-leonardo"
+secret_file = "/run/secrets/leonardo_client_secret"
+persona_file = "/app/characters/leonardo.md"

@@ -1,0 +1,10 @@
+# The runner reads its file once, at start, so the ConfigMap's name carries its content's hash and a change rolls the pod.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: personas
+resources:
+  - personas.yaml
+configMapGenerator:
+  - name: personas
+    files:
+      - personas.toml

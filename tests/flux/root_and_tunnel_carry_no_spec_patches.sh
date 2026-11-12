@@ -15,7 +15,7 @@ case "$(grep '^Kustomization' <<<"$objects" || true)" in
 esac
 # The job root's overlay patches these layers, one list with it (tests/flux/reconcile_the_candidate_tree.sh).
 for layers_file_and_layer in clusters/pc/infrastructure.yaml:tunnel clusters/pc/infrastructure.yaml:nvidia \
-  clusters/pc/apps.yaml:songmaker; do
+  clusters/pc/apps.yaml:songmaker clusters/pc/apps.yaml:personas; do
   layers_file="${layers_file_and_layer%%:*}"
   layer="${layers_file_and_layer##*:}"
   objects="$(kubectl create --dry-run=client -f "$layers_file" -o go-template='{{if eq .metadata.name "'"$layer"'"}}
