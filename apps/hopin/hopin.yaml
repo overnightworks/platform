@@ -51,14 +51,12 @@ spec:
               value: /run/secrets/turn_api_token
             - name: HOPIN_AGENT__BACKEND
               value: litellm
-            # The game's settings are required at start, yet the platform runs no gateway: .invalid never resolves
-            # (RFC 6761), and the key file stays absent, so every game master turn reads as unavailable.
             - name: HOPIN_AGENT__GATEWAY__ORIGIN
-              value: http://gateway.invalid
+              value: http://litellm-front.litellm:4000
             - name: HOPIN_AGENT__GATEWAY__KEY_FILE
               value: /run/secrets/litellm_key
             - name: HOPIN_AGENT__API_GROUP
-              value: /services/agent-service/api
+              value: /services/litellm
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicies below admit
             # only Traefik's and Keycloak's, so no other pod can name a client address in X-Forwarded-For.
             - name: HOPIN_TRUSTED_PROXIES
