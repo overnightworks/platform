@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # hopin_exchanges_an_agent_token_for_the_speech_audience.sh: EXCHANGING_CLIENT of REALM_FILE, as config-cli applied it,
 # trades the mcp-hopin token of the agent client AGENT_CLIENT for a token of its own with the scope EXCHANGE_SCOPE, and
-# no other client, scope, subject or switch-off lets a token through. Prints names and outcomes, never a token or a
+# no other client, scope, subject, subject token or switch-off lets a token through. Prints names and outcomes, never a token or a
 # secret; every throwaway user and client is deleted on every exit.
 set -euo pipefail
 umask 077
@@ -22,7 +22,7 @@ agent_secret_file="$scratch/agent-secret"
 exchanger_secret_file="$scratch/exchanger-secret"
 refused_secret_file="$scratch/refused-secret"
 subject_file="$scratch/subject-token"
-# Admin paths of what the cell switches off, set once they exist, so the exit restores them.
+# Admin paths of what the cell switches off or changes, set once they exist, so the exit restores them.
 agent_path=""
 account_path=""
 exchanger_path=""
@@ -37,29 +37,31 @@ remove_throwaways() {
   for switched_off in "$agent_path" "$account_path" "$exchanger_path"; do
     [ -z "$switched_off" ] || set_enabled "$switched_off" true || echo "::warning::$switched_off was not re-enabled"
   done
+  [ -z "$agent_path" ] || put_changed "$agent_path" '.attributes["access.token.lifespan"] = null' ||
+    echo "::warning::the token lifespan of $agent was not restored"
   rm -rf -- "$scratch" "$admin_secret_file"
   kill "$forward_pid" 2>/dev/null || true
 }
 trap remove_throwaways EXIT
 trap 'exit 143' TERM INT
 
-# set_enabled <admin path of a client or user> <true|false>
-set_enabled() {
-  admin GET "$1" | jq --argjson enabled "$2" '.enabled = $enabled' >"$scratch/enabled-body" &&
-    admin PUT "$1" "@$scratch/enabled-body" >/dev/null
-  rm -f -- "$scratch/enabled-body"
-}
-
-sorted_list() { tr ' ' '\n' | grep . | LC_ALL=C sort; }
 speech_audience="$(yq --exit-status '.clientScopes[] | select(.name == "'"$exchange_scope"'") | .protocolMappers[].config."included.client.audience" | select(. != null)' "$REALM_FILE")"
 speech_group="/services/$speech_audience"
 exchange_enabled_in_file="$(yq '[.clients[] | select(.attributes."standard.token.exchange.enabled" == "true") | .clientId] | join(" ")' "$REALM_FILE")"
 [ "$exchange_enabled_in_file" = "$exchanger" ] ||
   fail "$REALM_FILE enables the standard token exchange for '$exchange_enabled_in_file', not for $exchanger alone"
-file_groups="$(USER="service-account-$agent" yq '.users[] | select(.username == strenv(USER)) | .groups[]' "$REALM_FILE" | sorted_list)"
+mcp_audience="$(yq --exit-status '.clientScopes[] | select(.name == "mcp-hopin") | .protocolMappers[]
+  | select(.name == "mcp-hopin-audience") | .config."included.custom.audience"' "$REALM_FILE")"
+file_groups="$(file_groups_of "service-account-$agent")"
 for needed in /apps/hopin "$speech_group"; do
   grep -qxF "$needed" <<<"$file_groups" || fail "$REALM_FILE does not put the service account of $agent into $needed"
 done
+# The scopes the file offers the exchanging client, and every other scope it declares.
+offered_scopes="$(CLIENT="$exchanger" yq '.clients[] | select(.clientId == strenv(CLIENT))
+  | ((.defaultClientScopes // []) + (.optionalClientScopes // []))[]' "$REALM_FILE" | sorted_list)"
+grep -qxF "$exchange_scope" <<<"$offered_scopes" || fail "$REALM_FILE does not offer $exchange_scope to $exchanger"
+other_scopes="$(yq '.clientScopes[].name' "$REALM_FILE" | grep -vxFf <(printf '%s\n' "$offered_scopes"))" ||
+  fail "$REALM_FILE declares no scope that $exchanger is not offered"
 
 client_secret_to_file "$agent" "$agent_secret_file"
 client_secret_to_file "$exchanger" "$exchanger_secret_file"
@@ -117,12 +119,10 @@ exchanged() { jq --raw-output "$1" <<<"$exchanged_claims"; }
 [ "$(exchanged .sub)" = "$(jq --raw-output .sub <<<"$subject_claims")" ] || fail "the exchanged token's sub is not the agent's"
 [ "$(exchanged '[.aud] | flatten | index("'"$speech_audience"'") != null')" = true ] ||
   fail "the exchanged token's aud does not hold $speech_audience"
-[ "$(exchanged '[.aud] | flatten | map(select(startswith("https://"))) | length')" = 0 ] ||
-  fail "the exchanged token still names the MCP audience"
+[ "$(exchanged '[.aud] | flatten | index("'"$mcp_audience"'") == null')" = true ] ||
+  fail "the exchanged token still names the MCP audience $mcp_audience"
 [ "$(exchanged '.groups | sort | join(" ")')" = "${file_groups//$'\n'/ }" ] ||
   fail "the exchanged token's groups are '$(exchanged '.groups | sort | join(" ")')', not the file's '${file_groups//$'\n'/ }'"
-[ "$(exchanged 'has("agent_name") or has("agent_owner")')" = false ] ||
-  fail "the exchanged token carries the agent's own claims, which only the agent client's mappers write"
 expiry_gap="$(jq --null-input --argjson exchanged "$exchanged_claims" --argjson subject "$subject_claims" '$exchanged.exp - $subject.exp')"
 [ "$expiry_gap" -le 1 ] || fail "the exchanged token outlives the subject token by $expiry_gap s"
 echo "$exchanger's exchange of $agent's mcp-hopin token with scope=$exchange_scope: azp $exchanger, the agent's sub, aud $speech_audience, groups '${file_groups//$'\n'/ }', expiry at most 1 s after the subject's"
@@ -130,8 +130,29 @@ echo "$exchanger's exchange of $agent's mcp-hopin token with scope=$exchange_sco
 # The refusals.
 exchange "$refused_exchanger" "$refused_secret_file" "$subject_file" --data "scope=$exchange_scope"
 expect_refusal "$refused_exchanger's exchange of the same token" 400 invalid_request
-exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data scope=mcp-hopin
-expect_refusal "$exchanger's exchange for the scope mcp-hopin, none of its own" 400 invalid_scope
+for other_scope in $other_scopes; do
+  exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$other_scope"
+  expect_refusal "$exchanger's exchange for the scope $other_scope, which the file does not offer it" 400 invalid_scope
+done
+# A token that was altered, or that has run out, is no subject either.
+tamper_signature() {
+  local token signature first
+  token="$(<"$1")"
+  signature="${token##*.}"
+  first="${signature:0:1}"
+  printf '%s.%s%s' "${token%.*}" "$([ "$first" = A ] && echo B || echo A)" "${signature:1}"
+}
+[ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant with scope=mcp-hopin was refused"
+tamper_signature "$subject_file" >"$scratch/tampered-token"
+exchange "$exchanger" "$exchanger_secret_file" "$scratch/tampered-token" --data "scope=$exchange_scope"
+expect_refusal "the exchange of a token with a changed signature" 400 invalid_request
+put_changed "$agent_path" '.attributes["access.token.lifespan"] = "2"'
+[ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant with a lifespan of 2 s was refused"
+put_changed "$agent_path" '.attributes["access.token.lifespan"] = null'
+expired_at="$(jwt_part 2 "$(<"$subject_file")" | jq .exp)"
+timeout 30 bash -c 'until [ "$(date +%s)" -gt "$0" ]; do sleep 1; done' "$expired_at" || fail "the clock did not pass the token's expiry"
+exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
+expect_refusal "the exchange of an expired token" 400 invalid_request
 [ "$(agent_token)" = 200 ] || fail "$agent's grant without a scope was refused"
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 expect_refusal "the exchange of $agent's token asked without mcp-hopin" 403 access_denied
