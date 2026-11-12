@@ -6,10 +6,13 @@
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 
-# apply_stand_in: the Kustomization is applied and Ready, so the web and the claim exist.
+# apply_stand_in: the Kustomization is applied and Ready for the applied generation, so the web and the claim exist. A
+# Ready=True left by the previous path would satisfy the wait before the controller has seen the new one, hence the
+# wait for the applied generation to be observed first.
 apply_stand_in() {
+  local generation
   flux suspend kustomization flux-system >/dev/null
-  kubectl apply -f - <<'YAML'
+  generation="$(kubectl apply --output jsonpath='{.metadata.generation}' -f - <<'YAML'
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -28,7 +31,11 @@ spec:
     kind: GitRepository
     name: flux-system
 YAML
-  kubectl --namespace flux-system wait kustomization/presentator --for=condition=Ready --timeout=4m ||
+  )" || fail "kubectl apply of the stand-in Kustomization presentator failed"
+  [[ "$generation" =~ ^[0-9]+$ ]] || fail "the applied stand-in Kustomization presentator names no generation: '$generation'"
+  kubectl --namespace flux-system wait kustomization/presentator \
+    --for=jsonpath="{.status.observedGeneration}=$generation" --timeout=4m &&
+    kubectl --namespace flux-system wait kustomization/presentator --for=condition=Ready --timeout=4m ||
     { show_why_the_stand_in_is_not_ready; fail "within the time: the stand-in Kustomization presentator is Ready"; }
 }
 
