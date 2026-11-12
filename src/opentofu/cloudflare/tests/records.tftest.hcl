@@ -1,10 +1,13 @@
 # Proves docs/cloudflare-zone.md: the root declares one proxied CNAME to the platform's tunnel for each hostname of the
-# tunnel's lines and for the redirect-only name www, adopts a live single CNAME by import and never creates a second one.
+# tunnel's lines and for the redirected names (the apex and www), adopts a live single CNAME by import and never creates a second one.
 mock_provider "cloudflare" {}
 
 variables {
   api_token_file    = "tests/synthetic_token.txt"
   tunnel_lines_file = "tests/hosts_two.yaml"
+
+  # The records wait for the rulesets, whose facts every host of the file must have.
+  denied_paths_by_host = { "first.hallucinai.de" = [], "second.hallucinai.de" = [] }
 }
 
 # A record in a lookup carries every attribute of the provider's schema; the runs set only what they read.
@@ -23,7 +26,7 @@ override_data {
   }
 }
 
-run "each_hostname_of_the_file_and_www_get_a_proxied_cname_to_the_tunnel" {
+run "each_hostname_of_the_file_and_the_redirected_names_get_a_proxied_cname_to_the_tunnel" {
   command = plan
 
   plan_options {
@@ -32,9 +35,9 @@ run "each_hostname_of_the_file_and_www_get_a_proxied_cname_to_the_tunnel" {
 
   assert {
     condition = toset(keys(cloudflare_dns_record.host)) == toset([
-      "first.hallucinai.de", "second.hallucinai.de", "www.hallucinai.de"
+      "first.hallucinai.de", "second.hallucinai.de", "hallucinai.de", "www.hallucinai.de"
     ])
-    error_message = "The records are not the file's hostnames and www."
+    error_message = "The records are not the file's hostnames and the redirected names."
   }
 
   assert {
@@ -59,12 +62,13 @@ run "a_hostname_added_to_the_file_adds_a_record" {
   }
 
   variables {
-    tunnel_lines_file = "tests/hosts_three.yaml"
+    tunnel_lines_file    = "tests/hosts_three.yaml"
+    denied_paths_by_host = { "first.hallucinai.de" = [], "second.hallucinai.de" = [], "third.hallucinai.de" = [] }
   }
 
   assert {
     condition = toset(keys(cloudflare_dns_record.host)) == toset([
-      "first.hallucinai.de", "second.hallucinai.de", "third.hallucinai.de", "www.hallucinai.de"
+      "first.hallucinai.de", "second.hallucinai.de", "third.hallucinai.de", "hallucinai.de", "www.hallucinai.de"
     ])
     error_message = "The added hostname has no record."
   }
@@ -79,6 +83,9 @@ run "every_hostname_of_the_tunnels_lines_has_a_record" {
 
   variables {
     tunnel_lines_file = "../../../infrastructure/cloudflared/config.yaml"
+    denied_paths_by_host = {
+      for rule in yamldecode(file("../../../infrastructure/cloudflared/config.yaml")).ingress : rule.hostname => [] if contains(keys(rule), "hostname")
+    }
   }
 
   assert {
