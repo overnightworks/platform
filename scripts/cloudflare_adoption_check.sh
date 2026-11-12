@@ -82,7 +82,7 @@ judgement="$(jq --argjson allow "${allow_ruleset_update}" '
           )
         }
     end
-' 2>&1)" || fail "the plan could not be read: ${judgement}"
+' 2>&1)" || fail "the plan could not be read"
 
 stops="$(jq -r '.stops[] | "\(.address) \(.actions): \(.reason)"' <<<"${judgement}")"
 if [ -n "${stops}" ]; then
