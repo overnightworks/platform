@@ -44,7 +44,8 @@ trap 'git worktree remove --force "$transition"' EXIT
 for app in "${apps[@]}"; do
   release="$transition/apps/$app/release/kustomization.yaml"
   [ -f "$release" ] || fail "the pull layer of $app has no release at apps/$app/release/kustomization.yaml"
-  [ "$(yq '.images | length' "$release")" -eq 1 ] || fail "the release of $app holds more than one image, whose previous refs differ"
+  image_count="$(yq '.images | length' "$release")"
+  [ "$image_count" -eq 1 ] || fail "the release of $app holds $image_count images, not one"
   current_tag="$(yq '.images[].newTag' "$release")"
   current_digest="$(yq '.images[].digest' "$release")"
   # "<tag> <digest>" of each release removed from apps/<app>, newest first, whichever file held it.
