@@ -1,4 +1,57 @@
 {
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "cloudflare_dns_record.host[\"a.example.test\"]",
+          "mode": "managed",
+          "type": "cloudflare_dns_record"
+        },
+        {
+          "address": "cloudflare_dns_record.host[\"b.example.test\"]",
+          "mode": "managed",
+          "type": "cloudflare_dns_record"
+        },
+        {
+          "address": "cloudflare_dns_record.host[\"www.example.test\"]",
+          "mode": "managed",
+          "type": "cloudflare_dns_record"
+        },
+        {
+          "address": "cloudflare_ruleset.client_address",
+          "mode": "managed",
+          "type": "cloudflare_ruleset"
+        },
+        {
+          "address": "cloudflare_ruleset.deny_public",
+          "mode": "managed",
+          "type": "cloudflare_ruleset"
+        },
+        {
+          "address": "cloudflare_ruleset.apex_redirect",
+          "mode": "managed",
+          "type": "cloudflare_ruleset"
+        }
+      ],
+      "child_modules": [
+        {
+          "address": "module.settings",
+          "resources": [
+            {
+              "address": "module.settings.cloudflare_zone_setting.hsts",
+              "mode": "managed",
+              "type": "cloudflare_zone_setting"
+            },
+            {
+              "address": "module.settings.cloudflare_zone_setting.nel",
+              "mode": "managed",
+              "type": "cloudflare_zone_setting"
+            }
+          ]
+        }
+      ]
+    }
+  },
   "resource_changes": [
     {
       "address": "cloudflare_dns_record.host[\"a.example.test\"]",

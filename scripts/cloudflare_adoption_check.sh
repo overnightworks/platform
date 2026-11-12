@@ -27,6 +27,10 @@ command -v jq >/dev/null || fail "jq is not installed"
 judgement="$(jq --argjson allow "${allow_ruleset_update}" '
   def strip_index: gsub("\\[[^\\]]*\\]"; "");
   def actions_text: .change.actions | join(",");
+  # The declared instances: every managed resource the plan holds after the apply, a for_each key included.
+  def planned($module):
+    [($module.resources // [])[] | select(.mode == "managed") | .address]
+    + ([($module.child_modules // [])[] | planned(.)] | add // []);
   def declared($prefix; $module):
     [($module.resources // [])[] | select(.mode == "managed") | {address: ($prefix + .address), expressions: (.expressions | if . == null then null else keys end)}]
     + ([($module.module_calls // {}) | to_entries[] | declared($prefix + "module." + .key + "."; .value.module)] | add // []);
@@ -53,10 +57,11 @@ judgement="$(jq --argjson allow "${allow_ruleset_update}" '
         stops: (if $allow then [] else [$changes[] | select(.type == "cloudflare_ruleset" and (.change.actions | index("update")))
           | {address, actions: actions_text, reason: "is a ruleset update; pass --allow-ruleset-update for a reviewed change"}] end)
       }
-    elif $plan.configuration == null then
-      {adoption: true, listed: [], stops: [{address: "(plan)", actions: "none", reason: "the plan carries no configuration, so the declared objects cannot be judged"}]}
+    elif $plan.configuration == null or $plan.planned_values == null then
+      {adoption: true, listed: [], stops: [{address: "(plan)", actions: "none", reason: "the plan carries no configuration or no planned values, so the declared objects cannot be judged"}]}
     else
       declared(""; $plan.configuration.root_module) as $declared
+      | planned($plan.planned_values.root_module) as $instances
       | [$changes[] | select(is_www_record_update and .change.importing != null)] as $updates
       | {
           adoption: true,
@@ -70,8 +75,10 @@ judgement="$(jq --argjson allow "${allow_ruleset_update}" '
             + [$updates[] | . as $change | (changed_attributes(expressions_of($declared)) | map(select(. != "content"))) as $others
               | select($others | length > 0)
               | {address, actions: actions_text, reason: "changes \($others | join(", ")); the adoption allows only content"}]
-            + [$declared[] | select(.address as $address | $changes | any(.address | strip_index == $address) | not)
-              | {address, actions: "none", reason: "is declared and the plan holds no import for it"}]
+            + [$instances[] | select(. as $address | $changes | any(.address == $address) | not)
+              | {address: ., actions: "none", reason: "is declared and the plan holds no import for it"}]
+            + [$changes[] | select(.change.importing != null and (.address as $address | $instances | index($address) | not))
+              | {address, actions: actions_text, reason: "is imported and declared nowhere"}]
           )
         }
     end

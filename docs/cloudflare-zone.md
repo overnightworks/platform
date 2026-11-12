@@ -75,8 +75,10 @@ What each stop means, and what to do: nothing is applied and nothing is changed 
   plan shows the rule that would go; a deny rule must never be absent, so the rule is written into the root or removed
   on purpose, in a pull request, before another plan.
 - `second update` or `changes <attributes>`: more than the one allowed change of `www`.
-- `is declared and the plan holds no import for it`: a lookup found no object to adopt, or the plan is partial.
-- `the plan carries no configuration`: the file is not a plan of this root.
+- `is declared and the plan holds no import for it`: a lookup found no object to adopt, or the plan is partial; each instance of a record counts, so one
+  host without its import stops the plan though the others have theirs.
+- `is imported and declared nowhere`: the plan imports an address that the configuration does not plan.
+- `the plan carries no configuration or no planned values`: the file is not a plan of this root.
 - A `MISS` line of the probe in step 1 or 5 names the host, the path and the form that failed. A miss in step 1 is the
   edge as it was before the write; a difference between the two outputs is the write's effect and is undone by
   restoring `www`'s record to the content that step 2's plan printed as its earlier value.
