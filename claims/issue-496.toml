@@ -3,6 +3,6 @@ agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
 role = "builder"
 base = "d0e55a6a7f0f55b07004c701443da9b4845b2196"
 branch = "claude/issue-496-zone-records"
-scope = [".github/workflows/ci.yml", "docs/cloudflare-zone.md", "infrastructure/cloudflared", "mise.toml", "scripts/apply_opentofu.sh", "scripts/cutover_preflight.sh", "src/opentofu/cloudflare", "tests/cloudflared", "tests/cutover", "tests/images", "tests/opentofu"]
+scope = [".github/workflows/ci.yml", "docs/cloudflare-zone.md", "docs/runbooks/plan-the-cloudflare-zone.md", "infrastructure/cloudflared", "mise.toml", "scripts/apply_opentofu.sh", "scripts/cutover_preflight.sh", "src/opentofu/cloudflare", "tests/cloudflared", "tests/cutover", "tests/images", "tests/opentofu"]
 opened_commit = "4df9ebc1dd3cc99355626ea6c0368d11f23e8677"
 whole_reason = "The host file, the ConfigMap built from it, the root that reads it and the guard that protects it are one source of truth and cannot land in halves."
