@@ -160,11 +160,11 @@ tamper_signature() {
 tamper_signature "$subject_file" >"$scratch/tampered-token"
 exchange "$exchanger" "$exchanger_secret_file" "$scratch/tampered-token" --data "scope=$exchange_scope"
 expect_refusal "the exchange of a token with a changed signature" 400 invalid_request
-put_changed "$agent_path" '.attributes["access.token.lifespan"] = "2"'
-[ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant with a lifespan of 2 s was refused"
+# A negative lifespan puts the token's expiry in the past when it is minted.
+put_changed "$agent_path" '.attributes["access.token.lifespan"] = "-5"'
+[ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant with a lifespan of -5 s was refused"
 put_changed "$agent_path" '.attributes["access.token.lifespan"] = null'
-expired_at="$(jwt_part 2 "$(<"$subject_file")" | jq .exp)"
-timeout 30 bash -c 'until [ "$(date +%s)" -gt "$0" ]; do sleep 1; done' "$expired_at" || fail "the clock did not pass the token's expiry"
+[ "$(jwt_part 2 "$(<"$subject_file")" | jq '.exp < now')" = true ] || fail "the token minted with a lifespan of -5 s is not expired"
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 expect_refusal "the exchange of an expired token" 400 invalid_request
 [ "$(agent_token)" = 200 ] || fail "$agent's grant without a scope was refused"
