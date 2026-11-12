@@ -1,0 +1,48 @@
+# The volumes and the mounts of songmaker's four images in the Job pull. Both lists merge by name, so the Job of the base
+# is not restated; the references carry no version, which release/ adds.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: Job
+      name: pull
+    patch: |-
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: pull
+      spec:
+        template:
+          spec:
+            containers:
+              - name: pull
+                volumeMounts:
+                  - name: web
+                    mountPath: /images/web
+                    readOnly: true
+                  - name: music-worker
+                    mountPath: /images/music-worker
+                    readOnly: true
+                  - name: scoring-worker
+                    mountPath: /images/scoring-worker
+                    readOnly: true
+                  - name: acestep-worker
+                    mountPath: /images/acestep-worker
+                    readOnly: true
+            volumes:
+              - name: web
+                image:
+                  reference: ghcr.io/overnightworks/songmaker/web
+                  pullPolicy: IfNotPresent
+              - name: music-worker
+                image:
+                  reference: ghcr.io/overnightworks/songmaker/music-worker
+                  pullPolicy: IfNotPresent
+              - name: scoring-worker
+                image:
+                  reference: ghcr.io/overnightworks/songmaker/scoring-worker
+                  pullPolicy: IfNotPresent
+              - name: acestep-worker
+                image:
+                  reference: ghcr.io/overnightworks/songmaker/acestep-worker
+                  pullPolicy: IfNotPresent

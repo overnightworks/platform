@@ -12,6 +12,7 @@ resources:
 components:
   - ../../infrastructure/postgres/backup
   - ../../infrastructure/postgres/backup/files
+  - release
 configMapGenerator:
   - name: postgres
     behavior: merge

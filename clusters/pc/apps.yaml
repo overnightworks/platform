@@ -130,8 +130,28 @@ spec:
     - name: admission
     - name: storage
     - name: k8up
+    - name: songmaker-pull
   interval: 10m0s
   path: ./apps/songmaker
+  prune: true
+  wait: true
+  timeout: 30m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: songmaker-pull
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: platform-secrets
+    - name: admission
+  interval: 10m0s
+  retryInterval: 2m0s
+  path: ./apps/songmaker/pull
   prune: true
   wait: true
   timeout: 30m0s
