@@ -1,0 +1,7 @@
+claim_id = "3829cac85d00451e972c13fd0fe703c4"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "cab6f9de29e094673ee7cea08261cccc01836cd1"
+branch = "claude/issue-480-presentator-ai-group"
+scope = ["apps/presentator/web.yaml"]
+opened_commit = "58fdc3e24c52bc4504d577b650c7a80d86f507fa"
