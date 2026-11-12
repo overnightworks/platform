@@ -26,6 +26,8 @@ subject_file="$scratch/subject-token"
 agent_path=""
 account_path=""
 exchanger_path=""
+removed_membership_path=""
+refused_exchanger_path=""
 remove_throwaways() {
   local id
   id="$(admin GET "$realm/users?exact=true&username=$person" | jq --raw-output '.[0].id // empty')" || id=""
@@ -39,6 +41,11 @@ remove_throwaways() {
   done
   [ -z "$agent_path" ] || put_changed "$agent_path" '.attributes["access.token.lifespan"] = null' ||
     echo "::warning::the token lifespan of $agent was not restored"
+  [ -z "$refused_exchanger_path" ] ||
+    put_changed "$refused_exchanger_path" '.attributes["standard.token.exchange.enabled"] = null' ||
+    echo "::warning::the exchange switch of $refused_exchanger was not restored"
+  [ -z "$removed_membership_path" ] || admin PUT "$removed_membership_path" ||
+    echo "::warning::$removed_membership_path was not restored"
   rm -rf -- "$scratch" "$admin_secret_file"
   kill "$forward_pid" 2>/dev/null || true
 }
@@ -130,6 +137,13 @@ echo "$exchanger's exchange of $agent's mcp-hopin token with scope=$exchange_sco
 # The refusals.
 exchange "$refused_exchanger" "$refused_secret_file" "$subject_file" --data "scope=$exchange_scope"
 expect_refusal "$refused_exchanger's exchange of the same token" 400 invalid_request
+# With the exchange switched on for it, the client still names no hopin audience, which is the issuer's own refusal.
+refused_exchanger_path="$realm/clients/$(admin GET "$realm/clients?clientId=$refused_exchanger" | jq --raw-output '.[0].id')"
+put_changed "$refused_exchanger_path" '.attributes["standard.token.exchange.enabled"] = "true"'
+exchange "$refused_exchanger" "$refused_secret_file" "$subject_file" --data "scope=$exchange_scope"
+expect_refusal "$refused_exchanger's exchange of the same token with its exchange switched on" 403 access_denied
+put_changed "$refused_exchanger_path" '.attributes["standard.token.exchange.enabled"] = null'
+refused_exchanger_path=""
 for other_scope in $other_scopes; do
   exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$other_scope"
   expect_refusal "$exchanger's exchange for the scope $other_scope, which the file does not offer it" 400 invalid_scope
@@ -180,6 +194,20 @@ person_claims="$(jwt_part 2 "$(<"$scratch/person-token")")"
   fail "a person's token names $exchanger in its audience"
 exchange "$exchanger" "$exchanger_secret_file" "$scratch/person-token" --data "scope=$exchange_scope"
 expect_refusal "the exchange of a person's token" 403 access_denied
+
+# The exchanged token names the speech service's group only while the principal is in it, which is all the realm adds: the
+# service decides by the group.
+group_id="$(admin GET "$realm/group-by-path$speech_group" | jq --raw-output .id)"
+removed_membership_path="$account_path/groups/$group_id"
+admin DELETE "$removed_membership_path"
+[ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant outside $speech_group was refused"
+exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
+[ "$exchange_status" = 200 ] || fail "the exchange of $agent's token outside $speech_group got $exchange_status '$(exchange_error)'"
+[ "$(jwt_part 2 "$(jq --raw-output .access_token "$scratch/answer")" | jq --arg group "$speech_group" '.groups | index($group) == null')" = true ] ||
+  fail "the exchanged token names $speech_group though $agent is not in it"
+admin PUT "$removed_membership_path"
+removed_membership_path=""
+echo "the exchanged token names $speech_group only while $agent is in it"
 
 # A switch-off of the exchanging client, the agent client or its service account stops the exchange of a token minted
 # before.
