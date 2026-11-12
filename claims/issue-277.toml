@@ -1,0 +1,8 @@
+claim_id = "ffe941c1caa645bba2dad620dae4ce75"
+agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
+role = "builder"
+base = "8d3fd11367411ed955c7cc43995e754088d080dd"
+branch = "claude/issue-277-own-agents-paragraph"
+scope = ["infrastructure/legal/built", "infrastructure/legal/sections/litellm/datenschutz.html", "infrastructure/legal/stand.toml"]
+opened_commit = "723f437689184fcd4ea647a0beadc6a80a0dd3e3"
+whole_reason = "The section and the pages generated from it change together"
