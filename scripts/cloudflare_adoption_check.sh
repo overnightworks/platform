@@ -27,8 +27,8 @@ command -v jq >/dev/null || fail "jq is not installed"
 # and deletes nothing, imports every ruleset and setting at no-op, updates at most the content of the record www, and
 # imports every declared object the state does not hold (an object the state holds is at no-op without an import).
 # A plan without any import is a later plan.
-# (Resource instances that a delete, a forget or a replacement touches say nothing about the state in this judgement,
-# so such a plan stays an adoption and stops on that action.)
+# A delete, forget or replacement beside an import stops here; in a plan without any import, apply_opentofu.sh's
+# delete refusal stops it.
 judgement="$(jq --slurp --argjson allow "${allow_ruleset_update}" '
   def strip_index: gsub("\\[[^\\]]*\\]"; "");
   def actions_text: .change.actions | join(",");
