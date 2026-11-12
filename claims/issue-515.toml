@@ -3,6 +3,6 @@ agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
 role = "builder"
 base = "655af8c9ad816c7ef2dc0579fe13b842c07374de"
 branch = "claude/issue-515-songmaker-pull-layer"
-scope = [".github/workflows/ci.yml", "apps/songmaker", "clusters/pc/apps.yaml", "docs/app.md", "tests/flux", "tests/images", "tests/legal", "tests/songmaker", "tests/workloads"]
+scope = [".github/workflows/ci.yml", "apps/songmaker", "clusters/pc/apps.yaml", "docs/app.md", "infrastructure/legal/app-texts.toml", "tests/flux", "tests/images", "tests/legal", "tests/songmaker", "tests/workloads"]
 opened_commit = "01e4e621f6dc6a3934a73da856d29d7789f0bed6"
 whole_reason = "The Component, the pull layer and the checks that follow the ref to its new owner prove the ordering only together."
