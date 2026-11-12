@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# The web's route, as the layer applied it: a Pod beside cloudflared gets the web's health answer through Traefik for the
-# host the readiness probe names, the Ingress holds exactly the two origins the web is configured with, and no Pod
-# reaches the web's Service directly. It needs CLIENT_POD, CLIENT_IMAGE, TUNNEL_NAMESPACE and OTHER_NAMESPACE, a
-# Namespace the cell creates and deletes.
+# The web's route, as the layer applied it: a Pod beside cloudflared gets the web's health answer through Traefik for
+# each host the Ingress routes, the tunnel sends each of those hosts to Traefik's web port, the Ingress holds exactly
+# the two origins the web is configured with, and no Pod reaches the web's Service directly. It needs CLIENT_POD,
+# CLIENT_IMAGE, TUNNEL_NAMESPACE and OTHER_NAMESPACE, a Namespace the cell creates and deletes.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -30,9 +30,17 @@ echo "the Ingress routes exactly the hosts of the web's two origins: ${ingress_h
 
 service_url="http://$web.$namespace.svc:$(yq '.spec.rules[0].http.paths[0].backend.service.port.number' <<<"$ingress")"
 traefik_port="$(kubectl --namespace traefik get service traefik --output jsonpath='{.spec.ports[?(@.name=="web")].port}')"
-request "$TUNNEL_NAMESPACE" web-health-through-traefik "$probe_host" "http://traefik.traefik.svc:$traefik_port$probe_path"
-[ "$status" = 200 ] || fail "Traefik answered $status, not 200, to a Pod in $TUNNEL_NAMESPACE for $probe_host$probe_path, curl exit code $exit_code"
-echo "Traefik routes $probe_host: a Pod in $TUNNEL_NAMESPACE got 200 for $probe_path"
+tunnel_lines="$(kubectl --namespace "$TUNNEL_NAMESPACE" get configmap cloudflared --output jsonpath='{.data.config\.yaml}')"
+for ingress_host in $ingress_hosts; do
+  request "$TUNNEL_NAMESPACE" "web-health-through-traefik-${ingress_host//./-}" "$ingress_host" "http://traefik.traefik.svc:$traefik_port$probe_path"
+  [ "$status" = 200 ] || fail "Traefik answered $status, not 200, to a Pod in $TUNNEL_NAMESPACE for $ingress_host$probe_path, curl exit code $exit_code"
+  echo "Traefik routes $ingress_host: a Pod in $TUNNEL_NAMESPACE got 200 for $probe_path"
+  # The tunnel is the only way the host reaches the internet, and forwards to the Service this Pod just asked.
+  tunnel_service="$(HOST="$ingress_host" yq '.ingress[] | select(.hostname == strenv(HOST)) | .service' <<<"$tunnel_lines")"
+  [[ $tunnel_service =~ ^http://traefik\.traefik\.svc(\.cluster\.local)?:$traefik_port/?$ ]] ||
+    fail "the tunnel's lines send $ingress_host to '$tunnel_service', not to the Service traefik of namespace traefik at port $traefik_port"
+  echo "the tunnel sends $ingress_host to Traefik's web port"
+done
 
 kubectl create namespace "$OTHER_NAMESPACE"
 for client_namespace in "$OTHER_NAMESPACE" "$TUNNEL_NAMESPACE"; do

@@ -19,6 +19,10 @@ data:
         service: http://traefik.traefik.svc.cluster.local:80
       - hostname: auth.hallucinai.de
         service: http://traefik.traefik.svc.cluster.local:80
+      - hostname: presentator.hallucinai.de
+        service: http://traefik.traefik.svc.cluster.local:80
+      - hostname: presentator-talk.hallucinai.de
+        service: http://traefik.traefik.svc.cluster.local:80
       - service: http_status:404
 ---
 # The token in the Secret tunnel-token, applied from platform-secrets, names the tunnel and carries its credential, so
@@ -40,7 +44,7 @@ spec:
       annotations:
         # cloudflared reads its lines once, when it starts, so a changed line must roll the pod: this is the sha256 of
         # the ConfigMap's data config.yaml, and `cluster` fails with the right value when the two differ.
-        checksum/config: e42654fc04ab9163765c5effe41233731cc5deceeca92deb41b2fe0e3fc0c5e7
+        checksum/config: 0411a131241609ea8b00dd16dd6b5e080d079eea83098512773ee42de17c8024
     spec:
       automountServiceAccountToken: false
       securityContext:

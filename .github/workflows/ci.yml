@@ -576,7 +576,7 @@ jobs:
         if: matrix.part == 'apps'
         run: tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh
 
-      - name: Assert that a Pod beside cloudflared gets presentator's health answer through Traefik for the host its probe names, that its Ingress holds exactly the web's two origins and that no Pod reaches its Service directly
+      - name: Assert that a Pod beside cloudflared gets presentator's health answer through Traefik for each host its Ingress routes, that the tunnel sends each of them to Traefik, that its Ingress holds exactly the web's two origins and that no Pod reaches its Service directly
         if: matrix.part == 'apps'
         env:
           # A namespace that is neither Traefik's nor the tunnel's, created and deleted by the cell.
