@@ -38,6 +38,11 @@ spec:
               value: postgresql://skat@postgres:5432/skat
             - name: SKAT_DATABASE_PASSWORD_FILE
               value: /run/secrets/postgres/password
+            - name: SKAT_OPERATOR_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: skat
+                  key: operator_account_id
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -69,6 +74,11 @@ spec:
               value: postgresql://skat@postgres:5432/skat
             - name: SKAT_DATABASE_PASSWORD_FILE
               value: /run/secrets/postgres/password
+            - name: SKAT_OPERATOR_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: skat
+                  key: operator_account_id
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicy below admits
             # only Traefik's, so no other pod can name a client address in X-Forwarded-For.
             - name: SKAT_TRUSTED_PROXIES
