@@ -1,8 +1,0 @@
-claim_id = "45276b1c65364484bc158a5d898090d4"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "8d3fd11367411ed955c7cc43995e754088d080dd"
-branch = "claude/issue-487-litellm-key-replace"
-scope = [".github/workflows/ci.yml", "docs/operations.md", "docs/runbooks/change-ai-keys-and-budgets.md", "mise.toml", "scripts/litellm_keys.sh", "tests/litellm"]
-opened_commit = "1793a01841ad99937932c8d451f4e9eb0a878b05"
-whole_reason = "The flag, its cell and the two documents that state the command's contract change together."
