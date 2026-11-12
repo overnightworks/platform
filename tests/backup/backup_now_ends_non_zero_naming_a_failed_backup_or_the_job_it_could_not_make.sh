@@ -39,7 +39,7 @@ task_output=
 drive() {
   : >"$calls"
   task_status=0
-  task_output="$(cd "$repository_root" && PATH="$fake_bin:$PATH" KUBECONFIG=/nonexistent FAKE_CALLS="$calls" \
+  task_output="$(cd "$repository_root" && PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl KUBECONFIG=/nonexistent FAKE_CALLS="$calls" \
     FAKE_WAIT_STATUS="$1" FAKE_REASON="$2" FAKE_JOB_STATUS="$3" scripts/backup_now.sh somewhere 2>&1)" || task_status=$?
 }
 made_a_job() { grep -q "create job" "$calls"; }
