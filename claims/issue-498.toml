@@ -1,8 +1,0 @@
-claim_id = "a01953a738444de6ab0625d74e46cd47"
-agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
-role = "builder"
-base = "a1c43b19e1801d3257d926aa49aa93d30b915e86"
-branch = "claude/issue-498-zone-rulesets"
-scope = ["docs/cloudflare-zone.md", "docs/runbooks/plan-the-cloudflare-zone.md", "mise.toml", "src/opentofu/cloudflare", "tests/cloudflare"]
-opened_commit = "5eb4a2d2191c33231bfbece436e7fb58bc20b814"
-whole_reason = "The three rulesets share the host match and the records' dependency on them, and are reviewed side by side against hal's one file."
