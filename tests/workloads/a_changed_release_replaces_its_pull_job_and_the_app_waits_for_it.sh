@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Usage: CANDIDATE_REVISION=<sha> CANDIDATE_BRANCH=<branch> CANDIDATE_SOURCE_URL=<url> RUNNER_TEMP=<dir> \
 #   tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh
-# Run after the candidate was reconciled and served by tests/flux/serve_the_candidate_commit.sh. For every directory
-# apps/<app>/pull it commits a child of the candidate whose release reference differs, serves it as the candidate branch
-# and reconciles it. A Job's template is immutable, so the pull layer applies the new reference only if Flux re-creates the
-# Job: the cell waits for both layers to apply the new commit, requires the Job to be a new object, and then judges the
-# new state with the cell of the first release. The new reference is the app's previous release, the latest tag and digest
-# that the history of apps/<app> removed and the release no longer holds, so its digest is another valid image that the
-# node has not pulled.
+# Run after the candidate was reconciled and served by tests/flux/serve_the_candidate_commit.sh, and last of its part: it
+# leaves the app on a release that may not start. For every directory apps/<app>/pull it commits a child of the candidate
+# whose release reference differs, serves it as the candidate branch and reconciles it. A Job's template is immutable, so
+# the pull layer applies the new reference only if Flux re-creates the Job: the cell waits for the pull layer to apply the
+# new commit, requires the Job to be a new object, and then judges the new state with the cell of the first release. The
+# new reference is the app's previous release, the latest tag and digest that the history of apps/<app> removed and the
+# release no longer holds, so its digest is another valid image that the node has not pulled and the Job takes its time.
+# The app's layer is not waited for: a previous release may need a setting the current manifest no longer sets, so its
+# pods never turn ready and the layer never records the commit. The order is judged from the objects the layer creates,
+# which the cell of the first release reads until the app's pods report the new reference.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -54,14 +57,13 @@ scratch="$(mktemp -d)"
 RUNNER_TEMP="$scratch" CANDIDATE_REVISION="$new_revision" "$cells/../flux/reconcile_the_candidate_tree.sh" >/dev/null
 flux reconcile kustomization flux-system --with-source --timeout=5m
 
-layer_applied() {
-  [ "$(kubectl --namespace flux-system get kustomization "$1" \
+pull_layer_applied() {
+  [ "$(kubectl --namespace flux-system get kustomization "$1-pull" \
     -o jsonpath='{.status.lastAppliedRevision}{" "}{.status.conditions[?(@.type=="Ready")].status}')" = "${CANDIDATE_BRANCH}@sha1:${new_revision} True" ]
 }
 for app in "${apps[@]}"; do
-  until_true 300 "the Kustomization $app-pull applied $new_revision" layer_applied "$app-pull"
-  until_true 300 "the Kustomization $app applied $new_revision" layer_applied "$app"
-  echo "the Kustomizations $app-pull and $app applied $new_revision"
+  until_true 300 "the Kustomization $app-pull applied $new_revision" pull_layer_applied "$app"
+  echo "the Kustomization $app-pull applied $new_revision"
 done
 
 jobs_after="$(job_uids)"
@@ -70,4 +72,14 @@ while read -r namespace uid; do
   echo "the Job $namespace/pull of $uid was replaced"
 done <<<"$jobs_before"
 
-CANDIDATE_REVISION="$new_revision" "$cells/pull_layers_finish_before_their_app_rolls.sh"
+# The cell of the first release fails while the app's template still holds the old reference or its new pods have not
+# pulled the new one; what it reads about the order never changes once it exists, so the last failure stays visible.
+deadline=$((SECONDS + 300))
+until judgement="$(CANDIDATE_REVISION="$new_revision" "$cells/pull_layers_finish_before_their_app_rolls.sh" 2>&1)"; do
+  if [ "$SECONDS" -ge "$deadline" ]; then
+    echo "$judgement"
+    fail "within the time: the pods of every app run the new release and the Jobs completed before their ReplicaSets"
+  fi
+  sleep 5
+done
+echo "$judgement"
