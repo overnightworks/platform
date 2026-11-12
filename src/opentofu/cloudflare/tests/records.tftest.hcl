@@ -1,5 +1,5 @@
 # Proves docs/cloudflare-zone.md: the root declares one proxied CNAME to the platform's tunnel for each hostname of the
-# tunnel's lines and for the redirect-only name www, adopts a live single CNAME by import and never creates a second one.
+# tunnel's lines and for the redirected names (the apex and www), adopts a live single CNAME by import and never creates a second one.
 mock_provider "cloudflare" {}
 
 variables {
@@ -23,18 +23,24 @@ override_data {
   }
 }
 
-run "each_hostname_of_the_file_and_www_get_a_proxied_cname_to_the_tunnel" {
+run "each_hostname_of_the_file_and_the_redirected_names_get_a_proxied_cname_to_the_tunnel" {
   command = plan
 
   plan_options {
     target = [cloudflare_dns_record.host]
   }
 
+  # The records wait for the rulesets, whose facts judge the hostnames of the file, so this run reads the shipped one.
+  variables {
+    tunnel_lines_file = "../../../infrastructure/cloudflared/config.yaml"
+  }
+
   assert {
-    condition = toset(keys(cloudflare_dns_record.host)) == toset([
-      "first.hallucinai.de", "second.hallucinai.de", "www.hallucinai.de"
-    ])
-    error_message = "The records are not the file's hostnames and www."
+    condition = toset(keys(cloudflare_dns_record.host)) == toset(concat(
+      [for rule in yamldecode(file("../../../infrastructure/cloudflared/config.yaml")).ingress : rule.hostname if contains(keys(rule), "hostname")],
+      local.redirect.hostnames
+    ))
+    error_message = "The records are not the file's hostnames and the redirected names."
   }
 
   assert {
@@ -48,45 +54,6 @@ run "each_hostname_of_the_file_and_www_get_a_proxied_cname_to_the_tunnel" {
   assert {
     condition     = alltrue([for record in values(cloudflare_dns_record.host) : record.zone_id == data.cloudflare_zone.hallucinai.id])
     error_message = "A record is not in the zone."
-  }
-}
-
-run "a_hostname_added_to_the_file_adds_a_record" {
-  command = plan
-
-  plan_options {
-    target = [cloudflare_dns_record.host]
-  }
-
-  variables {
-    tunnel_lines_file = "tests/hosts_three.yaml"
-  }
-
-  assert {
-    condition = toset(keys(cloudflare_dns_record.host)) == toset([
-      "first.hallucinai.de", "second.hallucinai.de", "third.hallucinai.de", "www.hallucinai.de"
-    ])
-    error_message = "The added hostname has no record."
-  }
-}
-
-run "every_hostname_of_the_tunnels_lines_has_a_record" {
-  command = plan
-
-  plan_options {
-    target = [cloudflare_dns_record.host]
-  }
-
-  variables {
-    tunnel_lines_file = "../../../infrastructure/cloudflared/config.yaml"
-  }
-
-  assert {
-    condition = alltrue([
-      for rule in yamldecode(file("../../../infrastructure/cloudflared/config.yaml")).ingress :
-      !contains(keys(rule), "hostname") || contains(keys(cloudflare_dns_record.host), rule.hostname)
-    ])
-    error_message = "A hostname of the tunnel's lines has no record."
   }
 }
 
