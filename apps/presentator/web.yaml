@@ -67,7 +67,7 @@ spec:
             - name: PRESENTATOR_AGENT__GATEWAY__KEY_FILE
               value: /run/secrets/litellm_key
             - name: PRESENTATOR_AGENT__API_GROUP
-              value: /services/agent-service/api
+              value: /services/litellm
             - name: PRESENTATOR_SPEECH_SERVICE
               value: http://speech-runtime.speech-runtime.svc.cluster.local:8080
             - name: PRESENTATOR_SPEECH_SERVICE_SCOPE
