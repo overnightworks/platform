@@ -13,9 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 apply_stand_in() {
   local generation
   flux suspend kustomization flux-system >/dev/null
-  # A reconcile of the root already running ends first, since it would put the layer's own path back over the stand-in.
-  kubectl --namespace flux-system wait kustomization/flux-system --for=condition=Ready --timeout=4m ||
-    fail "within the time: no reconcile of the root Kustomization flux-system is running"
+  wait_for_the_root_to_stop_reconciling
   generation="$(kubectl apply --output jsonpath='{.metadata.generation}' -f - <<'YAML'
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -41,6 +39,18 @@ YAML
     --for=jsonpath="{.status.observedGeneration}=$generation" --timeout=4m &&
     kubectl --namespace flux-system wait kustomization/presentator --for=condition=Ready --timeout=4m ||
     { show_why_the_stand_in_is_not_ready; fail "within the time: the stand-in Kustomization presentator is Ready"; }
+}
+
+# wait_for_the_root_to_stop_reconciling: the root is suspended, so a reconcile already running is the last one, and it
+# would put the layer's own path back over the stand-in. The root's Ready is no sign of it, since a suspended
+# root was seen never Ready; the controller marks a running reconcile with the condition Reconciling.
+wait_for_the_root_to_stop_reconciling() {
+  local deadline=$((SECONDS + 240))
+  while [[ "$(kubectl --namespace flux-system get kustomization flux-system \
+    --output jsonpath='{.status.conditions[?(@.type=="Reconciling")].status}')" == True ]]; do
+    [ "$SECONDS" -lt "$deadline" ] || fail "within the time: the reconcile of the root Kustomization flux-system ends"
+    sleep 1
+  done
 }
 
 # show_why_the_stand_in_is_not_ready: the Kustomization's verdict, the namespace's Pods and its Warning events, which
