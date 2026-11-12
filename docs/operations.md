@@ -87,3 +87,12 @@ document and the group `/services/litellm/admin`, and LiteLLM's budget `litellm-
 first write; it then writes and reads back, in this order, the budget (no limit, `1mo`, created or corrected), the
 membership and the customer row, which is `/customer/new` under agent-runtime's `person_fingerprint` of issuer and
 person id or `/customer/update` of `budget_id` alone, so spend and other fields stay. (OPS-15)
+
+`mise run litellm:key <app> [--replace]` registers the value of the key `litellm_key` of the Secret `<app>` as the key of
+the table's row `<app>`, with the row's budget and limits, read back; it prints `<app> made`, or `<app> unchanged` when
+the alias already holds that value. Another value under the alias is refused, changing nothing, and the refusal names
+`--replace`. With `--replace` the one key under the alias is deleted by its hash, which no other alias shares, and the
+Secret's value is registered; it prints `<app> replaced`. LiteLLM binds spend to a key, so the replaced key's spend does
+not carry over and the app's period starts anew. The alias holds no key between the two writes: a failure there says that
+the alias holds no key (or may hold none or the new one, when an answer was lost), names the delete, and the same command
+completes it. (OPS-16)
