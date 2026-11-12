@@ -32,18 +32,21 @@ jobs:
       - name: Validate the Dependabot configuration against its schema
         run: uvx --no-build check-jsonschema@0.39.0 --builtin-schema vendor.dependabot .github/dependabot.yml
 
-      - name: Check that every directory under apps/ has its Kustomization over it, and every one of those a directory
+      - name: Check that every directory under apps/ has its Kustomization over it, its pull layer's directory its own, and every one of those a directory
         # pipefail: a find or yq that fails after printing its names must fail the step, not pass the comparison.
         shell: bash
         run: |
-          directories="$(find apps -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)"
-          kustomizations="$(yq --no-doc 'select(.kind == "Kustomization" and .spec.path == "./apps/" + .metadata.name) | .metadata.name' clusters/pc/apps.yaml | sort)"
-          every="$(yq --no-doc 'select(.kind == "Kustomization") | .metadata.name' clusters/pc/apps.yaml | sort)"
-          [ "$directories" = "$kustomizations" ] && [ "$every" = "$kustomizations" ] || {
-            echo "::error::apps/ holds [$(echo $directories)], clusters/pc/apps.yaml holds Kustomizations [$(echo $every)] of which [$(echo $kustomizations)] name their own directory"
+          directories="$(find apps -mindepth 1 -maxdepth 1 -type d -printf '%f\n')"
+          expected="$(for directory in $directories; do
+            echo "$directory ./apps/$directory"
+            if [ -d "apps/$directory/pull" ]; then echo "$directory-pull ./apps/$directory/pull"; fi
+          done | sort)"
+          actual="$(yq --no-doc 'select(.kind == "Kustomization") | .metadata.name + " " + .spec.path' clusters/pc/apps.yaml | sort)"
+          [ "$expected" = "$actual" ] || {
+            echo "::error::apps/ and its pull layers hold [$(echo $expected)], clusters/pc/apps.yaml holds Kustomizations [$(echo $actual)]"
             exit 1
           }
-          echo "each directory under apps/ has its Kustomization: $(echo $directories)"
+          echo "each directory under apps/ and each pull layer has its Kustomization: $(echo $expected)"
 
       - name: Install the pinned tools
         run: |
@@ -100,6 +103,9 @@ jobs:
 
       - name: Check that the Renovate report check fails naming a missing report, a report with no dependency and each missing or skipped pin
         run: tests/renovate/report_check_names_each_missing_pin.sh
+
+      - name: Check that every pull layer mounts each app ref its app renders and every image volume of its Job, and that a missing ref and an unmounted volume fail
+        run: mise exec -- tests/workloads/pull_layers_mount_every_app_ref_their_app_runs.sh
 
   cluster:
     # GitHub appends matrix values to a literal job name, and the gate looks for the name cluster.
@@ -333,6 +339,10 @@ jobs:
       - name: Assert that each app runs at its full app ref after platform-secrets, pulled through its pull Secret
         if: matrix.part == 'core'
         run: tests/workloads/apps_run_at_their_full_ref.sh
+
+      - name: Assert that each pull layer applied the candidate before its app's layer, that its Job completed before the app's ReplicaSet was created and kept its pod, and that the app's pods found the image already present
+        if: matrix.part == 'core'
+        run: tests/workloads/pull_layers_finish_before_their_app_rolls.sh
 
       - name: Assert that Traefik refuses the back-channel logout path and its spellings on every routed host while a neighbouring path reaches the app, that the Service still answers it in-namespace, and that the refusal holds in a restarted pod
         if: matrix.part == 'core'
@@ -569,11 +579,12 @@ jobs:
           APP_NAMESPACE: hopin
         run: tests/litellm/keys_table_drives_budgets_and_the_app_key.sh
 
-      - name: Assert that presentator's web passes restricted, its worker baseline without its init's NET_ADMIN, nothing else runs looser, and its render holds the contract
+      - name: Assert that presentator's web and its pull layer's Job pass restricted, its worker baseline without its init's NET_ADMIN, nothing else runs looser, and its render holds the contract
         if: matrix.part == 'apps'
         run: |
           kubectl kustomize apps/presentator >"$RUNNER_TEMP/presentator.yaml"
-          tests/presentator/pods_stay_within_their_levels.sh "$RUNNER_TEMP/presentator.yaml"
+          kubectl kustomize apps/presentator/pull >"$RUNNER_TEMP/presentator-pull.yaml"
+          tests/presentator/pods_stay_within_their_levels.sh "$RUNNER_TEMP/presentator.yaml" "$RUNNER_TEMP/presentator-pull.yaml"
 
       - name: Assert that presentator's Namespace enforces nothing and warns and audits at restricted, and that no Pod template of a layer runs as 61001 or 61002
         if: matrix.part == 'apps'
@@ -609,6 +620,12 @@ jobs:
       - name: Assert that backup:now refuses a namespace with no Schedule, with one Schedule and no CronJob restore-test and with both Schedules, making no object, and fails naming the restore test Job on an empty key table after a Backup that succeeded
         if: matrix.part == 'presentator-backup'
         run: tests/presentator/backup_now_refuses_what_it_cannot_run_and_fails_on_an_empty_key_table.sh
+
+      # Last of its part, which has room for the pull of a second release image: the cell leaves presentator on a release
+      # that may not start, so no step after it reads presentator.
+      - name: Assert that a release with a changed reference replaces the pull layer's Job, that the app's layer creates its new pods only after the new Job completed and that they find the image already present
+        if: matrix.part == 'presentator-backup'
+        run: tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells

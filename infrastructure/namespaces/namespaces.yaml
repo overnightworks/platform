@@ -100,9 +100,9 @@ metadata:
 ---
 # No level is enforced: the build worker's init container holds NET_ADMIN, which baseline refuses, and Pod Security
 # judges per Namespace. warn and audit hold the web's level; tests/presentator/pods_stay_within_their_levels.sh holds
-# every Pod template the layer renders to restricted and the worker to baseline without that init's capability. k8up's
-# Backup pod in this Namespace is proven by the cell that drives the Backup; its Check and Prune pods are proven by no
-# cell.
+# every Pod template the layer renders to restricted and the worker to baseline without that init's capability, and the
+# same cell holds the Job of the pull layer to restricted. k8up's Backup pod in this Namespace is proven by the cell
+# that drives the Backup; its Check and Prune pods are proven by no cell.
 apiVersion: v1
 kind: Namespace
 metadata:

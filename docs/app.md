@@ -28,6 +28,12 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
 - Its own Postgres in its Namespace, from the base `infrastructure/postgres` that `apps/<app>/kustomization.yaml`
   includes, so the app's one Kustomization owns it and `db:load-dump` can suspend it with the app.
 - Its private image, pulled through the Secret `ghcr-pull`. The ref moves in a pull request.
+- A pull layer, where the app has one (`apps/<app>/pull`, the Kustomization `<app>-pull`, on the base
+  `infrastructure/pull`): its Job pulls every image of the release onto the node as an image volume before the app's
+  layer, which waits for it, rolls them, so a `Recreate` stops the old pod only for the new one's start. The Component
+  `apps/<app>/release` owns the ref, and the app and its pull layer include it. A failed or slow pull leaves the pull
+  layer not Ready: the old release serves, and the app's other manifest changes wait with it. The finished Job's pod
+  stays until the next release replaces the Job, so the node keeps the image.
 - Provenance: platform's `images` job checks a bumped ref's tag, attestation and signer. Admission on the PC checks the
   ref's form only.
 
@@ -55,7 +61,9 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 | Image ref is a full app ref at a release, verified by tag, attestation and signer; the image comes from quality's path | platform's `images` job (tag, attestation, signer commit on quality's main); [quality's release path](https://github.com/overnightworks/quality/blob/main/docs/release.md) in the app's own release |
 | Image form (listed vendor at a digest, or a full app ref) on every Pod create or change | admission policy `app-and-vendor-images` |
 | Namespace enforces `restricted`; Deployment is `Recreate`, Available with one Ready pod, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
-| Manifests live under `apps/<app>/` and reconcile | the `cluster` job through the app's own Kustomization, named like its directory, which the `checks` job requires for every directory |
+| Manifests live under `apps/<app>/` and reconcile | the `cluster` job through the app's own Kustomization, named like its directory, which the `checks` job requires for every directory, and for a pull layer `<app>-pull` |
+| Every app ref an app renders is an image volume of its pull layer's Job, and a container mounts every volume | the `checks` job, by rendering both |
+| The pull layer's Job completes before the app's ReplicaSet is created, and the app's pods find the image on the node | the `cluster` job |
 | Env files and published compose ports pass quality's rules | quality's gate rules `env-file` and `compose-port`, in the app repository |
 | A readiness check exists; secrets are files; no second deploy path | not machine-checked; the move checklist's answers carry them |
 
