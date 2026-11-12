@@ -33,7 +33,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: ghcr.io/overnightworks/songmaker/web:2026.11.12.1@sha256:11c1f9693600d5c605518b49a067e7664b27a2dc507652249f9945122d7f0a56
+          image: ghcr.io/overnightworks/songmaker/web
           command: [/app/.venv/bin/alembic, upgrade, head]
           env:
             # The URL names no password: the file in /run/secrets is the password's one owner, the namespace's Postgres.
@@ -52,7 +52,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: web
-          image: ghcr.io/overnightworks/songmaker/web:2026.11.12.1@sha256:11c1f9693600d5c605518b49a067e7664b27a2dc507652249f9945122d7f0a56
+          image: ghcr.io/overnightworks/songmaker/web
           command: [/app/.venv/bin/songmaker, server, --port, '8080']
           ports:
             - name: http

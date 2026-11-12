@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: music-worker
-          image: ghcr.io/overnightworks/songmaker/music-worker:2026.11.12.1@sha256:3aecc1b49d606ac87e3e3fcc5d2abe0751c999cd6342042b1891c14ebe110c35
+          image: ghcr.io/overnightworks/songmaker/music-worker
           args: [songmaker_cli.music_worker.MusicWorkerSettings]
           env:
             # The URL names no password: the file in /run/secrets is the password's one owner, the namespace's Postgres.

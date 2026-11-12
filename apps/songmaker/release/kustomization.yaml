@@ -1,0 +1,21 @@
+# The release of songmaker's four images, each the full app ref of a release that changes only in a pull request: their
+# one owner, included by the layer and by its pull layer, so that the web, the migrate init container, the workers and
+# the pull layer's image volumes run one ref each. A bump changes the tags and digests together. The field spec makes the
+# transform rewrite the reference of a Job's image volume too, which it leaves alone by default.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: ghcr.io/overnightworks/songmaker/web
+    newTag: 2026.11.12.1
+    digest: sha256:11c1f9693600d5c605518b49a067e7664b27a2dc507652249f9945122d7f0a56
+  - name: ghcr.io/overnightworks/songmaker/music-worker
+    newTag: 2026.11.12.1
+    digest: sha256:3aecc1b49d606ac87e3e3fcc5d2abe0751c999cd6342042b1891c14ebe110c35
+  - name: ghcr.io/overnightworks/songmaker/scoring-worker
+    newTag: 2026.11.12.1
+    digest: sha256:f122d5444313a977e9b989131a04dd166d6ce9f02ff1182b49b873f778f3269b
+  - name: ghcr.io/overnightworks/songmaker/acestep-worker
+    newTag: 2026.11.12.1
+    digest: sha256:4544032fe0d3ffa7962073d9d9f41ef9a2383ec401f44d0edc0519bc1e92a15a
+configurations:
+  - image-volume.yaml
