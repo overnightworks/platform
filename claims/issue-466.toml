@@ -3,6 +3,6 @@ agent = "Claude c4160b1c-2ece-4402-a7f4-3927c10323de"
 role = "builder"
 base = "1146b59d294e3a2cc3610efdd69cfcef2d3d5294"
 branch = "claude/issue-466-the-realm-lets-the-agent-clients-into-sk"
-scope = ["infrastructure/keycloak/realm.yaml", "tests/keycloak"]
+scope = [".github/workflows/ci.yml", "infrastructure/keycloak/config-cli.yaml", "infrastructure/keycloak/realm.yaml", "tests/keycloak"]
 opened_commit = "67a04b7799be303f5e9661bce56e4dc2f98246bb"
 whole_reason = "tests/keycloak is a directory because the pull decides whether the cell joins the existing agent cell or stands beside it."
