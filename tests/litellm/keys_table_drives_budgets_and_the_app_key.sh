@@ -144,9 +144,9 @@ expected_routes="$(kubectl --namespace "$namespace" get configmap "$front_routes
 # equal_numbers <a> <b>: whether two numbers are equal as numbers, however each is written.
 equal_numbers() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a != "" && b != "" && a + 0 == b + 0) }'; }
 
-# The table without hopin, whose key does not exist yet; rows made with the master key stand in for the loaded copy,
-# with numbers other than the table's.
-set_table "$(yq 'del(.apps.hopin)' <<<"$table_original")"
+# The table without hopin and personas, whose keys do not exist yet; rows made with the master key stand in for the
+# loaded copy, with numbers other than the table's.
+set_table "$(yq 'del(.apps.hopin, .apps.personas)' <<<"$table_original")"
 admin /budget/new "$(ID="$budget_id" yq --null-input --output-format json --indent 0 \
   '{"budget_id": strenv(ID), "max_budget": 99, "budget_duration": "1d"}')" >/dev/null
 admin /key/generate '{"key_alias": "presentator", "max_budget": 7, "budget_duration": "1d", "max_parallel_requests": 2}' >/dev/null
@@ -181,7 +181,7 @@ echo "the table's numbers reach keys the command did not make and the person bud
 reset_before="$(row presentator budget_reset_at)"
 [[ $reset_before =~ ^[0-9]{4}- ]] || fail "presentator's row has no reset time: '$reset_before'"
 raised="$(yq '.apps.presentator.budget + 1' <<<"$table_original")"
-set_table "$(RAISED="$raised" yq 'del(.apps.hopin) | .apps.presentator.budget = (strenv(RAISED) | to_number)' <<<"$table_original")"
+set_table "$(RAISED="$raised" yq 'del(.apps.hopin, .apps.personas) | .apps.presentator.budget = (strenv(RAISED) | to_number)' <<<"$table_original")"
 run_task budget-change 0 litellm:keys
 [ "$(grep -c '^litellm:keys: key ' <<<"$output")" = 1 ] && grep -q "key presentator max_budget .* -> $raised\$" <<<"$output" ||
   fail "a changed budget did not change that field alone: $output"
@@ -209,6 +209,7 @@ put_secret_key() {
 put_secret_key "$app_key"
 run_task registration 0 litellm:key hopin
 equal_numbers "$(row hopin max_budget)" "$(yq '.apps.hopin.budget' <<<"$table_original")" || fail "hopin's row is not the table's"
+set_table "$(yq 'del(.apps.personas)' <<<"$table_original")"
 run_task after-registration 0 litellm:keys --plan
 grep -q ' 0 changes planned' <<<"$output" || fail "the new row differs from the table: $output"
 client_pod="${CLIENT_POD//@NAME@/keys-client}"
