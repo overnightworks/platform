@@ -48,7 +48,7 @@ judge_pull_layers() {
 
 problems="$(judge_pull_layers "$repository_root")"
 [ -z "$problems" ] || fail "a pull layer of this repository breaks its contract: ${problems//$'\n'/; }"
-echo "every pull layer of this repository mounts each app ref its app renders and mounts all its image volumes: $(ls -d "$repository_root"/apps/*/pull | sed 's|.*/apps/||; s|/pull||' | paste -sd' ')"
+echo "every pull layer of this repository mounts each app ref its app renders and mounts all its image volumes: $(find "$repository_root/apps" -mindepth 2 -maxdepth 2 -type d -name pull -printf '%P\n' | sed 's|/pull$||' | sort | paste -sd' ')"
 
 for case_directory in "$cases_directory"/*/; do
   case_name="$(basename "$case_directory")"
