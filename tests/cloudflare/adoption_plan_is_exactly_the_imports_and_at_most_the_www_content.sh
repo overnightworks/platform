@@ -23,19 +23,22 @@ secret_value=synthetic-secret-value
 www='cloudflare_dns_record.host["www.example.test"]'
 a_record='cloudflare_dns_record.host["a.example.test"]'
 deny='cloudflare_ruleset.deny_public'
+transform='cloudflare_ruleset.client_address'
 
-# Each mutation turns the baseline into the plan of the case; $www, $a and $deny are the addresses above.
+# Each mutation turns the baseline into the plan of the case; $www, $a, $deny and $ruleset are the addresses above, and
+# $ruleset is the one the case is about.
+ruleset_address="${deny}"
 update_www='(.resource_changes[] | select(.address == $www) | .change) |= (.actions = ["update"] | .after.content = "other-tunnel.cfargotunnel.com" | .after_unknown.modified_on = true)'
 # A plan of a state that holds the objects: nothing is an import any more.
 adopted='.resource_changes |= map(.change.importing = null)'
-ruleset_update="${adopted}"' | (.resource_changes[] | select(.address == $deny) | .change.actions) = ["update"]'
+ruleset_update="${adopted}"' | (.resource_changes[] | select(.address == $ruleset) | .change.actions) = ["update"]'
 
 # case_of <name> <jq program over the baseline> <status> <text the output holds>...: the output never holds a value.
 check_arguments=()
 case_of() {
   local name="$1" mutation="$2" expected_status="$3" plan="${work_directory}/plan.json" text
   shift 3
-  jq --arg www "${www}" --arg a "${a_record}" --arg deny "${deny}" "${mutation}" "${baseline}" >"${plan}"
+  jq --arg www "${www}" --arg a "${a_record}" --arg deny "${deny}" --arg ruleset "${ruleset_address}" "${mutation}" "${baseline}" >"${plan}"
   check_status=0
   check_output="$("${check}" "${check_arguments[@]}" <"${plan}" 2>&1)" || check_status=$?
   echo "${name}: status ${check_status}"
@@ -75,11 +78,14 @@ case_of "a new host after the adoption" "${adopted}"' | .resource_changes += [{a
 case_of "no change after the adoption" "${adopted}" 0 "state holds"
 case_of "an update of a record after the adoption" "${adopted}"' | (.resource_changes[] | select(.address == $a) | .change.actions) = ["update"]' 0 "state holds"
 
-# After the adoption an update of any ruleset needs the flag, whose name the refusal holds.
-case_of "a ruleset update after the adoption" "${ruleset_update}" 1 "${deny} update" "--allow-ruleset-update"
-check_arguments=(--allow-ruleset-update)
-case_of "a ruleset update after the adoption with the flag" "${ruleset_update}" 0 "${deny} update"
-# The flag loosens nothing in the adoption.
-case_of "a ruleset that is not at no-op in the adoption with the flag" '(.resource_changes[] | select(.address == $deny) | .change.actions) = ["update"]' 1 "${deny} update"
+# After the adoption an update of the deny or the transform ruleset needs the flag, whose name the refusal holds.
+for ruleset_address in "${deny}" "${transform}"; do
+  check_arguments=()
+  case_of "an update of ${ruleset_address} after the adoption" "${ruleset_update}" 1 "${ruleset_address} update" "--allow-ruleset-update"
+  check_arguments=(--allow-ruleset-update)
+  case_of "an update of ${ruleset_address} after the adoption with the flag" "${ruleset_update}" 0 "${ruleset_address} update"
+  # The flag loosens nothing in the adoption.
+  case_of "an update of ${ruleset_address} in the adoption with the flag" '(.resource_changes[] | select(.address == $ruleset) | .change.actions) = ["update"]' 1 "${ruleset_address} update"
+done
 check_arguments=(--unknown-flag)
 case_of "an unknown flag" '.' 1 "usage"

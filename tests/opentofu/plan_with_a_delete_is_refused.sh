@@ -178,7 +178,9 @@ done
 root=cloudflare
 adoption_plan="${repository_root}/tests/cloudflare/fixtures/adoption_plan.json"
 adopted_plan="$(jq -c '.resource_changes |= map(.change.importing = null)' "${adoption_plan}")"
-ruleset_update_plan="$(jq -c '(.resource_changes[] | select(.address == "cloudflare_ruleset.deny_public") | .change.actions) = ["update"]' <<<"${adopted_plan}")"
+ruleset_update_plan() {
+  jq -c --arg ruleset "$1" '(.resource_changes[] | select(.address == $ruleset) | .change.actions) = ["update"]' <<<"${adopted_plan}"
+}
 created_record_plan="$(jq -c '(.resource_changes[] | select(.index == "a.example.test") | .change) |= (.actions = ["create"] | .importing = null)' "${adoption_plan}")"
 
 run_script "adoption plan with a created record" 2 "${created_record_plan}"
@@ -193,15 +195,19 @@ run_script "adoption plan of imports under --apply" 2 "$(jq -c . "${adoption_pla
 [ "${script_status}" -eq 0 ] || fail "adoption plan of imports under --apply: status ${script_status}, not 0: ${output}"
 [ -e "${apply_marker}" ] || fail "adoption plan of imports under --apply: apply did not run"
 
-run_script "ruleset update without the flag" 2 "${ruleset_update_plan}"
-expect_refused "ruleset update without the flag" "--allow-ruleset-update"
-run_script "ruleset update without the flag under --apply" 2 "${ruleset_update_plan}" --apply
-expect_refused "ruleset update without the flag under --apply" "--allow-ruleset-update"
-run_script "ruleset update with the flag" 2 "${ruleset_update_plan}" --allow-ruleset-update
-[ "${script_status}" -eq 2 ] || fail "ruleset update with the flag: status ${script_status}, not 2: ${output}"
-run_script "ruleset update with the flag under --apply" 2 "${ruleset_update_plan}" --apply --allow-ruleset-update
-[ "${script_status}" -eq 0 ] || fail "ruleset update with the flag under --apply: status ${script_status}, not 0: ${output}"
-[ -e "${apply_marker}" ] || fail "ruleset update with the flag under --apply: apply did not run"
+for ruleset in cloudflare_ruleset.deny_public cloudflare_ruleset.client_address; do
+  ruleset_update="$(ruleset_update_plan "${ruleset}")"
+  run_script "update of ${ruleset} without the flag" 2 "${ruleset_update}"
+  expect_refused "update of ${ruleset} without the flag" "--allow-ruleset-update"
+  grep -qF -- "${ruleset} update" <<<"${output}" || fail "update of ${ruleset} without the flag: the refusal does not name it: ${output}"
+  run_script "update of ${ruleset} without the flag under --apply" 2 "${ruleset_update}" --apply
+  expect_refused "update of ${ruleset} without the flag under --apply" "--allow-ruleset-update"
+  run_script "update of ${ruleset} with the flag" 2 "${ruleset_update}" --allow-ruleset-update
+  [ "${script_status}" -eq 2 ] || fail "update of ${ruleset} with the flag: status ${script_status}, not 2: ${output}"
+  run_script "update of ${ruleset} with the flag under --apply" 2 "${ruleset_update}" --apply --allow-ruleset-update
+  [ "${script_status}" -eq 0 ] || fail "update of ${ruleset} with the flag under --apply: status ${script_status}, not 0: ${output}"
+  [ -e "${apply_marker}" ] || fail "update of ${ruleset} with the flag under --apply: apply did not run"
+done
 
 # The flag allows no delete.
 deleting_ruleset_plan="$(jq -c '(.resource_changes[] | select(.address == "cloudflare_ruleset.deny_public") | .change.actions) = ["delete", "create"]' <<<"${adopted_plan}")"
