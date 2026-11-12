@@ -1,0 +1,16 @@
+ingress:
+  - hostname: hallucinai.de
+    service: http://traefik.traefik.svc.cluster.local:80
+  - hostname: hopin.hallucinai.de
+    service: http://traefik.traefik.svc.cluster.local:80
+  - hostname: skat.hallucinai.de
+    service: http://traefik.traefik.svc.cluster.local:80
+  - hostname: songmaker.hallucinai.de
+    service: http://traefik.traefik.svc.cluster.local:80
+  - hostname: auth.hallucinai.de
+    service: http://traefik.traefik.svc.cluster.local:80
+  - hostname: presentator.hallucinai.de
+    service: http://traefik.traefik.svc.cluster.local:80
+  - hostname: presentator-talk.hallucinai.de
+    service: http://traefik.traefik.svc.cluster.local:80
+  - service: http_status:404

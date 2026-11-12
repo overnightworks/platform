@@ -35,9 +35,10 @@ if [ "${apply}" = true ]; then
   git -C "${repository_root}" fetch --quiet origin main
   [ "$(git -C "${repository_root}" rev-parse HEAD)" = "$(git -C "${repository_root}" rev-parse origin/main)" ] ||
     fail "--apply runs only when HEAD is origin/main"
-  # An ignored file counts too: tofu reads every .tf and auto-loaded .tfvars file in the root.
-  [ -z "$(git -C "${repository_root}" status --porcelain --untracked-files=all --ignored=matching -- src/opentofu mise.toml scripts/apply_opentofu.sh)" ] ||
-    fail "--apply runs only with src/opentofu/, mise.toml and this script unchanged"
+  # An ignored file counts too: tofu reads every .tf and auto-loaded .tfvars file in the root. The Cloudflare root also
+  # reads the tunnel's lines, which name the zone's records.
+  [ -z "$(git -C "${repository_root}" status --porcelain --untracked-files=all --ignored=matching -- src/opentofu infrastructure/cloudflared/config.yaml mise.toml scripts/apply_opentofu.sh)" ] ||
+    fail "--apply runs only with src/opentofu/, the tunnel's lines, mise.toml and this script unchanged"
 fi
 
 # mise looks its tasks up from the current directory, so every mise call runs inside the repository.
