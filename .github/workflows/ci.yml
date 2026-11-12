@@ -461,7 +461,9 @@ jobs:
         env:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
-          # The allowlist of an agent service account's groups, the same for both agents.
+          # The agent client whose tokens the cells mint, and the allowlist of an agent service account's groups, the same
+          # for both agents.
+          AGENT_CLIENT: agent-mozart
           AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /agent-owners /services/speech-service
           # The client that exchanges an agent's token, the scope it asks for, and a client that must be refused.
           EXCHANGING_CLIENT: hopin
@@ -471,13 +473,25 @@ jobs:
           BASE_REF: origin/main
         run: |
           tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
-          # The agent client whose tokens the cells mint, once for each.
-          for AGENT_CLIENT in agent-mozart agent-leonardo; do
-            export AGENT_CLIENT
-            tests/keycloak/agent_client_tokens_and_groups.sh
-            tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
-          done
+          tests/keycloak/agent_client_tokens_and_groups.sh
+          tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
           tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh
+
+      # The second agent's run of the cells, in a part with room: the access part's time limit holds no second run.
+      - name: P2 cells for the second agent
+        if: matrix.part == 'observability'
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+          AGENT_CLIENT: agent-leonardo
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /agent-owners /services/speech-service
+          EXCHANGING_CLIENT: hopin
+          EXCHANGE_SCOPE: speech-service-audience
+          REFUSED_CLIENT: presentator
+          BASE_REF: origin/main
+        run: |
+          tests/keycloak/agent_client_tokens_and_groups.sh
+          tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
 
       - name: Assert that cutover:load refuses the cluster's own Keycloak dump, naming agent_owner and the platform's six objects, before it loads anything
         if: matrix.part == 'access'
