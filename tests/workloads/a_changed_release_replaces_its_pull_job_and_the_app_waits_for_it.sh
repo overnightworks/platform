@@ -5,8 +5,9 @@
 # apps/<app>/pull it commits a child of the candidate whose release reference differs, serves it as the candidate branch
 # and reconciles it. A Job's template is immutable, so the pull layer applies the new reference only if Flux re-creates the
 # Job: the cell waits for both layers to apply the new commit, requires the Job to be a new object, and then judges the
-# new state with the cell of the first release. A second release image would be a second download of the whole image, so
-# the tag changes and the digest stays: the reference, which the Job and the app share, changes either way.
+# new state with the cell of the first release. The new reference is the app's previous release, the latest tag and digest
+# that the history of apps/<app> removed and the release no longer holds, so its digest is another valid image that the
+# node has not pulled.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -33,9 +34,15 @@ trap 'git worktree remove --force "$transition"' EXIT
 for app in "${apps[@]}"; do
   release="$transition/apps/$app/release/kustomization.yaml"
   [ -f "$release" ] || fail "the pull layer of $app has no release at apps/$app/release/kustomization.yaml"
-  old_tag="$(yq '.images[].newTag' "$release")"
-  yq --inplace '.images[].newTag += "-next"' "$release"
-  echo "the release of $app moves from tag $old_tag to $(yq '.images[].newTag' "$release")"
+  current_tag="$(yq '.images[].newTag' "$release")"
+  current_digest="$(yq '.images[].digest' "$release")"
+  # "<tag> <digest>" of each release removed from apps/<app>, newest first, whichever file held it.
+  previous="$(git -C "$transition" log -p -U0 --format= "$CANDIDATE_REVISION" -- "apps/$app" |
+    awk '/^-[[:space:]]+newTag: /{tag=$3} /^-[[:space:]]+digest: sha256:/{print tag, $3}' |
+    { grep -v -F " $current_digest" || true; } | sed -n 1p)"
+  [ -n "$previous" ] || fail "the history of apps/$app holds no release with another digest than $current_digest"
+  NEW_TAG="${previous% *}" NEW_DIGEST="${previous#* }" yq --inplace '.images[].newTag = strenv(NEW_TAG) | .images[].digest = strenv(NEW_DIGEST)' "$release"
+  echo "the release of $app moves from $current_tag@$current_digest to ${previous% *}@${previous#* }"
 done
 git -C "$transition" -c user.name="release transition" -c user.email="release-transition@invalid" \
   commit --quiet --no-verify --all --message="Change the release reference of every pull layer's app"
