@@ -79,6 +79,7 @@ healthy_lines=(
   "ok redirect www.example.test /: 302 https://auth.example.test/"
   "ok legal example.test /legal: 200"
   "ok legal example.test /terms: 200"
+  "ok not-found example.test /icon: 404"
   "ok health example.test /legal: 200"
   "ok health auth.example.test /realms/synthetic/.well-known/openid-configuration: 200"
   "ok health app.example.test /health: 200"
@@ -107,6 +108,8 @@ case_of "a www that redirects elsewhere" '[{"host":"www.example.test","path":"/"
   "MISS redirect www.example.test /: got 302 https://elsewhere.test/"
 case_of "a legal page that does not answer" '[{"host":"example.test","path":"/terms","status":404}]' 1 \
   "MISS legal example.test /terms: got 404"
+case_of "a page the origin answers 404 that is redirected" '[{"host":"example.test","path":"/icon","status":302,"location":"https://auth.example.test/"}]' 1 \
+  "MISS not-found example.test /icon: got 302"
 case_of "a health path that does not answer" '[{"host":"app.example.test","path":"/health","status":500}]' 1 \
   "MISS health app.example.test /health: got 500"
 case_of "an HSTS header twice" '[{"host":"auth.example.test","path":"/realms/synthetic/.well-known/openid-configuration","hsts":2}]' 1 \

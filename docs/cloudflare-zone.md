@@ -30,8 +30,9 @@ Reader: whoever changes `src/opentofu/cloudflare`.
   never reach, and `health_path`, a path that answers 200 at the edge. Every hostname of the tunnel's lines has an
   entry, an empty `denied_paths` for a host that denies nothing, and the plan fails for a tunnel host without one and
   for a key that is no tunnel host. A new host therefore never gets no deny rule by omission. The same file holds the
-  `redirect`: the redirected names, their target and the pages and the files prefix the apex serves; each name is a
-  record name, so the zone check covers it.
+  `redirect`: the redirected names, their target and the pages and the files prefix the apex serves, with `not_found`
+  naming the pages among them that the origin deliberately answers 404; each name is a record name, so the zone check
+  covers it.
 - **Adoption of rulesets.** The zone's rulesets are looked up, and the one of kind `zone` in each of the three phases
   is imported with the id `zones/<zone id>/<ruleset id>`, never created beside it. A phase without one is created. Two
   in one phase fail the plan. The import keeps none of the zone's own rules, so a plan that shows a rule removed or a
@@ -101,7 +102,8 @@ per check, ending non-zero on any `MISS`:
 - every denied path of a host answers 403 with Cloudflare's ray header, also in another case, with an encoded slash
   and with a doubled slash;
 - the apex and `www` answer 302 to the redirect target;
-- every page of `redirect.serve.pages` on the apex answers 200, and so does every host's `health_path`;
+- every page of `redirect.serve.pages` on the apex answers 200, and so does every host's `health_path`, except the pages
+  of `redirect.serve.not_found`, which answer the origin's 404 and are not redirected;
 - the HSTS header of each health response stands once.
 
 The lines hold no time or id, so two runs against the same edge are equal. `cloudflare:test` runs the probe against a

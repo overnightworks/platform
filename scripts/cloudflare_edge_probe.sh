@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Request the zone's public edge from outside and print one line per check: every denied path of a host is refused with
 # 403 and Cloudflare's ray header, also in another case, with an encoded slash and with a doubled slash; the apex and www
-# redirect to the sign-in host; the apex's legal pages and every host's health path answer 200; the HSTS header stands
-# once. The hosts come from the tunnel's lines and the paths from src/opentofu/cloudflare/zone.yaml, the files the root
-# reads, so no list is restated here. The probe sends no credential and its lines hold no timing or id, so a run before
-# and a run after an apply are equal when the edge is.
+# redirect to the sign-in host; the apex's legal pages and every host's health path answer 200, and its pages that the
+# origin deliberately answers 404 are not redirected; the HSTS header stands once. The hosts come from the tunnel's
+# lines and the paths from src/opentofu/cloudflare/zone.yaml, the files the root reads, so no list is restated here. The
+# probe sends no credential and its lines hold no timing or id, so a run before and a run after an apply are equal when
+# the edge is.
 # Usage: scripts/cloudflare_edge_probe.sh
 # Exit: 0 every check holds, 1 a check misses (its line starts with MISS) or a declaration cannot be read.
 # EDGE_PROBE_LOOPBACK_PORT sends plain HTTP to that port of this machine instead of https to the public edge, for tests.
@@ -86,17 +87,18 @@ check_redirect() {
   verdict "redirect ${host} /" "${status}${location:+ ${location}}" "302 ${redirect_target}"
 }
 
-# check_page <host> <kind> <path>
+# check_page <host> <kind> <path> [expected status]
 check_page() {
   request "$1" "$3"
-  verdict "$2 $1 $3" "${status}" 200
+  verdict "$2 $1 $3" "${status}" "${4:-200}"
 }
 
 tunnel_hosts="$(yq --exit-status '.ingress[] | select(has("hostname")) | .hostname' "${tunnel_lines}")" ||
   fail "no host in ${tunnel_lines}"
 redirect_hosts="$(yq --exit-status '.redirect.hostnames[]' "${zone_facts}")" || fail "no redirect.hostnames in ${zone_facts}"
 redirect_target="$(yq --exit-status '.redirect.target' "${zone_facts}")" || fail "no redirect.target in ${zone_facts}"
-served_pages="$(yq --exit-status '.redirect.serve.pages[]' "${zone_facts}")" || fail "no redirect.serve.pages in ${zone_facts}"
+legal_pages="$(yq --exit-status '(.redirect.serve.pages - (.redirect.serve.not_found // []))[]' "${zone_facts}")" || fail "no redirect.serve.pages in ${zone_facts}"
+not_found_pages="$(yq '(.redirect.serve.not_found // [])[]' "${zone_facts}")" || fail "redirect.serve.not_found cannot be read from ${zone_facts}"
 
 while IFS= read -r host; do
   if ! fact "${host}" '.hosts[strenv(HOST)]' >/dev/null; then
@@ -115,7 +117,10 @@ while IFS= read -r host; do
   if grep -qxF -- "${host}" <<<"${redirect_hosts}"; then
     while IFS= read -r page; do
       check_page "${host}" legal "${page}"
-    done <<<"${served_pages}"
+    done <<<"${legal_pages}"
+    while IFS= read -r page; do
+      [ -z "${page}" ] || check_page "${host}" not-found "${page}" 404
+    done <<<"${not_found_pages}"
   fi
   check_page "${host}" health "${health_path}"
   verdict "hsts ${host}" "$(header_count strict-transport-security)" 1

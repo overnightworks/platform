@@ -44,7 +44,9 @@ def answer(host, raw_path):
         return 403, None
     if host in redirect["hostnames"]:
         served = host in apex and (path in redirect["serve"]["pages"] or path.startswith(redirect["serve"]["files"]))
-        return (200, None) if served else (302, redirect["target"])
+        if served:
+            return (404 if path in redirect["serve"].get("not_found", []) else 200), None
+        return 302, redirect["target"]
     if path == zone["hosts"].get(host, {}).get("health_path"):
         return 200, None
     return 404, None

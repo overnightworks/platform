@@ -13,5 +13,6 @@ redirect:
   hostnames: [example.test, www.example.test]
   target: https://auth.example.test/
   serve:
-    pages: [/legal, /terms]
+    pages: [/legal, /terms, /icon]
+    not_found: [/icon]
     files: /files/

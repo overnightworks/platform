@@ -29,10 +29,12 @@ hosts:
     health_path: /health
 
 # The names that answer 302 at the edge and never reach the tunnel; the apex also has a line, and the pages it serves
-# and the prefix of its files are left to the tunnel.
+# and the prefix of its files are left to the tunnel. not_found lists the pages that the origin deliberately answers 404,
+# which the redirect leaves to it all the same, so the browser's own request is not redirected.
 redirect:
   hostnames: [hallucinai.de, www.hallucinai.de]
   target: https://auth.hallucinai.de/
   serve:
     pages: [/impressum, /datenschutz, /nutzungsbedingungen, /favicon.ico]
+    not_found: [/favicon.ico]
     files: /_rechtliches/
