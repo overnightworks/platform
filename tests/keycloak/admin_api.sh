@@ -69,3 +69,21 @@ client_secret_to_file() {
   kubectl -n "$namespace" get secret keycloak -o go-template="{{index .data \"$key\" | base64decode}}" >"$2"
   mask_secret "$(<"$2")"
 }
+# put_changed <admin path of a client or user> <jq filter> [<jq argument>...]: writes back the representation the filter
+# changes; it goes through a file, since a confidential client's holds its secret. An attribute the filter leaves out
+# stays, so one is removed by setting it to null.
+put_changed() {
+  local path="$1" filter="$2" body_file status
+  shift 2
+  body_file="$(mktemp "$RUNNER_TEMP/put-changed.XXXXXX")"
+  admin GET "$path" | jq "$@" "$filter" >"$body_file" && admin PUT "$path" "@$body_file" >/dev/null
+  status=$?
+  rm -f -- "$body_file"
+  return "$status"
+}
+# set_enabled <admin path of a client or user> <true|false>
+set_enabled() { put_changed "$1" '.enabled = $enabled' --argjson enabled "$2"; }
+# sorted_list: the words of stdin, one per line, in byte order.
+sorted_list() { tr ' ' '\n' | grep . | LC_ALL=C sort; }
+# file_groups_of <username>: the groups REALM_FILE gives the user, sorted, one per line.
+file_groups_of() { USER="$1" yq '.users[] | select(.username == strenv(USER)) | .groups[]' "$REALM_FILE" | sorted_list; }

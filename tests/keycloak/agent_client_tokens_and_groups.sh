@@ -48,13 +48,12 @@ client_entry="$(CLIENT="$client" yq --output-format json '.clients[] | select(.c
 [ -n "$client_entry" ] || fail "$REALM_FILE declares no client $client"
 lifespan="$(yq --exit-status '.accessTokenLifespan' "$REALM_FILE")"
 agent_name="$(jq --raw-output '.protocolMappers[] | select(.name == "agent_name") | .config."claim.value"' <<<"$client_entry")"
-sorted_list() { tr ' ' '\n' | grep . | LC_ALL=C sort; }
 # mcp_hopin_audiences: the audiences of the scope mcp-hopin, each mapper read by its name, sorted.
 mcp_hopin_audiences="$(yq --exit-status '[.clientScopes[] | select(.name == "mcp-hopin") | .protocolMappers[]
   | select(.name == "mcp-hopin-audience" or .name == "mcp-hopin-exchange-audience")
   | .config."included.custom.audience" // .config."included.client.audience"] | .[]' "$REALM_FILE" | sorted_list)"
 [ "$(wc -l <<<"$mcp_hopin_audiences")" = 2 ] || fail "$REALM_FILE gives mcp-hopin '${mcp_hopin_audiences//$'\n'/ }', not two audiences"
-file_groups="$(USER="service-account-$client" yq '.users[] | select(.username == strenv(USER)) | .groups[]' "$REALM_FILE" | sorted_list)"
+file_groups="$(file_groups_of "service-account-$client")"
 [ "$file_groups" = "$(sorted_list <<<"$AGENT_GROUPS")" ] ||
   fail "$REALM_FILE gives $client the groups '${file_groups//$'\n'/ }', not the allowlist '$AGENT_GROUPS'"
 
@@ -269,11 +268,6 @@ stand_in_groups="$(jwt_part 2 "$(person_token "$stand_in")" | jq --raw-output '.
 echo "the stand-in's own token carries $stand_in_groups"
 
 # R4, R5: a switch-off stops new tokens, and a file that re-enabled it would undo that on the next apply.
-set_enabled() {
-  admin GET "$1" | jq --argjson enabled "$2" '.enabled = $enabled' >"$scratch/enabled-body"
-  admin PUT "$1" "@$scratch/enabled-body" >/dev/null
-  rm -f -- "$scratch/enabled-body"
-}
 set_client_enabled() { set_enabled "$realm/clients/$client_uuid" "$1"; }
 set_account_enabled() { set_enabled "$realm/users/$account_id" "$1"; }
 grant_error() { jq --raw-output '.error // ""' <<<"$token_body"; }
