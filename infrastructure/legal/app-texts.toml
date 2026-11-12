@@ -13,7 +13,6 @@ date = 2026-11-09
 sha256 = "901d03ad3bf0907bf65fb1431c39d9dc4f8ab5c3819fbc8b808af2683a096083"
 
 [presentator]
-tag = "v2026.11.12.1"
 
 [presentator.datenschutz]
 date = 2026-11-12

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Usage: CANDIDATE_REVISION=<sha> CANDIDATE_BRANCH=<branch> CANDIDATE_SOURCE_URL=<url> RUNNER_TEMP=<dir> \
-#   tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh
+#   tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh <app>...
 # Run after the candidate was reconciled and served by tests/flux/serve_the_candidate_commit.sh, and last of its part: it
-# leaves the app on a release that may not start. For every directory apps/<app>/pull it commits a child of the candidate
+# leaves each named app on a release that may not start. For each app, whose pull layer is apps/<app>/pull and whose
+# release at apps/<app>/release holds one image, it commits a child of the candidate
 # whose release reference differs, serves it as the candidate branch and reconciles it. A Job's template is immutable, so
 # the pull layer applies the new reference only if Flux re-creates the Job: the cell waits for the pull layer to apply the
 # new commit, requires the Job to be a new object, and then judges the new state with the cell of the first release. The
@@ -10,7 +11,10 @@
 # release no longer holds, so its digest is another valid image that the node has not pulled and the Job takes its time.
 # The app's layer is not waited for: a previous release may need a setting the current manifest no longer sets, so its
 # pods never turn ready and the layer never records the commit. The order is judged from the objects the layer creates,
-# which the cell of the first release reads until the app's pods report the new reference.
+# which the cell of the first release reads until the app's pods report the new reference. The apps are named by the
+# caller, since the previous release of each is a pull the part must have room for: songmaker's four images differ in
+# digest, and its history holds its releases inline, so its Job is replaced by the same base and the same Flux
+# re-creation that presentator's run proves, and its changed release is proven on the PC.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -18,17 +22,20 @@ cells="$(dirname "${BASH_SOURCE[0]}")"
 served="$RUNNER_TEMP/candidate-source/repository.git"
 transition="$RUNNER_TEMP/release-transition"
 
-apps=()
-for pull_directory in apps/*/pull; do
-  [ -d "$pull_directory" ] || continue
-  app="${pull_directory#apps/}"
-  apps+=("${app%/pull}")
+apps=("$@")
+[ "${#apps[@]}" -gt 0 ] || fail "no app is named"
+for app in "${apps[@]}"; do
+  [ -d "apps/$app/pull" ] || fail "the directory apps/$app/pull does not exist"
 done
-[ "${#apps[@]}" -gt 0 ] || fail "no directory apps/<app>/pull exists"
 
-# namespace and uid of each Job pull, one line each.
-job_uids() { kubectl get jobs --all-namespaces --field-selector=metadata.name=pull \
-  -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.uid}{"\n"}{end}' | sort; }
+# namespace and uid of the Job pull of each named app, one line each.
+job_uids() {
+  local app
+  for app in "${apps[@]}"; do
+    kubectl --namespace "$(kubectl kustomize "apps/$app/pull" | yq 'select(.kind == "Job") | .metadata.namespace')" \
+      get job pull -o jsonpath='{.metadata.namespace}{" "}{.metadata.uid}{"\n"}'
+  done | sort
+}
 jobs_before="$(job_uids)"
 [ -n "$jobs_before" ] || fail "no Job pull exists before the release changes"
 
@@ -37,6 +44,8 @@ trap 'git worktree remove --force "$transition"' EXIT
 for app in "${apps[@]}"; do
   release="$transition/apps/$app/release/kustomization.yaml"
   [ -f "$release" ] || fail "the pull layer of $app has no release at apps/$app/release/kustomization.yaml"
+  image_count="$(yq '.images | length' "$release")"
+  [ "$image_count" -eq 1 ] || fail "the release of $app holds $image_count images, not one"
   current_tag="$(yq '.images[].newTag' "$release")"
   current_digest="$(yq '.images[].digest' "$release")"
   # "<tag> <digest>" of each release removed from apps/<app>, newest first, whichever file held it.

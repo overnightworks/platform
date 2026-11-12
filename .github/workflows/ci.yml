@@ -625,7 +625,7 @@ jobs:
       # that may not start, so no step after it reads presentator.
       - name: Assert that a release with a changed reference replaces the pull layer's Job, that the app's layer creates its new pods only after the new Job completed and that they find the image already present
         if: matrix.part == 'presentator-backup'
-        run: tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh
+        run: tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh presentator
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells

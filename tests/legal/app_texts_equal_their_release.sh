@@ -25,16 +25,27 @@ while read -r key tag; do
   tag_of[$key]="$tag"
 done < <(awk 'NF == 2' <<<"$declared")
 
-# set_release_tag <key> <declared tag>: sets tag, so a failure is not captured by a command substitution. The images of an
-# app stand at ghcr.io/overnightworks/<key>: or ghcr.io/overnightworks/<key>/<part>:, and all of them name one version.
+# release_versions <key>: the versions of an app's images, one per line. An app with a Component apps/<key>/release has
+# them from the tags of its `images:` entries at ghcr.io/overnightworks/<key> or ghcr.io/overnightworks/<key>/<part>, the
+# one owner of the ref; any other app writes its refs inline under apps/<key>.
+release_versions() {
+  local key="$1" release="apps/$1/release/kustomization.yaml"
+  if [ -f "$release" ]; then
+    KEY="$key" yq '.images[] | select(.name | test("^ghcr[.]io/overnightworks/" + strenv(KEY) + "(/[a-z0-9-]+)?$")) | .newTag' "$release"
+  else
+    { grep -rhoE "ghcr\.io/overnightworks/$key(/[a-z0-9-]+)?:[^@\" ]+" "apps/$key" 2>/dev/null || true; } | sed 's/^[^:]*://'
+  fi
+}
+
+# set_release_tag <key> <declared tag>: sets tag, so a failure is not captured by a command substitution. All the images
+# of an app name one version.
 set_release_tag() {
-  local key="$1" declared_tag="$2" image_refs versions
-  image_refs="$(grep -rhoE "ghcr\.io/overnightworks/$key(/[a-z0-9-]+)?:[^@\" ]+" "apps/$key" 2>/dev/null | sort -u || true)"
-  if [ -n "$image_refs" ]; then
+  local key="$1" declared_tag="$2" versions
+  versions="$(release_versions "$key" | sort -u)"
+  if [ -n "$versions" ]; then
     [ "$declared_tag" = "-" ] || fail "$list names a tag for $key, which has images under apps/$key; drop the tag"
-    versions="$(grep -oE '[^:]+$' <<<"$image_refs" | sort -u)"
     [ "$(wc -l <<<"$versions")" -eq 1 ] ||
-      fail "the images of $key under apps/$key are at more than one version: $(tr '\n' ' ' <<<"$image_refs")"
+      fail "the images of $key under apps/$key are at more than one version: $(tr '\n' ' ' <<<"$versions")"
     tag="v$versions"
     return
   fi
