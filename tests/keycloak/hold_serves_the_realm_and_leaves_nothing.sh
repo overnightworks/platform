@@ -54,6 +54,16 @@ finish() {
 }
 trap finish EXIT
 
+# known_secrets <name>: keeps the values of a running hold's generated secrets, which its scratch directory loses at the
+# end, for the search of the outputs.
+known_secrets() {
+  local secret
+  mkdir -p "$work/known-secrets"
+  for secret in "$work/$1-scratch"/secrets/*; do
+    cp "$secret" "$work/known-secrets/$1.$(basename "$secret")"
+  done
+}
+
 # start_hold <name> <stdin file> <command>...: runs the hold in the background with its output in $work/<name>.{out,err}.
 start_hold() {
   local name="$1" stdin="$2"
@@ -107,6 +117,7 @@ network="$(field keycloak_network)" project1="$(field project)"
 [ -z "$(find "$work/hold1-scratch/secrets" -type f ! -perm 600)" ] &&
   [ -z "$(find "$work/hold1-scratch" -maxdepth 1 -name '*.env' ! -perm 600)" ] ||
   fail "a generated secret or env file of hold 1 is not at mode 600"
+known_secrets hold1
 public_host="${issuer#https://}"
 public_host="${public_host%%/*}"
 
@@ -155,6 +166,7 @@ until [ -f "$work/hold2-scratch/project" ] && project2="$(<"$work/hold2-scratch/
   sleep 1
 done
 [ "$project2" != "$project1" ] || fail "both holds run the project $project1"
+known_secrets hold2
 stopped=$SECONDS
 kill -TERM "$hold2_pid"
 await_exit "$hold2_pid" 120
@@ -178,8 +190,12 @@ echo "hold 1 ended $((SECONDS - stopped)) s after EOF"
 for project in "$project1" "$project2"; do
   [ -z "$(project_objects "$project")" ] || fail "the holds left $(project_objects "$project" | tr '\n' ' ')"
 done
+for scratch in "$work"/hold[12]-scratch; do
+  [ ! -e "$scratch/secrets" ] && [ -z "$(find "$scratch" -name '*.env')" ] ||
+    fail "$(basename "$scratch") kept a generated secret or env file after it ended"
+done
 secrets=0
-for secret in "$work"/hold1-scratch/secrets/* "$work"/hold2-scratch/secrets/*; do
+for secret in "$work"/known-secrets/*; do
   [ -f "$secret" ] || continue
   secrets=$((secrets + 1))
   if grep -qFf "$secret" "$work"/*.out "$work"/*.err; then fail "a generated secret is in the output of a hold"; fi

@@ -1083,7 +1083,7 @@ exec kubectl --namespace keycloak port-forward --address 127.0.0.1 service/keycl
 [tasks."keycloak:hold"]
 description = "Start a throwaway Keycloak with its Postgres from this tree's manifests in a compose project and on host ports of its own, apply master.yaml and realm.yaml, print one READY line with the URLs, the project and an admin client, and hold until EOF on stdin tears it down. A signal needs scripts/keycloak_hold.sh run through mise exec, since mise run exits on SIGTERM before the teardown ends. Run under probe-run"
 usage = '''
-flag "--scratch <dir>" required=#true help="A new or empty directory for the generated secrets, the env files and docker's log; exit 2 otherwise"
+flag "--scratch <dir>" required=#true help="A new or empty directory for the generated secrets and env files, which the hold removes when it ends, and for docker's log; exit 2 otherwise"
 '''
 quiet = true
 raw = true

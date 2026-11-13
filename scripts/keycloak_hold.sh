@@ -4,8 +4,9 @@
 # line `READY <json>` and holds until SIGTERM, SIGINT or EOF on stdin. Teardown removes every container, network and
 # volume of its compose project, and only of that one; it prints `HOLD ENDED` and exits 0. A failed bring-up, a signal
 # before READY or an object left after teardown prints `PROBE FAILED: <what>` and exits 1; a scratch directory that is
-# not new or empty exits 2. DIR holds the generated secrets, the env files, the project's name and docker's log (the
-# containers' log after a failure), and stays with the caller.
+# not new or empty exits 2. DIR holds the generated secrets and the env files while the hold runs and loses them on
+# every exit once docker's teardown ran; the project's name and docker's log (the containers' log after a failure) stay
+# with the caller.
 # Each run has its own compose project and its own host ports, so holds run side by side. The caller runs it under
 # probe-run. Keycloak serves edge_url itself; a client sends `Host: auth.hallucinai.de` and `X-Forwarded-Proto: https`
 # as Traefik would, from an address of the hold's network.
@@ -21,7 +22,7 @@ keycloak_manifest="$root/infrastructure/keycloak/keycloak.yaml"
 config_cli_manifest="$root/infrastructure/keycloak/config-cli.yaml"
 postgres_manifest="$root/infrastructure/postgres/postgres.yaml"
 kustomization="$root/infrastructure/keycloak/kustomization.yaml"
-project="" log="" child="" failure="" stop_signal="" fail_after_teardown=""
+project="" log="" scratch="" child="" failure="" stop_signal="" fail_after_teardown=""
 project_claimed=0 ready=0
 # Set by container_value.
 password_mount="" manifest_admin_url="" public_hostname="" admin_client_id="" admin_secret_ref=""
@@ -66,6 +67,8 @@ finish() {
     [ -z "$failure" ] || compose logs --no-color >"$scratch/containers.log" 2>&1 || true
     teardown || true
   fi
+  # The generated secrets and the env files that carry them outlive neither the hold nor a failed one.
+  [ -z "$scratch" ] || rm -rf "$scratch/secrets" "$scratch"/*.env
   [ -z "$fail_after_teardown" ] || failure="${failure:+$failure; }$fail_after_teardown"
   if [ "$ready" = 0 ] && [ -z "$failure" ]; then
     failure="${stop_signal:+stopped by $stop_signal before READY}"
