@@ -506,21 +506,24 @@ admin_command() {
   fi
 }
 
-case "${1-}" in
-  keys)
-    command_name=keys
-    shift
-    keys_command "$@"
-    ;;
-  key)
-    command_name=key
-    shift
-    key_command "$@"
-    ;;
-  admin)
-    command_name="admin"
-    shift
-    admin_command "$@"
-    ;;
-  *) fail "usage: scripts/litellm_keys.sh keys [--plan] | key <app> [--replace] | admin <username>" ;;
-esac
+# scripts/litellm_cache_probe.sh sources this file for the connection and the requests, and runs none of the commands.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "${1-}" in
+    keys)
+      command_name=keys
+      shift
+      keys_command "$@"
+      ;;
+    key)
+      command_name=key
+      shift
+      key_command "$@"
+      ;;
+    admin)
+      command_name="admin"
+      shift
+      admin_command "$@"
+      ;;
+    *) fail "usage: scripts/litellm_keys.sh keys [--plan] | key <app> [--replace] | admin <username>" ;;
+  esac
+fi

@@ -79,6 +79,12 @@ to Claude for the provider's prompt cache, and `false` leaves them unmarked. Lit
 metadata, where `litellm:keys` reads it back, and records the cache reads and writes of each call in its spend log row,
 so a key whose cache costs more than it saves is switched off here. (OPS-13)
 
+`mise run litellm:cache-probe <key file>` is the operator's live proof of that marking: it sends two identical streamed
+rounds, whose long system text is new to each run, with the app key read from the file to the smallest text model under
+one test person, prints each round's usage counts and the cache writes and reads LiteLLM's spend log holds for the key
+since the run began, and exits 1 unless round 1 wrote the cache, round 2 read it and the log counts that read. It writes
+the test person's customer row and two spend log rows; `mise run litellm:cache-probe --remove` deletes the row.
+
 `mise run litellm:keys [--plan]` makes the person budget (the id of `max_end_user_budget_id`) and each row's key equal
 to it, sending only the fields that differ, so a pure budget change keeps the period's reset; it prints the revision
 Flux applied to the table it read, which it refuses when absent or changed during the read, one line per field with old
