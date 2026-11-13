@@ -104,6 +104,9 @@ secret_file="$(field admin_client_secret_file)" realm="$(field realm)" issuer="$
 network="$(field keycloak_network)" project1="$(field project)"
 [[ $project1 == "$project_prefix"* ]] || fail "hold 1 names the project $project1, not one of $project_prefix"
 [ "$(<"$work/hold1-scratch/project")" = "$project1" ] || fail "the project of the READY line is not the one in the scratch directory"
+[ -z "$(find "$work/hold1-scratch/secrets" -type f ! -perm 600)" ] &&
+  [ -z "$(find "$work/hold1-scratch" -maxdepth 1 -name '*.env' ! -perm 600)" ] ||
+  fail "a generated secret or env file of hold 1 is not at mode 600"
 public_host="${issuer#https://}"
 public_host="${public_host%%/*}"
 

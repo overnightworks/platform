@@ -205,9 +205,6 @@ write_env "$postgres_manifest" StatefulSet postgres "$scratch/postgres.env"
 # Compose reads every env file when it creates the network; Keycloak's is written once the network has its addresses.
 : >"$scratch/keycloak.env"
 ensure_secret "postgres/$(basename "$POSTGRES_PASSWORD_PATH")"
-# The image's entrypoint reads the password file once more as its postgres user, so the file is readable by others; the
-# scratch directory at 700 keeps it from other users of this machine.
-chmod 644 "$(secret_path "postgres/$(basename "$POSTGRES_PASSWORD_PATH")")"
 
 # Keycloak reads its theme beside the design kit it links; both stay in the tree, so the hold assembles a copy.
 theme_dir="$scratch/theme"
