@@ -59,11 +59,8 @@ jobs:
       - name: Check that backup:now ends non-zero naming a Backup that failed or did not complete without a restore test Job, and the Job it could not make after a Backup that succeeded
         run: mise exec -- tests/backup/backup_now_ends_non_zero_naming_a_failed_backup_or_the_job_it_could_not_make.sh
 
-      - name: Check that gpu:use orders its steps so speech always has a Ready pod, names the step and the way back of a failed wait, restarts a GPU rollout that ran out of time and refuses an unknown user
-        run: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_restarts_a_timed_out_rollout.sh
-
-      - name: Check that the GPU Deployment's progress deadline is not shorter than the wait gpu:use grants it
-        run: mise exec -- tests/gpu/progress_deadline_outlasts_the_wait_for_the_gpu_image.sh
+      - name: Check that gpu:use orders its steps so speech always has a Ready pod, waits for each Deployment's ready replica, names the step and the way back of a failed wait and refuses an unknown user
+        run: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh
 
       - name: Check that both speech pods mount /tmp, where an upload is spooled, as a memory-backed emptyDir
         run: mise exec -- tests/speech_runtime/upload_spool_is_memory_backed_in_both_speech_pods.sh
