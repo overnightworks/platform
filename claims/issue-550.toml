@@ -1,7 +1,0 @@
-claim_id = "3806d6987f1e4c7fb2fab4947894fde4"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "a6f2706d2abeedbc06525eef40d92d49b37db353"
-branch = "claude/issue-550-songmaker-runs-its-release-2026-11-13-1"
-scope = ["apps/songmaker/release/kustomization.yaml"]
-opened_commit = "de5720d4c714ffd1303efa2bf4c726699b8b020e"
