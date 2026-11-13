@@ -4,8 +4,7 @@
 # image and waits until it is Ready, and only then stops the small image, so the Service speech-runtime never has no
 # Ready pod; `songs` does it the other way round, starting the small image before the GPU image stops and the card
 # is free; a wait that fails ends non-zero, names the Deployment and the way back and makes none of the later calls;
-# the GPU Deployment's progress deadline is not shorter than the wait the switch grants it; an unknown user is refused
-# before any call; the GPU pod spools an upload into memory, as the small pod does, so a recording never reaches a disk.
+# an unknown user is refused before any call.
 # Usage: mise exec -- tests/gpu/use_orders_the_switch_and_names_the_way_back.sh
 set -euo pipefail
 
@@ -95,21 +94,4 @@ switch_to everyone
 [[ "$output" == *"unknown user 'everyone'"* ]] || fail "an unknown user was not named: $output"
 [ ! -s "$calls" ] || fail "an unknown user made calls: $(tr '\n' ';' <"$calls")"
 
-# The Deployment's progress deadline outlasts the wait the switch grants the GPU image, or the rollout status fails
-# before its own timeout.
-switch_to speech
-granted="$(sed -n 's/.*rollout status.*speech-runtime-gpu.*--timeout=\([0-9]*\)s.*/\1/p' "$calls")"
-deadline="$(yq '.spec.progressDeadlineSeconds' "$repository_root/apps/speech-runtime/speech-runtime-gpu.yaml")"
-[ -n "$granted" ] || fail "the wait for the GPU image grants no timeout"
-[ "$deadline" != null ] && [ "$deadline" -ge "$granted" ] ||
-  fail "the GPU Deployment's progress deadline ($deadline s) is shorter than the wait for it ($granted s)"
-
-# tmp_medium <deployment>: the medium of the emptyDir that the Deployment mounts at /tmp.
-tmp_medium() {
-  yq "select(.kind == \"Deployment\" and .metadata.name == \"$1\") | .spec.template.spec as \$pod
-    | \$pod.containers[].volumeMounts[] | select(.mountPath == \"/tmp\") | .name as \$volume
-    | \$pod.volumes[] | select(.name == \$volume) | .emptyDir.medium" "$repository_root/apps/speech-runtime/"*.yaml
-}
-[ "$(tmp_medium speech-runtime-gpu)" = Memory ] || fail "the GPU pod's /tmp, where an upload is spooled, is not memory-backed"
-[ "$(tmp_medium speech-runtime)" = Memory ] || fail "the small pod's /tmp, where an upload is spooled, is not memory-backed"
-echo "gpu:use orders the switch, names the way back and waits as long as the Deployment allows"
+echo "gpu:use orders the switch and names the way back"

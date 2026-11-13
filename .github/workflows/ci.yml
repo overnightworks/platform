@@ -62,6 +62,12 @@ jobs:
       - name: Check that gpu:use orders its steps so speech always has a Ready pod, names the step and the way back of a failed wait and refuses an unknown user
         run: mise exec -- tests/gpu/use_orders_the_switch_and_names_the_way_back.sh
 
+      - name: Check that the GPU Deployment's progress deadline is not shorter than the wait gpu:use grants it
+        run: mise exec -- tests/gpu/progress_deadline_outlasts_the_wait_for_the_gpu_image.sh
+
+      - name: Check that both speech pods mount /tmp, where an upload is spooled, as a memory-backed emptyDir
+        run: mise exec -- tests/speech_runtime/upload_spool_is_memory_backed_in_both_speech_pods.sh
+
       - name: Check that cutover:load and cutover:check name each difference, print no value, exit 1 or 2 and make only the listed calls
         run: mise exec -- tests/cutover/load_and_check_name_each_difference_and_print_no_value.sh
 
