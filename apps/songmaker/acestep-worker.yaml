@@ -1,6 +1,7 @@
-# songmaker's GPU worker, the music model's host. It holds the card with one replica, and it has no way to the
-# internet: HF_HUB_OFFLINE makes a missing model fail at once and the NetworkPolicy lets it send only to cluster DNS,
-# Redis and the web. Its image is the same private package release as the web; songmaker's
+# songmaker's GPU worker, the music model's host. Running, it holds the card with one replica; the manifest names no
+# replica count, since the operator gives the card to songmaker or speech with `mise run gpu:use`, and Flux keeps what
+# that sets. It has no way to the internet: HF_HUB_OFFLINE makes a missing model fail at once and the NetworkPolicy
+# lets it send only to cluster DNS, Redis and the web. Its image is the same private package release as the web; songmaker's
 # src/acestep_worker/settings.py owns its settings' names and how it reads secret files, and
 # docker/acestep-worker.Dockerfile its user and paths, while this manifest alone owns its mounts. Its one secret is
 # the internal token, which the worker reads from /run/secrets.
@@ -11,7 +12,6 @@ metadata:
   name: acestep-worker
   namespace: songmaker
 spec:
-  replicas: 1
   strategy:
     type: Recreate
   selector:

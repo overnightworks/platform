@@ -1045,6 +1045,20 @@ set -euo pipefail
 exec scripts/backup_now.sh "${usage_namespace?}"
 '''
 
+[tasks."gpu:use"]
+description = "Give the PC's card to songmaker's music or to speech"
+usage = '''
+arg "<user>" help="songs or speech" {
+  choices "songs" "speech"
+}
+'''
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+exec scripts/gpu_use.sh "${usage_user?}"
+'''
+
 # Replaces presentator's live SQLite file with a verified copy at the go; every line it prints is a name, a count or an
 # outcome, never a row.
 [tasks."presentator:load-database"]
