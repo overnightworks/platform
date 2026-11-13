@@ -1,0 +1,94 @@
+# speech-runtime's GPU image: the same service with Qwen3-TTS on vLLM-Omni and Whisper large-v3 on the card, both baked
+# into the image and loaded at start, so it is Ready only once both are. It takes the Service and the caller table of
+# speech-runtime.yaml and holds the card, which `mise run gpu:use speech` gives it by stopping songmaker's worker and
+# stopping the small pod; `gpu:use songs` takes it back. No replica count stands here: Flux keeps what gpu:use sets.
+# The image sets its own device, voices, caches and hearing model, so only the file and the address are named here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: speech-runtime-gpu
+  namespace: speech-runtime
+spec:
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: speech-runtime-gpu
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: speech-runtime-gpu
+        app.kubernetes.io/part-of: speech-runtime
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      runtimeClassName: nvidia
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        # The image's numeric USER is 1001, which the kubelet verifies as non-root.
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: speech-runtime
+          image: ghcr.io/overnightworks/speech:2026.11.13.2-gpu@sha256:6573495ec547a01a9d4a2b24c8ae212ccd67950767d675769f2296ae46a1374d
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SPEECH_CONFIG_FILE
+              value: /etc/speech-runtime/speech.toml
+            - name: SPEECH_HOST
+              value: 0.0.0.0
+          # The service and its Qwen server peaked at 12.7 GB of host memory on the card's first run, which is provisional
+          # until measured on the PC; the request defaults to the limit. The card holds 13.2 GB of it.
+          resources:
+            limits:
+              memory: 16Gi
+              nvidia.com/gpu: 1
+          # /health answers 200 while the models load, so ready decides. Qwen loads in about 5 minutes and the worker
+          # gives its server 600 seconds, so the start may take 10 minutes before the readiness probe takes over.
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import json, urllib.request; health = json.load(urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)); raise SystemExit(0 if health['speaking']['ready'] is True and health['hearing']['ready'] is True else 1)"
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import json, urllib.request; health = json.load(urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)); raise SystemExit(0 if health['speaking']['ready'] is True and health['hearing']['ready'] is True else 1)"
+            periodSeconds: 5
+            timeoutSeconds: 5
+          # No liveness probe: a restart reloads both models, and a service that is not ready is not served.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: caller-table
+              mountPath: /etc/speech-runtime
+            # Starlette spools an upload above 1 MiB here, one at a time, up to 25 MiB, and the Qwen worker keeps its
+            # compile caches here.
+            - name: tmp
+              mountPath: /tmp
+            # The server's stages pass data through shared memory, which Docker's 64 MB default would starve.
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: caller-table
+          configMap:
+            name: speech-runtime
+        - name: tmp
+          emptyDir: {}
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
