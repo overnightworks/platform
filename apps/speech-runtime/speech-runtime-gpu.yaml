@@ -9,6 +9,9 @@ metadata:
   name: speech-runtime-gpu
   namespace: speech-runtime
 spec:
+  # gpu:use waits 25 minutes for the pull of the image and the load of both models; the default deadline of 10 minutes
+  # would fail its rollout status first.
+  progressDeadlineSeconds: 1800
   strategy:
     type: Recreate
   selector:
