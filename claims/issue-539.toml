@@ -1,7 +1,0 @@
-claim_id = "7f0f51be62214a22abf822a637598d8f"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "adffee08c8b8ba4d8cfb7a5e2e9d28ae312b5e89"
-branch = "claude/issue-539-id-token-carries-account-language"
-scope = ["tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh"]
-opened_commit = "9da732cfb911258203941a8ad6d8f6d4c537d9ed"
