@@ -3,8 +3,10 @@
 # started with `mise run keycloak:hold`, serves hallucinai's realm through its edge and admin addresses and ends on EOF
 # with `HOLD ENDED`. Hold 2 runs beside it in a project of its own, started as the script itself since mise run's
 # wrapper dies on SIGTERM without waiting for the teardown; it gets SIGTERM before READY and ends with `PROBE FAILED`
-# while hold 1 still answers.
-# After both, no container, network or volume of either project remains and no generated secret is in any output.
+# while hold 1 still answers and publishes other host ports than hold 1. Hold 3 runs with a docker that cannot list
+# containers and must not claim a verified teardown.
+# After all, no container, network or volume of any project remains, no generated secret or env file is left in a
+# scratch directory and no generated secret is in any output.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
@@ -72,6 +74,14 @@ await_project() {
     [ "$SECONDS" -lt "$deadline" ] || fail "$1 created nothing in 120 s"
     sleep 1
   done
+}
+
+# keycloak_host_ports <project>: the host ports the project's Keycloak container publishes, one per line.
+keycloak_host_ports() {
+  local id
+  for id in $(docker ps --all --quiet --filter "label=com.docker.compose.project=$1" --filter label=com.docker.compose.service=keycloak); do
+    docker inspect --format '{{range .HostConfig.PortBindings}}{{range .}}{{.HostPort}}{{"\n"}}{{end}}{{end}}' "$id"
+  done | sed '/^$/d'
 }
 
 # start_hold <name> <stdin file> <command>...: runs the hold in the background with its output in $work/<name>.{out,err}.
@@ -186,13 +196,20 @@ docker run --rm --network "$network" --entrypoint wget "$postgres_image" -qO- \
 # --- hold 2 beside hold 1: SIGTERM before READY
 start_hold hold2 /dev/null scripts/keycloak_hold.sh
 hold2_pid="$hold_pid"
+await_project hold2 "$hold2_pid"
+project2="$project_name"
+[ "$project2" != "$project1" ] || fail "both holds run the project $project1"
 deadline=$((SECONDS + 120))
-until [ -f "$work/hold2-scratch/project" ] && project2="$(<"$work/hold2-scratch/project")" && [ -n "$(project_objects "$project2")" ]; do
-  kill -0 "$hold2_pid" 2>/dev/null || fail "hold 2 ended before it created anything: $(cat "$work/hold2.out")"
-  [ "$SECONDS" -lt "$deadline" ] || fail "hold 2 created nothing in 120 s"
+until [ -n "$(keycloak_host_ports "$project2")" ]; do
+  kill -0 "$hold2_pid" 2>/dev/null || fail "hold 2 ended before it created Keycloak: $(cat "$work/hold2.out")"
+  [ "$SECONDS" -lt "$deadline" ] || fail "hold 2 created no Keycloak container in 120 s"
   sleep 1
 done
-[ "$project2" != "$project1" ] || fail "both holds run the project $project1"
+ports2="$(keycloak_host_ports "$project2")"
+[ "$(sort -u <<<"$ports2" | wc -l)" = 2 ] || fail "hold 2 publishes $(tr '\n' ' ' <<<"$ports2"), not two ports of its own"
+for port in "${admin_url##*:}" "${edge_url##*:}"; do
+  ! grep -qxF "$port" <<<"$ports2" || fail "hold 2 publishes port $port, which hold 1 holds"
+done
 known_secrets hold2
 stopped=$SECONDS
 kill -TERM "$hold2_pid"
