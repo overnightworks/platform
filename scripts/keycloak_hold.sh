@@ -23,6 +23,10 @@ config_cli_manifest="$root/infrastructure/keycloak/config-cli.yaml"
 postgres_manifest="$root/infrastructure/postgres/postgres.yaml"
 kustomization="$root/infrastructure/keycloak/kustomization.yaml"
 project="" log="" scratch="" child="" failure="" stop_signal="" fail_after_teardown=""
+compose_command=()
+# probe-run kills what still runs 30 s after its TERM; a docker command that outlives its SIGTERM by this much is killed,
+# which leaves the rest of that grace to the teardown.
+child_stop_seconds=3
 project_claimed=0 ready=0
 # Set by container_value.
 password_mount="" manifest_admin_url="" public_hostname="" admin_client_id="" admin_secret_ref=""
@@ -31,7 +35,8 @@ declare -A hold_env=()
 
 fail() { failure="$1"; exit 1; }
 
-compose() { docker compose --project-name "$project" --file "$compose_file" "$@"; }
+# await runs the command itself, so a compose command it starts is the array, not this function.
+compose() { "${compose_command[@]}" "$@"; }
 
 # The project's containers (one-off runs included), networks and volumes, one name per line.
 # A listing that fails fails the function, so an empty answer is never taken for a clean teardown.
@@ -42,7 +47,8 @@ project_objects() {
   docker volume ls --quiet --filter "$label" || return
 }
 
-# Runs a command with docker's output in the log and waits for it in a way a trapped signal interrupts at once.
+# Runs a command with docker's output in the log and waits for it in a way a trapped signal interrupts at once. The
+# command must be an executable and not a shell function, so that $child is the pid of the docker process.
 await() {
   local status=0
   "$@" >>"$log" 2>&1 &
@@ -54,7 +60,7 @@ await() {
 
 teardown() {
   local leftovers
-  await compose down --volumes --remove-orphans || fail_after_teardown="docker compose down failed"
+  await "${compose_command[@]}" down --volumes --remove-orphans || fail_after_teardown="docker compose down failed"
   leftovers="$(project_objects)" || {
     fail_after_teardown="${fail_after_teardown:+$fail_after_teardown; }docker could not list the objects of $project, so the teardown is unverified"
     return
@@ -63,11 +69,11 @@ teardown() {
 }
 
 # Stops the running docker command and waits until it is gone, so that nothing it still creates appears after the
-# teardown listed the project; a command that ignores SIGTERM for 60 s is killed.
+# teardown listed the project; a command that ignores SIGTERM for child_stop_seconds is killed.
 stop_child() {
   local state attempt
   kill "$child" 2>/dev/null || return 0
-  for ((attempt = 0; attempt < 300; attempt++)); do
+  for ((attempt = 0; attempt < child_stop_seconds * 5; attempt++)); do
     state="$(ps -o stat= -p "$child" 2>/dev/null || true)"
     case "$state" in "" | Z*) break ;; esac
     sleep 0.2
@@ -110,6 +116,7 @@ scratch="$(cd "$2" && pwd -P)"
 log="$scratch/hold.log"
 : >"$log"
 project="platform-keycloak-hold-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+compose_command=(docker compose --project-name "$project" --file "$compose_file")
 echo "$project" >"$scratch/project"
 
 trap 'stop_signal=SIGTERM; exit 1' TERM
@@ -248,21 +255,21 @@ export KEYCLOAK_IMAGE KEYCLOAK_ARGS KEYCLOAK_HTTP_PORT KEYCLOAK_THEME_DIR KEYCLO
 # The network exists before Keycloak's env file is written, because Keycloak trusts the forwarded headers of that
 # network's addresses, which docker picks.
 project_claimed=1
-await compose up --no-start postgres || fail "docker compose could not create the network; see $log"
+await "${compose_command[@]}" up --no-start postgres || fail "docker compose could not create the network; see $log"
 subnets="$(docker network inspect "${project}_$network_key" --format '{{range .IPAM.Config}}{{.Subnet}},{{end}}')" ||
   fail "docker could not inspect the network ${project}_$network_key"
 [ -n "${subnets%,}" ] || fail "the network ${project}_$network_key has no address range"
 hold_env[KC_PROXY_TRUSTED_ADDRESSES]="${subnets%,}"
 write_env "$keycloak_manifest" Deployment keycloak "$scratch/keycloak.env"
 
-await compose up --detach postgres keycloak ||
+await "${compose_command[@]}" up --detach postgres keycloak ||
   fail "docker compose could not start Keycloak: $(tail -n 1 "$log")"
 
 attempts=$((backoff_limit + 1))
 applied=0
 for _ in $(seq "$attempts"); do
   # -T: the hold's stdin is the stop signal, which a run must not take.
-  if await compose run --rm --no-deps -T config-cli; then applied=1; break; fi
+  if await "${compose_command[@]}" run --rm --no-deps -T config-cli; then applied=1; break; fi
 done
 [ "$applied" = 1 ] || fail "config-cli failed $attempts times; its output is in $log"
 

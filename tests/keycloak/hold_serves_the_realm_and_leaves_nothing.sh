@@ -4,7 +4,8 @@
 # with `HOLD ENDED`. Hold 2 runs beside it in a project of its own, started as the script itself since mise run's
 # wrapper dies on SIGTERM without waiting for the teardown; it gets SIGTERM before READY and ends with `PROBE FAILED`
 # while hold 1 still answers and publishes other host ports than hold 1. Hold 3 runs with a docker that cannot list
-# containers and must not claim a verified teardown.
+# containers and must not claim a verified teardown. Hold 4 gets SIGTERM while a docker command that ignores SIGTERM
+# runs: the command is gone and the teardown done within probe-run's grace when the hold ends.
 # After all, no container, network or volume of any project remains, no generated secret or env file is left in a
 # scratch directory and no generated secret is in any output.
 set -euo pipefail
@@ -128,6 +129,37 @@ await_exit "$hold3_pid" 120
 [ "$exit_status" = 1 ] || fail "hold 3 ended with $exit_status although docker could not list its containers, not 1"
 grep -q '^PROBE FAILED: .*could not list' "$work/hold3.out" || fail "hold 3 did not report the unverified teardown: $(cat "$work/hold3.out")"
 
+# --- hold 4: SIGTERM while a docker command ignores SIGTERM; the hold kills it and tears down within probe-run's grace
+mkdir "$work/shim4"
+cat >"$work/shim4/docker" <<'SHIM'
+#!/bin/sh
+case " $* " in
+  *" up --detach "*) echo "$$" >"$HOLD4_COMMAND_PID_FILE"; trap '' TERM; exec sleep 600 ;;
+esac
+exec "$REAL_DOCKER" "$@"
+SHIM
+chmod +x "$work/shim4/docker"
+start_hold hold4 /dev/null env REAL_DOCKER="$(command -v docker)" HOLD4_COMMAND_PID_FILE="$work/hold4.command-pid" \
+  PATH="$work/shim4:$PATH" scripts/keycloak_hold.sh
+hold4_pid="$hold_pid"
+deadline=$((SECONDS + 120))
+until [ -s "$work/hold4.command-pid" ]; do
+  kill -0 "$hold4_pid" 2>/dev/null || fail "hold 4 ended before it ran its docker command: $(cat "$work/hold4.out")"
+  [ "$SECONDS" -lt "$deadline" ] || fail "hold 4 ran no docker command in 120 s"
+  sleep 1
+done
+hold4_command_pid="$(<"$work/hold4.command-pid")"
+project4="$(<"$work/hold4-scratch/project")"
+stopped=$SECONDS
+kill -TERM "$hold4_pid"
+await_exit "$hold4_pid" 120
+echo "hold 4 ended $((SECONDS - stopped)) s after SIGTERM"
+[ $((SECONDS - stopped)) -le "$teardown_seconds" ] || fail "hold 4 took longer than $teardown_seconds s to end"
+! kill -0 "$hold4_command_pid" 2>/dev/null || { kill -KILL "$hold4_command_pid"; fail "the docker command of hold 4 still runs after the hold ended"; }
+[ "$exit_status" = 1 ] || fail "hold 4 ended with $exit_status after SIGTERM, not 1"
+grep -q '^PROBE FAILED: ' "$work/hold4.out" || fail "hold 4 did not print PROBE FAILED: $(cat "$work/hold4.out")"
+[ -z "$(project_objects "$project4")" ] || fail "hold 4 left $(project_objects "$project4" | tr '\n' ' ')"
+
 # --- hold 1
 mkfifo "$work/stdin1"
 exec 3<>"$work/stdin1"
@@ -231,10 +263,10 @@ echo "hold 1 ended $((SECONDS - stopped)) s after EOF"
 [ $((SECONDS - stopped)) -le "$teardown_seconds" ] || fail "the teardown took longer than $teardown_seconds s"
 
 # --- nothing is left, and no generated secret was printed
-for project in "$project1" "$project2" "$project3"; do
+for project in "$project1" "$project2" "$project3" "$project4"; do
   [ -z "$(project_objects "$project")" ] || fail "the holds left $(project_objects "$project" | tr '\n' ' ')"
 done
-for scratch in "$work"/hold[123]-scratch; do
+for scratch in "$work"/hold[1234]-scratch; do
   [ ! -e "$scratch/secrets" ] && [ -z "$(find "$scratch" -name '*.env')" ] ||
     fail "$(basename "$scratch") kept a generated secret or env file after it ended"
 done
@@ -245,4 +277,4 @@ for secret in "$work"/known-secrets/*; do
   if grep -qFf "$secret" "$work"/*.out "$work"/*.err; then fail "a generated secret is in the output of a hold"; fi
 done
 [ "$secrets" -gt 0 ] || fail "no generated secret was found to look for"
-echo "$project1, $project2 and $project3 left nothing; none of $secrets generated secrets was printed"
+echo "$project1, $project2, $project3 and $project4 left nothing; none of $secrets generated secrets was printed"
