@@ -1,7 +1,0 @@
-claim_id = "9646404527854cab9bdf494b07b02a02"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "b8709b2d6d8e38c51bc23f5639ed4fbc861959a7"
-branch = "claude/issue-533-personas-release-2026-11-13-1"
-scope = ["apps/personas/personas.toml", "apps/personas/personas.yaml"]
-opened_commit = "271794003b298d82163d98ace19ba2f88b151c38"
