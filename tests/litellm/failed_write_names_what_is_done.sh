@@ -6,8 +6,9 @@
 # and registering the Secret's value; a failure between the delete and the registration says that the alias holds no key
 # and the same command completes it, a lost answer that it may hold the new one; a failed delete says the alias may hold
 # no key, and a signal or a read-back that differs after the registration says the alias may hold or was given the new key
-# and names no command that completes it; a budget-only change sends no period; a table that is no table of numbers, a revision that is absent or changes
-# while the table is read and a value with a newline are refused before any write; and neither a key's value, the master
+# and names no command that completes it; a budget-only change sends no period; a row's prompt_caching reaches its key
+# as enable_prompt_caching, true by default, and is read back from the key's metadata; a table that is no table of numbers
+# or holds a prompt_caching that is no boolean, a revision that is absent or changes while the table is read and a value with a newline are refused before any write; and neither a key's value, the master
 # key nor the value's sha256 reaches an argument or any output, tracing included, while the value does reach curl's stdin.
 # Usage: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
 # Proves docs/operations.md OPS-14, OPS-16.
@@ -56,7 +57,8 @@ FAKE
 # FAKE_HOPIN_HOLDER is set. A write named by FAKE_FAILING_WRITE (a path and a body marker) is answered with 500 and a
 # body, or with FAKE_TRANSPORT_FAILURE after it was applied with a lost answer; every other write is applied and
 # answered 200. It records each write's path, the body of the updates, registrations and deletions, and whether the key
-# value reached its stdin. After it applied a registration, FAKE_GENERATE_DRIFT=field reads the row back with another
+# value reached its stdin, and keeps a stored key's enable_prompt_caching in its metadata as LiteLLM does. After it
+# applied a registration, FAKE_GENERATE_DRIFT=field reads the row back with another
 # limit and =token under another value, and FAKE_SIGNAL_TERM sends TERM to the script before the answer arrives.
 cat >"$fake_bin/curl" <<'FAKE'
 #!/usr/bin/env bash
@@ -70,6 +72,10 @@ done
 case "$config" in *"Bearer $FAKE_MASTER_KEY"*) ;; *) echo "fake curl: no master key on stdin" >&2; exit 1 ;; esac
 case "$config" in *"$FAKE_APP_KEY"*) echo "app-key-on-stdin $path" >>"$FAKE_STATE/writes" ;; esac
 json() { yq --input-format json --output-format json --indent 0 "$@"; }
+# keep_caching_in_metadata <row file>: moves the row's enable_prompt_caching into its metadata.
+keep_caching_in_metadata() {
+  json -i 'if has("enable_prompt_caching") then .metadata.enable_prompt_caching = .enable_prompt_caching | del(.enable_prompt_caching) else . end' "$1"
+}
 status=200 reply='{}'
 case "$path" in
   /v1/models) reply='{"data":[{"id":"model-one"}]}' ;;
@@ -101,7 +107,8 @@ case "$path" in
         /key/update)
           echo "update $data" >>"$FAKE_STATE/bodies"
           for row in "$FAKE_STATE"/row-*.json; do
-            [ "$(yq --output-format yaml '.token' "$row")" != "$(yq --input-format json '.key' <<<"$data")" ] || json -i ". * $data" "$row"
+            [ "$(yq --output-format yaml '.token' "$row")" != "$(yq --input-format json '.key' <<<"$data")" ] ||
+              { json -i ". * $data" "$row"; keep_caching_in_metadata "$row"; }
           done ;;
         /key/generate)
           echo "register $data" >>"$FAKE_STATE/bodies"
@@ -109,6 +116,7 @@ case "$path" in
           token="$(printf '%s' "$value" | sha256sum)"
           row="$FAKE_STATE/row-$(yq --input-format json '.key_alias' <<<"$data").json"
           json "del(.key) | .token = \"${token%% *}\"" <<<"$data" >"$row"
+          keep_caching_in_metadata "$row"
           case "$FAKE_GENERATE_DRIFT" in
             field) json -i '.max_parallel_requests += 1' "$row" ;;
             token) json -i '.token = "hash-another"' "$row" ;;
@@ -218,6 +226,8 @@ table_cases=(
   'budget-typo~del(.apps.hopin.budget) | .apps.hopin.buget = 12~row hopin has no number budget'
   'budget-text~.apps.hopin.budget = "ten"~row hopin has no number budget'
   'parallel-missing~del(.apps.hopin.parallel)~row hopin has no whole number parallel'
+  'caching-text~.apps.hopin.prompt_caching = "no"~row hopin has no boolean prompt_caching'
+  'caching-null~.apps.hopin.prompt_caching = null~row hopin has no boolean prompt_caching'
   'row-scalar~.apps.hopin = 5~row hopin is no map'
   'apps-null~.apps = null~apps are no map with a row'
   'apps-number~.apps = 5~apps are no map with a row'
@@ -258,6 +268,18 @@ grep -q '^update .*"max_budget"' "$FAKE_STATE/bodies" || fail "budget-only: the 
   fail "budget-only: the update holds more than the budget: $(cat "$FAKE_STATE/bodies")"
 use_table
 echo "a changed budget alone sends the budget and no period"
+
+# A row's prompt_caching is sent as enable_prompt_caching, true when the row omits it, and read back from the key's metadata,
+# so a second run changes nothing.
+use_table 'del(.apps.hopin) | .apps."test-b".prompt_caching = false'
+run_task caching 0 "" litellm:keys
+grep -q '^update .*"enable_prompt_caching":true' <<<"$(grep 'hash-test-a' "$FAKE_STATE/bodies")" &&
+  grep -q '^update .*"enable_prompt_caching":false' <<<"$(grep 'hash-test-b' "$FAKE_STATE/bodies")" ||
+  fail "caching: the updates do not carry the default and the opt-out: $(cat "$FAKE_STATE/bodies")"
+run_task caching 0 "" litellm:keys
+grep -q ' 0 changes made' <<<"$output" || fail "caching: a second run changed a key: $output"
+use_table
+echo "a row's prompt_caching reaches its key as enable_prompt_caching, on by default, and a second run changes nothing"
 
 # Another value under the alias is refused without --replace, naming the flag, and nothing is written.
 FAKE_HOPIN_HOLDER=other run_task refused-without-flag 1 "" litellm:key hopin
