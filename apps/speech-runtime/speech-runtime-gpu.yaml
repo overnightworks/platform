@@ -10,7 +10,8 @@ metadata:
   namespace: speech-runtime
 spec:
   # gpu:use waits 25 minutes for the pull of the image and the load of both models; the default deadline of 10 minutes
-  # would fail its rollout status first.
+  # would fail its rollout status first. A pod that waited for the card past this deadline has a rollout that gave up,
+  # which gpu:use restarts before its wait.
   progressDeadlineSeconds: 1800
   strategy:
     type: Recreate

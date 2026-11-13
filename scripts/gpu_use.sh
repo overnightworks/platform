@@ -5,7 +5,8 @@
 # `songs` starts speech's small image on the CPU and waits until it is Ready, stops the GPU image and waits until its
 # pod is gone, which frees the card, then runs acestep-worker and waits until it is Ready, which its /health grants only
 # with the card. `speech` stops acestep-worker and waits until its pod is gone, runs the GPU image and waits until it is
-# Ready, which takes minutes, since it loads its models first, then stops the small image. The Service speech-runtime
+# Ready, which takes minutes, since it loads its models first, then stops the small image; a GPU rollout that waited for
+# the card past its progress deadline is restarted first, so the wait gets its whole time. The Service speech-runtime
 # reaches whichever one is Ready, and no step leaves it without one while the next is not Ready.
 # Usage: scripts/gpu_use.sh <songs|speech>
 set -euo pipefail
@@ -32,6 +33,20 @@ wait_gone() {
     fail "$2's pod is still there after 3 minutes; $3"
 }
 
+# restart_if_timed_out <namespace> <deployment>: a rollout that has already given up, as a pod that waited for the card
+# longer than the progress deadline, is started again, since scaling does not restart the deadline and the wait would
+# end at once.
+restart_if_timed_out() {
+  local reason
+  reason="$(kubectl get --namespace "$1" "deployment/$2" \
+    --output 'jsonpath={.status.conditions[?(@.type=="Progressing")].reason}')" ||
+    fail "could not read $2's rollout in namespace $1; check that the kubeconfig $KUBECONFIG reaches the cluster, then run it again"
+  if [ "$reason" = ProgressDeadlineExceeded ]; then
+    kubectl rollout restart --namespace "$1" "deployment/$2" >/dev/null ||
+      fail "could not restart $2's rollout in namespace $1, which had run out of time; run it again"
+  fi
+}
+
 # wait_ready <namespace> <deployment> <minutes> <way back>
 wait_ready() {
   kubectl rollout status --namespace "$1" "deployment/$2" --timeout="$(($3 * 60))s" >/dev/null ||
@@ -51,6 +66,7 @@ case "$user" in
   speech)
     scale "$songs_namespace" "$songs_worker" 0
     wait_gone "$songs_namespace" "$songs_worker" "run it again"
+    restart_if_timed_out "$speech_namespace" "$speech_gpu"
     scale "$speech_namespace" "$speech_gpu" 1
     # The pull of the image takes minutes, and its start another ten.
     wait_ready "$speech_namespace" "$speech_gpu" 25 "the small image still runs, so look at $speech_gpu's pod in namespace $speech_namespace, then run it again or run 'mise run gpu:use songs' to give the card back"
