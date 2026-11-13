@@ -27,6 +27,8 @@ compose_command=()
 # probe-run kills what still runs 30 s after its TERM; a docker command that outlives its SIGTERM by this much is killed,
 # which leaves the rest of that grace to the teardown.
 child_stop_seconds=3
+# docker finishes a request a killed command had sent, so the teardown repeats until the project stays empty.
+teardown_rounds=4
 project_claimed=0 ready=0
 # Set by container_value.
 password_mount="" manifest_admin_url="" public_hostname="" admin_client_id="" admin_secret_ref=""
@@ -58,14 +60,24 @@ await() {
   return "$status"
 }
 
+# Removes the project and lists what is left, again until two rounds in a row find it clean: docker finishes a create
+# request that a stopped compose command had already sent, which can land after the first `down` listed the project.
 teardown() {
-  local leftovers
-  await "${compose_command[@]}" down --volumes --remove-orphans || fail_after_teardown="docker compose down failed"
-  leftovers="$(project_objects)" || {
+  local round clean_rounds=0 down_failed leftovers listing_failed
+  for ((round = 0; round < teardown_rounds && clean_rounds < 2; round++)); do
+    down_failed=0 listing_failed=0
+    await "${compose_command[@]}" down --volumes --remove-orphans || down_failed=1
+    leftovers="$(project_objects)" || listing_failed=1
+    if [ "$down_failed$listing_failed" = 00 ] && [ -z "$leftovers" ]; then clean_rounds=$((clean_rounds + 1)); else clean_rounds=0; fi
+    [ "$clean_rounds" -ge 2 ] || sleep 1
+  done
+  [ "$clean_rounds" -lt 2 ] || return 0
+  [ "$down_failed" = 0 ] || fail_after_teardown="docker compose down failed"
+  if [ "$listing_failed" = 1 ]; then
     fail_after_teardown="${fail_after_teardown:+$fail_after_teardown; }docker could not list the objects of $project, so the teardown is unverified"
-    return
-  }
-  [ -z "$leftovers" ] || fail_after_teardown="${fail_after_teardown:+$fail_after_teardown; }left after teardown: $(tr '\n' ' ' <<<"$leftovers")"
+  elif [ -n "$leftovers" ]; then
+    fail_after_teardown="${fail_after_teardown:+$fail_after_teardown; }left after teardown: $(tr '\n' ' ' <<<"$leftovers")"
+  fi
 }
 
 # Stops the running docker command and waits until it is gone, so that nothing it still creates appears after the
