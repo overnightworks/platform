@@ -307,9 +307,21 @@ for compared in $(yq '.clients[] | select(.bearerOnly != true) | .clientId' "$RE
     [ -z "$scope" ] || scope_arguments=(--data "scope=$scope")
     left_out=""
     [ "$scope" != mcp-hopin ] || left_out="$exchanger"
+    # A scope the base's client does not offer cannot be asked of it: the base is then asked for none, and the candidate
+    # may differ from it by the audiences the realm file's mappers of that scope add, and by nothing else.
+    base_arguments=("${scope_arguments[@]}")
+    gained_audiences='[]'
+    if [ -n "$scope" ] && [ -z "$(CLIENT="$compared" SCOPE="$scope" yq '.clients[] | select(.clientId == strenv(CLIENT))
+      | (.optionalClientScopes // [])[] | select(. == strenv(SCOPE))' "$scratch/base-realm.yaml")" ]; then
+      base_arguments=()
+      gained_audiences="$(SCOPE="$scope" yq --output-format json --indent 0 '[.clientScopes[] | select(.name == strenv(SCOPE))
+        | .protocolMappers[] | select(.protocolMapper == "oidc-audience-mapper") | .config["included.custom.audience"]]' "$REALM_FILE")"
+      [ "$gained_audiences" != '[]' ] || fail "the realm file's scope $scope adds no audience to $compared"
+    fi
     candidate_claims="$(person_claims_at "$token_endpoint" "$twin_client" "${scope_arguments[@]}")"
-    base_claims="$(person_claims_at "$base_token_endpoint" "$twin_client" "${scope_arguments[@]}")"
-    [ "$(audience_and_roles "$candidate_claims" "$left_out")" = "$(audience_and_roles "$base_claims" "$left_out")" ] ||
+    base_claims="$(person_claims_at "$base_token_endpoint" "$twin_client" "${base_arguments[@]}")"
+    [ "$(audience_and_roles "$candidate_claims" "$left_out")" = "$(audience_and_roles "$base_claims" "$left_out" |
+      jq --compact-output --argjson gained "$gained_audiences" '.aud = (.aud + $gained | sort)')" ] ||
       fail "the audiences or roles of a person's sign-in at $compared with scope '$scope' are $(audience_and_roles "$candidate_claims" "$left_out"), not the base's $(audience_and_roles "$base_claims" "$left_out")"
   done
   remove_twin "$realm"
