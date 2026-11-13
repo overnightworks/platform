@@ -1,6 +1,7 @@
-# The personas runner: Mozart and Leonardo as agents of hopin and skat, pulled from its package through the Secret
-# ghcr-pull and started from the Secret personas' files, both from platform-secrets. The runner opens no port, so there
-# is no Service and no Ingress; it is Ready once the first loop's standing was answered, which creates its ready_file.
+# The personas runner: Mozart and Leonardo as agents of hopin and skat, Mozart also of songmaker, pulled from its
+# package through the Secret ghcr-pull and started from the Secret personas' files, both from platform-secrets. The
+# runner opens no port, so there is no Service and no Ingress; it is Ready once the first loop's standing was answered,
+# which creates its ready_file.
 # The Secret holds a copy of two client secrets that the Secret keycloak also holds (client-agent-mozart,
 # client-agent-leonardo), since a Secret cannot be mounted across namespaces: a rotation writes both.
 # One pod runs and a restart empties every agent's history, as the runner keeps no memory.
@@ -69,8 +70,8 @@ spec:
             medium: Memory
 ---
 # Nobody reaches the runner. It sends only to cluster DNS, the front's port and port 443 outside the pod and service
-# networks, where the realm's token endpoint and the MCP URLs of hopin and skat are public names behind Cloudflare; a
-# NetworkPolicy cannot name a host, so every public host on 443 is open to it.
+# networks, where the realm's token endpoint and the MCP URLs of hopin, skat and songmaker are public names behind
+# Cloudflare; a NetworkPolicy cannot name a host, so every public host on 443 is open to it.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
