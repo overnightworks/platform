@@ -224,6 +224,34 @@ no_scope_claims="$(jwt_part 2 "$(access_token)")"
   fail "a token without scope=mcp-hopin carries the scope '$(jq --raw-output .scope <<<"$no_scope_claims")', not '$(expected_scope)'"
 echo "R3: without scope=mcp-hopin the token has no audience and exactly the default scopes that go into a token"
 
+# A client whose allowlist holds songmaker's group is the one that reaches songmaker: its token for scope=mcp-songmaker
+# carries exactly songmaker's audience beside the file's groups, and no token asked without the scope carries it.
+songmaker_group=/apps/songmaker/mcp
+if grep --quiet --word-regexp --fixed-strings -- "$songmaker_group" <<<"$AGENT_GROUPS"; then
+  mcp_songmaker_audience="$(yq --exit-status '.clientScopes[] | select(.name == "mcp-songmaker") | .protocolMappers[]
+    | select(.name == "mcp-songmaker-audience") | .config."included.custom.audience"' "$REALM_FILE")"
+  [ "$(CLIENT="$client" yq '.clients[] | select(.clientId == strenv(CLIENT)) | .optionalClientScopes | contains(["mcp-songmaker"])' \
+    "$REALM_FILE")" = true ] || fail "$REALM_FILE does not give $client the optional scope mcp-songmaker"
+  agent_token --data scope=mcp-songmaker
+  [ "$token_status" = 200 ] || fail "the client-credentials grant with scope=mcp-songmaker answered $token_status"
+  [ "$(jq 'has("refresh_token")' <<<"$token_body")" = false ] || fail "the songmaker token response carries a refresh token"
+  songmaker_claims="$(jwt_part 2 "$(access_token)")"
+  songmaker_claim() { jq --raw-output "$1" <<<"$songmaker_claims"; }
+  [ "$(songmaker_claim '[.aud] | flatten | sort | join(" ")')" = "$mcp_songmaker_audience" ] ||
+    fail "the songmaker token's aud is '$(songmaker_claim '.aud | tojson')', not exactly $mcp_songmaker_audience"
+  [ "$(songmaker_claim '.groups | sort | join(" ")')" = "${file_groups//$'\n'/ }" ] ||
+    fail "the songmaker token's groups are '$(songmaker_claim '.groups | sort | join(" ")')', not the file's '${file_groups//$'\n'/ }'"
+  [ "$(jq --arg group "$songmaker_group" '.groups | index($group) != null' <<<"$songmaker_claims")" = true ] ||
+    fail "the songmaker token's groups lack $songmaker_group"
+  [ "$(songmaker_claim '.scope | split(" ") | sort | join(" ")')" = "$(expected_scope mcp-songmaker)" ] ||
+    fail "the songmaker token's scope is '$(songmaker_claim .scope)', not the scopes of the client's defaults and mcp-songmaker that go into a token: $(expected_scope mcp-songmaker)"
+  [ "$(songmaker_claim .agent_name)" = "$agent_name" ] || fail "the songmaker token's agent_name is not $agent_name"
+  [ "$(songmaker_claim .agent_owner)" = "$stand_in_id" ] || fail "the songmaker token's agent_owner is not the stand-in's id"
+  [ "$(jq --arg audience "$mcp_songmaker_audience" '[.aud] | flatten | index($audience) == null' <<<"$no_scope_claims")" = true ] ||
+    fail "a token without scope=mcp-songmaker carries songmaker's audience"
+  echo "R1, R3: with scope=mcp-songmaker aud exactly $mcp_songmaker_audience, the file's groups with $songmaker_group, agent_name, agent_owner; without the scope no such audience"
+fi
+
 # R2: the agent's own token is refused at both APIs; a person meets the profile's read-only rule.
 # The account path serves its web console unless a request asks for JSON.
 # http_status <token> <curl argument>...: the status of a JSON request that carries the token; the body goes to a file.

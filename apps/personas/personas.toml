@@ -52,6 +52,33 @@ tools = [
 ]
 max_tool_calls = 4
 
+# The tools songmaker's release v2026.11.13.1 declares in its MCP tools/list, in its order (src/songmaker_cli/agent/
+# mcp.py serves the routes marked with `agent_tool`; src/songmaker_cli/api.py orders the routers), that an agent with
+# an account of its own needs to make an album and a song, generate it, follow the generation, and share or unshare:
+# `share_song` is open to such an agent only, and the album has `unshare_album` alone, since songmaker declares no
+# `share_album`. Nothing that deletes, rewrites or reads another part of the library is named. Six calls fit a turn that
+# makes an album and a song, starts the generation, follows it once and shares the song. A turn runs only while the app
+# declares every tool named here.
+[[apps]]
+mcp_url = "https://songmaker.hallucinai.de/mcp"
+scope = "mcp-songmaker"
+listens = false
+tools = [
+  "list_albums",
+  "create_album",
+  "unshare_album",
+  "list_songs",
+  "get_song",
+  "create_song",
+  "share_song",
+  "unshare_song",
+  "generate_song",
+  "get_active_generation",
+  "get_last_failed_generation",
+  "get_job",
+]
+max_tool_calls = 6
+
 # Every agent's token carries /agents, and the gateway refuses a turn whose person is outside the group.
 [gateway]
 backend = "litellm"
