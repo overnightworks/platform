@@ -1,8 +1,0 @@
-claim_id = "d532ad3bf4444ab49fa40205d911854e"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "424ce195cc63c42de9cd2a2bede02b685311a7f2"
-branch = "claude/issue-548-skat-runs-its-release-2026-11-13-4-and-t"
-scope = ["apps/personas/personas.toml", "apps/skat/skat.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/skat/datenschutz.html", "infrastructure/legal/built"]
-opened_commit = "adf7e14129d06a750f2e03c9308d571c812cc6b1"
-whole_reason = "One release bump carries its own privacy copy and built pages, which tests/legal checks together."
