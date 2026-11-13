@@ -64,6 +64,16 @@ known_secrets() {
   done
 }
 
+# await_project <name> <pid>: waits until the hold has created an object of its project and sets project_name.
+await_project() {
+  local deadline=$((SECONDS + 120))
+  until [ -f "$work/$1-scratch/project" ] && project_name="$(<"$work/$1-scratch/project")" && [ -n "$(project_objects "$project_name")" ]; do
+    kill -0 "$2" 2>/dev/null || fail "$1 ended before it created anything: $(cat "$work/$1.out")"
+    [ "$SECONDS" -lt "$deadline" ] || fail "$1 created nothing in 120 s"
+    sleep 1
+  done
+}
+
 # start_hold <name> <stdin file> <command>...: runs the hold in the background with its output in $work/<name>.{out,err}.
 start_hold() {
   local name="$1" stdin="$2"
@@ -90,6 +100,23 @@ status=0
 mise run keycloak:hold --scratch "$work/occupied" >"$work/occupied.out" 2>&1 || status=$?
 [ "$status" = 2 ] || fail "a scratch directory with a file ended with $status, not 2"
 grep -q 'is not an empty directory' "$work/occupied.out" || fail "the refusal names no cause"
+
+# --- hold 3: a docker that cannot list containers leaves the teardown unverified, which the hold reports
+mkdir "$work/shim"
+cat >"$work/shim/docker" <<'SHIM'
+#!/bin/sh
+[ "$1" != ps ] || { echo "docker ps is refused" >&2; exit 1; }
+exec "$REAL_DOCKER" "$@"
+SHIM
+chmod +x "$work/shim/docker"
+start_hold hold3 /dev/null env REAL_DOCKER="$(command -v docker)" PATH="$work/shim:$PATH" scripts/keycloak_hold.sh
+hold3_pid="$hold_pid"
+await_project hold3 "$hold3_pid"
+project3="$project_name"
+kill -TERM "$hold3_pid"
+await_exit "$hold3_pid" 120
+[ "$exit_status" = 1 ] || fail "hold 3 ended with $exit_status although docker could not list its containers, not 1"
+grep -q '^PROBE FAILED: .*could not list' "$work/hold3.out" || fail "hold 3 did not report the unverified teardown: $(cat "$work/hold3.out")"
 
 # --- hold 1
 mkfifo "$work/stdin1"
@@ -187,10 +214,10 @@ echo "hold 1 ended $((SECONDS - stopped)) s after EOF"
 [ $((SECONDS - stopped)) -le "$teardown_seconds" ] || fail "the teardown took longer than $teardown_seconds s"
 
 # --- nothing is left, and no generated secret was printed
-for project in "$project1" "$project2"; do
+for project in "$project1" "$project2" "$project3"; do
   [ -z "$(project_objects "$project")" ] || fail "the holds left $(project_objects "$project" | tr '\n' ' ')"
 done
-for scratch in "$work"/hold[12]-scratch; do
+for scratch in "$work"/hold[123]-scratch; do
   [ ! -e "$scratch/secrets" ] && [ -z "$(find "$scratch" -name '*.env')" ] ||
     fail "$(basename "$scratch") kept a generated secret or env file after it ended"
 done
@@ -201,4 +228,4 @@ for secret in "$work"/known-secrets/*; do
   if grep -qFf "$secret" "$work"/*.out "$work"/*.err; then fail "a generated secret is in the output of a hold"; fi
 done
 [ "$secrets" -gt 0 ] || fail "no generated secret was found to look for"
-echo "$project1 and $project2 left nothing; none of $secrets generated secrets was printed"
+echo "$project1, $project2 and $project3 left nothing; none of $secrets generated secrets was printed"

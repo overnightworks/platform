@@ -34,11 +34,12 @@ fail() { failure="$1"; exit 1; }
 compose() { docker compose --project-name "$project" --file "$compose_file" "$@"; }
 
 # The project's containers (one-off runs included), networks and volumes, one name per line.
+# A listing that fails fails the function, so an empty answer is never taken for a clean teardown.
 project_objects() {
   local label="label=com.docker.compose.project=$project"
-  docker ps --all --quiet --filter "$label"
-  docker network ls --quiet --filter "$label"
-  docker volume ls --quiet --filter "$label"
+  docker ps --all --quiet --filter "$label" || return
+  docker network ls --quiet --filter "$label" || return
+  docker volume ls --quiet --filter "$label" || return
 }
 
 # Runs a command with docker's output in the log and waits for it in a way a trapped signal interrupts at once.
@@ -54,7 +55,10 @@ await() {
 teardown() {
   local leftovers
   await compose down --volumes --remove-orphans || fail_after_teardown="docker compose down failed"
-  leftovers="$(project_objects)"
+  leftovers="$(project_objects)" || {
+    fail_after_teardown="${fail_after_teardown:+$fail_after_teardown; }docker could not list the objects of $project, so the teardown is unverified"
+    return
+  }
   [ -z "$leftovers" ] || fail_after_teardown="${fail_after_teardown:+$fail_after_teardown; }left after teardown: $(tr '\n' ' ' <<<"$leftovers")"
 }
 
