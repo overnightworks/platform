@@ -32,6 +32,7 @@ tools = [
   "ramsch_take_skat",
   "ramsch_put_back_cards",
   "ramsch_push_skat",
+  "ramsch_declare_grand_hand",
   "play_card",
   "give_up_game",
   "agree_to_give_up",
@@ -43,8 +44,11 @@ tools = [
   "start_new_series",
   "agree_to_end_series",
   "refuse_to_end_series",
+  "agree_to_abort_hand",
+  "refuse_to_abort_hand",
   "read_series_list",
   "read_paused_tables",
+  "nudge_seat",
 ]
 max_tool_calls = 4
 
