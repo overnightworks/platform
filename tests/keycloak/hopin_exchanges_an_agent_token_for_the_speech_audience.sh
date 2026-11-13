@@ -220,11 +220,12 @@ person_claims_at() {
 }
 person_claims() { person_claims_at "$token_endpoint" "$password_client" "$@"; }
 # audience_and_roles <claims> [<audience to leave out>]: the claims a role or a scope would change, as the speech group
-# must not. A realm's default role carries the realm's name, which the base's realm does not share.
+# must not. A realm's default role carries the realm's name, which the base's realm does not share. A token without an audience
+# has none, not a null one, so a scope's gained audience is the whole difference.
 audience_and_roles() {
   jq --compact-output --arg left_out "${2:-}" 'def roles: if . == null then null
       else .roles |= (map(if startswith("default-roles-") then "default-roles" else . end) | sort) end;
-    {aud: (([.aud] | flatten | sort) - [$left_out]), realm_access: (.realm_access | roles),
+    {aud: (([.aud // empty] | flatten | sort) - [$left_out]), realm_access: (.realm_access | roles),
      resource_access: ((.resource_access // {}) | map_values(roles))}' <<<"$1"
 }
 member_claims="$(person_claims)"
