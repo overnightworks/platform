@@ -1094,6 +1094,15 @@ echo "keycloak:admin: open $admin_url/admin/master/console/ in a private window;
 exec kubectl --namespace keycloak port-forward --address 127.0.0.1 service/keycloak "${BASH_REMATCH[1]}:http"
 '''
 
+[tasks."keycloak:hold"]
+description = "Start a throwaway Keycloak with its Postgres from this tree's manifests in a compose project and on host ports of its own, apply master.yaml and realm.yaml, print one READY line with the URLs, the project and an admin client, and hold until EOF on stdin tears it down. A signal needs scripts/keycloak_hold.sh run through mise exec, since mise run exits on SIGTERM before the teardown ends. Run under probe-run"
+usage = '''
+flag "--scratch <dir>" required=#true help="A new or empty directory for the generated secrets and env files, which the hold removes when it ends, and for docker's log; exit 2 otherwise"
+'''
+quiet = true
+raw = true
+run = 'scripts/keycloak_hold.sh --scratch "${usage_scratch?}"'
+
 [tasks."litellm:keys"]
 description = "Make LiteLLM's person budget and the app keys' limits equal to infrastructure/litellm/keys.yaml; --plan only lists the differences (exit 2 with changes)"
 quiet = true

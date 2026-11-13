@@ -1,0 +1,64 @@
+# The shape of the throwaway Keycloak that scripts/keycloak_hold.sh holds. Every deployment value (images, commands,
+# environment, mount paths) comes from infrastructure/keycloak and infrastructure/postgres when the script runs, through
+# the variables and env files below; this file holds only how the hold wires them. The script names the project.
+services:
+  # The ConfigMap `postgres` the cluster mounts at /etc/postgres-checks holds the restore test's scripts, which no hold
+  # runs, so it stays out.
+  postgres:
+    image: ${POSTGRES_IMAGE:?}
+    env_file:
+      - path: ${HOLD_SCRATCH:?}/postgres.env
+        format: raw
+    volumes:
+      - type: bind
+        source: ${POSTGRES_PASSWORD_SOURCE:?}
+        target: ${POSTGRES_PASSWORD_PATH:?}
+        read_only: true
+      - type: tmpfs
+        target: ${POSTGRES_DATA_DIR:?}
+    healthcheck:
+      test: [CMD-SHELL, "${POSTGRES_READINESS_COMMAND:?}"]
+      interval: 2s
+    networks: [keycloak]
+
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:?}
+    command: ${KEYCLOAK_ARGS:?}
+    env_file:
+      - path: ${HOLD_SCRATCH:?}/keycloak.env
+        format: raw
+    ports:
+      - 127.0.0.1:${HOLD_ADMIN_PORT:?}:${KEYCLOAK_HTTP_PORT:?}
+      - 127.0.0.1:${HOLD_EDGE_PORT:?}:${KEYCLOAK_HTTP_PORT:?}
+    volumes:
+      - type: bind
+        source: ${HOLD_THEME_SOURCE:?}
+        target: ${KEYCLOAK_THEME_DIR:?}
+        read_only: true
+      - type: tmpfs
+        target: ${KEYCLOAK_TMP_DIR:?}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [keycloak]
+
+  config-cli:
+    image: ${CONFIG_CLI_IMAGE:?}
+    entrypoint: ${CONFIG_CLI_COMMAND:?}
+    env_file:
+      - path: ${HOLD_SCRATCH:?}/config-cli.env
+        format: raw
+    volumes:
+      - type: bind
+        source: ${HOLD_MASTER_FILE:?}
+        target: ${CONFIG_CLI_DIR:?}/master.yaml
+        read_only: true
+      - type: bind
+        source: ${HOLD_REALM_FILE:?}
+        target: ${CONFIG_CLI_DIR:?}/realm.yaml
+        read_only: true
+    depends_on: [keycloak]
+    networks: [keycloak]
+
+networks:
+  keycloak:
