@@ -94,7 +94,11 @@ case "$path" in
     spend_row() {
       printf '{"api_key":"%s","end_user":"fp-litellm-cache-probe","startTime":"2099-01-01T00:00:00","metadata":{"additional_usage_values":{"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s}}}' "$1" "$2" "$3"
     }
-    reply="[$(spend_row "$FAKE_APP_HASH" 2900 0),$(spend_row "$FAKE_APP_HASH" 0 2900),$(spend_row hash-another-key 0 7)]" ;;
+    reply="[$(spend_row "$FAKE_APP_HASH" 2900 0),$(spend_row "$FAKE_APP_HASH" 0 2900),$(spend_row hash-another-key 0 7)"
+    # Earlier runs of the probe person leave rows behind; many of them make the selected rows longer than a pipe holds.
+    old_row="$(spend_row "$FAKE_APP_HASH" 0 0)"
+    for _ in $(seq "${FAKE_OLD_ROWS:-0}"); do reply+=",${old_row/2099/2000}"; done
+    reply+="]" ;;
   /budget/list)
     reply='[]'
     [ ! -f "$FAKE_STATE/budget.json" ] || reply="[$(cat "$FAKE_STATE/budget.json")]" ;;
@@ -393,3 +397,12 @@ grep -q 'the spend log holds 2 calls of the key since this run began, cache writ
   grep -q 'held: round 1 wrote the cache, round 2 read it and the spend log counts the read under the key$' <<<"$output" ||
   fail "cache-probe: the probe did not count the two calls of its key: $output"
 echo "the cache probe counts the rows of its key in the unfiltered spend log and passes neither the key nor its hash to curl"
+
+# The hashes of an earlier run's rows must not reach a file either: a here-string longer than a pipe holds is written to a
+# temporary file, which a file size limit below the rows' length refuses.
+runner=(bash -c 'ulimit -f 80 && exec "$0" "$@"' "$repository_root/scripts/litellm_cache_probe.sh")
+FAKE_PROBE=1 FAKE_OLD_ROWS=2000 run_task cache-probe-long-log 0 "" "$work_directory/probe-key"
+runner=(mise run)
+grep -q 'the spend log holds 2 calls of the key since this run began, cache writes 2900, cache reads 2900$' <<<"$output" ||
+  fail "cache-probe-long-log: the probe did not count its calls in a long spend log: $output"
+echo "the cache probe holds the rows of its key's hash in no file, however long the spend log is"

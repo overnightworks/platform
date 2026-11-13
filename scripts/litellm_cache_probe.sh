@@ -57,7 +57,8 @@ usage_field() { yq --input-format json "$2 // \"absent\"" <<<"$1"; }
 # that LiteLLM's spend log holds for the key under the test person since the start; the log is written in batches, so it is
 # read again for two minutes until it holds both calls. The route's key filter would put the key's hash, which LiteLLM
 # takes as the key itself, into curl's arguments, so the unfiltered log (its most recent rows) is read and the rows are
-# selected here by the hash, which stays in a shell variable.
+# selected here by the hash, which stays in a shell variable and reaches the loop through a pipe, since a here-string
+# longer than a pipe holds is written to a temporary file.
 spend_since() {
   local key_hash rows row_key started writes reads
   key_hash="$(printf '%s' "$value" | sha256sum)"
@@ -75,7 +76,7 @@ spend_since() {
       recorded_calls=$((recorded_calls + 1))
       recorded_writes=$((recorded_writes + writes))
       recorded_reads=$((recorded_reads + reads))
-    done <<<"$rows"
+    done < <(printf '%s\n' "$rows")
     [ "$recorded_calls" -lt 2 ] || return 0
     sleep 10
   done
