@@ -24,30 +24,42 @@ image="$(yq 'select(.kind == "Deployment" and .metadata.name == "litellm") | .sp
 mapfile -t models < <(yq '.model_list[].litellm_params.model | select(test("^anthropic/"))' "$layer/litellm-config.yaml")
 [ "${#models[@]}" != 0 ] || fail "litellm-config.yaml names no Anthropic model"
 
-# The call goes through litellm.acompletion with the field the proxy copies from the key; the post is replaced by a
-# recorder that raises, so that nothing leaves the process, and the container has no network besides.
+# The call goes through litellm.acompletion with the field the proxy copies from the key, to an api_base that is a recorder
+# on the container's own loopback, which answers every request with an error; nothing leaves the container, which has no
+# network besides.
 rendered="$(timeout 300 docker run --name "$container" --rm --interactive --network none \
   --env LITELLM_LOCAL_MODEL_COST_MAP=True --entrypoint python "$image" - "${models[@]}" <<'PYTHON' | sed -n 's/^RENDERED //p'
-import asyncio, json as jsonlib, sys
+import asyncio, json as jsonlib, sys, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import litellm
-from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 
 sent = []
 
 
-async def record(self, url, data=None, json=None, **kwargs):
-    sent.append(data if data is not None else json)
-    raise RuntimeError("recorded, nothing is sent")
+class Recorder(BaseHTTPRequestHandler):
+    def do_POST(self):
+        sent.append(jsonlib.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+        reply = b'{"type": "error", "error": {"type": "invalid_request_error", "message": "recorded, nothing is answered"}}'
+        self.send_response(400)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(reply)))
+        self.end_headers()
+        self.wfile.write(reply)
+
+    def log_message(self, *arguments):
+        pass
 
 
-AsyncHTTPHandler.post = record
+recorder = ThreadingHTTPServer(("127.0.0.1", 0), Recorder)
+threading.Thread(target=recorder.serve_forever, daemon=True).start()
+api_base = f"http://127.0.0.1:{recorder.server_port}"
 
 
 async def render(model, flag):
     sent.clear()
     try:
         await litellm.acompletion(
-            model=model, api_key="sk-offline", api_base="http://127.0.0.1:9", max_tokens=16, num_retries=0,
+            model=model, api_key="sk-offline", api_base=api_base, max_tokens=16, num_retries=0,
             enable_prompt_caching=flag,
             messages=[{"role": "system", "content": "You are an agent."},
                       {"role": "user", "content": "first"},
@@ -59,8 +71,7 @@ async def render(model, flag):
         pass
     if len(sent) != 1:
         sys.exit(f"{model}: {len(sent)} requests rendered, not 1")
-    body = sent[0]
-    return jsonlib.loads(body) if isinstance(body, (str, bytes)) else body
+    return sent[0]
 
 
 async def main():
@@ -87,8 +98,8 @@ for index in "${!models[@]}"; do
   with="$((index * 2))" without="$((index * 2 + 1))"
   [ "$(marked "$with")" = "system ephemeral,message ephemeral" ] ||
     fail "${models[$index]}: enable_prompt_caching true did not mark the system text and the last message: $(marked "$with")"
-  [ "$(yq --input-format json ".[$with].request | .messages[-1].content[-1].text + \"/\" + .system[-1].text" <<<"$rendered")" = "second/You are an agent." ] ||
-    fail "${models[$index]}: the markers are not on the last message and the system text"
+  [ "$(yq --input-format json ".[$with].request | .messages[-1].content[-1].cache_control.type + \"/\" + .system[-1].cache_control.type" <<<"$rendered")" = "ephemeral/ephemeral" ] ||
+    fail "${models[$index]}: the markers are not on the final block of the last message and of the system text"
   [ -z "$(marked "$without")" ] || fail "${models[$index]}: enable_prompt_caching false still marked: $(marked "$without")"
 done
 echo "enable_prompt_caching true marks the system text and the last message of a call to each of ${#models[@]} Claude models and false marks nothing"
