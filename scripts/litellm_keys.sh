@@ -174,22 +174,26 @@ applied_revision() {
 }
 # is_number <yq tag>: whether the tag names a number.
 is_number() { [ "$1" = '!!int' ] || [ "$1" = '!!float' ]; }
-# check_table: refuses a table whose person budget or any row's budget or parallel limit is no number, whose apps are no
-# map of rows or whose names are no namespace names, naming the row; sets app_names, the rows' names in order.
+# check_table: refuses a table whose person budget or any row's budget or parallel limit is no number, whose
+# prompt_caching is no boolean, whose apps are no map of rows or whose names are no namespace names, naming the row; sets
+# app_names, the rows' names in order.
 check_table() {
-  local rows name row_tag budget_tag parallel_tag
+  local rows name row_tag budget_tag parallel_tag caching_tag
   app_names=()
   budget_tag="$(yq '.person_budget | tag' <<<"$table")" || fail "the table is no YAML"
   is_number "$budget_tag" || fail "the table's person_budget is no number"
   rows="$(yq '.apps | select(tag == "!!map") | to_entries | sort_by(.key) | .[] | .key + " " + (.value | tag) + " " +
     ((.value | select(tag == "!!map") | .budget | tag) // "none") + " " +
-    ((.value | select(tag == "!!map") | .parallel | tag) // "none")' <<<"$table")" || fail "the table is no YAML"
+    ((.value | select(tag == "!!map") | .parallel | tag) // "none") + " " +
+    ((.value | select(tag == "!!map") | .prompt_caching | tag) // "none")' <<<"$table")" || fail "the table is no YAML"
   [ -n "$rows" ] || fail "the table's apps are no map with a row"
-  while read -r name row_tag budget_tag parallel_tag; do
+  while read -r name row_tag budget_tag parallel_tag caching_tag; do
     [[ $name =~ ^[a-z0-9-]+$ ]] || fail "the table names the app '$name', which is no namespace name"
     [ "$row_tag" = '!!map' ] || fail "the table's row $name is no map"
     is_number "$budget_tag" || fail "the table's row $name has no number budget"
     [ "$parallel_tag" = '!!int' ] || fail "the table's row $name has no whole number parallel"
+    [ "$caching_tag" = '!!bool' ] || [ "$caching_tag" = none ] ||
+      fail "the table's row $name has no boolean prompt_caching"
     app_names+=("$name")
   done <<<"$rows"
 }
@@ -229,7 +233,8 @@ desired_key() {
   APP="$1" PERIOD="$period" ROUTES="$routes" MODELS="$models" yq --output-format json --indent 0 '
     .apps[strenv(APP)] as $row | {"max_budget": $row.budget, "budget_duration": strenv(PERIOD),
     "max_parallel_requests": $row.parallel, "models": (strenv(MODELS) | from_json),
-    "allowed_routes": (strenv(ROUTES) | from_json)}' <<<"$table"
+    "allowed_routes": (strenv(ROUTES) | from_json),
+    "enable_prompt_caching": (if $row | has("prompt_caching") then $row.prompt_caching else true end)}' <<<"$table"
 }
 # flat <JSON object>: one "field value" line per field, a list sorted and joined and a number as a number, so that two
 # objects compare by their lines.
@@ -257,13 +262,15 @@ differences() {
   change_fields="{$change_fields}"
 }
 # found_keys <app>: sets key_count to the keys that hold the alias exactly and found_row to the first of them as JSON, or
-# null.
+# null; LiteLLM keeps enable_prompt_caching in the key's metadata, so the row carries it as a field of its own, where the
+# table's fields are compared.
 found_keys() {
   local holders
   ask "listing the keys of $1" "/key/list?key_alias=$1&return_full_object=true&size=100"
   holders="$(json --output-format json --indent 0 '[.keys[] | select(.key_alias == "'"$1"'")]')"
   key_count="$(yq --input-format json 'length' <<<"$holders")"
-  found_row="$(yq --input-format json --output-format json --indent 0 '.[0]' <<<"$holders")"
+  found_row="$(yq --input-format json --output-format json --indent 0 '.[0] as $row | if $row == null then null else
+    $row | .enable_prompt_caching = $row.metadata.enable_prompt_caching end' <<<"$holders")"
 }
 # read_budget <id>: sets found to the budget's row as JSON, or null.
 read_budget() {
@@ -499,21 +506,24 @@ admin_command() {
   fi
 }
 
-case "${1-}" in
-  keys)
-    command_name=keys
-    shift
-    keys_command "$@"
-    ;;
-  key)
-    command_name=key
-    shift
-    key_command "$@"
-    ;;
-  admin)
-    command_name="admin"
-    shift
-    admin_command "$@"
-    ;;
-  *) fail "usage: scripts/litellm_keys.sh keys [--plan] | key <app> [--replace] | admin <username>" ;;
-esac
+# scripts/litellm_cache_probe.sh sources this file for the connection and the requests, and runs none of the commands.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "${1-}" in
+    keys)
+      command_name=keys
+      shift
+      keys_command "$@"
+      ;;
+    key)
+      command_name=key
+      shift
+      key_command "$@"
+      ;;
+    admin)
+      command_name="admin"
+      shift
+      admin_command "$@"
+      ;;
+    *) fail "usage: scripts/litellm_keys.sh keys [--plan] | key <app> [--replace] | admin <username>" ;;
+  esac
+fi

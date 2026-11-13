@@ -1133,6 +1133,11 @@ description = "Put a person on LiteLLM's unlimited admin budget and into /servic
 quiet = true
 run = "scripts/litellm_keys.sh admin"
 
+[tasks."litellm:cache-probe"]
+description = "Live proof of prompt caching: send two identical streamed rounds with the app key in <key file> to the smallest text model under one test person, print the usage counts and the cache reads LiteLLM recorded for the key (writes the test person's row and two spend log rows); --remove deletes the test person's row"
+quiet = true
+run = "scripts/litellm_cache_probe.sh"
+
 # The one owner of the loopback forward to a Service's page, which a page the operator opens only at the PC shares.
 [tasks."page:forward"]
 description = "Forward a Service to this PC's loopback at a free port and print the address once kubectl listens"

@@ -2,7 +2,9 @@
 # In k3d: the table in the ConfigMap litellm-keys drives LiteLLM's person budget and the app keys through
 # `mise run litellm:keys` and `mise run litellm:key`: --plan lists the differences, exits 2 and changes no row; a row
 # without a key is named and the run ends 1; the numbers reach a key the command did not make and a second run changes
-# nothing; a changed budget changes only that field and keeps the period's reset; the person budget takes its declared
+# nothing, caching included: a key whose row leaves `prompt_caching` out has LiteLLM's prompt caching on, a row with
+# `prompt_caching: false` turns it off and a change back on again, each changing that field alone; a changed budget
+# changes only that field and keeps the period's reset; the person budget takes its declared
 # number under the id LiteLLM's configuration names; litellm:key registers the value of the app's Secret so that it
 # passes the front, a second run reports unchanged, and a changed value, one without sk-, a missing key and an app
 # outside the table are refused and change no row; with --replace a changed value replaces the old one, which the front
@@ -171,6 +173,7 @@ for alias in presentator songmaker; do
   equal_numbers "$(row "$alias" max_budget)" "$(ALIAS="$alias" yq '.apps[strenv(ALIAS)].budget' <<<"$table_original")" &&
     equal_numbers "$(row "$alias" max_parallel_requests)" "$(ALIAS="$alias" yq '.apps[strenv(ALIAS)].parallel' <<<"$table_original")" &&
     [ "$(row "$alias" budget_duration)" = "$period" ] || fail "$alias's row is not the table's"
+  [ "$(row "$alias" metadata.enable_prompt_caching)" = true ] || fail "$alias's key does not have prompt caching on by default"
   [ "$(row_list "$alias" models)" = "$expected_models" ] && [ "$(row_list "$alias" allowed_routes)" = "$expected_routes" ] ||
     fail "$alias's row holds other models or routes than LiteLLM lists and the front's rules name"
 done
@@ -178,6 +181,24 @@ budget_row="$(admin /budget/list | yq --input-format json ".[] | select(.budget_
 equal_numbers "$(yq '.max_budget' <<<"$budget_row")" "$person_budget" && [ "$(yq '.budget_duration' <<<"$budget_row")" = "$period" ] ||
   fail "the person budget $budget_id is not the table's $person_budget per $period"
 echo "the table's numbers reach keys the command did not make and the person budget; a second run changes nothing"
+
+# A row that opts out turns its key's prompt caching off and nothing else; a change back turns it on; a second run changes
+# nothing.
+caching_table() { yq "del(.apps.hopin, .apps.personas) | .apps.songmaker.prompt_caching = $1" <<<"$table_original"; }
+set_table "$(caching_table false)"
+run_task caching-opt-out-plan 2 litellm:keys --plan
+grep -q '^litellm:keys: key songmaker enable_prompt_caching true -> false$' <<<"$output" || fail "--plan did not list the opt-out: $output"
+run_task caching-opt-out 0 litellm:keys
+[ "$(grep -c '^litellm:keys: key ' <<<"$output")" = 1 ] || fail "the opt-out changed more than one field: $output"
+[ "$(row songmaker metadata.enable_prompt_caching)" = false ] && [ "$(row presentator metadata.enable_prompt_caching)" = true ] ||
+  fail "the opt-out did not reach songmaker's key alone"
+run_task caching-opt-out-again 0 litellm:keys
+grep -q ' 0 changes made' <<<"$output" || fail "a second run after the opt-out changed a key: $output"
+set_table "$(caching_table true)"
+run_task caching-opt-in 0 litellm:keys
+[ "$(grep -c '^litellm:keys: key ' <<<"$output")" = 1 ] && [ "$(row songmaker metadata.enable_prompt_caching)" = true ] ||
+  fail "an opt-in did not turn caching on again for songmaker's key alone: $output"
+echo "a row with prompt_caching false turns its key's caching off, a change back turns it on, each changing that field alone and a second run nothing"
 
 # A changed budget changes that field alone, and the period's reset stays.
 reset_before="$(row presentator budget_reset_at)"

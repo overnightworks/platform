@@ -72,16 +72,27 @@ Claude's sessions, Docker's volumes and its build cache (hal's) are never cleane
 
 ## AI budgets (`scripts/litellm_keys.sh`)
 
-`keys.yaml` is the table of the person budget and each app's budget and parallel limit; the ConfigMap `litellm-keys`
-carries it, without a hash suffix, as no pod reads it. (OPS-13)
+`keys.yaml` is the table of the person budget and each app's budget, parallel limit and optional `prompt_caching`; the
+ConfigMap `litellm-keys` carries it, without a hash suffix, as no pod reads it. A row's `prompt_caching` (a boolean, true
+when absent) is the key's `enable_prompt_caching`: LiteLLM marks the system text and the last message of the key's calls
+to Claude for the provider's prompt cache, and `false` leaves them unmarked. LiteLLM keeps the field in the key's
+metadata, where `litellm:keys` reads it back, and records the cache reads and writes of each call in its spend log row,
+so a key whose cache costs more than it saves is switched off here. (OPS-13)
+
+`mise run litellm:cache-probe <key file>` is the operator's live proof of that marking: it sends two identical streamed
+rounds, whose long system text is new to each run, with the app key read from the file to the smallest text model under
+one test person, prints each round's usage counts and the cache writes and reads LiteLLM's spend log holds for the key
+since the run began, and exits 1 unless round 1 wrote the cache, round 2 read it and the log counts that read. It writes
+the test person's customer row and two spend log rows; `mise run litellm:cache-probe --remove` deletes the row.
 
 `mise run litellm:keys [--plan]` makes the person budget (the id of `max_end_user_budget_id`) and each row's key equal
 to it, sending only the fields that differ, so a pure budget change keeps the period's reset; it prints the revision
 Flux applied to the table it read, which it refuses when absent or changed during the read, one line per field with old
-and new, and a count; it refuses a table whose person budget or a row's budget or parallel limit is no number, naming
-the row; a row without a key is named with `run litellm:key <app>` and ends 1 after the rest; a failed write stops the
-rest and names what was made, the failed write, whose outcome is unknown when its answer was lost, and what was not
-made; `--plan` writes nothing and exits 0 with no change, 2 with changes, 1 on a failure. (OPS-14)
+and new, and a count; it refuses a table whose person budget or a row's budget or parallel limit is no number, or a row's
+`prompt_caching` no boolean, naming the row; a row without a key is named with `run litellm:key <app>` and ends 1 after
+the rest; a failed write stops the rest
+and names what was made, the failed write, whose outcome is unknown when its answer was lost, and what was not made;
+`--plan` writes nothing and exits 0 with no change, 2 with changes, 1 on a failure. (OPS-14)
 
 `mise run litellm:admin <username>` is the unlimited AI budget of one admin, through the same script: it reads the
 person as `keycloak:agent-owner` does (`scripts/keycloak_kcadm.sh`, which both tasks source, and whose kcadm diagnostics

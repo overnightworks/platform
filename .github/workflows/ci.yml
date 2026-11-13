@@ -98,6 +98,9 @@ jobs:
       - name: Check that a failed or lost write of the admin budget, its group or its customer row names what may be written and a rerun completes it
         run: mise exec -- tests/litellm/admin_names_what_a_failed_write_may_have_left.sh
 
+      - name: Check that the pinned LiteLLM image marks the provider request of a call with enable_prompt_caching true at the system text and the last message, and of one with false at nothing
+        run: mise exec -- tests/litellm/key_caching_marks_the_provider_request.sh
+
       - name: Check that GITHUB_META_TOKEN reaches only curl's stdin, stays anonymous when unset and is refused outside the token alphabet
         run: mise exec -- tests/secrets/github_meta_token_is_refused_or_reaches_only_curls_stdin.sh
 

@@ -6,9 +6,12 @@
 # and registering the Secret's value; a failure between the delete and the registration says that the alias holds no key
 # and the same command completes it, a lost answer that it may hold the new one; a failed delete says the alias may hold
 # no key, and a signal or a read-back that differs after the registration says the alias may hold or was given the new key
-# and names no command that completes it; a budget-only change sends no period; a table that is no table of numbers, a revision that is absent or changes
-# while the table is read and a value with a newline are refused before any write; and neither a key's value, the master
-# key nor the value's sha256 reaches an argument or any output, tracing included, while the value does reach curl's stdin.
+# and names no command that completes it; a budget-only change sends no period; a row's prompt_caching reaches its key
+# as enable_prompt_caching, true by default, and is read back from the key's metadata; a table that is no table of numbers
+# or holds a prompt_caching that is no boolean, a revision that is absent or changes while the table is read and a value with a newline are refused before any write; and neither a key's value, the master
+# key nor the value's sha256 reaches an argument or any output, tracing included, while the value does reach curl's stdin;
+# the same holds for `mise run litellm:cache-probe`, which reads the spend log without a key filter and counts the rows
+# of its key by the hash itself.
 # Usage: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
 # Proves docs/operations.md OPS-14, OPS-16.
 set -euo pipefail
@@ -56,7 +59,8 @@ FAKE
 # FAKE_HOPIN_HOLDER is set. A write named by FAKE_FAILING_WRITE (a path and a body marker) is answered with 500 and a
 # body, or with FAKE_TRANSPORT_FAILURE after it was applied with a lost answer; every other write is applied and
 # answered 200. It records each write's path, the body of the updates, registrations and deletions, and whether the key
-# value reached its stdin. After it applied a registration, FAKE_GENERATE_DRIFT=field reads the row back with another
+# value reached its stdin, and keeps a stored key's enable_prompt_caching in its metadata as LiteLLM does. After it
+# applied a registration, FAKE_GENERATE_DRIFT=field reads the row back with another
 # limit and =token under another value, and FAKE_SIGNAL_TERM sends TERM to the script before the answer arrives.
 cat >"$fake_bin/curl" <<'FAKE'
 #!/usr/bin/env bash
@@ -65,14 +69,36 @@ url="${*: -1}"
 path="${url#http://127.0.0.1:4000}"
 config="$(cat)"
 for argument in "$@"; do
-  case "$argument" in *"$FAKE_MASTER_KEY"* | *"$FAKE_APP_KEY"*) echo "fake curl: a key in the arguments" >&2; exit 1 ;; esac
+  case "$argument" in *"$FAKE_MASTER_KEY"* | *"$FAKE_APP_KEY"* | *"$FAKE_APP_HASH"*) echo "fake curl: a key or its hash in the arguments" >&2; exit 1 ;; esac
 done
-case "$config" in *"Bearer $FAKE_MASTER_KEY"*) ;; *) echo "fake curl: no master key on stdin" >&2; exit 1 ;; esac
+case "$config" in *"Bearer $FAKE_MASTER_KEY"* | *"Bearer $FAKE_APP_KEY"*) ;; *) echo "fake curl: no key on stdin" >&2; exit 1 ;; esac
 case "$config" in *"$FAKE_APP_KEY"*) echo "app-key-on-stdin $path" >>"$FAKE_STATE/writes" ;; esac
 json() { yq --input-format json --output-format json --indent 0 "$@"; }
+# keep_caching_in_metadata <row file>: moves the row's enable_prompt_caching into its metadata.
+keep_caching_in_metadata() {
+  json -i 'if has("enable_prompt_caching") then .metadata.enable_prompt_caching = .enable_prompt_caching | del(.enable_prompt_caching) else . end' "$1"
+}
 status=200 reply='{}'
 case "$path" in
-  /v1/models) reply='{"data":[{"id":"model-one"}]}' ;;
+  /v1/models)
+    reply='{"data":[{"id":"model-one"}]}'
+    [ -z "$FAKE_PROBE" ] || reply='{"data":[{"id":"model-one"},{"id":"text/haiku"}]}' ;;
+  # The probe's two rounds: the first writes the cache, the second reads it.
+  /v1/chat/completions)
+    echo round >>"$FAKE_STATE/rounds"
+    if [ "$(wc -l <"$FAKE_STATE/rounds")" = 1 ]; then usage='"cache_creation_input_tokens":2900,"cache_read_input_tokens":0'
+    else usage='"cache_creation_input_tokens":0,"cache_read_input_tokens":2900'; fi
+    reply="data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}"$'\n'"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3000,\"completion_tokens\":2,$usage}}"$'\n'"data: [DONE]" ;;
+  # The log of the probe's two calls under the app key's hash, and a third call of another key under the same person.
+  /spend/logs)
+    spend_row() {
+      printf '{"api_key":"%s","end_user":"fp-litellm-cache-probe","startTime":"2099-01-01T00:00:00","metadata":{"additional_usage_values":{"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s}}}' "$1" "$2" "$3"
+    }
+    reply="[$(spend_row "$FAKE_APP_HASH" 2900 0),$(spend_row "$FAKE_APP_HASH" 0 2900),$(spend_row hash-another-key 0 7)"
+    # Earlier runs of the probe person leave rows behind; many of them make the selected rows longer than a pipe holds.
+    old_row="$(spend_row "$FAKE_APP_HASH" 0 0)"
+    for _ in $(seq "${FAKE_OLD_ROWS:-0}"); do reply+=",${old_row/2099/2000}"; done
+    reply+="]" ;;
   /budget/list)
     reply='[]'
     [ ! -f "$FAKE_STATE/budget.json" ] || reply="[$(cat "$FAKE_STATE/budget.json")]" ;;
@@ -101,7 +127,8 @@ case "$path" in
         /key/update)
           echo "update $data" >>"$FAKE_STATE/bodies"
           for row in "$FAKE_STATE"/row-*.json; do
-            [ "$(yq --output-format yaml '.token' "$row")" != "$(yq --input-format json '.key' <<<"$data")" ] || json -i ". * $data" "$row"
+            [ "$(yq --output-format yaml '.token' "$row")" != "$(yq --input-format json '.key' <<<"$data")" ] ||
+              { json -i ". * $data" "$row"; keep_caching_in_metadata "$row"; }
           done ;;
         /key/generate)
           echo "register $data" >>"$FAKE_STATE/bodies"
@@ -109,6 +136,7 @@ case "$path" in
           token="$(printf '%s' "$value" | sha256sum)"
           row="$FAKE_STATE/row-$(yq --input-format json '.key_alias' <<<"$data").json"
           json "del(.key) | .token = \"${token%% *}\"" <<<"$data" >"$row"
+          keep_caching_in_metadata "$row"
           case "$FAKE_GENERATE_DRIFT" in
             field) json -i '.max_parallel_requests += 1' "$row" ;;
             token) json -i '.token = "hash-another"' "$row" ;;
@@ -136,6 +164,8 @@ export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux,flux2 KUBECONFIG=/
 [ "$(command -v kubectl)" = "$fake_bin/kubectl" ] || fail "kubectl on PATH is not the fake"
 [ "$(command -v curl)" = "$fake_bin/curl" ] || fail "curl on PATH is not the fake"
 export FAKE_MASTER_KEY="$master_key" FAKE_APP_KEY="$app_key" FAKE_SECRET_VALUE="$app_key" FAKE_REPLY_BODY="$reply_body"
+FAKE_APP_HASH="$(printf '%s' "$app_key" | sha256sum)"
+export FAKE_APP_HASH="${FAKE_APP_HASH%% *}" FAKE_PROBE=""
 export FAKE_REVISION=applied FAKE_TRANSPORT_FAILURE="" FAKE_HOPIN_HOLDER="" FAKE_GENERATE_DRIFT="" FAKE_SIGNAL_TERM=""
 
 budget_id="$(yq '.litellm_settings.max_end_user_budget_id' "$layer/litellm-config.yaml")"
@@ -218,6 +248,8 @@ table_cases=(
   'budget-typo~del(.apps.hopin.budget) | .apps.hopin.buget = 12~row hopin has no number budget'
   'budget-text~.apps.hopin.budget = "ten"~row hopin has no number budget'
   'parallel-missing~del(.apps.hopin.parallel)~row hopin has no whole number parallel'
+  'caching-text~.apps.hopin.prompt_caching = "no"~row hopin has no boolean prompt_caching'
+  'caching-null~.apps.hopin.prompt_caching = null~row hopin has no boolean prompt_caching'
   'row-scalar~.apps.hopin = 5~row hopin is no map'
   'apps-null~.apps = null~apps are no map with a row'
   'apps-number~.apps = 5~apps are no map with a row'
@@ -258,6 +290,18 @@ grep -q '^update .*"max_budget"' "$FAKE_STATE/bodies" || fail "budget-only: the 
   fail "budget-only: the update holds more than the budget: $(cat "$FAKE_STATE/bodies")"
 use_table
 echo "a changed budget alone sends the budget and no period"
+
+# A row's prompt_caching is sent as enable_prompt_caching, true when the row omits it, and read back from the key's metadata,
+# so a second run changes nothing.
+use_table 'del(.apps.hopin) | .apps."test-b".prompt_caching = false'
+run_task caching 0 "" litellm:keys
+grep -q '^update .*"enable_prompt_caching":true' <<<"$(grep 'hash-test-a' "$FAKE_STATE/bodies")" &&
+  grep -q '^update .*"enable_prompt_caching":false' <<<"$(grep 'hash-test-b' "$FAKE_STATE/bodies")" ||
+  fail "caching: the updates do not carry the default and the opt-out: $(cat "$FAKE_STATE/bodies")"
+run_task caching 0 "" litellm:keys
+grep -q ' 0 changes made' <<<"$output" || fail "caching: a second run changed a key: $output"
+use_table
+echo "a row's prompt_caching reaches its key as enable_prompt_caching, on by default, and a second run changes nothing"
 
 # Another value under the alias is refused without --replace, naming the flag, and nothing is written.
 FAKE_HOPIN_HOLDER=other run_task refused-without-flag 1 "" litellm:key hopin
@@ -344,3 +388,21 @@ for usage in "hopin --replace extra" "hopin --other"; do
   [ -z "$writes" ] || fail "usage: '$usage' wrote: $writes"
 done
 echo "an unknown flag or a second argument is refused as usage before any write"
+
+# The live probe reads the spend log without a key filter, since the key's hash in the request path would be an argument of
+# curl, and counts only the rows of its own key: the cache write of the first round and the read of the second.
+printf '%s\n' "$app_key" >"$work_directory/probe-key"
+FAKE_PROBE=1 run_task cache-probe 0 "" litellm:cache-probe "$work_directory/probe-key"
+grep -q 'the spend log holds 2 calls of the key since this run began, cache writes 2900, cache reads 2900$' <<<"$output" &&
+  grep -q 'held: round 1 wrote the cache, round 2 read it and the spend log counts the read under the key$' <<<"$output" ||
+  fail "cache-probe: the probe did not count the two calls of its key: $output"
+echo "the cache probe counts the rows of its key in the unfiltered spend log and passes neither the key nor its hash to curl"
+
+# The hashes of an earlier run's rows must not reach a file either: a here-string longer than a pipe holds is written to a
+# temporary file, which a file size limit below the rows' length refuses.
+runner=(bash -c 'ulimit -f 80 && exec "$0" "$@"' "$repository_root/scripts/litellm_cache_probe.sh")
+FAKE_PROBE=1 FAKE_OLD_ROWS=2000 run_task cache-probe-long-log 0 "" "$work_directory/probe-key"
+runner=(mise run)
+grep -q 'the spend log holds 2 calls of the key since this run began, cache writes 2900, cache reads 2900$' <<<"$output" ||
+  fail "cache-probe-long-log: the probe did not count its calls in a long spend log: $output"
+echo "the cache probe holds the rows of its key's hash in no file, however long the spend log is"
