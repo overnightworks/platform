@@ -3,6 +3,6 @@ agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
 role = "builder"
 base = "63e7bdb3efc89c31c67956de989117eae0130f36"
 branch = "claude/issue-544-one-operator-step-switches-the-gpu-betwe"
-scope = [".github/workflows/ci.yml", "apps/speech-runtime", "docs/operations.md", "docs/personal-data.md", "scripts/gpu_use.sh", "scripts/verify_image_release.sh"]
+scope = [".github/workflows/ci.yml", "apps/speech-runtime", "docs/operations.md", "docs/personal-data.md", "scripts/gpu_use.sh", "scripts/verify_image_release.sh", "tests/flux/reconcile_the_candidate_tree.sh"]
 opened_commit = "06a64a39e81680dc1f3deb2d2260b7bd17c905c0"
 whole_reason = "The GPU Deployment, the Service that swaps between both and the switch that scales them are one behaviour."
