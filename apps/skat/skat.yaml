@@ -68,6 +68,9 @@ spec:
               value: /run/secrets/skat/oidc_client_secret
             - name: SKAT_PUBLIC_ORIGIN
               value: https://skat.hallucinai.de
+            # hopin's origin, the one page that may frame a table in a call; unset, no page may.
+            - name: SKAT_CALL_ORIGIN
+              value: https://hopin.hallucinai.de
             - name: SKAT_SESSION_SECRET_FILE
               value: /run/secrets/skat/session_secret
             - name: SKAT_DATABASE_URL
