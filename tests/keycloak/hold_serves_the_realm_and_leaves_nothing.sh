@@ -4,7 +4,8 @@
 # with `HOLD ENDED`. Hold 2 runs beside it in a project of its own, started as the script itself since mise run's
 # wrapper dies on SIGTERM without waiting for the teardown; it gets SIGTERM before READY and ends with `PROBE FAILED`
 # while hold 1 still answers and publishes other host ports than hold 1. Hold 3 runs with a docker that cannot list
-# containers and must not claim a verified teardown. Hold 4 gets SIGTERM while a docker command runs that, like the
+# containers, and hold 5 with a docker that lists the project as left in three teardown rounds and empty in the fourth,
+# must not claim a verified teardown. Hold 4 gets SIGTERM while a docker command runs that, like the
 # compose plugin beside the docker command, has a child; both ignore SIGTERM: neither is left and the teardown is done
 # within probe-run's grace when the hold ends.
 # After all, no container, network or volume of any project remains, no generated secret or env file is left in a
@@ -129,6 +130,26 @@ kill -TERM "$hold3_pid"
 await_exit "$hold3_pid" 120
 [ "$exit_status" = 1 ] || fail "hold 3 ended with $exit_status although docker could not list its containers, not 1"
 grep -q '^PROBE FAILED: .*could not list' "$work/hold3.out" || fail "hold 3 did not report the unverified teardown: $(cat "$work/hold3.out")"
+
+# --- hold 5: a project that lists as left in three rounds and empty only in the fourth is no verified teardown
+mkdir "$work/shim5"
+cat >"$work/shim5/docker" <<'SHIM'
+#!/bin/sh
+if [ "$1" = ps ] && [ -e "$HOLD5_STATE.armed" ]; then
+  echo x >>"$HOLD5_STATE.listings"
+  [ "$(wc -l <"$HOLD5_STATE.listings")" -gt 3 ] || { echo "fake-leftover"; exit 0; }
+fi
+exec "$REAL_DOCKER" "$@"
+SHIM
+chmod +x "$work/shim5/docker"
+start_hold hold5 /dev/null env REAL_DOCKER="$(command -v docker)" HOLD5_STATE="$work/hold5-state" PATH="$work/shim5:$PATH" scripts/keycloak_hold.sh
+hold5_pid="$hold_pid"
+await_project hold5 "$hold5_pid"
+touch "$work/hold5-state.armed"
+kill -TERM "$hold5_pid"
+await_exit "$hold5_pid" 120
+[ "$exit_status" = 1 ] || fail "hold 5 ended with $exit_status after a teardown that was empty in one round only, not 1"
+grep -q '^PROBE FAILED: .*two rounds in a row' "$work/hold5.out" || fail "hold 5 did not report the unverified teardown: $(cat "$work/hold5.out")"
 
 # --- hold 4: SIGTERM while a docker command and its child ignore SIGTERM; the hold kills both and tears down within
 # probe-run's grace

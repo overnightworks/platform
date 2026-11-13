@@ -83,6 +83,7 @@ teardown() {
   elif [ -n "$leftovers" ]; then
     fail_after_teardown="${fail_after_teardown:+$fail_after_teardown; }left after teardown: $(tr '\n' ' ' <<<"$leftovers")"
   fi
+  [ -n "$fail_after_teardown" ] || fail_after_teardown="the project was not empty in two rounds in a row within $teardown_rounds rounds, so the teardown is unverified"
 }
 
 # True while a process of the session $1 leads, a zombie apart.
