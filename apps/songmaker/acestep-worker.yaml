@@ -1,7 +1,9 @@
 # songmaker's GPU worker, the music model's host. It holds the card with one replica, and it has no way to the
 # internet: HF_HUB_OFFLINE makes a missing model fail at once and the NetworkPolicy lets it send only to cluster DNS,
-# Redis and the web. Its image is the same private package release as the web, its environment and mounts follow the
-# release's docker-compose.yml, and its one secret is the internal token, which the worker reads from /run/secrets.
+# Redis and the web. Its image is the same private package release as the web; songmaker's
+# src/acestep_worker/settings.py owns its settings' names and how it reads secret files, and
+# docker/acestep-worker.Dockerfile its user and paths, while this manifest alone owns its mounts. Its one secret is
+# the internal token, which the worker reads from /run/secrets.
 # /health answers 503 without the card, so readiness proves the card as well.
 apiVersion: apps/v1
 kind: Deployment
