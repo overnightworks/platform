@@ -1,0 +1,7 @@
+claim_id = "c03a8490722f4209a278f1e4d7d0e19b"
+agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
+role = "builder"
+base = "259a71d7be3dd8a677f75635b9a2cf2896465941"
+branch = "fix/speech-2026.11.13.1"
+scope = ["apps/speech-runtime/speech-runtime.yaml"]
+opened_commit = "1b58c59c5acf904c4fa1354652a333b94579b9cb"
