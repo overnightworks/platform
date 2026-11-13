@@ -55,20 +55,23 @@ stream_round() {
 usage_field() { yq --input-format json "$2 // \"absent\"" <<<"$1"; }
 # spend_since <start>: sets recorded_calls, recorded_writes and recorded_reads to the calls and the cache writes and reads
 # that LiteLLM's spend log holds for the key under the test person since the start; the log is written in batches, so it is
-# read again for two minutes until it holds both calls.
+# read again for two minutes until it holds both calls. The route's key filter would put the key's hash, which LiteLLM
+# takes as the key itself, into curl's arguments, so the unfiltered log (its most recent rows) is read and the rows are
+# selected here by the hash, which stays in a shell variable.
 spend_since() {
-  local key_hash rows started writes reads
+  local key_hash rows row_key started writes reads
   key_hash="$(printf '%s' "$value" | sha256sum)"
+  key_hash="${key_hash%% *}"
   for _ in $(seq 12); do
-    ask "reading the spend log of the key" "/spend/logs?api_key=${key_hash%% *}"
+    ask "reading the spend log" /spend/logs
     rows="$(PERSON="$probe_person" json '
-      .[] | select(.end_user == strenv(PERSON)) | (.startTime | tostring) + " " + (.metadata |
+      .[] | select(.end_user == strenv(PERSON)) | .api_key + " " + (.startTime | tostring) + " " + (.metadata |
       ((select(tag == "!!str") | from_json) // .) | .additional_usage_values |
       ((.cache_creation_input_tokens // 0) | tostring) + " " + ((.cache_read_input_tokens // 0) | tostring))')"
     recorded_calls=0 recorded_writes=0 recorded_reads=0
-    while read -r started writes reads; do
+    while read -r row_key started writes reads; do
       # UTC timestamps of one format compare as text.
-      [ -n "$started" ] && [[ $started > $1 ]] || continue
+      [ "$row_key" = "$key_hash" ] && [[ $started > $1 ]] || continue
       recorded_calls=$((recorded_calls + 1))
       recorded_writes=$((recorded_writes + writes))
       recorded_reads=$((recorded_reads + reads))

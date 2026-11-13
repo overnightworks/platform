@@ -9,7 +9,9 @@
 # and names no command that completes it; a budget-only change sends no period; a row's prompt_caching reaches its key
 # as enable_prompt_caching, true by default, and is read back from the key's metadata; a table that is no table of numbers
 # or holds a prompt_caching that is no boolean, a revision that is absent or changes while the table is read and a value with a newline are refused before any write; and neither a key's value, the master
-# key nor the value's sha256 reaches an argument or any output, tracing included, while the value does reach curl's stdin.
+# key nor the value's sha256 reaches an argument or any output, tracing included, while the value does reach curl's stdin;
+# the same holds for `mise run litellm:cache-probe`, which reads the spend log without a key filter and counts the rows
+# of its key by the hash itself.
 # Usage: mise exec -- tests/litellm/failed_write_names_what_is_done.sh
 # Proves docs/operations.md OPS-14, OPS-16.
 set -euo pipefail
@@ -67,9 +69,9 @@ url="${*: -1}"
 path="${url#http://127.0.0.1:4000}"
 config="$(cat)"
 for argument in "$@"; do
-  case "$argument" in *"$FAKE_MASTER_KEY"* | *"$FAKE_APP_KEY"*) echo "fake curl: a key in the arguments" >&2; exit 1 ;; esac
+  case "$argument" in *"$FAKE_MASTER_KEY"* | *"$FAKE_APP_KEY"* | *"$FAKE_APP_HASH"*) echo "fake curl: a key or its hash in the arguments" >&2; exit 1 ;; esac
 done
-case "$config" in *"Bearer $FAKE_MASTER_KEY"*) ;; *) echo "fake curl: no master key on stdin" >&2; exit 1 ;; esac
+case "$config" in *"Bearer $FAKE_MASTER_KEY"* | *"Bearer $FAKE_APP_KEY"*) ;; *) echo "fake curl: no key on stdin" >&2; exit 1 ;; esac
 case "$config" in *"$FAKE_APP_KEY"*) echo "app-key-on-stdin $path" >>"$FAKE_STATE/writes" ;; esac
 json() { yq --input-format json --output-format json --indent 0 "$@"; }
 # keep_caching_in_metadata <row file>: moves the row's enable_prompt_caching into its metadata.
@@ -78,7 +80,21 @@ keep_caching_in_metadata() {
 }
 status=200 reply='{}'
 case "$path" in
-  /v1/models) reply='{"data":[{"id":"model-one"}]}' ;;
+  /v1/models)
+    reply='{"data":[{"id":"model-one"}]}'
+    [ -z "$FAKE_PROBE" ] || reply='{"data":[{"id":"model-one"},{"id":"text/haiku"}]}' ;;
+  # The probe's two rounds: the first writes the cache, the second reads it.
+  /v1/chat/completions)
+    echo round >>"$FAKE_STATE/rounds"
+    if [ "$(wc -l <"$FAKE_STATE/rounds")" = 1 ]; then usage='"cache_creation_input_tokens":2900,"cache_read_input_tokens":0'
+    else usage='"cache_creation_input_tokens":0,"cache_read_input_tokens":2900'; fi
+    reply="data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}"$'\n'"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3000,\"completion_tokens\":2,$usage}}"$'\n'"data: [DONE]" ;;
+  # The log of the probe's two calls under the app key's hash, and a third call of another key under the same person.
+  /spend/logs)
+    spend_row() {
+      printf '{"api_key":"%s","end_user":"fp-litellm-cache-probe","startTime":"2099-01-01T00:00:00","metadata":{"additional_usage_values":{"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s}}}' "$1" "$2" "$3"
+    }
+    reply="[$(spend_row "$FAKE_APP_HASH" 2900 0),$(spend_row "$FAKE_APP_HASH" 0 2900),$(spend_row hash-another-key 0 7)]" ;;
   /budget/list)
     reply='[]'
     [ ! -f "$FAKE_STATE/budget.json" ] || reply="[$(cat "$FAKE_STATE/budget.json")]" ;;
@@ -144,6 +160,8 @@ export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux,flux2 KUBECONFIG=/
 [ "$(command -v kubectl)" = "$fake_bin/kubectl" ] || fail "kubectl on PATH is not the fake"
 [ "$(command -v curl)" = "$fake_bin/curl" ] || fail "curl on PATH is not the fake"
 export FAKE_MASTER_KEY="$master_key" FAKE_APP_KEY="$app_key" FAKE_SECRET_VALUE="$app_key" FAKE_REPLY_BODY="$reply_body"
+FAKE_APP_HASH="$(printf '%s' "$app_key" | sha256sum)"
+export FAKE_APP_HASH="${FAKE_APP_HASH%% *}" FAKE_PROBE=""
 export FAKE_REVISION=applied FAKE_TRANSPORT_FAILURE="" FAKE_HOPIN_HOLDER="" FAKE_GENERATE_DRIFT="" FAKE_SIGNAL_TERM=""
 
 budget_id="$(yq '.litellm_settings.max_end_user_budget_id' "$layer/litellm-config.yaml")"
@@ -366,3 +384,12 @@ for usage in "hopin --replace extra" "hopin --other"; do
   [ -z "$writes" ] || fail "usage: '$usage' wrote: $writes"
 done
 echo "an unknown flag or a second argument is refused as usage before any write"
+
+# The live probe reads the spend log without a key filter, since the key's hash in the request path would be an argument of
+# curl, and counts only the rows of its own key: the cache write of the first round and the read of the second.
+printf '%s\n' "$app_key" >"$work_directory/probe-key"
+FAKE_PROBE=1 run_task cache-probe 0 "" litellm:cache-probe "$work_directory/probe-key"
+grep -q 'the spend log holds 2 calls of the key since this run began, cache writes 2900, cache reads 2900$' <<<"$output" &&
+  grep -q 'held: round 1 wrote the cache, round 2 read it and the spend log counts the read under the key$' <<<"$output" ||
+  fail "cache-probe: the probe did not count the two calls of its key: $output"
+echo "the cache probe counts the rows of its key in the unfiltered spend log and passes neither the key nor its hash to curl"
