@@ -1,0 +1,7 @@
+claim_id = "dba417487cb94fd1839300f25c40f73a"
+agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
+role = "builder"
+base = "e418e04fc8498215e79046143bc031cf40a58b03"
+branch = "claude/issue-555-the-runner-runs-personas-2026-11-13-2-wi"
+scope = ["apps/personas/personas.toml", "apps/personas/personas.yaml"]
+opened_commit = "eaf614a4842f7fc4057bb14e9ff9ceaad9140ed3"
