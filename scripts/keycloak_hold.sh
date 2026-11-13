@@ -49,11 +49,12 @@ project_objects() {
   docker volume ls --quiet --filter "$label" || return
 }
 
-# Runs a command with docker's output in the log and waits for it in a way a trapped signal interrupts at once. The
-# command must be an executable and not a shell function, so that $child is the pid of the docker process.
+# Runs a command with docker's output in the log, in a session of its own so that stop_child reaches the compose plugin
+# the docker command starts, and waits for it in a way a trapped signal interrupts at once. The command must be an
+# executable and not a shell function, so that $child is the pid of the session's leader.
 await() {
   local status=0
-  "$@" >>"$log" 2>&1 &
+  setsid "$@" >>"$log" 2>&1 &
   child=$!
   wait "$child" || status=$?
   child=""
@@ -80,18 +81,28 @@ teardown() {
   fi
 }
 
-# Stops the running docker command and waits until it is gone, so that nothing it still creates appears after the
-# teardown listed the project; a command that ignores SIGTERM for child_stop_seconds is killed.
-stop_child() {
-  local state attempt
-  kill "$child" 2>/dev/null || return 0
-  for ((attempt = 0; attempt < child_stop_seconds * 5; attempt++)); do
-    state="$(ps -o stat= -p "$child" 2>/dev/null || true)"
-    case "$state" in "" | Z*) break ;; esac
+# True while a process of the session $1 leads, a zombie apart.
+session_runs() { ps -o stat= --sid "$1" 2>/dev/null | grep -qv '^Z'; }
+
+await_session_gone() {
+  local attempt
+  for ((attempt = 0; attempt < $2 * 5; attempt++)); do
+    session_runs "$1" || return 0
     sleep 0.2
   done
-  kill -KILL "$child" 2>/dev/null || true
-  wait "$child" 2>/dev/null || true
+  return 1
+}
+
+# Stops the session of the running docker command and waits until no process of it remains, so that nothing it still
+# creates appears after the teardown listed the project; a session that ignores SIGTERM for child_stop_seconds is killed.
+stop_child() {
+  kill -TERM -- "-$child" 2>/dev/null || true
+  if ! await_session_gone "$child" "$child_stop_seconds"; then
+    kill -KILL -- "-$child" 2>/dev/null || true
+    await_session_gone "$child" 5 || true
+  fi
+  session_runs "$child" || wait "$child" 2>/dev/null || true
+  child=""
 }
 
 finish() {
@@ -298,6 +309,7 @@ ready_json="$(yq --null-input --output-format=json --indent=0 '{"edge_url": stre
 ready=1
 echo "READY $ready_json"
 
-cat <&0 >/dev/null &
+setsid cat <&0 >/dev/null &
 child=$!
 wait "$child" || true
+child=""
