@@ -78,6 +78,9 @@ spec:
               value: "true"
             - name: HOPIN_SPEECH__SPEAKING
               value: "true"
+            # Skat's origin, whose tables a call shows in a frame; unset, a call offers no Skat and frames nothing.
+            - name: HOPIN_SKAT_ORIGIN
+              value: https://skat.hallucinai.de
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicies below admit
             # only Traefik's and Keycloak's, so no other pod can name a client address in X-Forwarded-For.
             - name: HOPIN_TRUSTED_PROXIES
