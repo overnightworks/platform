@@ -59,6 +59,8 @@ max_tool_calls = 4
 # `share_album`. Nothing that deletes, rewrites or reads another part of the library is named. Six calls fit a turn that
 # makes an album and a song, starts the generation, follows it once and shares the song. If the app no longer declares
 # a tool named here, it lends none of its tools: the turn reports that once and runs on the other apps' tools.
+# Leonardo's client lacks mcp-songmaker, so the runner's request for the scope is refused on each of his turns and logs
+# tools_only_app_failed: visible and harmless, and his turn runs on the other apps' tools.
 [[apps]]
 mcp_url = "https://songmaker.hallucinai.de/mcp"
 scope = "mcp-songmaker"
