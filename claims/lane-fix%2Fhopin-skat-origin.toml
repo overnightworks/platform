@@ -3,5 +3,5 @@ agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
 role = "builder"
 base = "588dcb21dc9857c2c2855b655240154be2192d14"
 branch = "fix/hopin-skat-origin"
-scope = ["apps/hopin/hopin.yaml"]
+scope = ["apps/hopin/hopin.yaml", "apps/skat/skat.yaml"]
 opened_commit = "c449c489374caccd2d4716e9ff99d3b2343e1e03"
