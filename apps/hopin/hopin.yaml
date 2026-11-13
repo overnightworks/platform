@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: hopin
-          image: ghcr.io/overnightworks/hopin:2026.11.13.1@sha256:dd85c95866fd451a433b85ae0aad9dc9dea51f06f3cbd941c5aae875a576f528
+          image: ghcr.io/overnightworks/hopin:2026.11.13.2@sha256:9d3563bcf22b26036e3904ce7070cb9f6d1a22db5f081178be7205ea5eb283e3
           ports:
             - name: http
               containerPort: 8080
@@ -68,6 +68,16 @@ spec:
             # runner's figure lines name. A prefix holds no secret, so the value stands in the manifest.
             - name: HOPIN_FIGURE_SOURCES
               value: '["https://github.com/overnightworks/personas/releases/download/"]'
+            # The speech service's Service and the Keycloak scope its token carries: with both set, hearing lets an agent
+            # hear its sponsor and speaking lets an agent with an account of its own speak in a call.
+            - name: HOPIN_SPEECH__ORIGIN
+              value: http://speech-runtime.speech-runtime.svc.cluster.local:8080
+            - name: HOPIN_SPEECH__AUDIENCE_SCOPE
+              value: speech-service-audience
+            - name: HOPIN_SPEECH__HEARING
+              value: "true"
+            - name: HOPIN_SPEECH__SPEAKING
+              value: "true"
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicies below admit
             # only Traefik's and Keycloak's, so no other pod can name a client address in X-Forwarded-For.
             - name: HOPIN_TRUSTED_PROXIES
