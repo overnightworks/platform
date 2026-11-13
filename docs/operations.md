@@ -45,6 +45,9 @@ Deployment, so a dead web mails `DeploymentUnavailable` and `TargetDown` only fo
 alerts are `NoOnlineAceStepWorker`, silent while the Deployment `acestep-worker` stands at 0 replicas or is not Ready,
 `SongmakerJobFailure` and `SongmakerBackgroundLoopUnhealthy`. (OPS-7)
 
+The card has one user at a time because the PC holds one: `mise run gpu:use songs` runs `acestep-worker` and waits
+until it is Ready, `mise run gpu:use speech` stops it. Git names no replica count for it, so Flux keeps the choice.
+
 ## The PC's disk and its bounds (`host/disk/` and the user units of `mise.toml`)
 
 `mise run disk` runs without sudo and prints what fills the disk of the home directory by size and name (named
