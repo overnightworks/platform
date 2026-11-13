@@ -1,8 +1,0 @@
-claim_id = "e9076b1b70754fdebb2362dd4620906b"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "8f7b7d2c1199b604618aa5b0ab4ac5ab94e8c5de"
-branch = "fix/gpu-use"
-scope = ["apps/songmaker/acestep-worker.yaml", "docs/operations.md", "mise.toml", "scripts/gpu_use.sh"]
-opened_commit = "5e1b20d4acd5f10f9ecc5da4c18e468b30158794"
-whole_reason = "The switch command, its task and the manifest that hands the replica count to it work only together."
