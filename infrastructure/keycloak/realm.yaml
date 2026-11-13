@@ -419,6 +419,18 @@ clientScopes:
           access.token.claim: "true"
           userinfo.token.claim: "false"
           introspection.token.claim: "true"
+      # Keycloak's standard token exchange takes only a token that names the exchanging client in its audience, so a
+      # token asked with this scope names hopin beside the MCP URL, which lets hopin's client exchange it.
+      - name: mcp-hopin-exchange-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          included.client.audience: hopin
+          id.token.claim: "false"
+          access.token.claim: "true"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
   - name: mcp-skat
     description: An agent's access to skat's MCP front
     protocol: openid-connect
@@ -489,6 +501,7 @@ users:
       - /apps/hopin/mcp
       - /apps/skat/mcp
       - /agent-owners
+      - /services/speech-service
   - username: service-account-agent-leonardo
     serviceAccountClientId: agent-leonardo
     groups:
@@ -497,6 +510,7 @@ users:
       - /apps/hopin/mcp
       - /apps/skat/mcp
       - /agent-owners
+      - /services/speech-service
 clients:
   # Audience only: the speech service accepts tokens issued for it and never signs anyone in.
   - clientId: speech-service
@@ -546,7 +560,9 @@ clients:
   # hopin signs people in the same way as songmaker and is logged out the same way, at its own Service.
   # It holds a refresh token per session, named as on so a merge cannot keep an earlier off, and its service
   # account is a workload of the speech service, whose audience it asks for by the optional scope
-  # speech-service-audience. It reads no email, web origin or acr, so it has none of those scopes.
+  # speech-service-audience. It reads no email, web origin or acr, so it has none of those scopes. It is the only
+  # client that may exchange a token: standard.token.exchange.enabled lets it trade the token of an agent, which names
+  # hopin through mcp-hopin, for one with the speech audience.
   - clientId: hopin
     name: hopin
     enabled: true
@@ -567,6 +583,7 @@ clients:
       backchannel.logout.url: "http://hopin.hopin.svc.cluster.local:8080/auth/backchannel-logout"
       backchannel.logout.session.required: "false"
       use.refresh.tokens: "true"
+      standard.token.exchange.enabled: "true"
     defaultClientScopes:
       - basic
       - profile
@@ -673,9 +690,9 @@ clients:
       - mcp-hopin
       - offline_access
   # An autonomous agent's own confidential client: client credentials only, no refresh token, the type header
-  # webauth requires, and the audiences of hopin's and skat's /mcp only for the optional scopes mcp-hopin and
-  # mcp-skat. It has no roles scope, so its tokens carry no realm or client role. enabled is left out, so a switch-off
-  # in the console survives every apply.
+  # webauth requires, and the audiences of hopin's /mcp and hopin, and of skat's /mcp, only for the optional scopes
+  # mcp-hopin and mcp-skat. It has no roles scope, so its tokens carry no realm or client role. enabled is left out, so
+  # a switch-off in the console survives every apply.
   - clientId: agent-mozart
     name: agent-mozart
     publicClient: false

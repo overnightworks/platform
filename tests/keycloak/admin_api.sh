@@ -58,3 +58,32 @@ rerun_config_cli() {
   flux reconcile kustomization "$namespace" --timeout=10m
   kubectl -n "$namespace" wait job/config-cli --for=condition=Complete --timeout=10m
 }
+# client_secret_to_file <clientId> <file>: the client's secret as realm.yaml names it, read from the Secret keycloak under
+# the key the Job config-cli took it from, straight into the file; masked in Actions' logs.
+client_secret_to_file() {
+  local secret_variable key
+  secret_variable="$(CLIENT="$1" yq '.clients[] | select(.clientId == strenv(CLIENT)) | .secret' "$REALM_FILE" |
+    sed 's/^$(env:\(.*\))$/\1/')"
+  key="$(kubectl -n "$namespace" get job/config-cli -o json | NAME="$secret_variable" yq -p json \
+    '.spec.template.spec.containers[0].env[] | select(.name == strenv(NAME)) | .valueFrom.secretKeyRef.key')"
+  kubectl -n "$namespace" get secret keycloak -o go-template="{{index .data \"$key\" | base64decode}}" >"$2"
+  mask_secret "$(<"$2")"
+}
+# put_changed <admin path of a client or user> <jq filter> [<jq argument>...]: writes back the representation the filter
+# changes; it goes through a file, since a confidential client's holds its secret. An attribute the filter leaves out
+# stays, so one is removed by setting it to null.
+put_changed() {
+  local path="$1" filter="$2" body_file status
+  shift 2
+  body_file="$(mktemp "$RUNNER_TEMP/put-changed.XXXXXX")"
+  admin GET "$path" | jq "$@" "$filter" >"$body_file" && admin PUT "$path" "@$body_file" >/dev/null
+  status=$?
+  rm -f -- "$body_file"
+  return "$status"
+}
+# set_enabled <admin path of a client or user> <true|false>
+set_enabled() { put_changed "$1" '.enabled = $enabled' --argjson enabled "$2"; }
+# sorted_list: the words of stdin, one per line, in byte order.
+sorted_list() { tr ' ' '\n' | grep . | LC_ALL=C sort; }
+# file_groups_of <username>: the groups REALM_FILE gives the user, sorted, one per line.
+file_groups_of() { USER="$1" yq '.users[] | select(.username == strenv(USER)) | .groups[]' "$REALM_FILE" | sorted_list; }

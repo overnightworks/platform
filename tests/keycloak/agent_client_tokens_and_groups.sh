@@ -46,21 +46,19 @@ trap 'exit 143' TERM INT
 
 client_entry="$(CLIENT="$client" yq --output-format json '.clients[] | select(.clientId == strenv(CLIENT))' "$REALM_FILE")"
 [ -n "$client_entry" ] || fail "$REALM_FILE declares no client $client"
-hopin_audience="$(yq --exit-status '.clientScopes[] | select(.name == "mcp-hopin") | .protocolMappers[0].config."included.custom.audience"' "$REALM_FILE")"
 lifespan="$(yq --exit-status '.accessTokenLifespan' "$REALM_FILE")"
 agent_name="$(jq --raw-output '.protocolMappers[] | select(.name == "agent_name") | .config."claim.value"' <<<"$client_entry")"
-sorted_list() { tr ' ' '\n' | grep . | LC_ALL=C sort; }
-file_groups="$(USER="service-account-$client" yq '.users[] | select(.username == strenv(USER)) | .groups[]' "$REALM_FILE" | sorted_list)"
+# mcp_hopin_audiences: the audiences of the scope mcp-hopin, each mapper read by its name, sorted.
+mcp_hopin_audiences="$(yq --exit-status '[.clientScopes[] | select(.name == "mcp-hopin") | .protocolMappers[]
+  | select(.name == "mcp-hopin-audience" or .name == "mcp-hopin-exchange-audience")
+  | .config."included.custom.audience" // .config."included.client.audience"] | .[]' "$REALM_FILE" | sorted_list)"
+[ "$(wc -l <<<"$mcp_hopin_audiences")" = 2 ] || fail "$REALM_FILE gives mcp-hopin '${mcp_hopin_audiences//$'\n'/ }', not two audiences"
+file_groups="$(file_groups_of "service-account-$client")"
 [ "$file_groups" = "$(sorted_list <<<"$AGENT_GROUPS")" ] ||
   fail "$REALM_FILE gives $client the groups '${file_groups//$'\n'/ }', not the allowlist '$AGENT_GROUPS'"
 
-# The secret's name from the file and its Secret key from the Job that used it, read straight into a file.
-secret_variable="$(yq '.secret' <<<"$client_entry" | sed 's/^$(env:\(.*\))$/\1/')"
-secret_key="$(kubectl -n "$namespace" get job/config-cli -o json | NAME="$secret_variable" yq -p json \
-  '.spec.template.spec.containers[0].env[] | select(.name == strenv(NAME)) | .valueFrom.secretKeyRef.key')"
-kubectl -n "$namespace" get secret keycloak -o go-template="{{index .data \"$secret_key\" | base64decode}}" >"$client_secret_file"
+client_secret_to_file "$client" "$client_secret_file"
 openssl rand -hex 24 | tr -d '\n' >"$password_file"
-mask_secret "$(<"$client_secret_file")"
 mask_secret "$(<"$password_file")"
 
 client_uuid="$(admin GET "$realm/clients?clientId=$client" | jq --raw-output '.[0].id')"
@@ -74,13 +72,13 @@ members_of() {
 }
 # sorted_words <word>...: the words in the order members_of prints.
 sorted_words() { printf '%s\n' "$@" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'; }
-agent_account="service-account-$client"
-# agent-leonardo's service account is declared in /agent-owners too, as agent-mozart's is.
-leonardo_account=service-account-agent-leonardo
+# Every service account the file puts into /agent-owners: the agents' own, which the command leaves as it finds them.
+mapfile -t agent_accounts < <(yq '.users[] | select((.groups // []) | contains(["/agent-owners"])) | .username' "$REALM_FILE")
+agent_owners_before="$(sorted_words "${agent_accounts[@]}")"
 [ -z "$(members_of /agent-adders)" ] || fail "/agent-adders has members before the command"
-[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$leonardo_account")" ] ||
-  fail "/agent-owners holds '$(members_of /agent-owners)', not exactly $agent_account and $leonardo_account, before the command"
-echo "before the command /agent-adders is empty and /agent-owners holds $agent_account and $leonardo_account alone"
+[ "$(members_of /agent-owners)" = "$agent_owners_before" ] ||
+  fail "/agent-owners holds '$(members_of /agent-owners)', not exactly '$agent_owners_before', before the command"
+echo "before the command /agent-adders is empty and /agent-owners holds $agent_owners_before alone"
 
 # create_person <username> <attributes as JSON>: a person with the probe password, no required action and every profile
 # field set; the body with the password goes through a file.
@@ -136,21 +134,21 @@ refused "the service-account client $undeclared_client, which exists in Keycloak
 owner_command "$client" "$stand_in"
 [ "$command_status" = 0 ] || fail "keycloak:agent-owner failed for $stand_in"
 [ "$(agent_owner)" = "$stand_in_id" ] || fail "agent_owner does not name $stand_in"
-[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$leonardo_account" "$stand_in")" ] ||
-  fail "/agent-owners holds '$(members_of /agent-owners)', not exactly $agent_account, $leonardo_account and $stand_in"
+[ "$(members_of /agent-owners)" = "$(sorted_words "${agent_accounts[@]}" "$stand_in")" ] ||
+  fail "/agent-owners holds '$(members_of /agent-owners)', not exactly $agent_owners_before and $stand_in"
 [ -z "$(members_of /agent-adders)" ] || fail "/agent-adders gained a member without --adder"
-echo "the command set agent_owner and /agent-owners to $agent_account, $leonardo_account and $stand_in; /agent-adders stayed empty"
+echo "the command set agent_owner and /agent-owners to $agent_owners_before and $stand_in; /agent-adders stayed empty"
 
 owner_command "$client" "$stand_in"
 [ "$command_status" = 0 ] && grep -q 'nothing changed' <<<"$command_output" || fail "a second run did not report nothing changed"
 owner_command "$client" "$other_owner"
 refused "another owner" "$stand_in_id"
-[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$leonardo_account" "$stand_in")" ] || fail "the refused owner changed /agent-owners"
+[ "$(members_of /agent-owners)" = "$(sorted_words "${agent_accounts[@]}" "$stand_in")" ] || fail "the refused owner changed /agent-owners"
 
 owner_command --adder "$client" "$stand_in"
 [ "$command_status" = 0 ] || fail "keycloak:agent-owner --adder failed for $stand_in"
 [ "$(members_of /agent-adders)" = "$stand_in" ] || fail "/agent-adders does not hold exactly $stand_in"
-[ "$(members_of /agent-owners)" = "$(sorted_words "$agent_account" "$leonardo_account" "$stand_in")" ] || fail "--adder changed /agent-owners"
+[ "$(members_of /agent-owners)" = "$(sorted_words "${agent_accounts[@]}" "$stand_in")" ] || fail "--adder changed /agent-owners"
 echo "--adder added exactly $stand_in to /agent-adders; a second owner stays refused, a second run changes nothing"
 
 token_endpoint="$local_url/realms/$realm/protocol/openid-connect/token"
@@ -179,7 +177,7 @@ expected_scope() {
       | sort | join(" ")' --args "$@"
 }
 
-# R1, R3: the token's rights are exactly the file's list, its audience exactly hopin's /mcp, its life the realm's.
+# R1, R3: the token's rights are exactly the file's list, its audiences exactly hopin's /mcp and hopin, its life the realm's.
 agent_token --data scope=mcp-hopin
 [ "$token_status" = 200 ] || fail "the client-credentials grant with scope=mcp-hopin answered $token_status"
 [ "$(jq 'has("refresh_token")' <<<"$token_body")" = false ] || fail "the token response carries a refresh token"
@@ -190,8 +188,8 @@ claim() { jq --raw-output "$1" <<<"$claims"; }
 [ "$(jq --raw-output .typ <<<"$header")" = at+jwt ] || fail "the token's header typ is not at+jwt"
 [ "$(claim '.groups | sort | join(" ")')" = "${file_groups//$'\n'/ }" ] ||
   fail "the token's groups are '$(claim '.groups | sort | join(" ")')', not the file's '${file_groups//$'\n'/ }'"
-[ "$(claim 'if (.aud | type) == "string" then .aud else "not one string" end')" = "$hopin_audience" ] ||
-  fail "the token's aud is '$(claim '.aud | tojson')', not exactly $hopin_audience"
+[ "$(claim '[.aud] | flatten | sort | join(" ")')" = "${mcp_hopin_audiences//$'\n'/ }" ] ||
+  fail "the token's aud is '$(claim '.aud | tojson')', not exactly ${mcp_hopin_audiences//$'\n'/ }"
 [ "$(claim '.exp - .iat')" = "$lifespan" ] || fail "the token lives $(claim '.exp - .iat') s, not the realm's $lifespan s"
 [ "$(claim '.scope | split(" ") | sort | join(" ")')" = "$(expected_scope mcp-hopin)" ] ||
   fail "the token's scope is '$(claim .scope)', not the scopes of the client's defaults and mcp-hopin that go into a token: $(expected_scope mcp-hopin)"
@@ -215,7 +213,7 @@ password_grant_status="$(curl --silent --output "$scratch/answer" --write-out '%
   --data-urlencode "username=$stand_in" --data-urlencode "password@$password_file" "$token_endpoint")"
 [ "$password_grant_status" = 400 ] && [ "$(jq --raw-output .error "$scratch/answer")" = unauthorized_client ] ||
   fail "a password grant through $client answered $password_grant_status, not 400 unauthorized_client"
-echo "R1, R3: groups '${file_groups//$'\n'/ }', aud exactly $hopin_audience, no refresh token, $lifespan s, at+jwt, azp, agent_name, agent_owner, preferred_username, no role beyond the default"
+echo "R1, R3: groups '${file_groups//$'\n'/ }', aud exactly ${mcp_hopin_audiences//$'\n'/ }, no refresh token, $lifespan s, at+jwt, azp, agent_name, agent_owner, preferred_username, no role beyond the default"
 
 agent_token
 [ "$token_status" = 200 ] || fail "the client-credentials grant without scope answered $token_status"
@@ -270,11 +268,6 @@ stand_in_groups="$(jwt_part 2 "$(person_token "$stand_in")" | jq --raw-output '.
 echo "the stand-in's own token carries $stand_in_groups"
 
 # R4, R5: a switch-off stops new tokens, and a file that re-enabled it would undo that on the next apply.
-set_enabled() {
-  admin GET "$1" | jq --argjson enabled "$2" '.enabled = $enabled' >"$scratch/enabled-body"
-  admin PUT "$1" "@$scratch/enabled-body" >/dev/null
-  rm -f -- "$scratch/enabled-body"
-}
 set_client_enabled() { set_enabled "$realm/clients/$client_uuid" "$1"; }
 set_account_enabled() { set_enabled "$realm/users/$account_id" "$1"; }
 grant_error() { jq --raw-output '.error // ""' <<<"$token_body"; }
