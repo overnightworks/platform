@@ -57,8 +57,8 @@ max_tool_calls = 4
 # an account of its own needs to make an album and a song, generate it, follow the generation, and share or unshare:
 # `share_song` is open to such an agent only, and the album has `unshare_album` alone, since songmaker declares no
 # `share_album`. Nothing that deletes, rewrites or reads another part of the library is named. Six calls fit a turn that
-# makes an album and a song, starts the generation, follows it once and shares the song. A turn runs only while the app
-# declares every tool named here.
+# makes an album and a song, starts the generation, follows it once and shares the song. If the app no longer declares
+# a tool named here, it lends none of its tools: the turn reports that once and runs on the other apps' tools.
 [[apps]]
 mcp_url = "https://songmaker.hallucinai.de/mcp"
 scope = "mcp-songmaker"
