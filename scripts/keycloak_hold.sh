@@ -9,6 +9,9 @@
 # Each run has its own compose project and its own host ports, so holds run side by side. The caller runs it under
 # probe-run. Keycloak serves edge_url itself; a client sends `Host: auth.hallucinai.de` and `X-Forwarded-Proto: https`
 # as Traefik would, from an address of the hold's network.
+# Keycloak is not restarted after the apply: right after config-cli exits 0 it serves master's frontendUrl and the
+# admin client, which tests/keycloak/hold_serves_the_realm_and_leaves_nothing.sh proves by the token it requests at
+# admin_url and the client it creates and deletes straight after READY.
 set -euo pipefail
 umask 077
 
