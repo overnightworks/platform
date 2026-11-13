@@ -62,9 +62,11 @@ client_id = "agent-mozart"
 secret_file = "/run/secrets/mozart_client_secret"
 persona_file = "/app/characters/mozart.md"
 figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.12.1/mozart.vrm", sha256 = "299cd5763a5365e004121798ce011df1d15f44558f12d79ba9b2a5152a9bac03" }
+voice = {}
 
 [[agents]]
 client_id = "agent-leonardo"
 secret_file = "/run/secrets/leonardo_client_secret"
 persona_file = "/app/characters/leonardo.md"
 figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.12.1/leonardo.vrm", sha256 = "bb52fbfd3c2c13cb094e5b1dd4bfbfe99d2df3b8d583b1ad26ebca640132e87d" }
+voice = {}
