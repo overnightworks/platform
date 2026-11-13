@@ -62,11 +62,25 @@ teardown() {
   [ -z "$leftovers" ] || fail_after_teardown="${fail_after_teardown:+$fail_after_teardown; }left after teardown: $(tr '\n' ' ' <<<"$leftovers")"
 }
 
+# Stops the running docker command and waits until it is gone, so that nothing it still creates appears after the
+# teardown listed the project; a command that ignores SIGTERM for 60 s is killed.
+stop_child() {
+  local state attempt
+  kill "$child" 2>/dev/null || return 0
+  for ((attempt = 0; attempt < 300; attempt++)); do
+    state="$(ps -o stat= -p "$child" 2>/dev/null || true)"
+    case "$state" in "" | Z*) break ;; esac
+    sleep 0.2
+  done
+  kill -KILL "$child" 2>/dev/null || true
+  wait "$child" 2>/dev/null || true
+}
+
 finish() {
   local status=$?
   trap '' TERM INT
   trap - EXIT
-  [ -z "$child" ] || kill "$child" 2>/dev/null || true
+  [ -z "$child" ] || stop_child
   if [ "$project_claimed" = 1 ]; then
     [ -z "$failure" ] || compose logs --no-color >"$scratch/containers.log" 2>&1 || true
     teardown || true
