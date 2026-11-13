@@ -1,7 +1,0 @@
-claim_id = "145e6abaaedc4b7694a236356ce659fe"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "bed2d01f942df23eea111b5d97a9e9da25df1ac3"
-branch = "fix/acestep-comment"
-scope = ["apps/songmaker/acestep-worker.yaml"]
-opened_commit = "90ba570aab7402d3dfd887d9f06d6e0bdfef27cb"
