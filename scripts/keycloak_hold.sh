@@ -24,9 +24,12 @@ postgres_manifest="$root/infrastructure/postgres/postgres.yaml"
 kustomization="$root/infrastructure/keycloak/kustomization.yaml"
 project="" log="" scratch="" child="" failure="" stop_signal="" fail_after_teardown=""
 compose_command=()
-# probe-run kills what still runs 30 s after its TERM; a docker command that outlives its SIGTERM by this much is killed,
-# which leaves the rest of that grace to the teardown.
+# probe-run kills what still runs 30 s after its TERM, which a stopped docker command and the teardown share: a command
+# that is running when the hold is stopped may end by itself for command_settle_seconds, so that a container whose creation
+# it has already requested exists when the teardown looks, and one that outlives its SIGTERM by child_stop_seconds is killed.
+command_settle_seconds=10
 child_stop_seconds=3
+child_settle_seconds=0
 # docker finishes a request a killed command had sent, so the teardown repeats until the project stays empty.
 teardown_rounds=4
 project_claimed=0 ready=0
@@ -56,8 +59,9 @@ await() {
   local status=0
   setsid "$@" >>"$log" 2>&1 &
   child=$!
+  child_settle_seconds=$command_settle_seconds
   wait "$child" || status=$?
-  child=""
+  child="" child_settle_seconds=0
   return "$status"
 }
 
@@ -85,18 +89,21 @@ teardown() {
 session_runs() { ps -o stat= --sid "$1" 2>/dev/null | grep -qv '^Z'; }
 
 await_session_gone() {
-  local attempt
-  for ((attempt = 0; attempt < $2 * 5; attempt++)); do
-    session_runs "$1" || return 0
+  local attempt=0
+  while session_runs "$1"; do
+    [ "$attempt" -lt $(($2 * 5)) ] || return 1
+    attempt=$((attempt + 1))
     sleep 0.2
   done
-  return 1
 }
 
-# Stops the session of the running docker command and waits until no process of it remains, so that nothing it still
-# creates appears after the teardown listed the project; a session that ignores SIGTERM for child_stop_seconds is killed.
+# Stops the session of the running child and waits until no process of it remains, so that nothing it still creates
+# appears after the teardown listed the project: it may end by itself for child_settle_seconds, then gets SIGTERM, and a
+# session that ignores that for child_stop_seconds is killed.
 stop_child() {
-  kill -TERM -- "-$child" 2>/dev/null || true
+  if ! await_session_gone "$child" "$child_settle_seconds"; then
+    kill -TERM -- "-$child" 2>/dev/null || true
+  fi
   if ! await_session_gone "$child" "$child_stop_seconds"; then
     kill -KILL -- "-$child" 2>/dev/null || true
     await_session_gone "$child" 5 || true
