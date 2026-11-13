@@ -1,8 +1,0 @@
-claim_id = "c1ec191e06084139af28dd93136c093b"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "bed2d01f942df23eea111b5d97a9e9da25df1ac3"
-branch = "claude/issue-541-keycloak-hold"
-scope = [".github/workflows/ci.yml", "mise.toml", "scripts/keycloak_hold.compose.yaml", "scripts/keycloak_hold.sh", "tests/keycloak/hold_serves_the_realm_and_leaves_nothing.sh"]
-opened_commit = "738286c0a061408b609a1e9a741b36bdf64345b9"
-whole_reason = "One command, its compose, its task, its CI job and its test prove one hold end to end; none of them works alone."
