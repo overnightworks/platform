@@ -832,9 +832,28 @@ jobs:
       - name: Run the fixture cases through the script
         run: mise exec -- tests/images/run.sh
 
+  keycloak-hold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned tools
+        run: |
+          scripts/bootstrap_pc.sh --only tools
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Check that the Keycloak hold serves hallucinai's realm to an app's proof and leaves no container, network or volume
+        run: mise exec -- tests/keycloak/hold_serves_the_realm_and_leaves_nothing.sh
+
   quality:
     if: always()
-    needs: [checks, cluster, bootstrap, opentofu, images]
+    needs: [checks, cluster, bootstrap, opentofu, images, keycloak-hold]
     permissions:
       contents: read
       actions: read
