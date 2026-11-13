@@ -78,8 +78,8 @@ spec:
           volumeMounts:
             - name: caller-table
               mountPath: /etc/speech-runtime
-            # Starlette spools an upload above 1 MiB here, one at a time, up to 25 MiB, and the Qwen worker keeps its
-            # compile caches here.
+            # Starlette spools an upload above 1 MiB here, one at a time, up to 25 MiB, so it is memory-backed, and the
+            # Qwen worker keeps its compile caches here too, which the limit below is sized for.
             - name: tmp
               mountPath: /tmp
             # The server's stages pass data through shared memory, which Docker's 64 MB default would starve.
@@ -90,7 +90,9 @@ spec:
           configMap:
             name: speech-runtime
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
         - name: shm
           emptyDir:
             medium: Memory
