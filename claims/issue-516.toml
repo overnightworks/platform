@@ -1,8 +1,0 @@
-claim_id = "8ce62db2b21c46e7b29bc38e1bf2edaf"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "ab595cac6f02672a400d5c69ad34430362b7e7d0"
-branch = "claude/issue-516-mozart-may-make-and-share-songs-agent-mo"
-scope = [".github/workflows/ci.yml", "apps/personas/personas.toml", "apps/personas/personas.yaml", "apps/songmaker/web.yaml", "infrastructure/keycloak/realm.yaml", "tests/keycloak"]
-opened_commit = "8e43086d44b37513dbfaa56d0797b25ed129ee8d"
-whole_reason = "The realm right, the runner's binding and the cell that pins the token are one grant and are reviewed as one."
