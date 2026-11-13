@@ -85,7 +85,7 @@ spec:
             - name: PUBLIC_BASE_URL
               value: https://songmaker.hallucinai.de
             # The co-writer's gateway is the platform's AI front with the key of this app's row in keys.yaml; a partly set
-            # value stops the start, so the four stand together. MCP stays off without a client id.
+            # value stops the start, so the four stand together.
             - name: AGENT__BACKEND
               value: litellm
             - name: AGENT__GATEWAY__ORIGIN
@@ -94,6 +94,14 @@ spec:
               value: /run/secrets/litellm_key
             - name: AGENT__API_GROUP
               value: /services/litellm
+            # songmaker's /mcp answers only with all three set. The party is `agents`, the public client of a person's own
+            # agents; an agent with a client of its own passes through the group /agents.
+            - name: AGENT__MCP_CLIENT_ID
+              value: agents
+            - name: AGENT__MCP_SCOPE
+              value: mcp-songmaker
+            - name: AGENT__MCP_AGENT_GROUP
+              value: /agents
           # The start runs the migrations under a lock before it serves, so a slow one is not a failed start.
           startupProbe:
             httpGet:
