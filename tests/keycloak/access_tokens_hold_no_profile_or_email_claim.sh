@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # access_tokens_hold_no_profile_or_email_claim.sh: a person signs in to every client of REALM_FILE with the standard
 # flow (authorization code with PKCE, then a refresh grant), and no access token holds a claim that a mapper of the live
-# scopes profile and email names, while the ID tokens keep the identity the apps read and the tokens for the speech
-# service keep their audience, subject, authorized party and groups. Prints names and outcomes, never a token, a claim
-# value, a secret or a password; the throwaway person is deleted on every exit.
+# scopes profile and email names, while the ID tokens keep the identity the apps read and the account's language, and the
+# tokens for the speech service keep their audience, subject, authorized party and groups. Prints names and outcomes,
+# never a token, a claim value, a secret or a password; the throwaway person is deleted on every exit.
 set -euo pipefail
 umask 077
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
@@ -162,7 +162,7 @@ for client in $(yq '.clients[] | select(.standardFlowEnabled != false) | .client
   speaks="$(jq --raw-output '(.optionalClientScopes // []) | index("speech-service-audience") != null' <<<"$entry")"
   has_profile="$(jq --raw-output '(.defaultClientScopes // []) | index("profile") != null' <<<"$entry")"
   id_claims=(groups)
-  [ "$has_profile" = false ] || id_claims+=(preferred_username)
+  [ "$has_profile" = false ] || id_claims+=(preferred_username locale)
 
   sign_in "$scope" "$redirect_uri"
   request_token --data grant_type=authorization_code --data-urlencode "code@$code_file" \
