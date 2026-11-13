@@ -41,9 +41,18 @@ for manifest in $APP_MANIFESTS; do
       kubectl --namespace "$namespace" create --dry-run=server -f - ||
       fail "the Pod template of the Deployment $deployment is refused by $namespace's admission"
     echo "the Deployment $deployment has no pod and its Pod template passes server-side dry-run in $namespace"
+    # A Deployment is judged by the NetworkPolicy of its own name, but speech's GPU image shares speech-runtime's, which
+    # must select the GPU Pod template's labels.
     # The Deployment's reach, read from the applied policy: each rule as its sources and ports, sorted; a rule's source
     # is a namespace and a pod's first label value, or an address block with its exceptions.
+    policy_name="$name"
+    expected_policy_types="Egress,Ingress"
     case "$deployment" in
+      speech-runtime/speech-runtime-gpu)
+        policy_name=speech-runtime
+        expected_policy_types=Ingress
+        expected_ingress="gatus|hopin|presentator/ -> 8080/TCP"
+        expected_egress="" ;;
       songmaker/acestep-worker)
         expected_ingress="/music-worker,/web -> 8001/TCP"
         expected_egress="/redis -> 6379/TCP;/web -> 8080/TCP;kube-system/kube-dns -> 53/TCP,53/UDP" ;;
@@ -54,19 +63,26 @@ for manifest in $APP_MANIFESTS; do
     esac
     sources='(.from // .to) | map(
       (.ipBlock | select(. != null) | .cidr + " except " + (.except | sort | join(",")))
-      // ((.namespaceSelector.matchLabels["kubernetes.io/metadata.name"] // "") + "/" + (.podSelector.matchLabels | to_entries | .[0].value))) | sort | join(",")'
+      // ((.namespaceSelector.matchLabels["kubernetes.io/metadata.name"] // (.namespaceSelector.matchExpressions[0].values | sort | join("|")) // "")
+        + "/" + ((.podSelector.matchLabels // {}) | to_entries | .[0].value // ""))) | sort | join(",")'
     ports='[.ports[] | (.port | tostring) + "/" + .protocol] | sort | join(",")'
     rules='map((('"$sources"') + " -> " + ('"$ports"'))) | sort | join(";")'
-    policy="$(kubectl --namespace "$namespace" get networkpolicy "$name" -o yaml)"
+    policy="$(kubectl --namespace "$namespace" get networkpolicy "$policy_name" -o yaml)"
+    template_labels="$(kubectl --namespace "$namespace" get deployment "$name" -o yaml |
+      yq '.spec.template.metadata.labels | to_entries | map(.key + "=" + .value) | .[]')"
+    while IFS= read -r selected; do
+      grep -qxF "$selected" <<<"$template_labels" ||
+        fail "the NetworkPolicy $namespace/$policy_name selects $selected, which the Deployment $deployment's Pod template does not carry"
+    done < <(yq '.spec.podSelector.matchLabels | to_entries | map(.key + "=" + .value) | .[]' <<<"$policy")
     for direction in ingress:"$expected_ingress" egress:"$expected_egress"; do
       expected="${direction#*:}"
       actual="$(yq "(.spec.${direction%%:*} // []) | $rules" <<<"$policy")"
       [ "$actual" = "$expected" ] ||
-        fail "the NetworkPolicy $namespace/$name reads '$actual' for ${direction%%:*}, not '$expected'"
+        fail "the NetworkPolicy $namespace/$policy_name reads '$actual' for ${direction%%:*}, not '$expected'"
     done
-    [ "$(yq '.spec.policyTypes | sort | join(",")' <<<"$policy")" = "Egress,Ingress" ] ||
-      fail "the NetworkPolicy $namespace/$name does not govern exactly Ingress and Egress"
-    echo "the NetworkPolicy $namespace/$name admits '${expected_ingress:-nobody}' and sends only '$expected_egress'"
+    [ "$(yq '.spec.policyTypes | sort | join(",")' <<<"$policy")" = "$expected_policy_types" ] ||
+      fail "the NetworkPolicy $namespace/$policy_name does not govern exactly $expected_policy_types"
+    echo "the NetworkPolicy $namespace/$policy_name admits '${expected_ingress:-nobody}' and sends only '$expected_egress'"
   else
     kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
     state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
