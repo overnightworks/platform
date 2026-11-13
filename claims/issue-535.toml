@@ -1,7 +1,0 @@
-claim_id = "5a59e7623ed14189862bf07f177c31cd"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "b8709b2d6d8e38c51bc23f5639ed4fbc861959a7"
-branch = "claude/issue-535-speech-release-2026-11-12-3"
-scope = ["apps/speech-runtime/speech-runtime.yaml"]
-opened_commit = "44db2b756ea49ce09b85d03ab7009d95e2e90de6"
