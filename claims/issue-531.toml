@@ -1,8 +1,0 @@
-claim_id = "8fab4da42522488896380c4d1bfc4bcb"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "65d2512162bbe50d6948e024d0860152e32f5547"
-branch = "claude/issue-531-hopin-release-2026-11-13-2"
-scope = ["apps/hopin/hopin.yaml", "infrastructure/legal"]
-opened_commit = "dafea31ae742e3494c39aa3df62667b77490c077"
-whole_reason = "The release pin and the legal texts it carries change together, or the legal cell is red."
