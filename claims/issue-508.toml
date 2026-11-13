@@ -1,8 +1,0 @@
-claim_id = "c5d2fe010a174fe4a3196832074578e5"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "8798c09c4b17ed9d534c754fb147611fabcdf9d0"
-branch = "claude/issue-508-the-gateway-marks-a-turn-s-stable-prefix"
-scope = [".github/workflows/ci.yml", "docs/operations.md", "infrastructure/litellm/keys.yaml", "infrastructure/litellm/litellm-config.yaml", "mise.toml", "scripts/litellm_cache_probe.sh", "scripts/litellm_keys.sh", "tests/litellm/failed_write_names_what_is_done.sh", "tests/litellm/key_caching_marks_the_provider_request.sh", "tests/litellm/keys_table_drives_budgets_and_the_app_key.sh"]
-opened_commit = "824b2717463de582e19f8c12f32196c44efaccfa"
-whole_reason = "One capability, per-key prompt caching: the table field, its cell, the offline marker cell and the live script belong together."
