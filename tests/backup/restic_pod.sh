@@ -78,13 +78,14 @@ job_ended() {
   done
   fail "the Job $namespace/$job did not end within 10 minutes"
 }
-# run_restore_test <namespace> <job> [<configmap>]: runs the CronJob as it is, or with another ConfigMap as its checks;
+# run_restore_test <namespace> <job> [<configmap> [<cronjob>]]: runs the CronJob restore-test, or the one named, as it is,
+# or with another ConfigMap as its checks;
 # sets status to passed or failed, restore_exits to "dump <exit> check <exit>" (an exit the container never reached reads
 # as none) and restore_log to what the check printed.
 # shellcheck disable=SC2034 # status, restore_exits and restore_log are this function's results for the cells that source this file.
 run_restore_test() {
-  local namespace="$1" job="$2" checks="${3:-}" job_manifest pod exits
-  job_manifest="$(kubectl --namespace "$namespace" create job "$job" --from=cronjob/restore-test --dry-run=client --output json)"
+  local namespace="$1" job="$2" checks="${3:-}" cronjob="${4:-restore-test}" job_manifest pod exits
+  job_manifest="$(kubectl --namespace "$namespace" create job "$job" --from="cronjob/$cronjob" --dry-run=client --output json)"
   if [ -n "$checks" ]; then
     job_manifest="$(CHECKS="$checks" yq --output-format json \
       '(.spec.template.spec.volumes[] | select(.name == "checks") | .configMap.name) = strenv(CHECKS)' <<<"$job_manifest")"

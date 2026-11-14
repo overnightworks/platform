@@ -50,8 +50,9 @@ exit "$code"
 EOF
 )"
 
-# The StatefulSet, its ServiceAccount and its claim as the render has them, with the names read from it.
-kubectl kustomize apps/presentator >"$work/presentator.yaml"
+# The StatefulSet, its ServiceAccount and its claim as the render has them, with the names read from it; the Postgres
+# StatefulSet of the platform's base is no worker.
+kubectl kustomize apps/presentator | yq 'select(.kind != "StatefulSet" or .metadata.name != "postgres")' >"$work/presentator.yaml"
 yq --no-doc 'select(.kind == "StatefulSet") | .metadata.name' "$work/presentator.yaml" >"$work/names"
 [ "$(wc -l <"$work/names")" = 1 ] || fail "the render holds not exactly one StatefulSet"
 statefulset="$(cat "$work/names")"
