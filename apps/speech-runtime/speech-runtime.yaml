@@ -32,7 +32,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: speech-runtime
-          image: ghcr.io/overnightworks/speech:2026.11.13.1@sha256:54ae379704300c2caa5107b70e7eb2cbc9543080fb5ef5d4c26b53da48dbd637
+          image: ghcr.io/overnightworks/speech:2026.11.14.4@sha256:de28bb2e67ed613211701bbf9f0ccbec41b8c221ee88cd708bcd3e8f2aa36a9a
           ports:
             - name: http
               containerPort: 8080
