@@ -161,7 +161,8 @@ spec:
     name: flux-system
 ---
 # keycloak and litellm each run their own Postgres from the base infrastructure/postgres, its password from
-# platform-secrets and its claim through storage; apps/skat includes it in its own Kustomization.
+# platform-secrets and its claim through storage; the layers under apps/ that need one include it in their own
+# Kustomizations.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:

@@ -1,7 +1,7 @@
 # One Kustomization per directory under apps/, named like the directory and the app's namespace, so that an app's
 # objects share one owner that db:load-dump can suspend. Each starts from Secrets in platform-secrets, so it waits for
-# that layer, and runs workloads, so it waits for admission. skat, songmaker and presentator also wait for storage, as
-# their databases claim volumes, and for k8up, whose CRDs their backup objects need.
+# that layer, and runs workloads, so it waits for admission. personas, skat, songmaker and presentator also wait for
+# storage, as their databases claim volumes, and for k8up, whose CRDs their backup objects need.
 # An app that has a pull layer, apps/<app>/pull, has a second Kustomization <app>-pull, which the app's layer waits for:
 # its Job pulls the release's images onto the node before the app's layer rolls them. A timeout of the layer does not
 # cancel the pull, so the roll follows at the next retry.
@@ -32,6 +32,8 @@ spec:
   dependsOn:
     - name: platform-secrets
     - name: admission
+    - name: storage
+    - name: k8up
   interval: 10m0s
   path: ./apps/personas
   prune: true
