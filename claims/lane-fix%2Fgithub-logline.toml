@@ -1,7 +1,0 @@
-claim_id = "5ca084b8dc98401786f529e528fabe5b"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "6631b3204e3d138f8f0c9f34c7188ff1a6eaf96a"
-branch = "fix/github-logline"
-scope = ["src/opentofu/github/repositories.tf"]
-opened_commit = "42a3245e9c3b2308bda514481cc2815d44e7e884"
