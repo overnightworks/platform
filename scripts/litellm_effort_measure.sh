@@ -6,7 +6,8 @@
 #                                              below) and sends the requests streamed under one test person, one round
 #                                              after the other over all names so that a slow period weighs on each alike;
 #                                              each request is a short system text, new to it, and three consecutive user
-#                                              messages that ask for one word, with no real content and 16 tokens at most;
+#                                              messages that ask for one word, with no real content and 1024 tokens at most, which
+#                                              leaves room for the thinking of a name whose tokens count in its cost;
 #                                              prints per name the median time from sending to the first content chunk of
 #                                              the stream, the median cost of a request and the total, and exits 1 on any
 #                                              answer other than 200 or a stream without usage
@@ -44,15 +45,16 @@ request_body() {
   for line in $(seq "$system_lines"); do system+=" Rule $line: answer with one word."; done
   MODEL="$1" PERSON="$measure_person" SYSTEM="$system" yq --null-input --output-format json --indent 0 '
     {"model": strenv(MODEL), "user": strenv(PERSON), "stream": true, "stream_options": {"include_usage": true},
-    "max_tokens": 16, "messages": [{"role": "system", "content": strenv(SYSTEM)},
+    "max_tokens": 1024, "messages": [{"role": "system", "content": strenv(SYSTEM)},
     {"role": "user", "content": "Present 1: reply with the single word ok."},
     {"role": "user", "content": "Present 2: reply with the single word ok."},
     {"role": "user", "content": "Present 3: reply with the single word ok."}]}'
 }
 # send_once <name>: sends one request; sets first_token_ms and usage_tokens ("<prompt> <completion>"). Fails naming the
-# name and the status when the status is not 200, the stream holds no content or no usage came.
+# name and the status when the status is not 200, the stream holds no content (naming the spent max_tokens when the
+# stream ended with finish_reason length) or no usage came.
 send_once() {
-  local name="$1" config line sent_at first_at="" status="" usage_line="" tokens
+  local name="$1" config line sent_at first_at="" status="" usage_line="" tokens cut_off=""
   config="header = \"Authorization: Bearer $(quote_inner "$value")\""
   config+=$'\nheader = "Content-Type: application/json"\ndata = "'"$(quote_inner "$(request_body "$name")")"'"'
   sent_at="$(microseconds "$EPOCHREALTIME")"
@@ -60,11 +62,13 @@ send_once() {
     if [ -z "$first_at" ] && [[ $line == 'data: {'*'"content":"'[!\"]* ]]; then
       first_at="$(microseconds "$EPOCHREALTIME")"
     fi
+    if [[ $line == 'data: {'*'"finish_reason":"length"'* ]]; then cut_off=1; fi
     if [[ $line == 'data: {'*'"usage":{'* ]]; then usage_line="${line#data: }"; fi
     if [[ $line =~ ^[0-9]{3}$ ]]; then status="$line"; fi
   done < <({ printf '%s\n' "$config" | curl --silent --no-buffer --max-time 120 --config - \
     --write-out '\n%{http_code}\n' "http://127.0.0.1:$local_port/v1/chat/completions" || printf '\n000\n'; })
   [ "$status" = 200 ] || fail "$name answered with status ${status:-000}, not 200"
+  if [ -z "$first_at" ] && [ -n "$cut_off" ]; then fail "$name spent its max_tokens before its text"; fi
   [ -n "$first_at" ] || fail "$name streamed no content"
   tokens="$(yq --input-format json '.usage | [.prompt_tokens, .completion_tokens] | join(" ")' <<<"$usage_line")" ||
     fail "$name carried no readable usage in its stream"
