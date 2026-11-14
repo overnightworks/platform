@@ -1,8 +1,0 @@
-claim_id = "7af3e0071ce347e19fadb7b34a2258c2"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "ef652a2a348df2f927dc892c64cc667eaa9775ab"
-branch = "claude/issue-586-one-redis-base-for-every-app"
-scope = [".github/workflows/ci.yml", "apps/songmaker/kustomization.yaml", "apps/songmaker/redis.yaml", "infrastructure/admission/image-vendors.yaml", "infrastructure/redis", "tests/redis"]
-opened_commit = "eb9caa77c7f6a3dbf88d148c8723cce357dbf8a1"
-whole_reason = "The base, its first consumer and the cell that proves the base belong in one slice."
