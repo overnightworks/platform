@@ -115,3 +115,30 @@ persona_file = "/app/characters/leonardo.md"
 figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.13.2/leonardo.vrm", sha256 = "c14f6b5d47612fdb00c881cf5c94877117cd3d9dd3a4b1788791c4676dc9d590" }
 # ryan exists only in speech's GPU image.
 voice = { name = "ryan" }
+
+# The four test agents run on gateway models of their own, so that one call compares a lower effort and Haiku. They have
+# no figure and no voice yet.
+
+[[agents]]
+client_id = "agent-humboldt"
+secret_file = "/run/secrets/humboldt_client_secret"
+persona_file = "/app/characters/humboldt.md"
+model = "text/sonnet-medium"
+
+[[agents]]
+client_id = "agent-curie"
+secret_file = "/run/secrets/curie_client_secret"
+persona_file = "/app/characters/curie.md"
+model = "text/sonnet-low"
+
+[[agents]]
+client_id = "agent-lovelace"
+secret_file = "/run/secrets/lovelace_client_secret"
+persona_file = "/app/characters/lovelace.md"
+model = "text/haiku-medium"
+
+[[agents]]
+client_id = "agent-hildegard"
+secret_file = "/run/secrets/hildegard_client_secret"
+persona_file = "/app/characters/hildegard.md"
+model = "text/haiku-low"

@@ -141,6 +141,26 @@ spec:
                 secretKeyRef:
                   name: keycloak
                   key: client-agent-leonardo
+            - name: AGENT_HUMBOLDT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak
+                  key: client-agent-humboldt
+            - name: AGENT_CURIE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak
+                  key: client-agent-curie
+            - name: AGENT_LOVELACE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak
+                  key: client-agent-lovelace
+            - name: AGENT_HILDEGARD_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak
+                  key: client-agent-hildegard
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
