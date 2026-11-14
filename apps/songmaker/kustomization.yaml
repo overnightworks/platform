@@ -3,7 +3,7 @@ kind: Kustomization
 namespace: songmaker
 resources:
   - ../../infrastructure/postgres
-  - redis.yaml
+  - ../../infrastructure/redis
   - audio.yaml
   - web.yaml
   - music-worker.yaml
