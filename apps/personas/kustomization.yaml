@@ -3,8 +3,28 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: personas
 resources:
+  - ../../infrastructure/postgres
   - personas.yaml
+components:
+  - ../../infrastructure/postgres/backup
 configMapGenerator:
   - name: personas
     files:
       - personas.toml
+  - name: postgres
+    behavior: merge
+    literals:
+      # alembic_version, which personas migrate writes, comes first: the restore test fails on an empty first table.
+      - key-tables=alembic_version lines
+      - backup-repository=http://rest-server.backup.svc.cluster.local:8000/personas/
+replacements:
+  - source:
+      kind: ConfigMap
+      name: postgres
+      fieldPath: data.backup-repository
+    targets:
+      - select:
+          kind: Schedule
+          name: postgres
+        fieldPaths:
+          - spec.backend.rest.url

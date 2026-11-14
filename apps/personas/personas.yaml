@@ -4,7 +4,9 @@
 # which creates its ready_file.
 # The Secret holds a copy of two client secrets that the Secret keycloak also holds (client-agent-mozart,
 # client-agent-leonardo), since a Secret cannot be mounted across namespaces: a rotation writes both.
-# One pod runs and a restart empties every agent's history, as the runner keeps no memory.
+# The init container migrates the memory's database to the image's head, which the runner demands at start; its first run
+# may find Postgres not ready yet, and the init container's backoff heals that. The runner's history in memory is empty
+# after a restart; what the agents read is kept in the namespace's Postgres, which the runner tells them as the day.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,6 +33,31 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: ghcr.io/overnightworks/personas:2026.11.14.1@sha256:7a5f3e7cbedbdbd6be75ff7dbd571ef6c50b4f93540ef3e6ad3b482b17e1a2cc
+          args: [personas, migrate]
+          # The command reads the whole configuration, so it mounts what the runner does.
+          env:
+            - name: PERSONAS_CONFIG
+              value: /etc/personas/personas.toml
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/personas
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: postgres-password
+              mountPath: /run/postgres
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: personas
           image: ghcr.io/overnightworks/personas:2026.11.14.1@sha256:7a5f3e7cbedbdbd6be75ff7dbd571ef6c50b4f93540ef3e6ad3b482b17e1a2cc
@@ -54,6 +81,9 @@ spec:
             - name: secrets
               mountPath: /run/secrets
               readOnly: true
+            - name: postgres-password
+              mountPath: /run/postgres
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -64,14 +94,17 @@ spec:
         - name: secrets
           secret:
             secretName: personas
+        - name: postgres-password
+          secret:
+            secretName: postgres
         # ready_file lives here, and nothing outlives the pod.
         - name: tmp
           emptyDir:
             medium: Memory
 ---
-# Nobody reaches the runner. It sends only to cluster DNS, the front's port and port 443 outside the pod and service
-# networks, where the realm's token endpoint and the MCP URLs of hopin, skat and songmaker are public names behind
-# Cloudflare; a NetworkPolicy cannot name a host, so every public host on 443 is open to it.
+# Nobody reaches the runner. It sends only to cluster DNS, its Postgres, the front's port and port 443 outside the pod
+# and service networks, where the realm's token endpoint and the MCP URLs of hopin, skat and songmaker are public names
+# behind Cloudflare; a NetworkPolicy cannot name a host, so every public host on 443 is open to it.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -96,6 +129,13 @@ spec:
         - port: 53
           protocol: UDP
         - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - port: 5432
           protocol: TCP
     - to:
         - namespaceSelector:

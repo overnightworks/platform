@@ -69,3 +69,15 @@ The promise: [litellm](../infrastructure/legal/sections/litellm/datenschutz.html
 (a ConfigMap) and NetworkPolicy, which admits port 8080 only from the namespaces `hopin`, `presentator` and `gatus`.
 (PD-8)
 The promise: [speech](../infrastructure/legal/sections/speech/datenschutz.html#sprachdienst).
+
+## The personas runner's memory (`apps/personas/`)
+
+The runner keeps every line its agents read, verbatim with the speaker's name and the time of its first read, in the
+Postgres of the namespace `personas` (database and user `personas`, the table `lines`), through the `[memory]` table of
+`personas.toml`. `lines_keep_days = 30` is stated there so that a new default of a release does not change it: the
+runner removes a line 30 days after it was first read, once at its start and then every `sweep_minutes` (60 unless
+set). The Postgres admits only the namespace's own pods, and the runner sends to it alone of the platform's stores. The
+weekly backup of the component above copies the table into the repository `personas` on the rest server, so a line the
+runner removed stays in a backup until the prune drops that snapshot: 4 weekly and 3 monthly copies, up to about three
+months. (PD-9)
+The promise: none yet; the privacy text for the runner is written at the pre-launch check.

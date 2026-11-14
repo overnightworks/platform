@@ -58,7 +58,7 @@ for manifest in $APP_MANIFESTS; do
         expected_egress="/redis -> 6379/TCP;/web -> 8080/TCP;kube-system/kube-dns -> 53/TCP,53/UDP" ;;
       personas/personas)
         expected_ingress=""
-        expected_egress="0.0.0.0/0 except 10.42.0.0/16,10.43.0.0/16 -> 443/TCP;kube-system/kube-dns -> 53/TCP,53/UDP;litellm/litellm-front -> 4000/TCP" ;;
+        expected_egress="/postgres -> 5432/TCP;0.0.0.0/0 except 10.42.0.0/16,10.43.0.0/16 -> 443/TCP;kube-system/kube-dns -> 53/TCP,53/UDP;litellm/litellm-front -> 4000/TCP" ;;
       *) fail "the Deployment $deployment runs no pod and no reach is expected of it" ;;
     esac
     sources='(.from // .to) | map(

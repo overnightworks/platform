@@ -567,6 +567,12 @@ jobs:
           POLICY_MANIFESTS: apps/hopin/hopin.yaml apps/presentator/web.yaml apps/songmaker/web.yaml infrastructure/keycloak/keycloak-egress.yaml
         run: tests/keycloak/backchannel_reaches_only_its_apps.sh
 
+      - name: Assert that personas migrate, run through the runner's policy, fills the first key table of personas' Postgres for the restore test below and runs again unchanged
+        if: matrix.part == 'backup-1'
+        env:
+          PERSONAS_NAMESPACE: personas
+        run: tests/personas/migrate_fills_the_key_tables_and_runs_again_unchanged.sh
+
       - name: P7d cells
         if: matrix.part == 'backup-1'
         env:

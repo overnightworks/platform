@@ -81,6 +81,16 @@ tools = [
 ]
 max_tool_calls = 6
 
+# The agents' memory: every line they read, in the Postgres of this namespace, whose password is the Secret postgres'
+# file. A line is kept 30 days, which the table states so that a new default of the release does not change it.
+[memory]
+host = "postgres"
+port = 5432
+dbname = "personas"
+user = "personas"
+password_file = "/run/postgres/password"
+lines_keep_days = 30
+
 # Every agent's token carries /agents, and the gateway refuses a turn whose person is outside the group.
 [gateway]
 backend = "litellm"
