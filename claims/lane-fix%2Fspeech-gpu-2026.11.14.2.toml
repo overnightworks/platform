@@ -1,7 +1,0 @@
-claim_id = "f02903cea8af40cfbba381518d2b1531"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "aa5218c452d514308f6180d5b3c5ed8fe9df71dd"
-branch = "fix/speech-gpu-2026.11.14.2"
-scope = ["apps/speech-runtime/speech-runtime-gpu.yaml"]
-opened_commit = "e6047cefea1a8cf8dc695b9fab2e814deffa9668"
