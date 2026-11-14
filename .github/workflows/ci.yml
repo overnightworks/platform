@@ -529,7 +529,7 @@ jobs:
           tests/keycloak/agent_client_tokens_and_groups.sh
           tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
 
-      # The four test agents' runs of the same cells, which share Leonardo's declaration and allowlist. A run takes
+      # The four test agents' runs of the same cells, which share Mozart's declaration and allowlist. A run takes
       # about two minutes, so they stand in the parts with room, none with more than two.
       - name: P2 cells for the test agents
         if: fromJSON(env.TEST_AGENTS_BY_PART)[matrix.part] != null
@@ -537,7 +537,7 @@ jobs:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
           TEST_AGENTS: ${{ fromJSON(env.TEST_AGENTS_BY_PART)[matrix.part] }}
-          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /agent-owners /services/speech-service
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /apps/songmaker/mcp /agent-owners /services/speech-service
           EXCHANGING_CLIENT: hopin
           EXCHANGE_SCOPE: speech-service-audience
           REFUSED_CLIENT: presentator

@@ -519,6 +519,7 @@ users:
       - /apps/hopin
       - /apps/hopin/mcp
       - /apps/skat/mcp
+      - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
   - username: service-account-agent-curie
@@ -528,6 +529,7 @@ users:
       - /apps/hopin
       - /apps/hopin/mcp
       - /apps/skat/mcp
+      - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
   - username: service-account-agent-lovelace
@@ -537,6 +539,7 @@ users:
       - /apps/hopin
       - /apps/hopin/mcp
       - /apps/skat/mcp
+      - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
   - username: service-account-agent-hildegard
@@ -546,6 +549,7 @@ users:
       - /apps/hopin
       - /apps/hopin/mcp
       - /apps/skat/mcp
+      - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
 clients:
@@ -829,7 +833,7 @@ clients:
     optionalClientScopes:
       - mcp-hopin
       - mcp-skat
-  # Four more agents declared exactly as agent-leonardo, each with its own agent_name and its own key of the Secret keycloak.
+  # Four more agents declared exactly as agent-mozart, each with its own agent_name and its own key of the Secret keycloak.
   - clientId: agent-humboldt
     name: agent-humboldt
     publicClient: false
@@ -878,6 +882,7 @@ clients:
     optionalClientScopes:
       - mcp-hopin
       - mcp-skat
+      - mcp-songmaker
   - clientId: agent-curie
     name: agent-curie
     publicClient: false
@@ -926,6 +931,7 @@ clients:
     optionalClientScopes:
       - mcp-hopin
       - mcp-skat
+      - mcp-songmaker
   - clientId: agent-lovelace
     name: agent-lovelace
     publicClient: false
@@ -974,6 +980,7 @@ clients:
     optionalClientScopes:
       - mcp-hopin
       - mcp-skat
+      - mcp-songmaker
   - clientId: agent-hildegard
     name: agent-hildegard
     publicClient: false
@@ -1022,3 +1029,4 @@ clients:
     optionalClientScopes:
       - mcp-hopin
       - mcp-skat
+      - mcp-songmaker
