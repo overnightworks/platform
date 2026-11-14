@@ -1,0 +1,8 @@
+claim_id = "8e671de299dd447d8101015867cd0318"
+agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
+role = "builder"
+base = "5b0e4c4669f6919a6e6558fc08cbae95f886b21f"
+branch = "claude/issue-537-personas-memory-postgres"
+scope = [".github/workflows/ci.yml", "apps/personas", "docs/personal-data.md", "infrastructure/backup", "infrastructure/namespaces/namespaces.yaml", "tests"]
+opened_commit = "44d1866525460531fcc039fa89fab0ce385b1614"
+whole_reason = "The database, its backup, the runner's [memory] table and the migrate step only work together; a part alone leaves the runner failing at start or a store without backup."
