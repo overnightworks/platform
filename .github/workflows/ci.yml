@@ -441,6 +441,12 @@ jobs:
           OTHER_NAMESPACE: redis-client-hopin
         run: tests/redis/instance_runs_non_root_evicts_nothing_forgets_on_restart_and_answers_only_its_namespace.sh
 
+      - name: Assert that hopin's HOPIN_REDIS_URL names its Redis Service and port
+        if: matrix.part == 'load-2'
+        env:
+          APP_NAMESPACE: hopin
+        run: tests/hopin/redis_url_names_the_redis_service_in_its_namespace.sh
+
       - name: Assert that songmaker's web is Ready at its full ref, migrated, closed to other namespaces, read-only and holds its audio claim
         if: matrix.part == 'load-1'
         env:
