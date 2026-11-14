@@ -1,0 +1,7 @@
+claim_id = "f78cf352d0ef466e8ce83ae675eedf15"
+agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
+role = "builder"
+base = "0d09422855110259938aefdfd96779ef7c34b3fa"
+branch = "claude/issue-568-litellm-caches-growing-user-messages"
+scope = ["scripts/litellm_cache_probe.sh", "tests/litellm/key_caching_marks_the_provider_request.sh"]
+opened_commit = "79ceab871bd6a4d3ffc2f47c8a57d7caa5762489"
