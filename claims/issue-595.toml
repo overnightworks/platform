@@ -1,0 +1,8 @@
+claim_id = "9cde879aac764923b390455ea75f11be"
+agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
+role = "builder"
+base = "6fafa96aeb3885f8cabe3a700b2d75fedd5b2793"
+branch = "claude/issue-595-four-test-agents-beside-mozart-and-leona"
+scope = [".github/workflows/ci.yml", "apps/personas/personas.toml", "infrastructure/keycloak/realm.yaml", "tests/keycloak/agent_client_tokens_and_groups.sh"]
+opened_commit = "149a76e7fe9232835e1528c6e633886c6f56e5c9"
+whole_reason = "Four clients, their config entries and their cell are one coherent change of the same shape."
