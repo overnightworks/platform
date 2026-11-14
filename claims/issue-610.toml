@@ -3,6 +3,6 @@ agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
 role = "builder"
 base = "12ed38cb3f9fbfa3c0ed153eafb8b9ccc30949a3"
 branch = "claude/issue-610-presentator-s-build-worker-over-tcp-with"
-scope = [".github/workflows/ci.yml", "apps/presentator", "tests/workloads"]
+scope = [".github/workflows/ci.yml", "apps/presentator", "infrastructure/admission/image-vendors.yaml", "tests/no_network", "tests/presentator", "tests/workloads"]
 opened_commit = "7e9260eee7e90deaf7db7b849312a99047ba36af"
 whole_reason = "The worker's transport, rules, key and policy change together or the pod cannot start."
