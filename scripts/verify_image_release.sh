@@ -25,7 +25,9 @@ PC_ONLY_SOURCE="GitRepository/flux-system/platform-secrets"
 # The render of the real tree ends in about 2 seconds; a Kustomization whose path is its own ancestor never ends.
 RENDER_TIMEOUT_SECONDS_DEFAULT=120
 # An app's release: its image is built and attested by quality's reusable workflow from the app's main, and the
-# signer's commit must lie on quality's main.
+# signer's commit must lie on quality's main. A release may publish a second image, tagged <version>-gpu, from the
+# same commit with the same attestation; both belong to the tag v<version>.
+APP_IMAGE_VARIANT_SUFFIX="-gpu"
 SIGNER_REPOSITORY_NAME="quality"
 SIGNER_WORKFLOW=".github/workflows/image.yml"
 SIGNER_BRANCH="main"
@@ -451,7 +453,7 @@ resolve_tag_commit() {
 check_app_release() {
   local image="$1" locations="$2" named="${1%@*}" repository version repository_name status signer index
   local signer_repository="${owner}/${SIGNER_REPOSITORY_NAME}" reds_before="${red_count}"
-  repository="${named%:*}" version="${named##*:}"
+  repository="${named%:*}" version="${named##*:}" version="${version%"${APP_IMAGE_VARIANT_SUFFIX}"}"
   repository_name="${repository#*/*/}" repository_name="${repository_name%%/*}"
   if ! resolve_tag_commit "${repository_name}" "${version}"; then
     report_red "${locations}" "${image}" "${release_failure}"

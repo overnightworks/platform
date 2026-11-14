@@ -65,6 +65,7 @@ The promise: [litellm](../infrastructure/legal/sections/litellm/datenschutz.html
 
 ## The speech service
 
-`apps/speech-runtime/`: speech-runtime's Deployment, Service, caller table (a ConfigMap) and NetworkPolicy, which admits
-port 8080 only from the namespaces `hopin`, `presentator` and `gatus`. (PD-8)
+`apps/speech-runtime/`: speech-runtime's two Deployments (the small image and the GPU image), Service, caller table
+(a ConfigMap) and NetworkPolicy, which admits port 8080 only from the namespaces `hopin`, `presentator` and `gatus`.
+(PD-8)
 The promise: [speech](../infrastructure/legal/sections/speech/datenschutz.html#sprachdienst).

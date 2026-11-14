@@ -45,8 +45,13 @@ Deployment, so a dead web mails `DeploymentUnavailable` and `TargetDown` only fo
 alerts are `NoOnlineAceStepWorker`, silent while the Deployment `acestep-worker` stands at 0 replicas or is not Ready,
 `SongmakerJobFailure` and `SongmakerBackgroundLoopUnhealthy`. (OPS-7)
 
-The card has one user at a time because the PC holds one: `mise run gpu:use songs` runs `acestep-worker` and waits
-until it is Ready, `mise run gpu:use speech` stops it. Git names no replica count for it, so Flux keeps the choice.
+The card has one user at a time because the PC holds one: `mise run gpu:use speech` stops `acestep-worker`, runs the
+Deployment `speech-runtime-gpu` and waits until it is Ready, which takes minutes while it loads its models, then
+stops the small `speech-runtime`; `mise run gpu:use songs` runs the small `speech-runtime` and waits until it is Ready,
+stops `speech-runtime-gpu` and waits until its pod is gone, then runs `acestep-worker` and waits until it is Ready.
+The Service `speech-runtime` reaches whichever speech Deployment is Ready, so its callers' URL stays, yet the GPU
+image offers other voices and a different hearing model than the small one, so a caller that names a voice follows the
+switch. Git names no replica count for these three Deployments, so Flux keeps the choice.
 
 ## The PC's disk and its bounds (`host/disk/` and the user units of `mise.toml`)
 

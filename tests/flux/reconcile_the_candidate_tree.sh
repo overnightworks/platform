@@ -55,6 +55,19 @@ patches:
                       - op: replace
                         path: /spec/replicas
                         value: 0
+          # k3d has no card: a pod of speech's GPU image would stay Pending on nvidia.com/gpu, and the Kustomization
+          # speech-runtime, which waits, would never turn Ready; the Deployment applies and runs no pod, so its image
+          # stays off the node too.
+          - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: speech-runtime}
+            patch: |
+              - op: add
+                path: /spec/patches
+                value:
+                  - target: {group: apps, kind: Deployment, name: speech-runtime-gpu}
+                    patch: |
+                      - op: add
+                        path: /spec/replicas
+                        value: 0
           # The acestep-worker runs no pod in k3d, so its image stays off the node. The scoring-worker's, about 4 GB and
           # most of the pull time, stays off the Job too: the Job would pull it before songmaker's layer starts, and the
           # wait for every Kustomization would then run that pull and the layer's start one after the other. Its own pod
