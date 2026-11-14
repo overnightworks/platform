@@ -1134,7 +1134,7 @@ quiet = true
 run = "scripts/litellm_keys.sh admin"
 
 [tasks."litellm:cache-probe"]
-description = "Live proof of prompt caching: send two identical streamed rounds with the app key in <key file> to the smallest text model under one test person, print the usage counts and the cache reads LiteLLM recorded for the key (writes the test person's row and two spend log rows); --remove deletes the test person's row"
+description = "Live proof of prompt caching: send three streamed rounds, each adding one user message to the round before, with the app key in <key file> to the smallest text model under one test person, print the usage counts and the cache writes and reads LiteLLM recorded for the key (writes the test person's row and three spend log rows); --remove deletes the test person's row"
 quiet = true
 run = "scripts/litellm_cache_probe.sh"
 
