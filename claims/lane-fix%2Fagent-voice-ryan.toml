@@ -1,7 +1,0 @@
-claim_id = "c8629af285ce441c850dece0f53fd702"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "4e649f86f8abb3dcf6b732ad15b933f7b45ec442"
-branch = "fix/agent-voice-ryan"
-scope = ["apps/personas/personas.toml"]
-opened_commit = "12d468027fc280330402f16df459e3a3cd834336"
