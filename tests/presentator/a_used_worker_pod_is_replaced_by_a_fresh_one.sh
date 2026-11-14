@@ -6,9 +6,10 @@
 # the node's leases, links and sandboxes as they were; and after a removed sandbox a pod with a new uid follows and its
 # worker finds its scratch empty, while the cell prints what the old uid's worker did after the loss. It needs
 # CLUSTER_NAME and PROBE_IMAGE, and creates and deletes the Namespace $REPLACEMENT_NAMESPACE, which carries no Pod
-# Security label. The stand-in appends to the file lives in the claim: "empty" when every scratch directory of the worker
-# was empty at its start, else "used" and exit 2. It then waits for the file trigger in the claim, whose content is its
-# exit status. In loop mode it exits 2 at once.
+# Security label, with the ConfigMap of the rule file and a dummy Secret of the key, which the render's pod mounts, and a
+# claim of its own that outlives a pod, which the render's StatefulSet does not hold. The stand-in appends to the file
+# lives in the claim: "empty" when every scratch directory of the worker was empty at its start, else "used" and exit 2.
+# It then waits for the file trigger in the claim, whose content is its exit status. In loop mode it exits 2 at once.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 # shellcheck source=../failure.sh
@@ -16,6 +17,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=../no_network/pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../no_network/pod.sh"
 server="k3d-${CLUSTER_NAME}-server-0"
+claim=lives
+claim_mount=/lives
 namespace="${REPLACEMENT_NAMESPACE:-presentator-replacement}"
 started_at=$SECONDS
 work="$(mktemp -d)"
@@ -50,8 +53,8 @@ exit "$code"
 EOF
 )"
 
-# The StatefulSet, its ServiceAccount and its claim as the render has them, with the names read from it; the Postgres
-# StatefulSet of the platform's base is no worker.
+# The StatefulSet and its ServiceAccount as the render has them, with the names read from it; the Postgres StatefulSet of
+# the platform's base is no worker.
 kubectl kustomize apps/presentator | yq 'select(.kind != "StatefulSet" or .metadata.name != "postgres")' >"$work/presentator.yaml"
 yq --no-doc 'select(.kind == "StatefulSet") | .metadata.name' "$work/presentator.yaml" >"$work/names"
 [ "$(wc -l <"$work/names")" = 1 ] || fail "the render holds not exactly one StatefulSet"
@@ -61,21 +64,25 @@ pod_spec='select(.kind == "StatefulSet") | .spec.template.spec'
 [ "$(yq --no-doc "$pod_spec | .containers | length" "$work/presentator.yaml")" = 1 ] ||
   fail "the StatefulSet does not hold exactly one container"
 account="$(yq --no-doc "$pod_spec | .serviceAccountName" "$work/presentator.yaml")"
-claim_volume="$(yq --no-doc "$pod_spec | .volumes[] | select(has(\"persistentVolumeClaim\")) | .name" "$work/presentator.yaml")"
-claim="$(yq --no-doc "$pod_spec | .volumes[] | select(.name == \"$claim_volume\") | .persistentVolumeClaim.claimName" "$work/presentator.yaml")"
-claim_mount="$(yq --no-doc "$pod_spec | .containers[0].volumeMounts[] | select(.name == \"$claim_volume\") | .mountPath" "$work/presentator.yaml")"
 scratch_mounts="$(yq --no-doc "$pod_spec | [.volumes[] | select(has(\"emptyDir\")) | .name] as \$scratch
   | .containers[0].volumeMounts[] | select(.name as \$name | \$scratch | any_c(. == \$name)) | .mountPath" "$work/presentator.yaml" | tr '\n' ' ')"
-[ -n "$account" ] && [ -n "$claim" ] && [ -n "$claim_mount" ] && [ -n "$scratch_mounts" ] ||
-  fail "the render names no ServiceAccount, claim, its mount or scratch mount of the worker"
+# The ConfigMap of the rule file and the Secret of the key, by the volumes the pod mounts.
+rules_volume="$(yq --no-doc "$pod_spec | .initContainers[0].volumeMounts[0].name" "$work/presentator.yaml")"
+rules_map="$(yq --no-doc "$pod_spec | .volumes[] | select(.name == \"$rules_volume\") | .configMap.name" "$work/presentator.yaml")"
+key_secret="$(yq --no-doc "$pod_spec | .volumes[] | select(has(\"secret\")) | .secret.secretName" "$work/presentator.yaml")"
+[ -n "$account" ] && [ -n "$scratch_mounts" ] && [ -n "$rules_map" ] && [ -n "$key_secret" ] ||
+  fail "the render names no ServiceAccount, scratch mount, rule file ConfigMap or key Secret of the worker"
 
 # statefulset_manifest <replicas> <serve|loop>: the render's StatefulSet in the cell's Namespace, its worker container
-# running the stand-in from PROBE_IMAGE in that mode.
+# running the stand-in from PROBE_IMAGE in that mode, without the readiness probe of the worker's program, and the cell's
+# claim mounted in it.
 statefulset_manifest() {
   REPLICAS="$1" MODE="$2" NAMESPACE="$namespace" IMAGE="$PROBE_IMAGE" PROGRAM="$STAND_IN" CLAIM_MOUNT="$claim_mount" SCRATCH="$scratch_mounts" \
-    yq --no-doc 'select(.kind == "StatefulSet") | .metadata.namespace = strenv(NAMESPACE) | .spec.replicas = env(REPLICAS)
-      | .spec.template.spec.containers[0] |= (.image = strenv(IMAGE)
-        | .command = ["sh", "-c", strenv(PROGRAM), "stand-in", strenv(MODE), strenv(CLAIM_MOUNT)] + (strenv(SCRATCH) | split(" ") | map(select(length > 0))))' \
+    CLAIM="$claim" yq --no-doc 'select(.kind == "StatefulSet") | .metadata.namespace = strenv(NAMESPACE) | .spec.replicas = env(REPLICAS)
+      | .spec.template.spec.containers[0] |= (.image = strenv(IMAGE) | del(.readinessProbe)
+        | .command = ["sh", "-c", strenv(PROGRAM), "stand-in", strenv(MODE), strenv(CLAIM_MOUNT)] + (strenv(SCRATCH) | split(" ") | map(select(length > 0)))
+        | .volumeMounts += [{"name": strenv(CLAIM), "mountPath": strenv(CLAIM_MOUNT)}])
+      | .spec.template.spec.volumes += [{"name": strenv(CLAIM), "persistentVolumeClaim": {"claimName": strenv(CLAIM)}}]' \
     "$work/presentator.yaml"
 }
 
@@ -84,8 +91,12 @@ namespace_created=1
 {
   ACCOUNT="$account" NAMESPACE="$namespace" yq --no-doc 'select(.kind == "ServiceAccount" and .metadata.name == strenv(ACCOUNT)) | .metadata.namespace = strenv(NAMESPACE)' "$work/presentator.yaml"
   echo ---
-  CLAIM="$claim" NAMESPACE="$namespace" yq --no-doc 'select(.kind == "PersistentVolumeClaim" and .metadata.name == strenv(CLAIM)) | .metadata.namespace = strenv(NAMESPACE)' "$work/presentator.yaml"
+  RULES="$rules_map" NAMESPACE="$namespace" yq --no-doc 'select(.kind == "ConfigMap" and .metadata.name == strenv(RULES)) | .metadata.namespace = strenv(NAMESPACE)' "$work/presentator.yaml"
+  echo ---
+  CLAIM="$claim" yq --null-input '{"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": strenv(CLAIM)},
+    "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": "local-path", "resources": {"requests": {"storage": "1Gi"}}}}'
 } | k apply -f -
+k create secret generic "$key_secret" --from-literal=key=dummy
 find_lease_directory
 node_before="$(node_state)" || exit 1
 
@@ -126,7 +137,7 @@ trigger_exit() { k exec "$pod" -c worker -- sh -c "echo $1 >'$claim_mount/trigge
 # restarted, and it is the only pod of the StatefulSet.
 fresh_pod_holds() {
   [ "$phase" = Running ] || fail "the successor's phase is '$phase', not Running"
-  [ "$init_exit" = 0 ] || fail "remove-link ended '$init_exit' in the successor, not 0"
+  [ "$init_exit" = 0 ] || fail "nft-rules ended '$init_exit' in the successor, not 0"
   [ "$restarts" = 0 ] || fail "the successor's worker restarted $restarts times"
   [ "$(k get pods -o name | wc -l)" = 1 ] || fail "the namespace holds $(k get pods -o name | wc -l) pods besides the successor: $(k get pods -o name | tr '\n' ' ')"
 }
@@ -149,7 +160,7 @@ fresh_pod_holds
 
 # (a) A life ends, a fresh pod answers.
 end_a_life 0 "a life's end (exit 0)"
-echo "(a) after a life's end the pod has a new uid, remove-link ended 0 in it, its worker has no restart and found its scratch empty"
+echo "(a) after a life's end the pod has a new uid, nft-rules ended 0 in it, its worker has no restart and found its scratch empty"
 
 # (b) A running pod is never touched.
 untouched_uid="$uid"

@@ -659,9 +659,13 @@ jobs:
           OTHER_NAMESPACE: presentator-client
         run: tests/presentator/web_answers_only_through_traefik.sh
 
-      - name: Assert that presentator's Postgres is Ready, that the web connects to its Service and its Pod, and that the sealed build worker connects to neither
+      - name: Assert that presentator's Postgres is Ready, that the web connects to its Service and its Pod, and that neither sealed build worker connects to either
         if: matrix.part == 'presentator'
         run: tests/presentator/postgres_is_reached_by_the_web_and_never_by_the_sealed_worker.sh
+
+      - name: Assert that presentator's two build workers are Ready behind the Service build-worker with the web's key file at mode 0400 as root's, and that the web alone connects to a worker
+        if: matrix.part == 'presentator'
+        run: tests/presentator/build_workers_are_two_pods_behind_one_service_with_one_key.sh
 
       - name: Assert that presentator:load-database refuses before any change, replaces the live file whole or leaves the old one, keeps a suspension it found, and that a killed run and a second run at once converge on the same command
         if: matrix.part == 'presentator'
