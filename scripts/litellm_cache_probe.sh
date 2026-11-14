@@ -26,13 +26,6 @@ probe_model=text/haiku
 # The system text's length: past the provider's minimum cacheable prefix of every model, a few thousand tokens.
 probe_rules=400
 
-# value_from_file <file>: sets value to the key in the file, which must be one printable line starting with sk-.
-value_from_file() {
-  [ -f "$1" ] && [ -r "$1" ] || fail "the key file cannot be read"
-  value="$(<"$1")" || fail "the key file cannot be read"
-  [[ $value == "$key_prefix"* && $value =~ ^[!-~]+$ ]] || fail "the key file is not one printable line starting with $key_prefix"
-  [ "${#value}" -ge "$key_minimum_length" ] || fail "the key in the file is shorter than $key_minimum_length characters"
-}
 # system_text: a text no earlier run sent, long enough to be cached.
 system_text() {
   local rule
