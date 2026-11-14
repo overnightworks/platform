@@ -144,6 +144,8 @@ jobs:
       CANDIDATE_BRANCH: candidate
       CANDIDATE_SOURCE_PORT: "8081"
       CLUSTER_NAME: platform
+      # The test agents whose P2 cells a part runs, by part name.
+      TEST_AGENTS_BY_PART: '{"presentator": "agent-humboldt agent-curie", "load-1": "agent-lovelace", "load-2": "agent-hildegard"}'
       # The k3s configuration the PC and this cluster share.
       K3S_CONFIG_SOURCE: host/k3s/config.yaml
       # The k3d-managed registry serving the job's platform-secrets source: the cluster reaches it by its address on
@@ -526,6 +528,26 @@ jobs:
         run: |
           tests/keycloak/agent_client_tokens_and_groups.sh
           tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
+
+      # The four test agents' runs of the same cells, which share Leonardo's declaration and allowlist. A run takes
+      # about two minutes, so they stand in the parts with room, none with more than two.
+      - name: P2 cells for the test agents
+        if: fromJSON(env.TEST_AGENTS_BY_PART)[matrix.part] != null
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+          TEST_AGENTS: ${{ fromJSON(env.TEST_AGENTS_BY_PART)[matrix.part] }}
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /agent-owners /services/speech-service
+          EXCHANGING_CLIENT: hopin
+          EXCHANGE_SCOPE: speech-service-audience
+          REFUSED_CLIENT: presentator
+          BASE_REF: origin/main
+        run: |
+          for AGENT_CLIENT in $TEST_AGENTS; do
+            export AGENT_CLIENT
+            tests/keycloak/agent_client_tokens_and_groups.sh
+            tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
+          done
 
       - name: Assert that cutover:load refuses the cluster's own Keycloak dump, naming agent_owner and the platform's six objects, before it loads anything
         if: matrix.part == 'access'

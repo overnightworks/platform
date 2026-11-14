@@ -51,7 +51,7 @@ for manifest in $APP_MANIFESTS; do
       skat) app_keys="oidc_client_secret session_secret operator_account_id" ;;
       songmaker) app_keys="oidc_client_secret session_secret songmaker_internal_token litellm_key songmaker_monitoring_token" ;;
       presentator) app_keys="presentator_secret_key oidc_client_secret litellm_key" ;;
-      personas) app_keys="litellm_key mozart_client_secret leonardo_client_secret" ;;
+      personas) app_keys="litellm_key mozart_client_secret leonardo_client_secret client-agent-humboldt client-agent-curie client-agent-lovelace client-agent-hildegard" ;;
       *) app_keys="oidc_client_secret session_secret turn_key_id turn_api_token agent_adders" ;;
     esac
     for key in $app_keys; do
