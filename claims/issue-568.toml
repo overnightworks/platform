@@ -3,5 +3,6 @@ agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
 role = "builder"
 base = "0d09422855110259938aefdfd96779ef7c34b3fa"
 branch = "claude/issue-568-litellm-caches-growing-user-messages"
-scope = ["scripts/litellm_cache_probe.sh", "tests/litellm/key_caching_marks_the_provider_request.sh"]
+scope = ["docs/operations.md", "mise.toml", "scripts/litellm_cache_probe.sh", "tests/litellm/failed_write_names_what_is_done.sh", "tests/litellm/key_caching_marks_the_provider_request.sh"]
 opened_commit = "79ceab871bd6a4d3ffc2f47c8a57d7caa5762489"
+whole_reason = "One probe change: its script, its fake-gateway cell, its task description and its operations paragraph move together."
