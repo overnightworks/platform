@@ -17,6 +17,7 @@ locals {
     "skat",
     "songmaker",
     "speech",
+    "tandem",
     "webauth",
   ])
 
