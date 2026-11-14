@@ -423,23 +423,23 @@ jobs:
           SONGMAKER_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
           OTHER_NAMESPACE: songmaker-client
-        run: tests/songmaker/stores_are_ready_non_root_closed_and_forget.sh
+        run: tests/songmaker/postgres_is_ready_non_root_and_closed.sh
 
-      - name: Assert that the Redis base keeps nothing and evicts nothing on songmaker's instance, and answers only its namespace
+      - name: Assert that the Redis base runs non-root, evicts nothing, forgets on restart and answers only its namespace on songmaker's instance
         if: matrix.part == 'load-2'
         env:
           APP_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
           OTHER_NAMESPACE: redis-client
-        run: tests/redis/instance_keeps_nothing_evicts_nothing_and_answers_only_its_namespace.sh
+        run: tests/redis/instance_runs_non_root_evicts_nothing_forgets_on_restart_and_answers_only_its_namespace.sh
 
-      - name: Assert that the Redis base keeps nothing and evicts nothing on hopin's instance, and answers only its namespace
+      - name: Assert that the Redis base runs non-root, evicts nothing, forgets on restart and answers only its namespace on hopin's instance
         if: matrix.part == 'load-2'
         env:
           APP_NAMESPACE: hopin
           # The throwaway namespace of the Pod that must get no answer.
           OTHER_NAMESPACE: redis-client-hopin
-        run: tests/redis/instance_keeps_nothing_evicts_nothing_and_answers_only_its_namespace.sh
+        run: tests/redis/instance_runs_non_root_evicts_nothing_forgets_on_restart_and_answers_only_its_namespace.sh
 
       - name: Assert that songmaker's web is Ready at its full ref, migrated, closed to other namespaces, read-only and holds its audio claim
         if: matrix.part == 'load-1'
