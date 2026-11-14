@@ -33,7 +33,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: personas
-          image: ghcr.io/overnightworks/personas:2026.11.13.2@sha256:d66ba05498670d9e8c5d92d7810540cbb771160113b4e9ddf195124588c0a69e
+          image: ghcr.io/overnightworks/personas:2026.11.14.1@sha256:7a5f3e7cbedbdbd6be75ff7dbd571ef6c50b4f93540ef3e6ad3b482b17e1a2cc
           env:
             - name: PERSONAS_CONFIG
               value: /etc/personas/personas.toml
