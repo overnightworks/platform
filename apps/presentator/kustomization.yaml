@@ -11,6 +11,10 @@ resources:
 components:
   - release
 configMapGenerator:
+  # The one rule file of the workers' packet filter; its hash suffix rolls the pods when a rule changes.
+  - name: build-worker-rules
+    files:
+      - worker.nft
   - name: sqlite
     behavior: merge
     literals:

@@ -56,3 +56,6 @@ data:
   redis: docker.io/library/redis
   # infrastructure/nvidia/nvidia.yaml; https://catalog.ngc.nvidia.com/orgs/nvidia/containers/k8s-device-plugin
   nvidia-device-plugin: nvcr.io/nvidia/k8s-device-plugin
+  # apps/presentator/worker.yaml, the init container nft-rules, which ships the nft program;
+  # https://github.com/kubernetes/release/tree/master/images/build/distroless-iptables
+  distroless-iptables: registry.k8s.io/build-image/distroless-iptables

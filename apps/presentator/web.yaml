@@ -32,7 +32,7 @@ spec:
       imagePullSecrets:
         - name: ghcr-pull
       securityContext:
-        # The image's runtime user, whose gid is the one the worker's group names.
+        # The image's runtime user.
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
@@ -74,17 +74,11 @@ spec:
               value: speech-service-audience
             - name: PRESENTATOR_BUILD_RUNNER
               value: worker
-          # The web refuses to start unless the worker answers within 70 seconds, which the pod's first start may need
-          # the worker's image pull for.
-          startupProbe:
-            httpGet:
-              path: /health
-              port: http
-              httpHeaders:
-                - name: Host
-                  value: presentator.hallucinai.de
-            periodSeconds: 10
-            failureThreshold: 30
+            # The Service of the build workers, one of whose pods takes each step; the web starts without them.
+            - name: PRESENTATOR_BUILD_WORKER_ADDRESS
+              value: build-worker:7100
+            - name: PRESENTATOR_BUILD_WORKER_KEY_FILE
+              value: /run/secrets/build-worker-key/key
           # The Host check admits the public host only, so the kubelet's probe names it.
           readinessProbe:
             httpGet:
@@ -110,19 +104,24 @@ spec:
               mountPath: /data/mirrors
             - name: builds
               mountPath: /data/builds
-            - name: build-socket
-              mountPath: /run/presentator-build
             - name: sqlite
               mountPath: /etc/sqlite
               readOnly: true
       volumes:
-        # Every key of the Secret becomes a file: presentator_secret_key, oidc_client_secret and litellm_key.
+        # Every key of the Secret presentator becomes a file: presentator_secret_key, oidc_client_secret and litellm_key.
+        # The workers' key lies beside them as /run/secrets/build-worker-key/key, readable by uid 1001: a volume of its own
+        # there would nest a mount inside this read-only one.
         - name: secrets
           projected:
             defaultMode: 0444
             sources:
               - secret:
                   name: presentator
+              - secret:
+                  name: build-worker-key
+                  items:
+                    - key: key
+                      path: build-worker-key/key
         - name: tmp
           emptyDir:
             medium: Memory
@@ -136,9 +135,6 @@ spec:
         - name: builds
           persistentVolumeClaim:
             claimName: builds
-        - name: build-socket
-          persistentVolumeClaim:
-            claimName: build-socket
         - name: sqlite
           configMap:
             name: sqlite
