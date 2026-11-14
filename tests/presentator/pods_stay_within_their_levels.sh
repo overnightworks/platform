@@ -167,6 +167,9 @@ judge_structure() {
   # Replicas, strategy, process sharing, fsGroup and exec probes.
   exactly "$manifest" "the web does not run one replica and the worker two" \
     "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | .spec.replicas" '1,2'
+  # An immutable field of the StatefulSet changes only by deleting it, which Flux does for the annotation.
+  found "$manifest" "the worker sets podManagementPolicy without the annotation that lets Flux recreate its StatefulSet" \
+    "select($WORKER_DOCUMENT) | select(.spec.podManagementPolicy != null and .metadata.annotations[\"kustomize.toolkit.fluxcd.io/force\"] != \"enabled\")"
   exactly "$manifest" "the web's strategy is not Recreate" \
     'select(.kind == "Deployment" and .metadata.name == "web") | .spec.strategy.type' '"Recreate"'
   exactly "$manifest" "the web does not share its process namespace" "$WEB | .shareProcessNamespace" 'true'
@@ -426,6 +429,8 @@ mutant "the web does not mount that volume read-only at /run/secrets" "($on_web 
 mutant "the web does not run one replica and the worker two" "($on_web | .spec.replicas) = 2"
 mutant "the web does not run one replica and the worker two" "($on_worker | .spec.replicas) = 1"
 mutant "the web does not run one replica and the worker two" "($on_worker | .spec.replicas) = 3"
+mutant "the worker sets podManagementPolicy without the annotation" "del($on_worker | .metadata.annotations)"
+mutant "the worker sets podManagementPolicy without the annotation" "($on_worker | .metadata.annotations.\"kustomize.toolkit.fluxcd.io/force\") = \"disabled\""
 mutant "the web's strategy is not Recreate" "($on_web | .spec.strategy.type) = \"RollingUpdate\""
 mutant "the web does not share its process namespace" "($on_web | .spec.template.spec.shareProcessNamespace) = false"
 mutant "a template sets fsGroup" "($on_web | .spec.template.spec.securityContext.fsGroup) = 1001"

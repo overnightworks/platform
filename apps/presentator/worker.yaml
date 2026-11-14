@@ -17,10 +17,15 @@ kind: StatefulSet
 metadata:
   name: build-worker
   namespace: presentator
+  annotations:
+    # podManagementPolicy is immutable and the StatefulSet that ran before it was set holds the default, so Flux's apply is
+    # refused until it deletes and creates the StatefulSet. The StatefulSet owns no claim, so nothing is lost with it.
+    kustomize.toolkit.fluxcd.io/force: enabled
 spec:
   replicas: 2
   serviceName: build-worker
-  # A pod is replaced after every life, so the second must not wait for the first.
+  # A pod is replaced after every life, so the second must not wait for the first, which OrderedReady makes it do: a pod
+  # serving a life is not ready.
   podManagementPolicy: Parallel
   selector:
     matchLabels:
