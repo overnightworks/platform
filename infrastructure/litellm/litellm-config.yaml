@@ -1,9 +1,9 @@
 # LiteLLM's configuration (litellm.yaml, Deployment `litellm`). Three text names an app sends, each mapped to the
 # current id of its family on Anthropic at the model's default effort, and for sonnet and haiku a `-medium` and a `-low`
 # name that send the family's model with `output_config: {effort: ...}`, which LiteLLM passes to Anthropic as it is
-# (a request that names `reasoning_effort` outranks it), each with `max_tokens`: what LiteLLM sends for a request that names none, and the
-# output it reserves against a budget, so the ceiling of a conforming app; an app that names more is bound by the
-# budgets alone. One picture name, mapped to an OpenAI image model, which answers with the picture's bytes and its
+# (a request that names `reasoning_effort` outranks it), each with `max_tokens`: what LiteLLM sends for a request that
+# names none, and the output it reserves against a budget, so the ceiling of a conforming app; an app that names more is
+# bound by the budgets alone. One picture name, mapped to an OpenAI image model, which answers with the picture's bytes and its
 # usage; it has no `max_tokens`, so nothing is reserved and one picture can pass a budget. LiteLLM reads this file once,
 # at start: kustomization.yaml generates its ConfigMap under a name with the content's hash, so a change rolls the pod.
 # No callback, cache or fallback; the provider keys, the master key and the database URL come from the environment the
