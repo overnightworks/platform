@@ -1,8 +1,0 @@
-claim_id = "42d12880b2614f0fbfd42438c50df512"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "d696ff80429df093ffbf34fdbcdfdee875d061a8"
-branch = "claude/issue-604-hopin-gets-its-own-redis"
-scope = [".github/workflows/ci.yml", "apps/hopin/hopin.yaml", "apps/hopin/kustomization.yaml", "tests/hopin/redis_url_names_the_redis_service_in_its_namespace.sh", "tests/redis", "tests/songmaker/postgres_is_ready_non_root_and_closed.sh", "tests/songmaker/stores_are_ready_non_root_closed_and_forget.sh", "tests/workloads"]
-opened_commit = "cb05c6982ad7139fe04875ef88cae704a0ed2bf6"
-whole_reason = "hopin's Redis, its env and the base cell run for hopin's instance are one slice; the stores cell only loses the probe the base cell now owns."
