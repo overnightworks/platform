@@ -300,6 +300,11 @@ add_twin() {
 # remove_twin <realm>
 remove_twin() { admin DELETE "$1/clients/$(admin GET "$1/clients?clientId=$twin_client" | jq --raw-output '.[0].id')"; }
 for compared in $(yq '.clients[] | select(.bearerOnly != true) | .clientId' "$REALM_FILE"); do
+  # A client the base does not declare has no sign-in to compare with.
+  if [ -z "$(CLIENT="$compared" yq '.clients[] | select(.clientId == strenv(CLIENT)) | .clientId' "$scratch/base-realm.yaml")" ]; then
+    echo "$compared is not in the base: no sign-in to compare"
+    continue
+  fi
   add_twin "$realm" "$REALM_FILE" "$compared"
   add_twin "$base_realm" "$scratch/base-realm.yaml" "$compared"
   compared_scopes="$(CLIENT="$compared" yq '.clients[] | select(.clientId == strenv(CLIENT)) | (.optionalClientScopes // []) | join(" ")' "$REALM_FILE")"
