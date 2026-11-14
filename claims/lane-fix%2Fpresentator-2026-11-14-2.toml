@@ -1,7 +1,0 @@
-claim_id = "62995ebcdea64818a22570a52a6883cb"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "1882852f7c3c12073351efcfe2c98be6e177948d"
-branch = "fix/presentator-2026-11-14-2"
-scope = ["apps/presentator/release/kustomization.yaml"]
-opened_commit = "120ec7e1defc6c043e9408f15c4b5c7d4c68d816"
