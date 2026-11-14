@@ -91,6 +91,14 @@ cache writes and reads LiteLLM's spend log holds for the key since the run began
 cache, each later round read at least what the round before cached and the log counts those reads. It writes the test
 person's customer row and three spend log rows; `mise run litellm:cache-probe --remove` deletes the row.
 
+Besides `text/sonnet`, `text/haiku` and `text/opus`, LiteLLM names `text/sonnet-medium`, `text/sonnet-low`,
+`text/haiku-medium` and `text/haiku-low`: each is its family's model with Anthropic's effort set by `output_config` in
+`litellm-config.yaml`, so an app tries one by its name alone; a key lists the names it may use. `mise run
+litellm:measure <key file> [<requests per name>]` is the operator's measurement, since it spends money: it sends
+synthetic streamed requests to the six sonnet and haiku names in turn and prints each name's median time to the first
+content chunk and its median and total cost, from the stream's usage and the prices of `/model/info`;
+`mise run litellm:measure --remove` deletes its test person's row.
+
 `mise run litellm:keys [--plan]` makes the person budget (the id of `max_end_user_budget_id`) and each row's key equal
 to it, sending only the fields that differ, so a pure budget change keeps the period's reset; it prints the revision
 Flux applied to the table it read, which it refuses when absent or changed during the read, one line per field with old

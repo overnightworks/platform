@@ -1,5 +1,7 @@
 # LiteLLM's configuration (litellm.yaml, Deployment `litellm`). Three text names an app sends, each mapped to the
-# current id of its family on Anthropic, with `max_tokens`: what LiteLLM sends for a request that names none, and the
+# current id of its family on Anthropic at the model's default effort, and for sonnet and haiku a `-medium` and a `-low`
+# name that send the family's model with `output_config: {effort: ...}`, which LiteLLM passes to Anthropic as it is
+# (a request that names `reasoning_effort` outranks it), each with `max_tokens`: what LiteLLM sends for a request that names none, and the
 # output it reserves against a budget, so the ceiling of a conforming app; an app that names more is bound by the
 # budgets alone. One picture name, mapped to an OpenAI image model, which answers with the picture's bytes and its
 # usage; it has no `max_tokens`, so nothing is reserved and one picture can pass a budget. LiteLLM reads this file once,
@@ -32,6 +34,38 @@ model_list:
       api_key: os.environ/ANTHROPIC_API_KEY
       max_retries: 0
       max_tokens: 16384
+  - model_name: text/sonnet-medium
+    litellm_params:
+      model: anthropic/claude-sonnet-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      max_retries: 0
+      max_tokens: 16384
+      output_config:
+        effort: medium
+  - model_name: text/sonnet-low
+    litellm_params:
+      model: anthropic/claude-sonnet-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      max_retries: 0
+      max_tokens: 16384
+      output_config:
+        effort: low
+  - model_name: text/haiku-medium
+    litellm_params:
+      model: anthropic/claude-haiku-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      max_retries: 0
+      max_tokens: 16384
+      output_config:
+        effort: medium
+  - model_name: text/haiku-low
+    litellm_params:
+      model: anthropic/claude-haiku-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      max_retries: 0
+      max_tokens: 16384
+      output_config:
+        effort: low
   - model_name: image/flare
     litellm_params:
       model: openai/gpt-image-2.5-flare

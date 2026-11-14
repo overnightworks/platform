@@ -21,7 +21,7 @@ trap 'exit 143' TERM
 image="$(yq 'select(.kind == "Deployment" and .metadata.name == "litellm") | .spec.template.spec.containers[].image |
   select(test("^ghcr[.]io/berriai/litellm:"))' "$layer/litellm.yaml")"
 [ -n "$image" ] || fail "litellm.yaml holds no LiteLLM image"
-mapfile -t models < <(yq '.model_list[].litellm_params.model | select(test("^anthropic/"))' "$layer/litellm-config.yaml")
+mapfile -t models < <(yq '[.model_list[].litellm_params.model | select(test("^anthropic/"))] | unique | .[]' "$layer/litellm-config.yaml")
 [ "${#models[@]}" != 0 ] || fail "litellm-config.yaml names no Anthropic model"
 
 # The call goes through litellm.acompletion with the field the proxy copies from the key, to an api_base that is a recorder

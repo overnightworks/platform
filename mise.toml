@@ -1138,6 +1138,11 @@ description = "Live proof of prompt caching: send three streamed rounds, each ad
 quiet = true
 run = "scripts/litellm_cache_probe.sh"
 
+[tasks."litellm:measure"]
+description = "Compare the sonnet and haiku text names at each effort: send N synthetic streamed requests per name with the app key in <key file> and print each name's median time to first token and cost (spends money, writes a test person's row and one spend log row per request); --remove deletes the test person's row"
+quiet = true
+run = "scripts/litellm_effort_measure.sh"
+
 # The one owner of the loopback forward to a Service's page, which a page the operator opens only at the PC shares.
 [tasks."page:forward"]
 description = "Forward a Service to this PC's loopback at a free port and print the address once kubectl listens"

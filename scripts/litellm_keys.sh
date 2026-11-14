@@ -112,6 +112,13 @@ quote_inner() {
   printf '%s' "${text//\"/\\\"}"
 }
 
+# value_from_file <file>: sets value to the key in the file, which must be one printable line starting with sk-.
+value_from_file() {
+  [ -f "$1" ] && [ -r "$1" ] || fail "the key file cannot be read"
+  value="$(<"$1")" || fail "the key file cannot be read"
+  [[ $value == "$key_prefix"* && $value =~ ^[!-~]+$ ]] || fail "the key file is not one printable line starting with $key_prefix"
+  [ "${#value}" -ge "$key_minimum_length" ] || fail "the key in the file is shorter than $key_minimum_length characters"
+}
 reply="" status="" failure=""
 # request <step> <path> [<body> [discard]]: a GET without a body, a POST with one, authorized by the master key on
 # curl's stdin; sets status and reply, with discard the reply goes nowhere. Returns 1 with failure naming the step and
