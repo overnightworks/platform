@@ -83,12 +83,19 @@ postgres_statefulset="$(yq 'select(.kind == "StatefulSet")' "$POSTGRES_BASE/post
 postgres_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$postgres_statefulset")"
 password_file="$(yq '.spec.template.spec.containers[0].env[] | select(.name == "POSTGRES_PASSWORD_FILE") | .value' \
   <<<"$postgres_statefulset")"
-# layer_includes <kustomization file> <resources|components> <directory>: the field of the layer names the directory.
+# layer_includes <kustomization file> <resources|components> <directory>: the field of the layer names the directory, or,
+# for resources, a layer inside its own directory does. Components are not followed: presentator's nested layer holds the
+# backup component beside the SQLite base's Schedule, and the cells that read BACKUP_NAMESPACES assume one stream and the
+# Schedule postgres.
 layer_includes() {
-  local layer="$1" field="$2" directory entry
+  local layer="$1" field="$2" directory entry resolved
   directory="$(realpath --canonicalize-missing "$3")"
   while IFS= read -r entry; do
-    [ "$(realpath --canonicalize-missing "${layer%/*}/$entry")" != "$directory" ] || return 0
+    resolved="$(realpath --canonicalize-missing "${layer%/*}/$entry")"
+    [ "$resolved" != "$directory" ] || return 0
+    if [ "$field" = resources ] && [[ $resolved == "$(realpath "${layer%/*}")"/* ]] && [ -f "$resolved/kustomization.yaml" ]; then
+      ! layer_includes "$resolved/kustomization.yaml" resources "$3" || return 0
+    fi
   done < <(FIELD="$field" yq '.[strenv(FIELD)] // [] | .[]' "$layer")
   return 1
 }
