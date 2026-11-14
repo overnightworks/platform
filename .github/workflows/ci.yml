@@ -621,9 +621,7 @@ jobs:
       - name: Assert that presentator's web and its pull layer's Job pass restricted, its worker baseline without its init's NET_ADMIN, nothing else runs looser, and its render holds the contract
         if: matrix.part == 'apps'
         run: |
-          # The Postgres StatefulSet is the platform's base, which every layer that includes it holds to restricted where the
-          # Namespace enforces it; this cell judges presentator's own templates.
-          kubectl kustomize apps/presentator | yq 'select(.kind != "StatefulSet" or .metadata.name != "postgres")' >"$RUNNER_TEMP/presentator.yaml"
+          kubectl kustomize apps/presentator >"$RUNNER_TEMP/presentator.yaml"
           kubectl kustomize apps/presentator/pull >"$RUNNER_TEMP/presentator-pull.yaml"
           tests/presentator/pods_stay_within_their_levels.sh "$RUNNER_TEMP/presentator.yaml" "$RUNNER_TEMP/presentator-pull.yaml"
 

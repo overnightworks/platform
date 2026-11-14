@@ -146,8 +146,9 @@ judge_structure() {
   found "$manifest" "a template other than the web's shares its process namespace" \
     "select((.kind == \"Deployment\" and .metadata.name == \"web\") | not) | $SPECS | select(.shareProcessNamespace == true)"
   found "$manifest" "a template sets fsGroup" "$SPECS | select(.securityContext.fsGroup != null)"
+  # The platform's Postgres base reads its readiness through `pg_isready`, an exec probe; it is held to restricted above.
   found "$manifest" "a container has an exec probe or a postStart hook" \
-    "$SPECS | [.initContainers[], .containers[]][] | select(.livenessProbe.exec != null or .readinessProbe.exec != null or .startupProbe.exec != null or .lifecycle.postStart != null)"
+    "select(.kind + \"/\" + .metadata.name != \"StatefulSet/postgres\") | $SPECS | [.initContainers[], .containers[]][] | select(.livenessProbe.exec != null or .readinessProbe.exec != null or .startupProbe.exec != null or .lifecycle.postStart != null)"
   # The worker's group is the web's, and its command, seal and memory bound are set.
   web_group="$(yq --no-doc "$WEB | .securityContext.runAsGroup" "$manifest")"
   worker_group="$(yq --no-doc "$WORKER_CONTAINER | .securityContext.runAsGroup" "$manifest")"
@@ -244,6 +245,9 @@ EOF
 # The CronJob's pod template is among the judged templates.
 mutant "the Pod restore-test is refused at restricted" \
   "(select(.kind == \"CronJob\" and .metadata.name == \"restore-test\") | .spec.jobTemplate.spec.template.spec.securityContext) |= (.runAsUser = 0 | .runAsNonRoot = false)"
+# The platform's Postgres template is held to restricted in this Namespace, which enforces no level.
+mutant "the Pod postgres is refused at restricted" \
+  "(select(.kind == \"StatefulSet\" and .metadata.name == \"postgres\") | .spec.template.spec.securityContext) |= (.runAsUser = 0 | .runAsNonRoot = false)"
 # NET_ADMIN is what makes the worker need baseline.
 mutant "the worker with its init's NET_ADMIN is admitted" "($on_worker | .spec.template.spec.initContainers[0].securityContext.capabilities.add) = []"
 # NET_ADMIN only in the finishing init.
