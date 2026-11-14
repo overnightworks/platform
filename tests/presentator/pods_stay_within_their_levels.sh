@@ -6,20 +6,17 @@
 # Namespace enforces no level for it. Each Pod template of the render becomes a Pod, created with
 # --dry-run=server in throwaway Namespaces that enforce the level: every template but the build worker's at
 # restricted, the worker's at baseline once the init container's NET_ADMIN is removed from the copy. The rest of the
-# contract is read from the render, and each rule is proven by mutants: a copy of the render changed to break exactly
-# that rule must make the check name it, or the script fails.
+# contract is read from the render, where a value two objects must agree on is read from both, and each rule is proven
+# by mutants: a copy of the render changed to break exactly that rule must make the check name it, or the script fails.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
-# shellcheck source=../no_network/pod.sh
-source "$(dirname "${BASH_SOURCE[0]}")/../no_network/pod.sh"
 
 if [ $# -lt 1 ] || [ $# -gt 2 ] || [ ! -f "$1" ] || { [ $# -eq 2 ] && [ ! -f "$2" ]; }; then
   fail "usage: $0 <rendered manifest> [<rendered pull layer>]"
 fi
 rendered="$1"
 pull_rendered="${2:-}"
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 restricted_namespace=presentator-levels-restricted
 baseline_namespace=presentator-levels-baseline
 
@@ -48,8 +45,13 @@ WORKER_KEY=StatefulSet/build-worker
 WORKER_DOCUMENT=".kind + \"/\" + .metadata.name == \"$WORKER_KEY\""
 WORKER="select($WORKER_DOCUMENT) | .spec.template.spec"
 WEB='select(.kind == "Deployment" and .metadata.name == "web") | .spec.template.spec'
+WORKER_SERVICE='select(.kind == "Service" and .metadata.name == "build-worker")'
+WORKER_LABELS="select($WORKER_DOCUMENT) | .spec.template.metadata.labels"
+WEB_LABELS='select(.kind == "Deployment" and .metadata.name == "web") | .spec.template.metadata.labels'
+WORKER_POLICY='select(.kind == "NetworkPolicy" and .metadata.name == "build-worker")'
 WORKER_CONTAINER="$WORKER | .containers[] | select(.name == \"worker\")"
 NET_ADMIN_HOLDER='select((.securityContext.capabilities.add // []) | any_c(. == "NET_ADMIN")) | .name'
+WORKER_INIT="$WORKER | .initContainers[0]"
 
 # The Namespaces and the ServiceAccounts the Pods name, which the API server's admission needs to exist.
 for level in restricted baseline; do
@@ -101,22 +103,35 @@ judge_levels() {
 # the expected text.
 found() { [ -z "$(yq --no-doc "$3" "$1" 2>&1)" ] || echo "problem: $2"; }
 exactly() { [ "$(yq --no-doc -o=json -I=0 "$3" "$1" 2>&1 | paste -sd,)" = "$4" ] || echo "problem: $2"; }
+# same prints the problem $4 unless the expressions $2 and $3 print the same values.
+same() { [ "$(yq --no-doc -o=json -I=0 "$2" "$1" 2>&1 | paste -sd,)" = "$(yq --no-doc -o=json -I=0 "$3" "$1" 2>&1 | paste -sd,)" ] || echo "problem: $4"; }
 
 # judge_structure <manifest>: prints a problem line for each rule of the contract that the render breaks.
 judge_structure() {
-  local manifest="$1" probe_image reference actual web_group worker_group
-  # NET_ADMIN sits in the one finishing init container.
-  exactly "$manifest" "a container other than remove-link holds NET_ADMIN" \
-    "$WORKER | [.initContainers[], .containers[]][] | $NET_ADMIN_HOLDER" '"remove-link"'
+  local manifest="$1" rules_volume rules_mount rules_file rules_map worker_command worker_probe worker_port key_file key_volume key_secret web_mount
+  local service_port service_name service_target web_address web_key_file web_item
+  # NET_ADMIN sits in the one finishing init container, which loads the rule file and holds nothing else.
+  exactly "$manifest" "a container other than nft-rules holds NET_ADMIN" \
+    "$WORKER | [.initContainers[], .containers[]][] | $NET_ADMIN_HOLDER" '"nft-rules"'
   exactly "$manifest" "the worker has a container besides worker" "$WORKER | .containers[].name" '"worker"'
-  exactly "$manifest" "the worker has an init container besides remove-link" "$WORKER | .initContainers[].name" '"remove-link"'
+  exactly "$manifest" "the worker has an init container besides nft-rules" "$WORKER | .initContainers[].name" '"nft-rules"'
   found "$manifest" "an init container of the worker restarts, which makes it a sidecar that runs beside the worker" \
     "$WORKER | .initContainers[] | select(has(\"restartPolicy\"))"
-  # remove-link is the init container of tests/no_network/pod.sh, with the image its cell runs.
-  probe_image="$(yq '.jobs.cluster.env.PROBE_IMAGE' "$root/.github/workflows/ci.yml")"
-  reference="$(no_network_pod remove-link "$probe_image" init | yq '.spec.initContainers[0] | sort_keys(..) | to_json(0)')"
-  actual="$(yq "$WORKER | .initContainers[0] | sort_keys(..) | to_json(0)" "$manifest")"
-  [ "$actual" = "$reference" ] || echo "problem: remove-link differs from the init container of tests/no_network/pod.sh"
+  exactly "$manifest" "the init container nft-rules does not hold exactly root, no escalation, a read-only root, RuntimeDefault and NET_ADMIN alone" \
+    "$WORKER_INIT | .securityContext | sort_keys(..) | to_json(0)" \
+    '"{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"add\":[\"NET_ADMIN\"],\"drop\":[\"ALL\"]},\"readOnlyRootFilesystem\":true,\"runAsUser\":0,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}}"'
+  found "$manifest" "the init container nft-rules has an environment, a port or a probe" \
+    "$WORKER_INIT | select(has(\"env\") or has(\"envFrom\") or has(\"ports\") or has(\"livenessProbe\") or has(\"readinessProbe\") or has(\"startupProbe\"))"
+  # The init container mounts the rule file's ConfigMap read-only and nothing else, and loads a file of it.
+  exactly "$manifest" "the init container nft-rules does not mount exactly one volume, read-only" \
+    "$WORKER_INIT | .volumeMounts | (length | tostring) + \",\" + (.[0].readOnly | tostring)" '"1,true"'
+  rules_volume="$(yq --no-doc "$WORKER_INIT | .volumeMounts[0].name" "$manifest")"
+  rules_mount="$(yq --no-doc "$WORKER_INIT | .volumeMounts[0].mountPath" "$manifest")"
+  rules_file="$(yq --no-doc "$WORKER_INIT | .command[-1]" "$manifest")"
+  rules_map="$(yq --no-doc "$WORKER | .volumes[] | select(.name == \"$rules_volume\") | .configMap.name" "$manifest")"
+  [ "$(yq --no-doc "select(.kind == \"ConfigMap\" and .metadata.name == \"$rules_map\") | .data | has(\"${rules_file##*/}\")" "$manifest")" = true ] &&
+    [ "${rules_file%/*}" = "$rules_mount" ] ||
+    echo "problem: the init container nft-rules does not load a file of the ConfigMap '$rules_map' from its mount '$rules_mount': '$rules_file'"
   # The worker adds exactly the capabilities of a controller that drops to its build users.
   exactly "$manifest" "the worker does not add exactly SETUID, SETGID and KILL" \
     "$WORKER_CONTAINER | .securityContext.capabilities.add | sort | join(\",\")" '"KILL,SETGID,SETUID"'
@@ -150,8 +165,8 @@ judge_structure() {
   exactly "$manifest" "the web does not mount that volume read-only at /run/secrets" \
     "$WEB | .containers[0].volumeMounts[] | select(.name == \"secrets\") | .mountPath + \",\" + (.readOnly | to_string)" '"/run/secrets,true"'
   # Replicas, strategy, process sharing, fsGroup and exec probes.
-  exactly "$manifest" "the web or the worker does not run one replica" \
-    "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | .spec.replicas" '1,1'
+  exactly "$manifest" "the web does not run one replica and the worker two" \
+    "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | .spec.replicas" '1,2'
   exactly "$manifest" "the web's strategy is not Recreate" \
     'select(.kind == "Deployment" and .metadata.name == "web") | .spec.strategy.type' '"Recreate"'
   exactly "$manifest" "the web does not share its process namespace" "$WEB | .shareProcessNamespace" 'true'
@@ -159,13 +174,54 @@ judge_structure() {
     "select((.kind == \"Deployment\" and .metadata.name == \"web\") | not) | $SPECS | select(.shareProcessNamespace == true)"
   found "$manifest" "a template sets fsGroup" "$SPECS | select(.securityContext.fsGroup != null)"
   # The platform's Postgres base reads its readiness through `pg_isready`, an exec probe; it is held to restricted above.
+  # The worker's readiness is an exec probe too, since a connection would spend the life it serves; it has no other.
   found "$manifest" "a container has an exec probe or a postStart hook" \
-    "select(.kind + \"/\" + .metadata.name != \"StatefulSet/postgres\") | $SPECS | [.initContainers[], .containers[]][] | select(.livenessProbe.exec != null or .readinessProbe.exec != null or .startupProbe.exec != null or .lifecycle.postStart != null)"
-  # The worker's group is the web's, and its command, seal and memory bound are set.
-  web_group="$(yq --no-doc "$WEB | .securityContext.runAsGroup" "$manifest")"
-  worker_group="$(yq --no-doc "$WORKER_CONTAINER | .securityContext.runAsGroup" "$manifest")"
-  { [ "$web_group" != null ] && [ "$web_group" = "$worker_group" ]; } ||
-    echo "problem: the worker's runAsGroup '$worker_group' is not the web's '$web_group'"
+    "select(.kind + \"/\" + .metadata.name != \"StatefulSet/postgres\" and .kind + \"/\" + .metadata.name != \"$WORKER_KEY\") | $SPECS | [.initContainers[], .containers[]][] | select(.livenessProbe.exec != null or .readinessProbe.exec != null or .startupProbe.exec != null or .lifecycle.postStart != null)"
+  found "$manifest" "a container of the worker has a probe or a postStart hook other than the worker's readiness exec" \
+    "$WORKER | [.initContainers[], .containers[]][] | select(.livenessProbe != null or .startupProbe != null or .lifecycle.postStart != null or (.name != \"worker\" and .readinessProbe != null))"
+  exactly "$manifest" "the worker's readiness probe is no exec" "$WORKER_CONTAINER | .readinessProbe | has(\"exec\")" 'true'
+  # The worker's port is one number in its command, its readiness probe, its container port, its Service and the web's address.
+  worker_command="$(yq --no-doc "$WORKER_CONTAINER | (.command // []) | join(\" \")" "$manifest")"
+  worker_probe="$(yq --no-doc "$WORKER_CONTAINER | (.readinessProbe.exec.command // []) | join(\" \")" "$manifest")"
+  worker_port="$(yq --no-doc "$WORKER_CONTAINER | .ports[] | select(.name == \"build\") | .containerPort" "$manifest")"
+  [[ $worker_command =~ (^|\ )--port\ ([0-9]+)($|\ ) ]] && [ "${BASH_REMATCH[2]}" = "$worker_port" ] ||
+    echo "problem: the worker's command '$worker_command' does not serve the container port build '$worker_port'"
+  [[ $worker_probe =~ (^|\ )--ready\ --port\ ([0-9]+)$ ]] && [ "${BASH_REMATCH[2]}" = "$worker_port" ] ||
+    echo "problem: the worker's readiness probe '$worker_probe' does not ask for the container port build '$worker_port'"
+  service_name="$(yq --no-doc "$WORKER_SERVICE | .metadata.name" "$manifest")"
+  service_port="$(yq --no-doc "$WORKER_SERVICE | .spec.ports[] | select(.name == \"build\") | .port" "$manifest")"
+  service_target="$(yq --no-doc "$WORKER_SERVICE | .spec.ports[] | select(.name == \"build\") | .targetPort" "$manifest")"
+  web_address="$(yq --no-doc "$WEB | .containers[0].env[] | select(.name == \"PRESENTATOR_BUILD_WORKER_ADDRESS\") | .value" "$manifest")"
+  { [ "$service_target" = build ] && [ "$web_address" = "$service_name:$service_port" ] && [ "$service_port" = "$worker_port" ]; } ||
+    echo "problem: the Service '$service_name' (port '$service_port' to '$service_target') and the web's address '$web_address' do not reach the container port build '$worker_port'"
+  same "$manifest" "$WORKER_SERVICE | .spec.selector" "$WORKER_LABELS" "the Service build-worker does not select the worker's pods"
+  # The key is a file of the Secret the worker mounts alone, read-only at 0400, which the web reads at the same path from
+  # its volume of Secret files.
+  key_file="$(yq --no-doc "$WORKER_CONTAINER | (.command // []) | join(\" \")" "$manifest" | sed -n 's/.*--key-file \([^ ]*\).*/\1/p')"
+  key_volume="$(yq --no-doc "$WORKER_CONTAINER | .volumeMounts[] | select(.mountPath == \"${key_file%/*}\") | .name" "$manifest")"
+  key_secret="$(yq --no-doc "$WORKER | .volumes[] | select(.name == \"$key_volume\") | .secret.secretName" "$manifest")"
+  [ -n "$key_file" ] && [ -n "$key_volume" ] && [ -n "$key_secret" ] ||
+    echo "problem: the worker's key file '$key_file' is not in a mounted Secret volume ('$key_volume', '$key_secret')"
+  exactly "$manifest" "the worker's key volume is not read-only" \
+    "$WORKER_CONTAINER | .volumeMounts[] | select(.name == \"$key_volume\") | .readOnly" 'true'
+  exactly "$manifest" "the worker's key file is not mode 0400" \
+    "$WORKER | .volumes[] | select(.name == \"$key_volume\") | .secret.defaultMode" '256'
+  found "$manifest" "a container other than the worker's mounts the worker's key" \
+    "$WORKER | .initContainers[] | select((.volumeMounts // []) | any_c(.name == \"$key_volume\"))"
+  web_key_file="$(yq --no-doc "$WEB | .containers[0].env[] | select(.name == \"PRESENTATOR_BUILD_WORKER_KEY_FILE\") | .value" "$manifest")"
+  web_mount="$(yq --no-doc "$WEB | .containers[0].volumeMounts[] | select(.name == \"secrets\") | .mountPath" "$manifest")"
+  web_item="$(yq --no-doc "$WEB | .volumes[] | select(.name == \"secrets\") | .projected.sources[] | select(.secret.name == \"$key_secret\") | .secret.items[0].path" "$manifest")"
+  { [ "$web_key_file" = "$key_file" ] && [ "$web_key_file" = "$web_mount/$web_item" ]; } ||
+    echo "problem: the web reads its key from '$web_key_file', not the worker's '$key_file' as the item '$web_item' of its volume at '$web_mount'"
+  # The NetworkPolicy admits the web's pods to the worker's port and nothing to leave: no egress rule, and Egress listed.
+  exactly "$manifest" "the NetworkPolicy build-worker does not list exactly Ingress and Egress" \
+    "$WORKER_POLICY | .spec.policyTypes | sort | join(\",\")" '"Egress,Ingress"'
+  exactly "$manifest" "the NetworkPolicy build-worker has an egress rule" "$WORKER_POLICY | (.spec.egress // []) | length" '0'
+  exactly "$manifest" "the NetworkPolicy build-worker does not admit exactly one peer, a podSelector, to the one port build" \
+    "$WORKER_POLICY | .spec.ingress | (length | tostring) + \",\" + (.[0].from | length | tostring) + \",\" + (.[0].from[0] | keys | join(\"+\")) + \",\" + (.[0].ports | length | tostring) + \",\" + .[0].ports[0].port + \",\" + .[0].ports[0].protocol" \
+    '"1,1,podSelector,1,build,TCP"'
+  same "$manifest" "$WORKER_POLICY | .spec.ingress[0].from[0].podSelector.matchLabels" "$WEB_LABELS" "the NetworkPolicy build-worker does not admit the web's pods"
+  same "$manifest" "$WORKER_POLICY | .spec.podSelector.matchLabels" "$WORKER_LABELS" "the NetworkPolicy build-worker does not select the worker's pods"
   exactly "$manifest" "the worker has no command" "$WORKER_CONTAINER | .command | length > 0" 'true'
   exactly "$manifest" "the worker's seal is not set" \
     "$WORKER_CONTAINER | .env[] | select(.name == \"PRESENTATOR_WORKER_SEAL\") | (.value // \"\") != \"\"" 'true'
@@ -263,15 +319,25 @@ mutant "the Pod postgres is refused at restricted" \
 # NET_ADMIN is what makes the worker need baseline.
 mutant "the worker with its init's NET_ADMIN is admitted" "($on_worker | .spec.template.spec.initContainers[0].securityContext.capabilities.add) = []"
 # NET_ADMIN only in the finishing init.
-mutant "a container other than remove-link holds NET_ADMIN" "($on_worker | $worker_container | .securityContext.capabilities.add) += [\"NET_ADMIN\"]"
+mutant "a container other than nft-rules holds NET_ADMIN" "($on_worker | $worker_container | .securityContext.capabilities.add) += [\"NET_ADMIN\"]"
 mutant "the worker has a container besides worker" "($on_worker | .spec.template.spec.containers) += [{\"name\": \"second\", \"image\": \"docker.io/library/busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4\", \"securityContext\": {\"allowPrivilegeEscalation\": true, \"capabilities\": {\"add\": [\"MKNOD\", \"DAC_OVERRIDE\"]}}}]"
-mutant "the worker has an init container besides remove-link" "($on_worker | .spec.template.spec.initContainers) += [{\"name\": \"second\", \"image\": \"docker.io/library/busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4\"}]"
+mutant "the worker has an init container besides nft-rules" "($on_worker | .spec.template.spec.initContainers) += [{\"name\": \"second\", \"image\": \"docker.io/library/busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4\"}]"
 mutant "an init container of the worker restarts" "($on_worker | .spec.template.spec.initContainers[0].restartPolicy) = \"Always\""
-# remove-link equals the init of no_network.
-mutant "remove-link differs" "($on_worker | .spec.template.spec.initContainers[0].command[2]) += \" \""
-mutant "remove-link differs" "($on_worker | .spec.template.spec.initContainers[0].image) |= sub(\"@sha256:\", \"@sha256:0\")"
-mutant "remove-link differs" "($on_worker | .spec.template.spec.initContainers[0].securityContext.capabilities.add) += [\"CHOWN\"]"
-mutant "remove-link differs" "($on_worker | .spec.template.spec.initContainers[0].volumeMounts) = [{\"name\": \"tmp\", \"mountPath\": \"/tmp\"}]"
+# The init container is exactly the finishing one: its fields, its mount and the file it loads.
+init="$on_worker | .spec.template.spec.initContainers[0]"
+mutant "the init container nft-rules does not hold exactly" "($init | .securityContext.capabilities.add) += [\"CHOWN\"]"
+mutant "the init container nft-rules does not hold exactly" "($init | .securityContext.allowPrivilegeEscalation) = true"
+mutant "the init container nft-rules does not hold exactly" "($init | .securityContext.readOnlyRootFilesystem) = false"
+mutant "the init container nft-rules does not hold exactly" "($init | .securityContext.runAsUser) = 1000"
+mutant "the init container nft-rules does not hold exactly" "del($init | .securityContext.seccompProfile)"
+mutant "the init container nft-rules does not hold exactly" "($init | .securityContext.privileged) = true"
+mutant "the init container nft-rules has an environment, a port or a probe" "($init | .env) = [{\"name\": \"X\", \"value\": \"1\"}]"
+mutant "the init container nft-rules has an environment, a port or a probe" "($init | .readinessProbe) = {\"exec\": {\"command\": [\"true\"]}}"
+mutant "the init container nft-rules does not mount exactly one volume, read-only" "($init | .volumeMounts[0].readOnly) = false"
+mutant "the init container nft-rules does not mount exactly one volume, read-only" "($init | .volumeMounts) += [{\"name\": \"tmp\", \"mountPath\": \"/tmp\"}]"
+mutant "the init container nft-rules does not load a file of the ConfigMap" "($init | .command[-1]) = \"/etc/nftables/other.nft\""
+mutant "the init container nft-rules does not load a file of the ConfigMap" "($init | .volumeMounts[0].mountPath) = \"/etc/other\""
+mutant "the init container nft-rules does not load a file of the ConfigMap" "($on_worker | .spec.template.spec.volumes[0].configMap.name) = \"missing\""
 # The worker's capabilities.
 mutant "the worker does not add exactly SETUID, SETGID and KILL" "($on_worker | $worker_container | .securityContext.capabilities.add) += [\"MKNOD\"]"
 mutant "the worker does not drop ALL capabilities" "del($on_worker | $worker_container | .securityContext.capabilities.drop)"
@@ -357,18 +423,49 @@ mutant "the web projects a ServiceAccount token" \
 # Replicas, strategy, process sharing, fsGroup and exec probes.
 mutant "the web does not turn the kubelet's ServiceAccount token automount off" "($on_web | .spec.template.spec.automountServiceAccountToken) = true"
 mutant "the web does not mount that volume read-only at /run/secrets" "($on_web | .spec.template.spec.containers[0].volumeMounts[] | select(.name == \"secrets\") | .readOnly) = false"
-mutant "the web or the worker does not run one replica" "($on_web | .spec.replicas) = 2"
-mutant "the web or the worker does not run one replica" "($on_worker | .spec.replicas) = 2"
+mutant "the web does not run one replica and the worker two" "($on_web | .spec.replicas) = 2"
+mutant "the web does not run one replica and the worker two" "($on_worker | .spec.replicas) = 1"
+mutant "the web does not run one replica and the worker two" "($on_worker | .spec.replicas) = 3"
 mutant "the web's strategy is not Recreate" "($on_web | .spec.strategy.type) = \"RollingUpdate\""
 mutant "the web does not share its process namespace" "($on_web | .spec.template.spec.shareProcessNamespace) = false"
 mutant "a template sets fsGroup" "($on_web | .spec.template.spec.securityContext.fsGroup) = 1001"
 mutant "a template sets fsGroup" "($on_worker | .spec.template.spec.securityContext.fsGroup) = 1001"
 mutant "a container has an exec probe or a postStart hook" \
   "($on_web | .spec.template.spec.containers[0].livenessProbe) = {\"exec\": {\"command\": [\"true\"]}}"
-mutant "a container has an exec probe or a postStart hook" \
+mutant "a container of the worker has a probe or a postStart hook other than" \
   "($on_worker | $worker_container | .lifecycle.postStart) = {\"exec\": {\"command\": [\"true\"]}}"
-# Group, command, seal and memory bound.
-mutant "is not the web's" "($on_worker | $worker_container | .securityContext.runAsGroup) = 0"
+mutant "a container has an exec probe or a postStart hook" \
+  "($on_web | .spec.template.spec.containers[0].startupProbe) = {\"exec\": {\"command\": [\"true\"]}}"
+# The worker has its readiness exec and no other probe or hook, and one port in every place that names it.
+mutant "a container of the worker has a probe or a postStart hook other than the worker's readiness exec" \
+  "($on_worker | $worker_container | .livenessProbe) = {\"exec\": {\"command\": [\"true\"]}}"
+mutant "a container of the worker has a probe or a postStart hook other than the worker's readiness exec" \
+  "($init | .readinessProbe) = {\"exec\": {\"command\": [\"true\"]}}"
+mutant "the worker's readiness probe is no exec" "($on_worker | $worker_container | .readinessProbe) = {\"tcpSocket\": {\"port\": \"build\"}}"
+mutant "the worker's readiness probe '" "($on_worker | $worker_container | .readinessProbe.exec.command[-1]) = \"7101\""
+mutant "the worker's command '" "($on_worker | $worker_container | .command[-1]) = \"7101\""
+mutant "the Service '" "($on_worker | $worker_container | .ports[0].containerPort) = 7101"
+mutant "the Service 'build-worker'" "($WORKER_SERVICE | .spec.ports[0].port) = 7101"
+mutant "the Service 'build-worker'" "($WORKER_SERVICE | .spec.ports[0].targetPort) = 7100"
+mutant "the Service 'build-worker'" "($on_web | .spec.template.spec.containers[0].env[] | select(.name == \"PRESENTATOR_BUILD_WORKER_ADDRESS\") | .value) = \"build-worker:7101\""
+mutant "the Service build-worker does not select the worker's pods" "($WORKER_SERVICE | .spec.selector) = {\"app.kubernetes.io/name\": \"web\"}"
+# The key: a Secret file of the worker alone, read-only at 0400, and the web reads the same path.
+mutant "the worker's key file is not mode 0400" "($on_worker | .spec.template.spec.volumes[] | select(.name == \"key\") | .secret.defaultMode) = 292"
+mutant "the worker's key file is not mode 0400" "del($on_worker | .spec.template.spec.volumes[] | select(.name == \"key\") | .secret.defaultMode)"
+mutant "the worker's key volume is not read-only" "($on_worker | $worker_container | .volumeMounts[] | select(.name == \"key\") | .readOnly) = false"
+mutant "the worker's key file '" "($on_worker | $worker_container | .command[2]) = \"/run/secrets/other/key\""
+mutant "a container other than the worker's mounts the worker's key" "($init | .volumeMounts) += [{\"name\": \"key\", \"mountPath\": \"/run/secrets/build-worker-key\"}]"
+mutant "the web reads its key from" "($on_web | .spec.template.spec.containers[0].env[] | select(.name == \"PRESENTATOR_BUILD_WORKER_KEY_FILE\") | .value) = \"/run/secrets/key\""
+mutant "the web reads its key from" "($on_web | .spec.template.spec.volumes[] | select(.name == \"secrets\") | .projected.sources[1].secret.items[0].path) = \"key\""
+# The NetworkPolicy: Ingress and Egress listed with no egress rule, the web's pods to the one port, the worker's pods selected.
+mutant "the NetworkPolicy build-worker does not list exactly Ingress and Egress" "($WORKER_POLICY | .spec.policyTypes) = [\"Ingress\"]"
+mutant "the NetworkPolicy build-worker has an egress rule" "($WORKER_POLICY | .spec.egress) = [{}]"
+mutant "the NetworkPolicy build-worker does not admit exactly one peer" "($WORKER_POLICY | .spec.ingress[0].from) += [{\"namespaceSelector\": {}}]"
+mutant "the NetworkPolicy build-worker does not admit exactly one peer" "($WORKER_POLICY | .spec.ingress[0].from[0]) = {\"namespaceSelector\": {}}"
+mutant "the NetworkPolicy build-worker does not admit exactly one peer" "del($WORKER_POLICY | .spec.ingress[0].ports)"
+mutant "the NetworkPolicy build-worker does not admit the web's pods" "($WORKER_POLICY | .spec.ingress[0].from[0].podSelector.matchLabels) = {\"app.kubernetes.io/name\": \"build-worker\"}"
+mutant "the NetworkPolicy build-worker does not select the worker's pods" "($WORKER_POLICY | .spec.podSelector) = {}"
+# Command, seal and memory bound.
 mutant "the worker has no command" "del($on_worker | $worker_container | .command)"
 mutant "the worker's seal is not set" "del($on_worker | $worker_container | .env[] | select(.name == \"PRESENTATOR_WORKER_SEAL\"))"
 mutant "the worker has no memory limit" "del($on_worker | $worker_container | .resources)"
