@@ -7,6 +7,7 @@ locals {
     "figure",
     "hal",
     "hopin",
+    "logline",
     "marketplace",
     "personas",
     "platform",
