@@ -59,8 +59,9 @@ max_tool_calls = 4
 # `share_album`. Nothing that deletes, rewrites or reads another part of the library is named. Six calls fit a turn that
 # makes an album and a song, starts the generation, follows it once and shares the song. If the app no longer declares
 # a tool named here, it lends none of its tools: the turn reports that once and runs on the other apps' tools.
-# Leonardo's client lacks mcp-songmaker, so the runner's request for the scope is refused on each of his turns and logs
-# tools_only_app_failed: visible and harmless, and his turn runs on the other apps' tools.
+# The clients of Leonardo, Humboldt, Curie, Lovelace and Hildegard lack mcp-songmaker, so the runner's request for the
+# scope is refused on each of their turns and logs tools_only_app_failed: visible and harmless, and their turns run on
+# the other apps' tools.
 [[apps]]
 mcp_url = "https://songmaker.hallucinai.de/mcp"
 scope = "mcp-songmaker"
@@ -115,3 +116,30 @@ persona_file = "/app/characters/leonardo.md"
 figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.13.2/leonardo.vrm", sha256 = "c14f6b5d47612fdb00c881cf5c94877117cd3d9dd3a4b1788791c4676dc9d590" }
 # ryan exists only in speech's GPU image.
 voice = { name = "ryan" }
+
+# The four test agents run on gateway models of their own, so that one call compares a lower effort and Haiku. They have
+# no figure and no voice yet.
+
+[[agents]]
+client_id = "agent-humboldt"
+secret_file = "/run/secrets/client-agent-humboldt"
+persona_file = "/app/characters/humboldt.md"
+model = "text/sonnet-medium"
+
+[[agents]]
+client_id = "agent-curie"
+secret_file = "/run/secrets/client-agent-curie"
+persona_file = "/app/characters/curie.md"
+model = "text/sonnet-low"
+
+[[agents]]
+client_id = "agent-lovelace"
+secret_file = "/run/secrets/client-agent-lovelace"
+persona_file = "/app/characters/lovelace.md"
+model = "text/haiku-medium"
+
+[[agents]]
+client_id = "agent-hildegard"
+secret_file = "/run/secrets/client-agent-hildegard"
+persona_file = "/app/characters/hildegard.md"
+model = "text/haiku-low"
