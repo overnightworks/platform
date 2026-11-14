@@ -64,7 +64,13 @@ echo "the web connects to $service:$service_port"
 worker_address="$(head -n 1 <<<"$ready_addresses")"
 k run "$outsider" --image "$PROBE_IMAGE" --restart Never --command -- sleep 600
 k wait "pod/$outsider" --for=condition=Ready --timeout=2m
-refused() { ! k exec "$outsider" -- sh -c "nc -w 3 '$worker_address' '$service_port' </dev/null"; }
+# A refusal is nc's own failure status: an exec that did not run, or a missing nc (126, 127), is no refusal.
+refused() {
+  local reply refusal_status
+  reply="$(k exec "$outsider" -- sh -c "nc -w 3 '$worker_address' '$service_port' </dev/null >/dev/null 2>&1; echo status=\$?")" || return 1
+  refusal_status="${reply##*status=}"
+  [[ $refusal_status =~ ^[0-9]+$ ]] && [ "$refusal_status" -ne 0 ] && [ "$refusal_status" -lt 126 ]
+}
 until_true 60 "the connection of a Pod without the web's labels to the worker $worker_address:$service_port is refused" refused
 web_direct="$(k exec deployment/web --container web -- python3 -I -c "$connect_script" "$worker_address" "$service_port" 2>&1)" ||
   fail "the web did not connect to the worker pod $worker_address:$service_port: $web_direct"
