@@ -1,8 +1,0 @@
-claim_id = "7dd15b7274ee474e8de122897b3b1b8a"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "6631b3204e3d138f8f0c9f34c7188ff1a6eaf96a"
-branch = "claude/issue-594-litellm-effort-routes"
-scope = [".github/workflows/ci.yml", "docs/operations.md", "infrastructure/litellm/litellm-config.yaml", "mise.toml", "scripts/litellm_cache_probe.sh", "scripts/litellm_effort_measure.sh", "scripts/litellm_keys.sh", "tests/litellm/configured_effort_reaches_the_provider_request.sh", "tests/litellm/key_caching_marks_the_provider_request.sh"]
-opened_commit = "420c17601b2e2e6b54b91fd410fc47e38c4b82fb"
-whole_reason = "The effort routes, their measuring script and the cell that proves them change together."
