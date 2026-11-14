@@ -5,7 +5,7 @@
 # which creates its ready_file.
 # The Secret holds a copy of six client secrets that the Secret keycloak also holds (client-agent-mozart,
 # client-agent-leonardo, client-agent-humboldt, client-agent-curie, client-agent-lovelace, client-agent-hildegard),
-# since a Secret cannot be mounted across namespaces: a rotation writes all six.
+# since a Secret cannot be mounted across namespaces: rotating a client's secret updates both Secrets.
 # The init container migrates the memory's database to the image's head, which the runner demands at start; its first run
 # may find Postgres not ready yet, and the init container's backoff heals that. The runner's history in memory is empty
 # after a restart; what the agents read is kept in the namespace's Postgres, which the runner tells them as the day.
