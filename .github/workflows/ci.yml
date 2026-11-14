@@ -107,6 +107,9 @@ jobs:
       - name: Check that the pinned LiteLLM image marks the provider request of a call with enable_prompt_caching true at the system text and the last message, and of one with false at nothing
         run: mise exec -- tests/litellm/key_caching_marks_the_provider_request.sh
 
+      - name: Check that the pinned LiteLLM image sends the effort of each -medium and -low text name to Anthropic and lets a request's reasoning_effort outrank it
+        run: mise exec -- tests/litellm/configured_effort_reaches_the_provider_request.sh
+
       - name: Check that GITHUB_META_TOKEN reaches only curl's stdin, stays anonymous when unset and is refused outside the token alphabet
         run: mise exec -- tests/secrets/github_meta_token_is_refused_or_reaches_only_curls_stdin.sh
 
