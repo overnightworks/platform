@@ -10,8 +10,8 @@ tools = ["say"]
 max_tool_calls = 2
 
 # The whole list skat declares in its MCP tools/list, in its order, so an agent may use every tool the release declares.
-# Only `accept_invitation` is absent, since the runner calls it itself. A turn runs only while the app declares
-# every tool named here.
+# Only `accept_invitation` is absent, since the runner calls it itself. A turn binds only those named here that the app
+# lists when the turn starts.
 [[apps]]
 mcp_url = "https://skat.hallucinai.de/mcp"
 scope = "mcp-skat"
