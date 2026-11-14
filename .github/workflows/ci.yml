@@ -636,6 +636,10 @@ jobs:
           OTHER_NAMESPACE: presentator-client
         run: tests/presentator/web_answers_only_through_traefik.sh
 
+      - name: Assert that presentator's Postgres is Ready, that the web connects to its Service and its Pod, and that the sealed build worker connects to neither
+        if: matrix.part == 'presentator'
+        run: tests/presentator/postgres_is_reached_by_the_web_and_never_by_the_sealed_worker.sh
+
       - name: Assert that presentator:load-database refuses before any change, replaces the live file whole or leaves the old one, keeps a suspension it found, and that a killed run and a second run at once converge on the same command
         if: matrix.part == 'presentator'
         run: tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh
@@ -659,6 +663,11 @@ jobs:
       - name: Assert that backup:now refuses a namespace with no Schedule, with one Schedule and no CronJob restore-test and with both Schedules, making no object, and fails naming the restore test Job on an empty key table after a Backup that succeeded
         if: matrix.part == 'presentator-backup'
         run: tests/presentator/backup_now_refuses_what_it_cannot_run_and_fails_on_an_empty_key_table.sh
+
+      # After the cells above, whose repository this one adds snapshots to; it leaves the SQLite stream's latest snapshot foreign.
+      - name: Assert that one Backup leaves one snapshot each of presentator's SQLite copy and Postgres dump, that each restore test passes on its own stream and fails alone on a foreign latest snapshot of its path, and that a second Backup supersedes it
+        if: matrix.part == 'presentator-backup'
+        run: tests/presentator/both_databases_are_backed_up_by_one_schedule_and_restored_by_their_own_tests.sh
 
       # Last of its part, which has room for the pull of a second release image: the cell leaves presentator on a release
       # that may not start, so no step after it reads presentator.

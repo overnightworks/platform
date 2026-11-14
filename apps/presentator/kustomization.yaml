@@ -7,6 +7,7 @@ resources:
   - web.yaml
   - worker.yaml
   - ../../infrastructure/sqlite
+  - postgres
 components:
   - release
 configMapGenerator:
@@ -29,7 +30,16 @@ replacements:
           name: backup
         fieldPaths:
           - spec.backend.rest.url
-  # The restore test checks the copy in the image and as the user that wrote it.
+      # Both databases share the one repository, whose URL this layer states once.
+      - select:
+          kind: ConfigMap
+          name: postgres
+        fieldPaths:
+          - data.backup-repository
+        options:
+          create: true
+  # The restore test checks the copy in the image and as the user that wrote it. A selector also matches a renamed object by
+  # its first name, so the Postgres restore test, which postgres/ renames, is rejected by its own.
   - source:
       kind: Deployment
       name: web
@@ -38,6 +48,8 @@ replacements:
       - select:
           kind: CronJob
           name: restore-test
+        reject:
+          - name: postgres-restore-test
         fieldPaths:
           - spec.jobTemplate.spec.template.spec.containers.[name=restore-test].image
   - source:
@@ -48,6 +60,8 @@ replacements:
       - select:
           kind: CronJob
           name: restore-test
+        reject:
+          - name: postgres-restore-test
         fieldPaths:
           - spec.jobTemplate.spec.template.spec.securityContext.runAsUser
   - source:
@@ -58,5 +72,7 @@ replacements:
       - select:
           kind: CronJob
           name: restore-test
+        reject:
+          - name: postgres-restore-test
         fieldPaths:
           - spec.jobTemplate.spec.template.spec.securityContext.runAsGroup

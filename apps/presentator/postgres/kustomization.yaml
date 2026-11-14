@@ -1,0 +1,46 @@
+# presentator's Postgres and its backup, beside the SQLite database that stays until the app leaves it. A nested layer so
+# that the base's backup component, which would add a second Schedule backup, PodConfig backup and CronJob restore-test
+# beside the SQLite base's, never meets them: Kustomize registers a component's resources before its patches rename them.
+# k8up's Backup takes every Pod of the namespace that carries a backup command, the web's SQLite stream and this
+# StatefulSet's dump alike, so the SQLite base's Schedule backup already backs up both and this layer keeps none of its
+# own; its restore test waits under its own name and reads its own file by path in the shared repository.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../infrastructure/postgres
+components:
+  - ../../../infrastructure/postgres/backup
+configMapGenerator:
+  - name: postgres
+    behavior: merge
+    literals:
+      # alembic_version, which presentator migrate writes, comes first: the restore test fails on an empty first table.
+      - key-tables=alembic_version users sources decks
+patches:
+  - target:
+      kind: Schedule
+      name: postgres
+    patch: |
+      $patch: delete
+      apiVersion: k8up.io/v1
+      kind: Schedule
+      metadata:
+        name: postgres
+  - target:
+      kind: PodConfig
+      name: postgres-backup
+    patch: |
+      $patch: delete
+      apiVersion: k8up.io/v1
+      kind: PodConfig
+      metadata:
+        name: postgres-backup
+  - target:
+      kind: CronJob
+      name: restore-test
+    patch: |
+      - op: replace
+        path: /metadata/name
+        value: postgres-restore-test
+    options:
+      allowNameChange: true
