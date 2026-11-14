@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: ghcr.io/overnightworks/skat:2026.11.14.3@sha256:65ee408b201dd72a53d5356aff47abcf2c965b73bcee5f441b1b00d0910f1ac6
+          image: ghcr.io/overnightworks/skat:2026.11.14.4@sha256:c20fe6832e95252661eb57ea7fd1aaec7884705926a755755e3d49d5ec1af261
           args: [skat, migrate]
           env:
             # The URL names no password: the file below is the password's one owner, the namespace's Postgres.
@@ -56,7 +56,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: skat
-          image: ghcr.io/overnightworks/skat:2026.11.14.3@sha256:65ee408b201dd72a53d5356aff47abcf2c965b73bcee5f441b1b00d0910f1ac6
+          image: ghcr.io/overnightworks/skat:2026.11.14.4@sha256:c20fe6832e95252661eb57ea7fd1aaec7884705926a755755e3d49d5ec1af261
           args: [skat, serve]
           ports:
             - name: http
