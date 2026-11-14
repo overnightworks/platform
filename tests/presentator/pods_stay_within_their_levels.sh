@@ -39,7 +39,10 @@ trap remove_objects EXIT
 # partial template merged over its Job pods, with a container and no image, so it is none.
 SPECS='(select(.kind != "PodConfig") | .spec.template.spec // .spec.jobTemplate.spec.template.spec // (select(.kind == "Pod") | .spec))'
 ANNOTATIONS='(.spec.template.metadata.annotations // .spec.jobTemplate.spec.template.metadata.annotations // (select(.kind == "Pod") | .metadata.annotations))'
-POD_OF="$SPECS as \$spec | $ANNOTATIONS as \$annotations | select(\$spec != null) | {\"apiVersion\": \"v1\", \"kind\": \"Pod\", \"metadata\": ({\"name\": .metadata.name} + (if \$annotations == null then {} else {\"annotations\": \$annotations} end)), \"spec\": \$spec}"
+# A StatefulSet's claim templates are volumes of its Pods that the template does not list; the controller adds each as a
+# claim named <template>-<workload>-<ordinal>, which a dry run does not need to exist.
+CLAIM_VOLUMES='(.metadata.name as $workload | [(.spec.volumeClaimTemplates // [])[] | {"name": .metadata.name, "persistentVolumeClaim": {"claimName": (.metadata.name + "-" + $workload + "-0")}}])'
+POD_OF="$SPECS as \$spec | $ANNOTATIONS as \$annotations | $CLAIM_VOLUMES as \$claims | select(\$spec != null) | {\"apiVersion\": \"v1\", \"kind\": \"Pod\", \"metadata\": ({\"name\": .metadata.name} + (if \$annotations == null then {} else {\"annotations\": \$annotations} end)), \"spec\": (\$spec | if (\$claims | length) > 0 then .volumes = ((.volumes // []) + \$claims) else . end)}"
 WORKER_KEY=StatefulSet/build-worker
 WORKER_DOCUMENT=".kind + \"/\" + .metadata.name == \"$WORKER_KEY\""
 WORKER="select($WORKER_DOCUMENT) | .spec.template.spec"
@@ -61,6 +64,9 @@ done
 
 # admit <namespace> <Pod>: succeeds when --dry-run=server creates the Pod there; admit_output holds the answer.
 admit() { admit_output="$(kubectl -n "$1" create --dry-run=server -f - <<<"$2" 2>&1)"; }
+# The API server validates the Pod itself before admission, so an answer that does not name PodSecurity is no level's
+# refusal.
+refused_by_pod_security() { [[ $admit_output == *"violates PodSecurity"* ]]; }
 
 # judge_levels <manifest>: prints a problem line for each Pod that its level refuses and for a worker that the
 # unchanged copy's NET_ADMIN does not make baseline refuse.
@@ -74,12 +80,17 @@ judge_levels() {
         echo "problem: the worker without its init's NET_ADMIN is refused at baseline: $admit_output"
       if admit "$baseline_namespace" "$pod"; then
         echo "problem: the worker with its init's NET_ADMIN is admitted at baseline, so NET_ADMIN is not what makes it need an exception"
-      elif [[ $admit_output != *NET_ADMIN* ]]; then
+      elif ! refused_by_pod_security || [[ $admit_output != *NET_ADMIN* ]]; then
         echo "problem: baseline refuses the worker without naming NET_ADMIN: $admit_output"
       fi
     else
-      admit "$restricted_namespace" "$pod" ||
-        echo "problem: the Pod ${name#*/} is refused at restricted: $admit_output"
+      if ! admit "$restricted_namespace" "$pod"; then
+        if refused_by_pod_security; then
+          echo "problem: the Pod ${name#*/} is refused at restricted: $admit_output"
+        else
+          echo "problem: the Pod ${name#*/} is refused by something other than restricted: $admit_output"
+        fi
+      fi
     fi
   done
 }
