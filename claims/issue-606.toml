@@ -1,8 +1,0 @@
-claim_id = "3f109ff51d1a4ea0b185bee7603138b6"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "d696ff80429df093ffbf34fdbcdfdee875d061a8"
-branch = "claude/issue-606-skat-s-release-is-on-the-node-before-its"
-scope = ["apps/skat", "clusters/pc/apps.yaml", "tests/legal", "tests/workloads"]
-opened_commit = "ea3e8eaf0dddc199d5d409472d9915c8bfbfdbe2"
-whole_reason = "skat's release owner, its pull layer and the Flux edge that orders them make one slice; the cells only learn the new app."
