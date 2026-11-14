@@ -512,6 +512,42 @@ users:
       - /apps/skat/mcp
       - /agent-owners
       - /services/speech-service
+  - username: service-account-agent-humboldt
+    serviceAccountClientId: agent-humboldt
+    groups:
+      - /agents
+      - /apps/hopin
+      - /apps/hopin/mcp
+      - /apps/skat/mcp
+      - /agent-owners
+      - /services/speech-service
+  - username: service-account-agent-curie
+    serviceAccountClientId: agent-curie
+    groups:
+      - /agents
+      - /apps/hopin
+      - /apps/hopin/mcp
+      - /apps/skat/mcp
+      - /agent-owners
+      - /services/speech-service
+  - username: service-account-agent-lovelace
+    serviceAccountClientId: agent-lovelace
+    groups:
+      - /agents
+      - /apps/hopin
+      - /apps/hopin/mcp
+      - /apps/skat/mcp
+      - /agent-owners
+      - /services/speech-service
+  - username: service-account-agent-hildegard
+    serviceAccountClientId: agent-hildegard
+    groups:
+      - /agents
+      - /apps/hopin
+      - /apps/hopin/mcp
+      - /apps/skat/mcp
+      - /agent-owners
+      - /services/speech-service
 clients:
   # Audience only: the speech service accepts tokens issued for it and never signs anyone in.
   - clientId: speech-service
@@ -766,6 +802,199 @@ clients:
         config:
           claim.name: agent_name
           claim.value: Leonardo
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+          access.tokenResponse.claim: "false"
+      # The realm's own unique username; the name people see is agent_name.
+      - name: preferred_username
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: username
+          claim.name: preferred_username
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+    defaultClientScopes:
+      - basic
+      - groups
+      - service_account
+      - agent-identity
+    optionalClientScopes:
+      - mcp-hopin
+      - mcp-skat
+  # Four more agents declared exactly as agent-leonardo, each with its own agent_name and its own key of the Secret keycloak.
+  - clientId: agent-humboldt
+    name: agent-humboldt
+    publicClient: false
+    secret: $(env:AGENT_HUMBOLDT_CLIENT_SECRET)
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    frontchannelLogout: false
+    attributes:
+      use.refresh.tokens: "false"
+      client_credentials.use_refresh_token: "false"
+      access.token.header.type.rfc9068: "true"
+    protocolMappers:
+      - name: agent_name
+        protocol: openid-connect
+        protocolMapper: oidc-hardcoded-claim-mapper
+        consentRequired: false
+        config:
+          claim.name: agent_name
+          claim.value: Humboldt
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+          access.tokenResponse.claim: "false"
+      # The realm's own unique username; the name people see is agent_name.
+      - name: preferred_username
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: username
+          claim.name: preferred_username
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+    defaultClientScopes:
+      - basic
+      - groups
+      - service_account
+      - agent-identity
+    optionalClientScopes:
+      - mcp-hopin
+      - mcp-skat
+  - clientId: agent-curie
+    name: agent-curie
+    publicClient: false
+    secret: $(env:AGENT_CURIE_CLIENT_SECRET)
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    frontchannelLogout: false
+    attributes:
+      use.refresh.tokens: "false"
+      client_credentials.use_refresh_token: "false"
+      access.token.header.type.rfc9068: "true"
+    protocolMappers:
+      - name: agent_name
+        protocol: openid-connect
+        protocolMapper: oidc-hardcoded-claim-mapper
+        consentRequired: false
+        config:
+          claim.name: agent_name
+          claim.value: Curie
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+          access.tokenResponse.claim: "false"
+      # The realm's own unique username; the name people see is agent_name.
+      - name: preferred_username
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: username
+          claim.name: preferred_username
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+    defaultClientScopes:
+      - basic
+      - groups
+      - service_account
+      - agent-identity
+    optionalClientScopes:
+      - mcp-hopin
+      - mcp-skat
+  - clientId: agent-lovelace
+    name: agent-lovelace
+    publicClient: false
+    secret: $(env:AGENT_LOVELACE_CLIENT_SECRET)
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    frontchannelLogout: false
+    attributes:
+      use.refresh.tokens: "false"
+      client_credentials.use_refresh_token: "false"
+      access.token.header.type.rfc9068: "true"
+    protocolMappers:
+      - name: agent_name
+        protocol: openid-connect
+        protocolMapper: oidc-hardcoded-claim-mapper
+        consentRequired: false
+        config:
+          claim.name: agent_name
+          claim.value: Lovelace
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+          access.tokenResponse.claim: "false"
+      # The realm's own unique username; the name people see is agent_name.
+      - name: preferred_username
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          user.attribute: username
+          claim.name: preferred_username
+          jsonType.label: String
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+    defaultClientScopes:
+      - basic
+      - groups
+      - service_account
+      - agent-identity
+    optionalClientScopes:
+      - mcp-hopin
+      - mcp-skat
+  - clientId: agent-hildegard
+    name: agent-hildegard
+    publicClient: false
+    secret: $(env:AGENT_HILDEGARD_CLIENT_SECRET)
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    frontchannelLogout: false
+    attributes:
+      use.refresh.tokens: "false"
+      client_credentials.use_refresh_token: "false"
+      access.token.header.type.rfc9068: "true"
+    protocolMappers:
+      - name: agent_name
+        protocol: openid-connect
+        protocolMapper: oidc-hardcoded-claim-mapper
+        consentRequired: false
+        config:
+          claim.name: agent_name
+          claim.value: Hildegard
           jsonType.label: String
           access.token.claim: "true"
           id.token.claim: "false"
