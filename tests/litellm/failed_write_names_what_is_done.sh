@@ -83,18 +83,21 @@ case "$path" in
   /v1/models)
     reply='{"data":[{"id":"model-one"}]}'
     [ -z "$FAKE_PROBE" ] || reply='{"data":[{"id":"model-one"},{"id":"text/haiku"}]}' ;;
-  # The probe's two rounds: the first writes the cache, the second reads it.
+  # The probe's three rounds: the first writes the cache, each later one reads the prefix the round before left and extends it.
   /v1/chat/completions)
     echo round >>"$FAKE_STATE/rounds"
-    if [ "$(wc -l <"$FAKE_STATE/rounds")" = 1 ]; then usage='"cache_creation_input_tokens":2900,"cache_read_input_tokens":0'
-    else usage='"cache_creation_input_tokens":0,"cache_read_input_tokens":2900'; fi
+    case "$(wc -l <"$FAKE_STATE/rounds")" in
+      1) usage='"cache_creation_input_tokens":2900,"cache_read_input_tokens":0' ;;
+      2) usage='"cache_creation_input_tokens":100,"cache_read_input_tokens":2900' ;;
+      *) usage='"cache_creation_input_tokens":100,"cache_read_input_tokens":3000' ;;
+    esac
     reply="data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}"$'\n'"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3000,\"completion_tokens\":2,$usage}}"$'\n'"data: [DONE]" ;;
-  # The log of the probe's two calls under the app key's hash, and a third call of another key under the same person.
+  # The log of the probe's three calls under the app key's hash, and a third call of another key under the same person.
   /spend/logs)
     spend_row() {
       printf '{"api_key":"%s","end_user":"fp-litellm-cache-probe","startTime":"2099-01-01T00:00:00","metadata":{"additional_usage_values":{"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s}}}' "$1" "$2" "$3"
     }
-    reply="[$(spend_row "$FAKE_APP_HASH" 2900 0),$(spend_row "$FAKE_APP_HASH" 0 2900),$(spend_row hash-another-key 0 7)"
+    reply="[$(spend_row "$FAKE_APP_HASH" 2900 0),$(spend_row "$FAKE_APP_HASH" 100 2900),$(spend_row "$FAKE_APP_HASH" 100 3000),$(spend_row hash-another-key 0 7)"
     # Earlier runs of the probe person leave rows behind; many of them make the selected rows longer than a pipe holds.
     old_row="$(spend_row "$FAKE_APP_HASH" 0 0)"
     for _ in $(seq "${FAKE_OLD_ROWS:-0}"); do reply+=",${old_row/2099/2000}"; done
@@ -390,12 +393,12 @@ done
 echo "an unknown flag or a second argument is refused as usage before any write"
 
 # The live probe reads the spend log without a key filter, since the key's hash in the request path would be an argument of
-# curl, and counts only the rows of its own key: the cache write of the first round and the read of the second.
+# curl, and counts only the rows of its own key: the cache write of the first round and the reads of the later two.
 printf '%s\n' "$app_key" >"$work_directory/probe-key"
 FAKE_PROBE=1 run_task cache-probe 0 "" litellm:cache-probe "$work_directory/probe-key"
-grep -q 'the spend log holds 2 calls of the key since this run began, cache writes 2900, cache reads 2900$' <<<"$output" &&
-  grep -q 'held: round 1 wrote the cache, round 2 read it and the spend log counts the read under the key$' <<<"$output" ||
-  fail "cache-probe: the probe did not count the two calls of its key: $output"
+grep -q 'the spend log holds 3 calls of the key since this run began, cache writes 3100, cache reads 5900$' <<<"$output" &&
+  grep -q 'held: round 1 wrote the cache, each later round read at least what the round before cached and the spend log counts the reads under the key$' <<<"$output" ||
+  fail "cache-probe: the probe did not count the three calls of its key: $output"
 echo "the cache probe counts the rows of its key in the unfiltered spend log and passes neither the key nor its hash to curl"
 
 # The hashes of an earlier run's rows must not reach a file either: a here-string longer than a pipe holds is written to a
@@ -403,6 +406,6 @@ echo "the cache probe counts the rows of its key in the unfiltered spend log and
 runner=(bash -c 'ulimit -f 80 && exec "$0" "$@"' "$repository_root/scripts/litellm_cache_probe.sh")
 FAKE_PROBE=1 FAKE_OLD_ROWS=2000 run_task cache-probe-long-log 0 "" "$work_directory/probe-key"
 runner=(mise run)
-grep -q 'the spend log holds 2 calls of the key since this run began, cache writes 2900, cache reads 2900$' <<<"$output" ||
+grep -q 'the spend log holds 3 calls of the key since this run began, cache writes 3100, cache reads 5900$' <<<"$output" ||
   fail "cache-probe-long-log: the probe did not count its calls in a long spend log: $output"
 echo "the cache probe holds the rows of its key's hash in no file, however long the spend log is"

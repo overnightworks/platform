@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # The command behind `mise run litellm:cache-probe`: shows on the live gateway that a key with prompt caching on gets the
 # provider's cache write and then the cache read, and that LiteLLM records the read under that key.
-#   scripts/litellm_cache_probe.sh <key file>  reads an app key's value from the file, sends two identical streamed
-#                                              rounds to the smallest text model under one test person, whose long first
-#                                              system text is new to each run so that the first round writes the cache,
-#                                              and prints each round's usage counts, then the cache writes and reads
-#                                              LiteLLM's spend log holds for this run's calls of the key; exits 1 when the
-#                                              first round shows no write, the second no read or the log another read
+#   scripts/litellm_cache_probe.sh <key file>  reads an app key's value from the file, sends three streamed rounds to the
+#                                              smallest text model under one test person, whose long first system text is
+#                                              new to each run so that the first round writes the cache; round n sends that
+#                                              system text and n consecutive user messages, each earlier one unchanged, as
+#                                              a voice call's turns grow; prints each round's usage counts, then the cache
+#                                              writes and reads LiteLLM's spend log holds for this run's calls of the key;
+#                                              exits 1 when the first round shows no write, a later round reads less than
+#                                              the round before cached (its write and read) or the log another read
 #   scripts/litellm_cache_probe.sh --remove    deletes the test person's customer row, which the first call makes
 # The run writes the test person's row and one spend log row per call to the live store and reads the spend log. The key's
 # value and the master key travel as litellm_keys.sh says: from a file or kubectl's stdout through shell variables to
@@ -53,9 +55,18 @@ stream_round() {
 }
 # usage_field <usage JSON> <yq path>: the number at the path, or absent.
 usage_field() { yq --input-format json "$2 // \"absent\"" <<<"$1"; }
+# growing_body <user messages>: the request body of a round: the system text and that many consecutive user messages.
+growing_body() {
+  local count="$1" messages
+  messages="$(for number in $(seq "$count"); do printf 'Present %s: reply with the single word ok.\n' "$number"; done)"
+  MODEL="$probe_model" PERSON="$probe_person" SYSTEM="$system" MESSAGES="$messages" yq --null-input --output-format json --indent 0 '
+    {"model": strenv(MODEL), "user": strenv(PERSON), "stream": true, "stream_options": {"include_usage": true},
+    "max_tokens": 16, "messages": [{"role": "system", "content": strenv(SYSTEM)}] +
+    (strenv(MESSAGES) | split("\n") | map(select(. != "") | {"role": "user", "content": .}))}'
+}
 # spend_since <start>: sets recorded_calls, recorded_writes and recorded_reads to the calls and the cache writes and reads
 # that LiteLLM's spend log holds for the key under the test person since the start; the log is written in batches, so it is
-# read again for two minutes until it holds both calls. The route's key filter would put the key's hash, which LiteLLM
+# read again for two minutes until it holds all three calls. The route's key filter would put the key's hash, which LiteLLM
 # takes as the key itself, into curl's arguments, so the unfiltered log (its most recent rows) is read and the rows are
 # selected here by the hash, which stays in a shell variable and reaches the loop through a pipe, since a here-string
 # longer than a pipe holds is written to a temporary file.
@@ -77,37 +88,42 @@ spend_since() {
       recorded_writes=$((recorded_writes + writes))
       recorded_reads=$((recorded_reads + reads))
     done < <(printf '%s\n' "$rows")
-    [ "$recorded_calls" -lt 2 ] || return 0
+    [ "$recorded_calls" -lt 3 ] || return 0
     sleep 10
   done
 }
 
 probe_command() {
-  local started body first_usage second_usage written read_back
+  local started system round usage_of_round written read_back expected_reads=0 held=1 previous_cached=0
   usage="" value=""
   value_from_file "$1"
   connect
   ask "listing LiteLLM's models" /v1/models
   [ "$(json "[.data[].id] | map(select(. == \"$probe_model\")) | length")" = 1 ] || fail "LiteLLM does not list the model $probe_model"
-  body="$(MODEL="$probe_model" PERSON="$probe_person" SYSTEM="$(system_text)" yq --null-input --output-format json --indent 0 '
-    {"model": strenv(MODEL), "user": strenv(PERSON), "stream": true, "stream_options": {"include_usage": true},
-    "max_tokens": 16, "messages": [{"role": "system", "content": strenv(SYSTEM)},
-    {"role": "user", "content": "Reply with the single word ok."}]}')"
+  system="$(system_text)"
   started="$(date -u +%Y-%m-%dT%H:%M:%S)"
-  stream_round "the first round" "$body"
-  first_usage="$usage"
-  stream_round "the second round" "$body"
-  second_usage="$usage"
-  written="$(usage_field "$first_usage" .cache_creation_input_tokens)"
-  read_back="$(usage_field "$second_usage" .cache_read_input_tokens)"
-  echo "litellm:cache-probe: round 1: prompt $(usage_field "$first_usage" .prompt_tokens), completion $(usage_field "$first_usage" .completion_tokens), cache write $written, cache read $(usage_field "$first_usage" .cache_read_input_tokens)"
-  echo "litellm:cache-probe: round 2: prompt $(usage_field "$second_usage" .prompt_tokens), completion $(usage_field "$second_usage" .completion_tokens), cache write $(usage_field "$second_usage" .cache_creation_input_tokens), cache read $read_back"
+  for round in 1 2 3; do
+    stream_round "round $round" "$(growing_body "$round")"
+    usage_of_round="$usage"
+    written="$(usage_field "$usage_of_round" .cache_creation_input_tokens)"
+    read_back="$(usage_field "$usage_of_round" .cache_read_input_tokens)"
+    echo "litellm:cache-probe: round $round ($round user messages): prompt $(usage_field "$usage_of_round" .prompt_tokens), completion $(usage_field "$usage_of_round" .completion_tokens), cache write $written, cache read $read_back"
+    if [[ $written =~ ^[0-9]+$ && $read_back =~ ^[0-9]+$ ]]; then
+      if [ "$round" = 1 ]; then [ "$written" -gt 0 ] || held=0; else
+        [ "$read_back" -ge "$previous_cached" ] && [ "$read_back" -gt 0 ] || held=0
+        expected_reads=$((expected_reads + read_back))
+      fi
+      previous_cached=$((written + read_back))
+    else
+      held=0
+    fi
+  done
   spend_since "$started"
   echo "litellm:cache-probe: the spend log holds $recorded_calls calls of the key since this run began, cache writes $recorded_writes, cache reads $recorded_reads"
   echo "litellm:cache-probe: the test person $probe_person stays in LiteLLM's customer table; remove it with: mise run litellm:cache-probe --remove"
-  [[ $written =~ ^[0-9]+$ && $read_back =~ ^[0-9]+$ ]] && [ "$written" -gt 0 ] && [ "$read_back" -gt 0 ] && [ "$recorded_reads" = "$read_back" ] ||
-    fail "the cache did not hold: expected a write in round 1, a read in round 2 and that read in the spend log"
-  echo "litellm:cache-probe: held: round 1 wrote the cache, round 2 read it and the spend log counts the read under the key"
+  [ "$held" = 1 ] && [ "$recorded_reads" = "$expected_reads" ] ||
+    fail "the cache did not hold: expected a write in round 1, in each later round a read covering the round before's write and read, and those reads in the spend log"
+  echo "litellm:cache-probe: held: round 1 wrote the cache, each later round read at least what the round before cached and the spend log counts the reads under the key"
 }
 
 remove_command() {
