@@ -1,0 +1,6 @@
+# The base every app that needs short-lived shared state includes, no Flux layer of its own: each sets its namespace and
+# reaches it at redis://redis:6379/0.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - redis.yaml
