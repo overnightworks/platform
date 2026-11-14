@@ -41,6 +41,8 @@ spec:
               value: /run/secrets/oidc_client_secret
             - name: HOPIN_PUBLIC_ORIGIN
               value: https://hopin.hallucinai.de
+            - name: HOPIN_REDIS_URL
+              value: redis://redis:6379/0
             - name: HOPIN_SESSION_SECRET_FILE
               value: /run/secrets/session_secret
             - name: HOPIN_TURN_PROVIDER

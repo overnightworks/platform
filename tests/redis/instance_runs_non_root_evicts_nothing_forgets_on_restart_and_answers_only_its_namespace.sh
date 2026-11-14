@@ -4,6 +4,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # The rendered instance is the one in $APP_NAMESPACE; a Pod in $OTHER_NAMESPACE is the outsider.
 
+redis_cli() { kubectl --namespace "$APP_NAMESPACE" exec redis-0 --container redis -- redis-cli "$@"; }
+
 # Every deletion is attempted, whichever fails.
 remove_objects() {
   local cell_status=$?
@@ -15,6 +17,10 @@ trap remove_objects EXIT
 kubectl create namespace "$OTHER_NAMESPACE"
 
 kubectl --namespace "$APP_NAMESPACE" wait pod/redis-0 --for=condition=Ready --timeout=5m
+read -r uid image_uid < <(kubectl --namespace "$APP_NAMESPACE" exec redis-0 --container redis -- \
+  sh -c 'echo "$(id -u) $(id -u redis)"')
+[ "$uid" = "$image_uid" ] && [ "$uid" != 0 ] || fail "Redis in $APP_NAMESPACE runs as uid $uid, not as the image's redis user $image_uid"
+echo "Redis in $APP_NAMESPACE is Ready and runs as uid $uid"
 config_value() {
   kubectl --namespace "$APP_NAMESPACE" exec redis-0 --container redis -- redis-cli config get "$1" | sed -n 2p
 }
@@ -42,3 +48,16 @@ probe "$APP_NAMESPACE" redis-own-probe
 probe "$OTHER_NAMESPACE" redis-other-probe
 [ "$probe_log" = closed ] || fail "a Pod in $OTHER_NAMESPACE reaches Redis in $APP_NAMESPACE"
 echo "a Pod in $OTHER_NAMESPACE gets no answer from Redis, one in $APP_NAMESPACE does"
+
+# A key written to Redis is gone after its pod is deleted and back Ready.
+key="forget-proof-$(openssl rand -hex 8)"
+[ "$(redis_cli set "$key" value)" = OK ] || fail "Redis refused the key $key"
+[ "$(redis_cli get "$key")" = value ] || fail "Redis did not return the key $key it was given"
+old_pod="$(kubectl --namespace "$APP_NAMESPACE" get pod redis-0 -o jsonpath='{.metadata.uid}')"
+kubectl --namespace "$APP_NAMESPACE" delete pod redis-0 --wait --timeout=2m
+kubectl --namespace "$APP_NAMESPACE" wait pod/redis-0 --for=create --timeout=1m
+kubectl --namespace "$APP_NAMESPACE" wait pod/redis-0 --for=condition=Ready --timeout=2m
+[ "$(kubectl --namespace "$APP_NAMESPACE" get pod redis-0 -o jsonpath='{.metadata.uid}')" != "$old_pod" ] ||
+  fail "the Redis pod is the one before the deletion"
+[ "$(redis_cli dbsize)" = 0 ] || fail "the new Redis pod in $APP_NAMESPACE holds keys after a restart"
+echo "the key $key is gone after Redis's pod in $APP_NAMESPACE was deleted and came back Ready"
