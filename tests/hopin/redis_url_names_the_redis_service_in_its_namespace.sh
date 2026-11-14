@@ -18,8 +18,15 @@ service="${host%%.*}"
 service_ports="$(kubectl --namespace "$APP_NAMESPACE" get service "$service" -o jsonpath='{.spec.ports[*].port}')" ||
   fail "HOPIN_REDIS_URL names the Service $service, which $APP_NAMESPACE does not hold"
 [[ " $service_ports " == *" $port "* ]] || fail "the Service $service in $APP_NAMESPACE has the ports $service_ports, not the $port of HOPIN_REDIS_URL"
-backing_pods="$(kubectl --namespace "$APP_NAMESPACE" get endpoints "$service" \
-  -o jsonpath='{.subsets[*].addresses[*].targetRef.name}')"
+# The endpoints controller publishes a restarted pod's address after it is Ready, so the read waits at most 60 s.
+backing_pods=""
+for _ in $(seq 1 30); do
+  backing_pods="$(kubectl --namespace "$APP_NAMESPACE" get endpointslices.discovery.k8s.io \
+    --selector "kubernetes.io/service-name=$service" \
+    -o jsonpath='{.items[*].endpoints[*].targetRef.name}')"
+  [ "$backing_pods" = "redis-0" ] && break
+  sleep 2
+done
 [ "$backing_pods" = "redis-0" ] ||
   fail "the Service $service named by HOPIN_REDIS_URL is backed by [$backing_pods], not by the Redis base's pod redis-0"
 echo "HOPIN_REDIS_URL names the Service $service of $APP_NAMESPACE on its port $port, backed by the Redis pod"
