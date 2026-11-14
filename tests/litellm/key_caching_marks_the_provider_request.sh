@@ -55,16 +55,23 @@ threading.Thread(target=recorder.serve_forever, daemon=True).start()
 api_base = f"http://127.0.0.1:{recorder.server_port}"
 
 
-async def render(model, flag):
+GROWING = [{"role": "system", "content": "You are an agent."},
+           {"role": "user", "content": "first present"},
+           {"role": "user", "content": "second present"},
+           {"role": "user", "content": "third present"}]
+MIXED = [{"role": "system", "content": "You are an agent."},
+         {"role": "user", "content": "first"},
+         {"role": "assistant", "content": "ok"},
+         {"role": "user", "content": "second"}]
+
+
+async def render(model, flag, messages):
     sent.clear()
     try:
         await litellm.acompletion(
             model=model, api_key="sk-offline", api_base=api_base, max_tokens=16, num_retries=0,
             enable_prompt_caching=flag,
-            messages=[{"role": "system", "content": "You are an agent."},
-                      {"role": "user", "content": "first"},
-                      {"role": "assistant", "content": "ok"},
-                      {"role": "user", "content": "second"}],
+            messages=messages,
             tools=[{"type": "function", "function": {"name": "t", "description": "d",
                                                      "parameters": {"type": "object", "properties": {}}}}])
     except Exception:  # LiteLLM maps the recorder's error to its own; the count below judges the call
@@ -77,15 +84,15 @@ async def render(model, flag):
 async def main():
     rendered = []
     for model in sys.argv[1:]:
-        for flag in (True, False):
-            rendered.append({"enable_prompt_caching": flag, "request": await render(model, flag)})
+        for flag, messages in ((True, MIXED), (False, MIXED), (True, GROWING)):
+            rendered.append({"enable_prompt_caching": flag, "request": await render(model, flag, messages)})
     print("RENDERED " + jsonlib.dumps(rendered))
 
 
 asyncio.run(main())
 PYTHON
 )" || fail "the container did not render the requests"
-[ "$(yq --input-format json 'length' <<<"$rendered")" = $((${#models[@]} * 2)) ] || fail "the container rendered other requests than asked: $rendered"
+[ "$(yq --input-format json 'length' <<<"$rendered")" = $((${#models[@]} * 3)) ] || fail "the container rendered other requests than asked: $rendered"
 
 # marked <index>: the blocks of the rendered request that carry a cache_control, as "path type" lines.
 marked() {
@@ -95,11 +102,21 @@ marked() {
     (.tools[] | select(has(\"cache_control\")) | \"tool \" + .cache_control.type)] | join(\",\")" <<<"$rendered"
 }
 for index in "${!models[@]}"; do
-  with="$((index * 2))" without="$((index * 2 + 1))"
+  with="$((index * 3))" without="$((index * 3 + 1))" growing="$((index * 3 + 2))"
   [ "$(marked "$with")" = "system ephemeral,message ephemeral" ] ||
     fail "${models[$index]}: enable_prompt_caching true did not mark the system text and the last message: $(marked "$with")"
   [ "$(yq --input-format json ".[$with].request | .messages[-1].content[-1].cache_control.type + \"/\" + .system[-1].cache_control.type" <<<"$rendered")" = "ephemeral/ephemeral" ] ||
     fail "${models[$index]}: the markers are not on the final block of the last message and of the system text"
   [ -z "$(marked "$without")" ] || fail "${models[$index]}: enable_prompt_caching false still marked: $(marked "$without")"
+  # Three consecutive user messages stay three blocks, in the order and with the text sent, and only the last block of the
+  # last message carries the marker; a merge into one block or a marker elsewhere fails here naming the structure.
+  structure="$(yq --input-format json --output-format json --indent 0 ".[$growing].request |
+    {\"messages\": [.messages[] | {\"role\": .role, \"blocks\": (.content | length),
+    \"marked\": [.content[] | has(\"cache_control\")]}]}" <<<"$rendered")"
+  [ "$(yq --input-format json ".[$growing].request | [.messages[].content[].text] | join(\"|\")" <<<"$rendered")" = "first present|second present|third present" ] ||
+    fail "${models[$index]}: three consecutive user messages are not three separate blocks as sent: $structure"
+  [ "$(yq --input-format json ".[$growing].request | [.messages[].content[] | has(\"cache_control\")] | map(select(.)) | length" <<<"$rendered")" = 1 ] &&
+    [ "$(yq --input-format json ".[$growing].request | .messages[-1].content[-1].cache_control.type" <<<"$rendered")" = ephemeral ] ||
+    fail "${models[$index]}: the marker is not on the last block of the last message alone: $structure"
 done
-echo "enable_prompt_caching true marks the system text and the last message of a call to each of ${#models[@]} Claude models and false marks nothing"
+echo "enable_prompt_caching true marks the system text and the last message of a call to each of ${#models[@]} Claude models and false marks nothing; three consecutive user messages stay three blocks with the marker on the last"
