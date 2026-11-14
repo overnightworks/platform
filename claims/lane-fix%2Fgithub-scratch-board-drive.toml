@@ -1,7 +1,0 @@
-claim_id = "c989e4329ac14d2fabcefc781d291b4e"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "e751eb1ff6021b92079356571799f7370ecb41b5"
-branch = "fix/github-scratch-board-drive"
-scope = ["src/opentofu/github/repositories.tf"]
-opened_commit = "a7f9b018c981773cc4e68f9fe110fa8cbff38402"
