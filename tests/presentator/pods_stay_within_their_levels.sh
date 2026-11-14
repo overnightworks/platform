@@ -177,7 +177,7 @@ judge_structure() {
     "select((.kind == \"Deployment\" and .metadata.name == \"web\") | not) | $SPECS | select(.shareProcessNamespace == true)"
   found "$manifest" "a template sets fsGroup" "$SPECS | select(.securityContext.fsGroup != null)"
   # The platform's Postgres base reads its readiness through `pg_isready`, an exec probe; it is held to restricted above.
-  # The worker's readiness is an exec probe too, since a connection would spend the life it serves; it has no other.
+  # The worker's readiness is an exec probe too, since a verified hello would spend a life; it has no other.
   found "$manifest" "a container has an exec probe or a postStart hook" \
     "select(.kind + \"/\" + .metadata.name != \"StatefulSet/postgres\" and .kind + \"/\" + .metadata.name != \"$WORKER_KEY\") | $SPECS | [.initContainers[], .containers[]][] | select(.livenessProbe.exec != null or .readinessProbe.exec != null or .startupProbe.exec != null or .lifecycle.postStart != null)"
   found "$manifest" "a container of the worker has a probe or a postStart hook other than the worker's readiness exec" \

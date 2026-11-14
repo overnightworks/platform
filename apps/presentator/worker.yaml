@@ -81,7 +81,7 @@ spec:
               value: '300'
             - name: PRESENTATOR_BUILD_OUTPUT_MEGABYTES
               value: '300'
-          # The probe reads the worker's socket table and spends no life, where a connection would. A worker serving a
+          # The probe reads the worker's socket table and spends no life, where a verified hello would. A worker serving a
           # life is not ready, so the Service sends the web's next step to the idle pod.
           readinessProbe:
             exec:
