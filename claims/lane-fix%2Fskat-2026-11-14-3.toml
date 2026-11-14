@@ -1,7 +1,0 @@
-claim_id = "76c798a9000548418eb0a711fab9a9ac"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "a9b8fc6283be710d135579f087886b89c380befb"
-branch = "fix/skat-2026-11-14-3"
-scope = ["apps/skat/skat.yaml"]
-opened_commit = "ef57efe56d5e0c63f1bb597ef1afab29cf0056f4"
