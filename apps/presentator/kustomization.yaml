@@ -30,6 +30,14 @@ replacements:
           name: backup
         fieldPaths:
           - spec.backend.rest.url
+      # Both databases share the one repository, whose URL this layer states once.
+      - select:
+          kind: ConfigMap
+          name: postgres
+        fieldPaths:
+          - data.backup-repository
+        options:
+          create: true
   # The restore test checks the copy in the image and as the user that wrote it. A selector also matches a renamed object by
   # its first name, so the Postgres restore test, which postgres/ renames, is rejected by its own.
   - source:

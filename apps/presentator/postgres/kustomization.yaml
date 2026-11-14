@@ -16,7 +16,6 @@ configMapGenerator:
     literals:
       # alembic_version, which presentator migrate writes, comes first: the restore test fails on an empty first table.
       - key-tables=alembic_version users sources decks
-      - backup-repository=http://rest-server.backup.svc.cluster.local:8000/presentator/
 patches:
   - target:
       kind: Schedule
