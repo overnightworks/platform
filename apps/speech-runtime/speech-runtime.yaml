@@ -10,8 +10,12 @@ metadata:
   name: speech-runtime
   namespace: speech-runtime
 spec:
+  # A new pod turns Ready before the old one stops, and the old one drains its sessions and streams on SIGTERM.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: speech-runtime
@@ -21,6 +25,9 @@ spec:
         app.kubernetes.io/name: speech-runtime
         app.kubernetes.io/part-of: speech-runtime
     spec:
+      # The drain takes at most 30 s, the hearing's final wait of 60 s and five closes of 5 s, after the 5 s preStop
+      # that lets the Service stop routing here first: 120 s, and the grace leaves 10 s above it.
+      terminationGracePeriodSeconds: 130
       automountServiceAccountToken: false
       enableServiceLinks: false
       imagePullSecrets:
@@ -32,7 +39,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: speech-runtime
-          image: ghcr.io/overnightworks/speech:2026.11.14.5@sha256:0fc6e2a2e733404129c881c9ab197905d11f210fa4312a56b17cea43bf465893
+          image: ghcr.io/overnightworks/speech:2026.11.14.6@sha256:621b25de038e4f3026ad6396425baa48f8a16173ea8c36cf702230174f553d00
           ports:
             - name: http
               containerPort: 8080
@@ -67,6 +74,10 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 5
           # No liveness probe: a restart reloads both models, and a service that is not ready is not served.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
