@@ -6,6 +6,7 @@ resources:
   - skat.yaml
 components:
   - ../../infrastructure/postgres/backup
+  - release
 configMapGenerator:
   - name: postgres
     behavior: merge

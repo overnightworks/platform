@@ -1,0 +1,12 @@
+# The release of skat's image, the full app ref of a release that changes only in a pull request: its one owner,
+# included by the layer and by its pull layer, so that the init container, the main container and the pull layer's image
+# volume run one ref. A bump changes tag and digest together. The field spec makes the transform rewrite the reference of
+# a Job's image volume too, which it leaves alone by default.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: ghcr.io/overnightworks/skat
+    newTag: 2026.11.14.5
+    digest: sha256:216d20d8cd0e3912130130120c167011042bf61825484cf2b7df58a7644eacb4
+configurations:
+  - image-volume.yaml

@@ -1,0 +1,12 @@
+# skat's pull layer: the Job pull of the base, with the image of the release as an image volume that its container
+# mounts. volumes/ adds the volume by the image's name alone, and release/, listed after it, gives that name the one ref
+# the init container and the main container run; a patch of this file would be applied after the Component and leave the
+# volume without a version.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: skat
+resources:
+  - ../../../infrastructure/pull
+components:
+  - volumes
+  - ../release
