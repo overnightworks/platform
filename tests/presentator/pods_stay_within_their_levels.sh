@@ -41,6 +41,7 @@ SPECS='(select(.kind != "PodConfig") | .spec.template.spec // .spec.jobTemplate.
 ANNOTATIONS='(.spec.template.metadata.annotations // .spec.jobTemplate.spec.template.metadata.annotations // (select(.kind == "Pod") | .metadata.annotations))'
 # A StatefulSet's claim templates are volumes of its Pods that the template does not list; the controller adds each as a
 # claim named <template>-<workload>-<ordinal>, which a dry run does not need to exist.
+# shellcheck disable=SC2016 # the jq expression expands its own variable
 CLAIM_VOLUMES='(.metadata.name as $workload | [(.spec.volumeClaimTemplates // [])[] | {"name": .metadata.name, "persistentVolumeClaim": {"claimName": (.metadata.name + "-" + $workload + "-0")}}])'
 POD_OF="$SPECS as \$spec | $ANNOTATIONS as \$annotations | $CLAIM_VOLUMES as \$claims | select(\$spec != null) | {\"apiVersion\": \"v1\", \"kind\": \"Pod\", \"metadata\": ({\"name\": .metadata.name} + (if \$annotations == null then {} else {\"annotations\": \$annotations} end)), \"spec\": (\$spec | if (\$claims | length) > 0 then .volumes = ((.volumes // []) + \$claims) else . end)}"
 WORKER_KEY=StatefulSet/build-worker
