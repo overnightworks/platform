@@ -567,13 +567,11 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/grafana/grafana_answers_both_data_sources_without_state_and_only_gatus_reaches_it.sh
 
-      # The cell compares the node's leases, links and sandboxes before and after its lives, so no step of this part that
-      # leaves Pods terminating runs before it.
-      - name: Assert that a Pod whose init container removes its link holds lo alone, fails closed and leaves nothing behind on the node
+      - name: Assert that a Pod of presentator's worker template takes its init container's rules, so that it answers one port and sends nothing off the loopback, that its key is root's at mode 0400, and that the NetworkPolicy build-worker admits only the web
         if: matrix.part == 'apps'
         env:
           NO_NETWORK_NAMESPACE: no-network
-        run: tests/no_network/pod_loses_its_link_before_the_worker_starts.sh
+        run: tests/no_network/worker_pod_reaches_only_its_port_and_the_loopback.sh
 
       - name: Assert that songmaker's music and scoring workers are Ready at their full refs, that neither asks for the GPU, and that the scoring worker reaches only its Postgres and Redis
         if: matrix.part == 'apps'
