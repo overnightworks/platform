@@ -1,7 +1,0 @@
-claim_id = "82c2cd0ebf6c4501a1986ae8d7ab0158"
-agent = "Claude a781a801-ea1d-4ad9-a154-3b380e608374"
-role = "builder"
-base = "d3c80b418bf1e43a7062ef426bc2e261a2484486"
-branch = "fix/tandem-managed-repository"
-scope = ["src/opentofu/github/repositories.tf", "src/opentofu/github/tests/repository_listing.tftest.hcl"]
-opened_commit = "31580b868507d2800df881c8801207f47c6f791d"
