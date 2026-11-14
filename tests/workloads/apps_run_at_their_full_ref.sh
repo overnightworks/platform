@@ -3,6 +3,13 @@ set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 layer() { kubectl --namespace "${1%/*}" get kustomization "${1#*/}" -o jsonpath="$2"; }
+# A Deployment replaces its pod either by Recreate or by a RollingUpdate that never stops the old pod before the new one
+# is Ready.
+strategy() {
+  kubectl --namespace "$1" get deployment "$2" -o jsonpath='{.spec.strategy.type}{.spec.strategy.rollingUpdate.maxUnavailable}' |
+    sed 's/^RollingUpdate0$/RollingUpdate/'
+}
+replaces_safely() { [ "$1" = Recreate ] || [ "$1" = RollingUpdate ]; }
 
 for manifest in $APP_MANIFESTS; do
   app_layer="flux-system/$(basename "$(dirname "$manifest")")"
@@ -28,8 +35,11 @@ for manifest in $APP_MANIFESTS; do
   # A Deployment at 0 replicas has no pod to be Available; its strategy and image are still judged.
   replicas="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.replicas}')"
   if [ "$replicas" = 0 ]; then
-    state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.replicas}|{.spec.strategy.type}')"
-    [ "$state" = "|Recreate" ] || fail "the Deployment $deployment reads '$state', not no pod at 0 replicas and Recreate"
+    pod_count="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.replicas}')"
+    replacement="$(strategy "$namespace" "$name")"
+    if ! { [ -z "$pod_count" ] && replaces_safely "$replacement"; }; then
+      fail "the Deployment $deployment reads '$pod_count|$replacement', not no pod at 0 replicas and a safe replacement"
+    fi
     pods="$(kubectl --namespace "$namespace" get pods -l "app.kubernetes.io/name=$name" -o name)"
     [ -z "$pods" ] || fail "the Deployment $deployment at 0 replicas has pods: $pods"
     # The class is applied by another layer, so admission finds it only once that layer has.
@@ -85,13 +95,16 @@ for manifest in $APP_MANIFESTS; do
     echo "the NetworkPolicy $namespace/$policy_name admits '${expected_ingress:-nobody}' and sends only '$expected_egress'"
   else
     kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
-    state="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}|{.spec.strategy.type}')"
-    [ "$state" = "1|Recreate" ] || fail "the Deployment $deployment reads '$state', not one Ready pod and Recreate"
+    ready="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}')"
+    replacement="$(strategy "$namespace" "$name")"
+    if ! { [ "$ready" = 1 ] && replaces_safely "$replacement"; }; then
+      fail "the Deployment $deployment reads '$ready|$replacement', not one Ready pod and a safe replacement"
+    fi
   fi
   image="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.containers[*].image}')"
   [[ $image =~ ^ghcr[.]io/${GITHUB_REPOSITORY_OWNER,,}/[^[:space:]:@]+:[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] ||
     fail "the Deployment $deployment runs '$image', not one full app ref"
-  echo "the Deployment $deployment is Available with one Ready pod, Recreate, and runs the full app ref $image"
+  echo "the Deployment $deployment is Available with one Ready pod, replaced by $replacement, and runs the full app ref $image"
   # What the image cost the runner: the kubelet's own report of each pull, and the disk after it.
   kubectl --namespace "$namespace" get events --field-selector reason=Pulled \
     -o jsonpath='{range .items[*]}{.message}{"\n"}{end}'
