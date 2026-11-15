@@ -5,13 +5,13 @@
 # A row's optional `prompt_caching` (a boolean, true when absent) has LiteLLM mark the system text and the last message of
 # the key's calls to Claude for the provider's prompt cache; `false` leaves the key's calls unmarked.
 period: 1mo
-person_budget: 2
+person_budget: 10
 apps:
   hopin:
     budget: 10
     parallel: 5
   personas:
-    budget: 10
+    budget: 60
     parallel: 2
   presentator:
     budget: 10
