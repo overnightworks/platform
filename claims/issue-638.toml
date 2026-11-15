@@ -1,8 +1,0 @@
-claim_id = "02f4cc315c2148a7ab0964ade43e0eee"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "1665688ce59f1b76c0ef54ebc42d9c479805dc0f"
-branch = "claude/issue-638-litellm-names-text-sonnet-fast-sonnet-5"
-scope = ["docs/operations.md", "infrastructure/litellm/litellm-config.yaml", "scripts/litellm_effort_measure.sh", "tests/litellm/configured_effort_reaches_the_provider_request.sh"]
-opened_commit = "6d26088c251bb9836302df7543ca6cefb249b590"
-whole_reason = "one gateway name touches its config, its cell, its doc line and the measure list that names every text alias"
