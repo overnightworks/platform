@@ -12,10 +12,11 @@
 #                                              the stream, the median cost of a request and the total, and exits 1 on any
 #                                              answer other than 200 or a stream without usage
 #   scripts/litellm_effort_measure.sh --remove deletes the test person's customer row, which the first call makes
-# The names are text/sonnet, text/haiku and their -medium and -low variants. The cost is the stream's usage (prompt and
-# completion tokens) times the prices of the name's /model/info, so it ignores the discount of a cache read, which a text
-# this short does not earn; LiteLLM's response cost header is not used, as a stream sends its headers before the cost is
-# known. The run spends money and writes one spend log row per request and the test person's row to the live store.
+# The names are text/sonnet, text/haiku and their -medium, -low and -fast variants. The cost is the stream's usage
+# (prompt and completion tokens) times the prices of the name's /model/info, so it ignores the discount of a cache read,
+# which a text this short does not earn; LiteLLM's response cost header is not used, as a stream sends its headers
+# before the cost is known. The run spends money and writes one spend log row per request and the test person's row to
+# the live store.
 # The key's value and the master key travel as litellm_keys.sh says: from a file or kubectl's stdout through shell
 # variables to curl's stdin, never into an argument, a URL or an output; a failure names the step and the HTTP status,
 # never a body.
@@ -27,7 +28,7 @@ command_name=measure
 
 # The only person this command sends for; its customer row is what --remove deletes.
 measure_person=fp-litellm-effort-measure
-measured_names=(text/sonnet text/sonnet-medium text/sonnet-low text/sonnet-fast text/haiku text/haiku-medium text/haiku-low)
+measured_names=(text/sonnet text/sonnet-medium text/sonnet-low text/sonnet-fast text/haiku text/haiku-medium text/haiku-low text/haiku-fast)
 default_requests=10
 # The lines of the system text, as many as a short call prompt holds.
 system_lines=20
