@@ -1,8 +1,0 @@
-claim_id = "9f71b607c7cb421eb8881079540ee638"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "981a8348f5d2b1cc06cba304a3184d0b857d8e50"
-branch = "claude/issue-647-skat-redis"
-scope = [".github/workflows/ci.yml", "apps/skat", "tests/hopin", "tests/redis"]
-opened_commit = "949cab3b95b9d1dff8d930427f86398e25a03b78"
-whole_reason = "one small slice: a kustomize include, an env var, the shared URL test and its CI step"
