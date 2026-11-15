@@ -119,6 +119,18 @@ on_change = "restart"
 source = "host/disk/user-tmpfiles.conf"
 mode = "copy"
 
+# The global commit hook: one template under both names git calls, in a directory of platform's own, so a quality bump
+# needs no change of the files. bootstrap:hook installs quality and sets core.hooksPath once these exist.
+[dotfiles."~/.local/share/platform/git-hooks/pre-commit"]
+source = "host/git-hooks/hook"
+mode = "copy"
+permissions = "0755"
+
+[dotfiles."~/.local/share/platform/git-hooks/pre-merge-commit"]
+source = "host/git-hooks/hook"
+mode = "copy"
+permissions = "0755"
+
 # Docuum measures the Images line of `docker system df`, which counts a shared layer once, so the threshold is 100 GB
 # of real space. --keep matches `repository:tag`: tags `previous` and the `-base` images, every ghcr.io and quay.io
 # image, Microsoft's registry, Traefik, and every other vendor repository the machine holds; the images of our own builds
@@ -597,8 +609,59 @@ exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.b
 '''
 
 [tasks.bootstrap]
-description = "The PC's own steps after the declarative parts: k3s, then Flux, then its access to platform-secrets"
-run = [{ task = "bootstrap:k3s" }, { task = "bootstrap:flux" }, { task = "bootstrap:secrets" }]
+description = "The PC's own steps after the declarative parts: the commit hook, then k3s, then Flux, then its access to platform-secrets"
+run = [{ task = "bootstrap:hook" }, { task = "bootstrap:k3s" }, { task = "bootstrap:flux" }, { task = "bootstrap:secrets" }]
+
+[tasks."bootstrap:hook"]
+description = "Install quality at the gate pin of ci.yml with its engines, then set git's core.hooksPath to the global commit hook"
+# The hook calls ~/.local/bin/quality, so uv puts the executable there whatever XDG_BIN_HOME says.
+env = { UV_TOOL_BIN_DIR = "{{env.HOME}}/.local/bin" }
+# quality's engines are the tools of the mise.toml and mise.lock it ships beside its package; the ceiling keeps mise
+# from reading any config above that directory. core.hooksPath is set last: the hook blocks every commit while quality
+# or its scanner is missing, so a half installed quality must not leave a machine with the hook active.
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+workflow=.github/workflows/ci.yml
+template=host/git-hooks/hook
+hooks_directory="$HOME/.local/share/platform/git-hooks"
+quality_repository=https://github.com/overnightworks/quality
+fail() { echo "bootstrap:hook: $1" >&2; exit 1; }
+
+for hook in pre-commit pre-merge-commit; do
+  cmp --silent "$template" "$hooks_directory/$hook" && [ "$(stat --format=%a "$hooks_directory/$hook")" = 755 ] ||
+    fail "$hooks_directory/$hook is missing or differs from $template; run scripts/bootstrap_pc.sh --only tools,dotfiles first"
+done
+
+# The gate's pin is the one quality version of this repository, so the hook scans with the quality its CI judges by.
+gate="$(yq '.jobs.quality.uses' "$workflow")"
+pin="${gate##*@}"
+[[ $gate == overnightworks/quality/.github/workflows/gate.yml@* && $pin =~ ^[0-9a-f]{40}$ ]] ||
+  fail "$workflow's job quality does not call quality's gate at a full commit"
+
+receipt="$(uv tool dir)/overnightworks-quality/uv-receipt.toml"
+if [ -x "$HOME/.local/bin/quality" ] && grep -qF "git = \"$quality_repository?rev=$pin\"" "$receipt" 2>/dev/null; then
+  echo "bootstrap:hook: quality $pin is installed"
+else
+  uv tool install --force "overnightworks-quality @ git+$quality_repository@$pin" ||
+    fail "uv could not install quality at $pin"
+fi
+
+quality_python="$(uv tool dir)/overnightworks-quality/bin/python"
+package="$("$quality_python" -I -c 'import importlib.util; print(importlib.util.find_spec("quality").origin)')"
+engines="$(dirname "$package")/mise"
+[ -f "$engines/mise.toml" ] && [ -f "$engines/mise.lock" ] || fail "quality at $pin ships no engine manifest in $engines"
+engine_mise() { MISE_CEILING_PATHS="$(dirname "$engines")" mise --cd "$engines" "$@"; }
+engine_mise install --locked || fail "mise could not install quality's engines from $engines"
+missing="$(engine_mise ls --current --missing)"
+[ -z "$missing" ] || fail "quality's engines are still missing: $missing"
+engine_mise which gitleaks >/dev/null || fail "mise finds no gitleaks, the engine of the commit hook"
+
+if [ "$(git config --global --get core.hooksPath || true)" != "$hooks_directory" ]; then
+  git config --global core.hooksPath "$hooks_directory"
+fi
+echo "bootstrap:hook: core.hooksPath is $hooks_directory"
+'''
 
 [tasks."bootstrap:k3s"]
 description = "Install k3s at K3S_VERSION from its pinned installer, restart it for a newer config, wait for the node"

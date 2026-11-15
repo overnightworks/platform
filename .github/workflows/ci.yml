@@ -818,8 +818,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install the pinned tools
-        run: scripts/bootstrap_pc.sh --only tools
+      - name: Install the pinned tools and write the commit hooks
+        run: scripts/bootstrap_pc.sh --only tools,dotfiles
 
       - name: Assert that every locked tool is installed and runs
         run: tests/bootstrap/every_locked_tool_runs.sh
@@ -844,6 +844,33 @@ jobs:
 
       - name: Check that the journal's drop-in is read by systemd, its limits add up to under 30 days and its notification names a declared service
         run: tests/journald/retention_drop_in_keeps_every_entry_under_30_days.sh
+
+      - name: Check that the dotfiles step writes both commit hooks as mode 755 and leaves core.hooksPath unset
+        run: tests/bootstrap/dotfiles_write_both_hooks_with_mode_755.sh
+
+      - name: Check that core.hooksPath stays unset when quality cannot be installed
+        run: tests/bootstrap/hooks_path_stays_unset_when_quality_cannot_install.sh
+
+      - name: Check that bootstrap:hook installs quality at the gate pin with its engines and sets core.hooksPath
+        run: tests/bootstrap/bootstrap_hook_installs_quality_at_the_gate_pin_and_sets_hooks_path.sh
+
+      - name: Check that the hook refuses a commit that stages a dummy secret
+        run: tests/bootstrap/hook_refuses_a_commit_staging_a_dummy_secret.sh
+
+      - name: Check that the hook refuses a merge commit that stages a dummy secret
+        run: tests/bootstrap/hook_refuses_a_merge_commit_staging_a_dummy_secret.sh
+
+      - name: Check that the hook passes a clean commit and a clean merge commit
+        run: tests/bootstrap/hook_passes_a_clean_commit_and_a_clean_merge_commit.sh
+
+      - name: Check that the hook runs the repository's hook and scans again after it
+        run: tests/bootstrap/hook_runs_the_repository_hook_and_scans_again_after_it.sh
+
+      - name: Check that the hook blocks the commit with exit 2 when quality is missing
+        run: tests/bootstrap/hook_blocks_the_commit_with_exit_2_when_quality_is_missing.sh
+
+      - name: Run the dotfiles step and bootstrap:hook again and assert that they change nothing
+        run: tests/bootstrap/hook_second_run_changes_nothing.sh
 
   opentofu:
     runs-on: ubuntu-latest
