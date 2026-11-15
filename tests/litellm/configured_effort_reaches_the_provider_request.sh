@@ -5,7 +5,7 @@
 # the configured effort and thinking, as litellm-config.yaml says, so a gateway bump that drops the effort or the
 # thinking, changes the effort's precedence or a name whose effort or thinking cannot be set goes red.
 # Usage: tests/litellm/configured_effort_reaches_the_provider_request.sh
-# Proves the effort names and text/sonnet-fast of litellm-config.yaml.
+# Proves the effort names, text/sonnet-fast and text/haiku-fast of litellm-config.yaml.
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
