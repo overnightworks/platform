@@ -1,7 +1,0 @@
-claim_id = "71850e857a9f499c8db198938283bd5d"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "faefdb6633953a721bf976ae0f2ad4b0ca871790"
-branch = "claude/issue-622-cluster-docker-hub-rate-limit"
-scope = [".github/workflows/ci.yml"]
-opened_commit = "8b58f9e6678f019745cd0c7c26b47c4b8426736e"
