@@ -117,28 +117,32 @@ figure = { url = "https://github.com/overnightworks/personas/releases/download/v
 voice = { names = ["ryan", "de_DE-thorsten-medium"] }
 
 # The four test agents run on gateway models of their own, so that one call compares a lower effort and Haiku. They have
-# no figure and no voice yet.
+# no figure yet; each speaks first with a voice of the language its prompt defaults to, German.
 
 [[agents]]
 client_id = "agent-humboldt"
 secret_file = "/run/secrets/humboldt_client_secret"
 persona_file = "/app/characters/humboldt.md"
 model = "text/sonnet-medium"
+voice = { names = ["de_DE-thorsten-medium", "en_US-norman-medium"] }
 
 [[agents]]
 client_id = "agent-curie"
 secret_file = "/run/secrets/curie_client_secret"
 persona_file = "/app/characters/curie.md"
 model = "text/sonnet-low"
+voice = { names = ["de_DE-kerstin-medium", "en_US-ljspeech-medium"] }
 
 [[agents]]
 client_id = "agent-lovelace"
 secret_file = "/run/secrets/lovelace_client_secret"
 persona_file = "/app/characters/lovelace.md"
 model = "text/haiku-medium"
+voice = { names = ["de_DE-kerstin-medium", "en_GB-cori-medium"] }
 
 [[agents]]
 client_id = "agent-hildegard"
 secret_file = "/run/secrets/hildegard_client_secret"
 persona_file = "/app/characters/hildegard.md"
 model = "text/haiku-low"
+voice = { names = ["de_DE-kerstin-medium", "en_GB-cori-medium"] }
