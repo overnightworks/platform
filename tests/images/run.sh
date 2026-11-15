@@ -3,8 +3,9 @@
 # exit status and red records compared with its expected-exit.txt and expected-red.txt. Each line of expected-red.txt
 # matches one red record; a * in it stands for any text, since flux's messages name the runner's own resolver.
 # Tag lookups read local bare repositories, so no case needs the network.
-# RENDER_IMAGE is the images job's own when unset. RENDER_TIMEOUT_SECONDS is the render's bound in every case, short
-# enough that the case with a Kustomization path that contains itself ends soon; every other render takes seconds.
+# RENDER_IMAGE is the images job's own when unset. A case's render-timeout-seconds.txt, absent when it needs none, is
+# that case's RENDER_TIMEOUT_SECONDS: only a case that expects the render never to end sets it short; every other
+# render runs under the script's default bound, so a slow runner cannot turn it red.
 # A case's expected-gaps.txt, absent when it expects none, matches the same way the gap lines of the log other than
 # G1, which every run prints.
 # Usage: mise exec -- tests/images/run.sh
@@ -14,7 +15,7 @@ cases_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 verify="${cases_directory}/../../scripts/verify_image_release.sh"
 # The one scenario every case runs in; the base's root GitRepository matches it.
 export GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=overnightworks/platform
-export GITHUB_REPOSITORY_OWNER=overnightworks DEFAULT_BRANCH=main RENDER_TIMEOUT_SECONDS=20
+export GITHUB_REPOSITORY_OWNER=overnightworks DEFAULT_BRANCH=main
 RENDER_IMAGE="${RENDER_IMAGE:-$(yq eval '.jobs.images.env.RENDER_IMAGE' "${cases_directory}/../../.github/workflows/ci.yml")}"
 export RENDER_IMAGE
 
@@ -60,6 +61,10 @@ for case_directory in "${cases_directory}"/*/; do
   find "${tree}" -name 'dot.*' -exec sh -c 'mv "$1" "${1%/*}/.${1##*/dot.}"' rename {} \;
   find "${tree}" -name 'symlink.*' -exec sh -c 'ln -sfn "$(cat "$1")" "${1%/*}/${1##*/symlink.}" && rm "$1"' link {} \;
   status=0
+  render_timeout_file="${case_directory}/render-timeout-seconds.txt"
+  rm -f "${tree}/render-timeout-seconds.txt"
+  if [ -f "${render_timeout_file}" ]; then RENDER_TIMEOUT_SECONDS="$(cat "${render_timeout_file}")"; else unset RENDER_TIMEOUT_SECONDS; fi
+  export RENDER_TIMEOUT_SECONDS
   "${verify}" "${tree}" >"${tree}.log" 2>&1 || status=$?
   grep '^red: ' "${tree}.log" >"${tree}.red" || true
   grep '^images: gap G' "${tree}.log" | grep -v '^images: gap G1:' >"${tree}.gaps" || true
