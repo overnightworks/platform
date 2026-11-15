@@ -227,6 +227,24 @@ jobs:
         if: matrix.part == 'core'
         run: tests/prometheus/rules_pass_promtool_and_their_tests.sh
 
+      - name: Route Docker Hub pulls through the mirror and pull the registry image at its digest
+        run: |
+          # Google's public pull-through cache of Docker Hub needs no credential: the runner's Docker daemon and the
+          # cluster's containerd ask it first, since the matrix parts share runner addresses Docker Hub rate-limits (429).
+          mirror=https://mirror.gcr.io
+          # k3d's registry, which k3d pulls as docker.io/library/registry:2 when the runner holds no such image.
+          registry_image=docker.io/library/registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+          # The mirror serves what it holds or fetches from Docker Hub itself. Containerd and Docker both fall back to
+          # docker.io when the mirror fails or lacks an image, so a failing mirror costs the rate limit again, never a pull.
+          sudo mkdir -p /etc/docker
+          jq --null-input --arg mirror "$mirror" '{"registry-mirrors": [$mirror]}' |
+            sudo tee /etc/docker/daemon.json >/dev/null
+          sudo systemctl restart docker
+          docker pull --quiet "$registry_image"
+          # k3d pulls only an image it does not find under this name.
+          docker tag "$registry_image" docker.io/library/registry:2
+          printf 'mirrors:\n  docker.io:\n    endpoint:\n      - "%s"\n' "$mirror" > "$RUNNER_TEMP/registries.yaml"
+
       - name: Create the k3d cluster with its registry
         id: create-cluster
         run: |
@@ -239,6 +257,7 @@ jobs:
           # shared file's iptables-localhost-nodeports=false keeps it 0, so CoreDNS would answer SERVFAIL.
           K3D_FIX_DNS=0 k3d cluster create "$CLUSTER_NAME" --image "rancher/k3s:${K3S_VERSION//+/-}" \
             --volume "$PWD/$K3S_CONFIG_SOURCE:/etc/rancher/k3s/config.yaml:ro@server:0" \
+            --registry-config "$RUNNER_TEMP/registries.yaml" \
             --registry-create "${REGISTRY_NAME}:127.0.0.1:${REGISTRY_PORT}" --enforce-registry-port-match \
             --wait --timeout 3m
 
