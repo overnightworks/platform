@@ -1,0 +1,8 @@
+claim_id = "6f22ffc3fb844458bb5865d06cd56869"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "f6a3e31f1689c934554d261bcf3d7d97124528b6"
+branch = "claude/issue-643-haiku-fast"
+scope = ["docs/operations.md", "infrastructure/litellm/litellm-config.yaml", "scripts/litellm_effort_measure.sh", "tests/litellm/configured_effort_reaches_the_provider_request.sh"]
+opened_commit = "fc487e07084e9a8a500924bd07885c088b9cf70f"
+whole_reason = "four files of one LiteLLM name, as #638"
