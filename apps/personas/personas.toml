@@ -100,10 +100,12 @@ api_group = "/agents"
 origin = "http://litellm-front.litellm:4000"
 key_file = "/run/secrets/litellm_key"
 
+# Mozart runs Haiku without thinking, so a call shows whether its faster first token is heard.
 [[agents]]
 client_id = "agent-mozart"
 secret_file = "/run/secrets/mozart_client_secret"
 persona_file = "/app/characters/mozart.md"
+model = "text/haiku-fast"
 figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.13.2/mozart.vrm", sha256 = "085a5d49db270d6ce06235bce163bfd0895e6d5be546834c9aa48bddf79f5b7e" }
 # ryan exists only in speech's GPU image; Thorsten is speech's male German Piper voice for the CPU.
 voice = { names = ["ryan", "de_DE-thorsten-medium"] }
