@@ -10,18 +10,20 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/prometheus_api.sh"
 
 stopped_replicas=""
-# The layer's Kustomization would restore the replicas at its next interval, inside the ten minutes, so it is suspended
-# while the front is stopped; the cell brings both back on every exit.
+# The layer's Kustomization would restore the replicas at its next interval, inside the ten minutes, and the root
+# Kustomization re-applies the layer's without `suspend` at its own, so both are suspended while the front is stopped;
+# the cell brings all back on every exit.
 restore_gateway() {
   if [ -n "$stopped_replicas" ]; then
     kubectl -n "$GATEWAY_NAMESPACE" scale "deployment/$GATEWAY_DEPLOYMENT" --replicas="$stopped_replicas" || true
     kubectl -n "$GATEWAY_NAMESPACE" rollout status "deployment/$GATEWAY_DEPLOYMENT" --timeout=5m || true
   fi
-  set_layer_suspended false || true
+  set_suspended false "$GATEWAY_KUSTOMIZATION" || true
+  set_suspended false flux-system || true
 }
 trap restore_gateway EXIT
-set_layer_suspended() {
-  kubectl -n flux-system patch kustomization "$GATEWAY_KUSTOMIZATION" --type=merge --patch "{\"spec\":{\"suspend\":$1}}" >/dev/null
+set_suspended() {
+  kubectl -n flux-system patch kustomization "$2" --type=merge --patch "{\"spec\":{\"suspend\":$1}}" >/dev/null
 }
 
 probe_success="gatus_results_endpoint_success{name=\"$GATEWAY_ENDPOINT\"}"
@@ -58,7 +60,8 @@ echo "Prometheus reads $GATEWAY_ENDPOINT healthy from Gatus and AiGatewayProbeFa
 
 stopped_replicas="$(kubectl -n "$GATEWAY_NAMESPACE" get deployment "$GATEWAY_DEPLOYMENT" -o jsonpath='{.spec.replicas}')"
 sends_before="$(alertmanager_metric "$sends")"
-set_layer_suspended true
+set_suspended true flux-system
+set_suspended true "$GATEWAY_KUSTOMIZATION"
 kubectl -n "$GATEWAY_NAMESPACE" scale "deployment/$GATEWAY_DEPLOYMENT" --replicas=0
 until_true 360 "AiGatewayProbeFailing is pending for $GATEWAY_ENDPOINT" alert_is pending
 echo "AiGatewayProbeFailing is pending for $GATEWAY_ENDPOINT with $GATEWAY_DEPLOYMENT at 0"
@@ -72,7 +75,8 @@ echo "AiGatewayProbeFailing fired for $GATEWAY_ENDPOINT, Alertmanager lists it f
 kubectl -n "$GATEWAY_NAMESPACE" scale "deployment/$GATEWAY_DEPLOYMENT" --replicas="$stopped_replicas"
 kubectl -n "$GATEWAY_NAMESPACE" rollout status "deployment/$GATEWAY_DEPLOYMENT" --timeout=5m
 stopped_replicas=""
-set_layer_suspended false
+set_suspended false "$GATEWAY_KUSTOMIZATION"
+set_suspended false flux-system
 until_true 360 "Prometheus reads the probe of $GATEWAY_ENDPOINT healthy again" probe_reads 1
 until_true 120 "AiGatewayProbeFailing clears in Prometheus" alert_is_none
 until_true 120 "AiGatewayProbeFailing clears in Alertmanager" alertmanager_lists_none
