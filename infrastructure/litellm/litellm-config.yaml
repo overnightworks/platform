@@ -1,7 +1,9 @@
 # LiteLLM's configuration (litellm.yaml, Deployment `litellm`). Three text names an app sends, each mapped to the
 # current id of its family on Anthropic at the model's default effort, and for sonnet and haiku a `-medium` and a `-low`
 # name that send the family's model with `output_config: {effort: ...}`, which LiteLLM passes to Anthropic as it is (a
-# request that names `reasoning_effort` outranks it), each with `max_tokens`: what LiteLLM sends for a request that
+# request that names `reasoning_effort` outranks it), and `text/sonnet-fast`, sonnet at effort low with thinking off, which
+# Sonnet 5.5 takes only as `thinking: {type: between_tools}`, since it thinks adaptively when a request names none and
+# refuses `disabled`; each with `max_tokens`: what LiteLLM sends for a request that
 # names none, and the output it reserves against a budget, so the ceiling of a conforming app; an app that names more is
 # bound by the budgets alone. One picture name, mapped to an OpenAI image model, which answers with the picture's bytes
 # and its usage; it has no `max_tokens`, so nothing is reserved and one picture can pass a budget. LiteLLM reads this
@@ -48,6 +50,16 @@ model_list:
       api_key: os.environ/ANTHROPIC_API_KEY
       max_retries: 0
       max_tokens: 16384
+      output_config:
+        effort: low
+  - model_name: text/sonnet-fast
+    litellm_params:
+      model: anthropic/claude-sonnet-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      max_retries: 0
+      max_tokens: 16384
+      thinking:
+        type: between_tools
       output_config:
         effort: low
   - model_name: text/haiku-medium

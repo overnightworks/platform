@@ -27,7 +27,7 @@ command_name=measure
 
 # The only person this command sends for; its customer row is what --remove deletes.
 measure_person=fp-litellm-effort-measure
-measured_names=(text/sonnet text/sonnet-medium text/sonnet-low text/haiku text/haiku-medium text/haiku-low)
+measured_names=(text/sonnet text/sonnet-medium text/sonnet-low text/sonnet-fast text/haiku text/haiku-medium text/haiku-low)
 default_requests=10
 # The lines of the system text, as many as a short call prompt holds.
 system_lines=20
