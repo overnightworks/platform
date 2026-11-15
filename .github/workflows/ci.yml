@@ -757,6 +757,7 @@ jobs:
           STOPPED_DEPLOYMENT: speech-runtime
           STOPPED_ENDPOINT: speech
           OTHER_NAMESPACE: gatus-client
+          PROMETHEUS_NAMESPACE: prometheus
         run: tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh
 
       - name: Assert that Alloy ships a pod's line to Loki with three labels, holds one ClusterRole with exactly two rules and answers nobody

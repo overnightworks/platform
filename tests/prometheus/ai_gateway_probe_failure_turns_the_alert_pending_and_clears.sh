@@ -23,7 +23,11 @@ probe_reads() { [ "$(query "$probe_success" | yq -p=json '.value[1]')" = "$1" ];
 alert_is() {
   api alerts | yq -p=json -e ".data.alerts[] | select(.state == \"$1\" and .labels.alertname == \"AiGatewayProbeFailing\" and .labels.name == \"$GATEWAY_ENDPOINT\")" >/dev/null 2>&1
 }
-alert_is_none() { ! api alerts | yq -p=json -e '.data.alerts[] | select(.labels.alertname == "AiGatewayProbeFailing")' >/dev/null 2>&1; }
+alert_is_none() {
+  local alerts
+  alerts="$(api alerts)" || return 1
+  ! yq -p=json -e '.data.alerts[] | select(.labels.alertname == "AiGatewayProbeFailing")' <<<"$alerts" >/dev/null 2>&1
+}
 
 kubectl -n "$GATEWAY_NAMESPACE" rollout status "deployment/$GATEWAY_DEPLOYMENT" --timeout=5m
 until_true 360 "Prometheus reads the healthy probe of $GATEWAY_ENDPOINT from Gatus" probe_reads 1
