@@ -783,6 +783,16 @@ jobs:
           FAILING_CRONJOB: prometheus-probe
         run: tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh
 
+      - name: Assert that Prometheus reads Gatus' probe of the AI gateway and that its alert goes pending for a failing probe and clears
+        if: matrix.part == 'observability'
+        env:
+          PROMETHEUS_NAMESPACE: prometheus
+          # The gateway the cell stops and restores, by its Namespace, Deployment and Gatus endpoint.
+          GATEWAY_NAMESPACE: litellm
+          GATEWAY_DEPLOYMENT: litellm-front
+          GATEWAY_ENDPOINT: litellm
+        run: tests/prometheus/ai_gateway_probe_failure_turns_the_alert_pending_and_clears.sh
+
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
         run: tests/flux/print_flux_state.sh
