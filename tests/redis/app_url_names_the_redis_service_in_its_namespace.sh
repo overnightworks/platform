@@ -2,7 +2,8 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
-# The applied Deployment $APP_DEPLOYMENT's container $APP_CONTAINER must carry $REDIS_URL_VARIABLE, which must name the Service the Redis base renders in $APP_NAMESPACE.
+# The applied Deployment's $REDIS_URL_VARIABLE, in its container $APP_CONTAINER, must name the Service the Redis base
+# renders in $APP_NAMESPACE.
 
 url="$(kubectl --namespace "$APP_NAMESPACE" get deployment "$APP_DEPLOYMENT" \
   -o jsonpath="{.spec.template.spec.containers[?(@.name==\"$APP_CONTAINER\")].env[?(@.name==\"$REDIS_URL_VARIABLE\")].value}")"
