@@ -467,7 +467,19 @@ jobs:
         if: matrix.part == 'load-2'
         env:
           APP_NAMESPACE: hopin
-        run: tests/hopin/redis_url_names_the_redis_service_in_its_namespace.sh
+          APP_DEPLOYMENT: hopin
+          APP_CONTAINER: hopin
+          REDIS_URL_VARIABLE: HOPIN_REDIS_URL
+        run: tests/redis/app_url_names_the_redis_service_in_its_namespace.sh
+
+      - name: Assert that skat's SKAT_REDIS_URL names its Redis Service and port
+        if: matrix.part == 'load-2'
+        env:
+          APP_NAMESPACE: skat
+          APP_DEPLOYMENT: skat
+          APP_CONTAINER: skat
+          REDIS_URL_VARIABLE: SKAT_REDIS_URL
+        run: tests/redis/app_url_names_the_redis_service_in_its_namespace.sh
 
       - name: Assert that songmaker's web is Ready at its full ref, migrated, closed to other namespaces, read-only and holds its audio claim
         if: matrix.part == 'load-1'
