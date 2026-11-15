@@ -30,10 +30,6 @@ trap remove_probes EXIT
 
 # in_pod <command>...: runs in Alertmanager's container.
 in_pod() { kubectl -n "$PROMETHEUS_NAMESPACE" exec "$pod" -c alertmanager -- "$@"; }
-# metric <series selector>: the value of one of Alertmanager's own series, 0 while it has none.
-metric() {
-  in_pod wget -qO- http://127.0.0.1:9093/metrics | awk -v series="$1" 'index($0, series " ") == 1 {value = $2} END {print value + 0}'
-}
 
 kubectl -n "$PROMETHEUS_NAMESPACE" rollout status statefulset/prometheus-alertmanager --timeout=5m
 user_id="$(in_pod id -u)"
@@ -133,8 +129,8 @@ group_interval="$(route_seconds group_interval)"
 sends="alertmanager_notifications_total{integration=\"email\"}"
 attempts="alertmanager_notification_requests_total{integration=\"email\"}"
 kubectl create namespace "$OTHER_NAMESPACE"
-sends_before="$(metric "$sends")"
-attempts_before="$(metric "$attempts")"
+sends_before="$(alertmanager_metric "$sends")"
+attempts_before="$(alertmanager_metric "$attempts")"
 alert() {
   printf '[{"labels": {"alertname": "%s"}, "annotations": {"summary": "a synthetic alert"}, "startsAt": "%s"%s}]' \
     "$alert_name" "$1" "${2:+, \"endsAt\": \"$2\"}"
@@ -151,14 +147,14 @@ request "$PROMETHEUS_NAMESPACE" alert-fires "$address" "$alertmanager_url/api/v2
   --request POST --header 'Content-Type: application/json' --data "$(alert "$started_at")"
 [ "$status" = 200 ] || fail "a Pod in $PROMETHEUS_NAMESPACE got '$status' posting a synthetic alert, not 200"
 until_true 60 "Alertmanager lists the synthetic alert as active" active_synthetic_alerts 1
-one_send_was_made() { [ "$(metric "$sends")" -ge $((sends_before + 1)) ]; }
+one_send_was_made() { [ "$(alertmanager_metric "$sends")" -ge $((sends_before + 1)) ]; }
 until_true 120 "the fired alert makes a send" one_send_was_made
-sends_made=$(($(metric "$sends") - sends_before))
+sends_made=$(($(alertmanager_metric "$sends") - sends_before))
 elapsed=$((SECONDS - posted_after))
 flushes_possible=$((1 + (elapsed > group_wait ? (elapsed - group_wait) / group_interval : 0)))
 [ "$sends_made" -le "$flushes_possible" ] ||
   fail "$sends_made sends within $elapsed seconds of the alert, while at most $flushes_possible flushes fit"
-[ "$(metric "$attempts")" -ge $((attempts_before + 1)) ] || fail "the send made no attempt"
+[ "$(alertmanager_metric "$attempts")" -ge $((attempts_before + 1)) ] || fail "the send made no attempt"
 echo "a synthetic alert posted from a Pod in $PROMETHEUS_NAMESPACE fires and its sends stay within one per flush, which fail at the smarthost"
 request "$PROMETHEUS_NAMESPACE" alert-resolves "$address" "$alertmanager_url/api/v2/alerts" \
   --request POST --header 'Content-Type: application/json' --data "$(alert "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"

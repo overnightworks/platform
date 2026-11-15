@@ -125,10 +125,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator, presentator-backup]
+        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator, presentator-backup, ai-gateway-outage]
     runs-on: ubuntu-latest
     # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
-    timeout-minutes: 17
+    # The part ai-gateway-outage waits out the rule's ten minutes after the reconcile and its healthy read, about 25 minutes in all.
+    timeout-minutes: ${{ matrix.part == 'ai-gateway-outage' && 35 || 17 }}
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
@@ -803,15 +804,18 @@ jobs:
           FAILING_CRONJOB: prometheus-probe
         run: tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh
 
-      - name: Assert that Prometheus reads Gatus' probe of the AI gateway and that its alert goes pending for a failing probe and clears
-        if: matrix.part == 'observability'
+      # The part holds only this cell, which waits out the rule's ten minutes beside no other cell.
+      - name: Assert that Prometheus reads Gatus' probe of the AI gateway and that a failing probe fires its alert to the mail receiver and clears with the probe
+        if: matrix.part == 'ai-gateway-outage'
         env:
           PROMETHEUS_NAMESPACE: prometheus
-          # The gateway the cell stops and restores, by its Namespace, Deployment and Gatus endpoint.
+          # The gateway the cell stops and restores, by its Namespace, Deployment and Gatus endpoint, and the Kustomization
+          # of its layer that the cell suspends meanwhile.
           GATEWAY_NAMESPACE: litellm
           GATEWAY_DEPLOYMENT: litellm-front
           GATEWAY_ENDPOINT: litellm
-        run: tests/prometheus/ai_gateway_probe_failure_turns_the_alert_pending_and_clears.sh
+          GATEWAY_KUSTOMIZATION: litellm
+        run: tests/prometheus/ai_gateway_probe_failure_fires_the_alert_to_the_mail_receiver_and_clears.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
