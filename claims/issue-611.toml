@@ -1,0 +1,8 @@
+claim_id = "78c8a7bdd6d246d18bd77e5a7fbd9be2"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "faefdb6633953a721bf976ae0f2ad4b0ca871790"
+branch = "claude/issue-611-p2b-platform-owns-the-machine-s-quality"
+scope = [".github/workflows/ci.yml", "host/git-hooks", "mise.lock", "mise.toml", "scripts/bootstrap_pc.sh", "tests/bootstrap"]
+opened_commit = "832738fd5a1204abeeade3fdf93cb7286ee6306e"
+whole_reason = "The hook template, the task that installs quality and the container cells that prove them change together."
