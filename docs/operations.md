@@ -17,8 +17,15 @@ passes with no annotated Secret. (OPS-1)
 prints the address of the status page once kubectl listens, none when the forward fails, which exits non-zero; the page
 has no other way in. (OPS-2)
 
-Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its Service at a free port and
-prints the address, the only way to the page. (OPS-3)
+Its own NetworkPolicies admit one sender, Prometheus' server, to its port for the scrape of `/metrics`: any other pod gets no
+answer, and `mise run gatus:open` forwards `127.0.0.1` to its Service at a free port and prints the address, the only way
+for a person to the page. (OPS-3)
+
+Prometheus scrapes Gatus' results, and `AiGatewayProbeFailing` mails once when the `litellm` endpoint, the AI gateway's
+front, fails its probe for 10 minutes, and again when it resolves. The probe is healthy only on the front's 401 for a call
+without a key, so a front or LiteLLM that answers 5xx, times out or refuses the connection fails it; a provider's refusal of
+one model reaches the caller as that call's answer and fails nothing here. A Gatus that stops answering is `TargetDown`'s.
+(OPS-17)
 
 ## Grafana
 

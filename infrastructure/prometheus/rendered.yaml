@@ -212,6 +212,13 @@ data:
       - source_labels:
         - __meta_kubernetes_pod_name
         target_label: pod
+    - job_name: gatus
+      static_configs:
+      - labels:
+          deployment: gatus
+          namespace: gatus
+        targets:
+        - gatus.gatus.svc:8080
     - job_name: kube-state-metrics
       static_configs:
       - targets:

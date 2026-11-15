@@ -77,6 +77,15 @@ data:
             for: 15m
             annotations:
               summary: 'The CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} did not start within an hour of its due time'
+          # Gatus asks the LiteLLM front once a minute and the endpoint is healthy only on the front's 401 for a call without
+          # a key, so a front or LiteLLM that answers 5xx, times out or refuses the connection fails it; a provider's refusal
+          # of one model is answered by the gateway for that call alone and does not fail it. A Gatus that stops answering is
+          # TargetDown's.
+          - alert: AiGatewayProbeFailing
+            expr: gatus_results_endpoint_success{name="litellm"} == 0
+            for: 10m
+            annotations:
+              summary: 'Gatus'' probe of the {{ $labels.name }} endpoint, the AI gateway, has failed for 10 minutes'
           # songmaker's web exports the series at 0 with no worker, and a Deployment at 0 replicas wants none, so the guard
           # keeps the rule quiet there. A worker that is not Ready is DeploymentUnavailable's, so this rule is the
           # Ready-and-unregistered case.

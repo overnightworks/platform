@@ -417,3 +417,18 @@ tests:
         exp_alerts:
           - exp_labels: {status: online}
             exp_annotations: {summary: No ACE-Step worker of songmaker is online}
+  - interval: 1m
+    name: a failing AI gateway probe fires AiGatewayProbeFailing after ten minutes and a healthy one or another endpoint never does
+    input_series:
+      - series: gatus_results_endpoint_success{name="litellm", key="_litellm", group="", type="HTTP"}
+        values: "1x2 0x14 1x5"
+      - series: gatus_results_endpoint_success{name="hopin", key="_hopin", group="", type="HTTP"}
+        values: "0x21"
+    alert_rule_test:
+      - {eval_time: 11m, alertname: AiGatewayProbeFailing}
+      - eval_time: 14m
+        alertname: AiGatewayProbeFailing
+        exp_alerts:
+          - exp_labels: {name: litellm, key: _litellm, type: HTTP}
+            exp_annotations: {summary: "Gatus' probe of the litellm endpoint, the AI gateway, has failed for 10 minutes"}
+      - {eval_time: 19m, alertname: AiGatewayProbeFailing}
