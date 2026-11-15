@@ -1,8 +1,0 @@
-claim_id = "b626f8b6f8f74df189c7a3cbb4ebdc6b"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "faefdb6633953a721bf976ae0f2ad4b0ca871790"
-branch = "claude/issue-623-images-fixture-render-timeout"
-scope = ["scripts/verify_image_release.sh", "tests/images"]
-opened_commit = "b8ed3ddc2e3b69f7a71688ed9a21b8d9db4c7504"
-whole_reason = "The fixture cases and their runner change together with the render's limit."
