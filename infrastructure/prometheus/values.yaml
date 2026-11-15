@@ -212,6 +212,14 @@ scrapeConfigs:
   alertmanager:
     static_configs:
       - targets: [prometheus-alertmanager.prometheus.svc:9093]
+  # Gatus' results per endpoint, which NetworkPolicy `metrics-from-prometheus` in gatus admits.
+  gatus:
+    static_configs:
+      - targets: [gatus.gatus.svc:8080]
+        # The labels name the Deployment, so TargetDown leaves a dead Gatus to DeploymentUnavailable.
+        labels:
+          namespace: gatus
+          deployment: gatus
   songmaker:
     authorization:
       type: Bearer
