@@ -1,8 +1,0 @@
-claim_id = "20984940597548fea63d7506282f3aef"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "faefdb6633953a721bf976ae0f2ad4b0ca871790"
-branch = "claude/issue-626-ai-gateway-outage-mail"
-scope = ["infrastructure/gatus", "infrastructure/prometheus"]
-opened_commit = "13a711165504e0ba4e79a8a42496f1fcf74bb9b4"
-whole_reason = "The alert rule, its probe source and its cluster cell change together."
