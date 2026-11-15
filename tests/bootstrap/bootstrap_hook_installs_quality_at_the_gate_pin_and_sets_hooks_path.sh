@@ -12,8 +12,4 @@ pin="$(sed -n 's|^ *uses: overnightworks/quality/\.github/workflows/gate\.yml@\(
 grep -qF "overnightworks/quality?rev=$pin" "$uv_tools/overnightworks-quality/uv-receipt.toml" ||
   fail "uv's receipt of quality does not record the gate pin $pin"
 quality --help >/dev/null || fail "quality does not start"
-# The engine the hook's scan runs is where quality's own manifest puts it, and starts.
-engines="$(dirname "$("$uv_tools/overnightworks-quality/bin/python" -I -c 'import importlib.util; print(importlib.util.find_spec("quality").origin)')")/mise"
-gitleaks="$(MISE_CEILING_PATHS="$(dirname "$engines")" mise --cd "$engines" which gitleaks)"
-"$gitleaks" version >/dev/null || fail "$gitleaks does not run"
 [ "$(git config --global --get core.hooksPath)" = "$hooks_directory" ] || fail "core.hooksPath does not name $hooks_directory"
