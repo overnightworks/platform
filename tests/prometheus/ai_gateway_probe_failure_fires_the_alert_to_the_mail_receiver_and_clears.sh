@@ -52,7 +52,8 @@ one_more_send() { [ "$(alertmanager_metric "$sends")" -gt "$sends_before" ]; }
 
 kubectl -n "$GATEWAY_NAMESPACE" rollout status "deployment/$GATEWAY_DEPLOYMENT" --timeout=5m
 until_true 360 "Prometheus reads the healthy probe of $GATEWAY_ENDPOINT from Gatus" probe_reads 1
-alert_is_none || fail "AiGatewayProbeFailing is active while the gateway is healthy"
+# A gateway that was still settling leaves a pending alert, which the next evaluation drops once the probe reads healthy.
+until_true 360 "AiGatewayProbeFailing is gone while the gateway is healthy" alert_is_none
 echo "Prometheus reads $GATEWAY_ENDPOINT healthy from Gatus and AiGatewayProbeFailing is quiet"
 
 stopped_replicas="$(kubectl -n "$GATEWAY_NAMESPACE" get deployment "$GATEWAY_DEPLOYMENT" -o jsonpath='{.spec.replicas}')"
