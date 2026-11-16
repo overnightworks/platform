@@ -3,8 +3,8 @@
 realm: master
 # Master logins and tokens live on the loopback admin address keycloak:admin forwards, never on the
 # public hostname. keycloak.yaml owns the value (KC_HOSTNAME_ADMIN) and kustomization.yaml hands it to
-# the apply. Keycloak checks an admin token's issuer against this front end, so the run that changes
-# it fails on its own token, and the Job's next attempt converges.
+# the apply and to the Job's init container, which sets it before config-cli signs in: Keycloak checks an
+# admin token's issuer against this front end, so a run that changed it would end on its own token.
 attributes:
   frontendUrl: $(env:KC_HOSTNAME_ADMIN)
 bruteForceProtected: true

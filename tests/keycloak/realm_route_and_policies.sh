@@ -8,8 +8,9 @@ applied_revision="$(kubectl -n flux-system get kustomization "$namespace" -o jso
   fail "the Kustomization $namespace applied '$applied_revision', not the candidate $CANDIDATE_REVISION"
 kubectl -n "$namespace" wait --for=condition=Available --timeout=5m deployment/keycloak
 kubectl -n "$namespace" wait job/config-cli --for=condition=Complete --timeout=10m
-echo "the Kustomization $namespace applied the candidate; Keycloak is Available and config-cli's Job completed" \
-  "after $(kubectl -n "$namespace" get job/config-cli -o jsonpath='{.status.failed}') failed attempts"
+first_failures="$(kubectl -n "$namespace" get job/config-cli -o jsonpath='{.status.failed}')"
+[ -z "$first_failures" ] || fail "config-cli's first run on the empty database failed $first_failures times before it completed"
+echo "the Kustomization $namespace applied the candidate; Keycloak is Available and config-cli's Job completed at its first attempt"
 
 # shellcheck source=admin_api.sh
 source "$(dirname "${BASH_SOURCE[0]}")/admin_api.sh"

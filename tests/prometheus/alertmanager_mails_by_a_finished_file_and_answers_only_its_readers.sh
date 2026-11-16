@@ -17,12 +17,15 @@ probe_secret=alertmanager-probe
 init_probe=alertmanager-init-probe
 pending_probe=flux-controller-pending-probe
 alert_name=AlertmanagerCell
+silence_id=
 
 remove_probes() {
   local status=$?
   delete_object -n flux-system delete pod --ignore-not-found --wait --timeout=2m "$pending_probe"
   delete_object -n "$PROMETHEUS_NAMESPACE" delete pod --ignore-not-found --wait --timeout=2m "$init_probe" alertmanager-labelled
   delete_object -n "$PROMETHEUS_NAMESPACE" delete secret --ignore-not-found "$probe_secret"
+  [ -z "$silence_id" ] || delete_object -n "$PROMETHEUS_NAMESPACE" exec "$pod" -c alertmanager -- \
+    amtool silence expire --alertmanager.url=http://127.0.0.1:9093 "$silence_id"
   delete_object delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
   end_deletions "$status"
 }
@@ -113,7 +116,9 @@ done
 # one before, so the sends are bounded by the time since the alert was posted. The smarthost cannot be looked up, so the
 # send fails and shows in the counters and the log. alertmanager_notifications_total counts one per flush of the group and not
 # one per retry, which alertmanager_notification_requests_total counts, and both are Alertmanager's own and not the
-# synthetic alert's: a firing rule of the cluster would add to them. The alert's state is read from the API by its name.
+# synthetic alert's: a firing rule of the cluster would add one send per flush of its own group, so a silence on every
+# alert but the synthetic one holds the counters to it until the cell ends. The alert's state is read from the API by
+# its name.
 # A resolved alert is sent only after its firing alert was, so against a smarthost that never answers the resolved mail
 # is not attempted: its proof is the PC's.
 # route_seconds <key>: the route's duration of that key in the render, in whole seconds.
@@ -129,6 +134,9 @@ group_interval="$(route_seconds group_interval)"
 sends="alertmanager_notifications_total{integration=\"email\"}"
 attempts="alertmanager_notification_requests_total{integration=\"email\"}"
 kubectl create namespace "$OTHER_NAMESPACE"
+silence_id="$(in_pod amtool silence add "alertname!=$alert_name" --alertmanager.url=http://127.0.0.1:9093 \
+  --duration=15m --author=cluster-cell --comment="the cluster's own alerts must not add to the counters")"
+[[ $silence_id =~ ^[0-9a-f-]+$ ]] || fail "amtool did not print the id of the silence"
 sends_before="$(alertmanager_metric "$sends")"
 attempts_before="$(alertmanager_metric "$attempts")"
 alert() {
