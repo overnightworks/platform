@@ -48,3 +48,4 @@ node_state() {
   rule_list="$(cni_rules)" || exit 1
   printf 'leases:\n%s\nveths:\n%s\nsandboxes:\n%s\nrules:\n%s\n' "$lease_list" "$veth_list" "$sandbox_list" "$rule_list"
 }
+#
