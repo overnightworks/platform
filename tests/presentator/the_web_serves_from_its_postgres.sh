@@ -47,7 +47,7 @@ for container_list in containers initContainers; do
     [ "$read_only" = true ] || fail "the mount $volume that holds $password_file in $container_list of $pod is not read-only"
     secret="$(VOLUME="$volume" yq '.spec.volumes[] | select(.name == strenv(VOLUME)) | .secret.secretName' <<<"$pod_json")"
     [ "$secret" = postgres ] || fail "the mount $volume that holds $password_file in $container_list of $pod is the Secret '$secret', not postgres"
-  done < <(yq ".spec.$container_list[].volumeMounts[] | .name + \",\" + .mountPath + \",\" + (.readOnly | to_string)" <<<"$pod_json")
+  done < <(yq ".spec.${container_list}[].volumeMounts[] | .name + \",\" + .mountPath + \",\" + (.readOnly | to_string)" <<<"$pod_json")
   [ "$holding" = 1 ] || fail "$holding mounts of the $container_list of $pod hold $password_file, not 1"
 done
 echo "$file_variable lies in a read-only mount of the Secret postgres in the web and in migrate"
