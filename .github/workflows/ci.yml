@@ -53,8 +53,10 @@ jobs:
           scripts/bootstrap_pc.sh --only tools
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Check that part_closure.sh follows dependsOn and refuses an unknown part and a missing layer
-        run: mise exec -- tests/flux/part_closure_follows_dependson.sh
+      - name: Check that part_closure.sh follows dependsOn and refuses an unknown part and a missing layer, and that the reconcile script refuses an unset or unknown CLUSTER_PART
+        run: |
+          mise exec -- tests/flux/part_closure_follows_dependson.sh
+          mise exec -- tests/flux/reconcile_refuses_an_unset_or_unknown_part.sh
 
       - name: Check that every layer is in the closure of a part, that the parts are the matrix's, and that the check names each breach
         run: |
