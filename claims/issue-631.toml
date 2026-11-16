@@ -1,0 +1,8 @@
+claim_id = "f087da77529a495a9e31570d138d709d"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "d8342cf42cdbb2bfbed7b876480e45141df0355e"
+branch = "claude/issue-631-main-s-cluster-job-passes-on-a-healthy-r"
+scope = ["infrastructure/keycloak/config-cli.yaml", "tests/keycloak", "tests/presentator"]
+opened_commit = "5d84a968081fbe8e657c55db42e0acfacc6b7f7b"
+whole_reason = "main is red since #614: config-cli's first run on an empty database ends 401 and the cluster parts run past their caps; both cells' causes are one lane per the item body"
