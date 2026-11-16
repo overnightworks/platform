@@ -49,6 +49,7 @@ WORKER_SERVICE='select(.kind == "Service" and .metadata.name == "build-worker")'
 WORKER_LABELS="select($WORKER_DOCUMENT) | .spec.template.metadata.labels"
 WEB_LABELS='select(.kind == "Deployment" and .metadata.name == "web") | .spec.template.metadata.labels'
 WORKER_POLICY='select(.kind == "NetworkPolicy" and .metadata.name == "build-worker")'
+REDIS_POLICY='select(.kind == "NetworkPolicy" and .metadata.name == "redis")'
 WORKER_CONTAINER="$WORKER | .containers[] | select(.name == \"worker\")"
 NET_ADMIN_HOLDER='select((.securityContext.capabilities.add // []) | any_c(. == "NET_ADMIN")) | .name'
 WORKER_INIT="$WORKER | .initContainers[0]"
@@ -225,6 +226,12 @@ judge_structure() {
     '"1,1,podSelector,1,build,TCP"'
   same "$manifest" "$WORKER_POLICY | .spec.ingress[0].from[0].podSelector.matchLabels" "$WEB_LABELS" "the NetworkPolicy build-worker does not admit the web's pods"
   same "$manifest" "$WORKER_POLICY | .spec.podSelector.matchLabels" "$WORKER_LABELS" "the NetworkPolicy build-worker does not select the worker's pods"
+  # Only the web holds store credentials: Redis admits the web's pods alone, and the worker names no Redis.
+  exactly "$manifest" "the NetworkPolicy redis does not admit exactly one peer, a podSelector" \
+    "$REDIS_POLICY | .spec.ingress | (length | tostring) + \",\" + (.[0].from | length | tostring) + \",\" + (.[0].from[0] | keys | join(\"+\"))" \
+    '"1,1,podSelector"'
+  same "$manifest" "$REDIS_POLICY | .spec.ingress[0].from[0].podSelector.matchLabels" "$WEB_LABELS" "the NetworkPolicy redis does not admit the web's pods"
+  found "$manifest" "the worker names a Redis variable" "$WORKER_CONTAINER | (.env // [])[] | select(.name | test(\"REDIS\"))"
   exactly "$manifest" "the worker has no command" "$WORKER_CONTAINER | .command | length > 0" 'true'
   exactly "$manifest" "the worker's seal is not set" \
     "$WORKER_CONTAINER | .env[] | select(.name == \"PRESENTATOR_WORKER_SEAL\") | (.value // \"\") != \"\"" 'true'
@@ -470,6 +477,10 @@ mutant "the NetworkPolicy build-worker does not admit exactly one peer" "($WORKE
 mutant "the NetworkPolicy build-worker does not admit exactly one peer" "del($WORKER_POLICY | .spec.ingress[0].ports)"
 mutant "the NetworkPolicy build-worker does not admit the web's pods" "($WORKER_POLICY | .spec.ingress[0].from[0].podSelector.matchLabels) = {\"app.kubernetes.io/name\": \"build-worker\"}"
 mutant "the NetworkPolicy build-worker does not select the worker's pods" "($WORKER_POLICY | .spec.podSelector) = {}"
+# Redis's ingress and the worker's environment.
+mutant "the NetworkPolicy redis does not admit exactly one peer" "($REDIS_POLICY | .spec.ingress[0].from) = [{\"podSelector\": {}}, {\"namespaceSelector\": {}}]"
+mutant "the NetworkPolicy redis does not admit the web's pods" "($REDIS_POLICY | .spec.ingress[0].from[0].podSelector) = {}"
+mutant "the worker names a Redis variable" "($on_worker | $worker_container | .env) += [{\"name\": \"PRESENTATOR_REDIS_URL\", \"value\": \"redis://redis:6379/0\"}]"
 # Command, seal and memory bound.
 mutant "the worker has no command" "del($on_worker | $worker_container | .command)"
 mutant "the worker's seal is not set" "del($on_worker | $worker_container | .env[] | select(.name == \"PRESENTATOR_WORKER_SEAL\"))"

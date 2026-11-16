@@ -79,6 +79,8 @@ spec:
               value: build-worker:7100
             - name: PRESENTATOR_BUILD_WORKER_KEY_FILE
               value: /run/secrets/build-worker-key/key
+            - name: PRESENTATOR_REDIS_URL
+              value: redis://redis:6379/0
           # The Host check admits the public host only, so the kubelet's probe names it.
           readinessProbe:
             httpGet:

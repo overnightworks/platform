@@ -717,6 +717,15 @@ jobs:
         if: matrix.part == 'presentator'
         run: tests/presentator/postgres_is_reached_by_the_web_and_never_by_the_sealed_worker.sh
 
+      - name: Assert that presentator's PRESENTATOR_REDIS_URL names its Redis Service and port
+        if: matrix.part == 'presentator'
+        env:
+          APP_NAMESPACE: presentator
+          APP_DEPLOYMENT: web
+          APP_CONTAINER: web
+          REDIS_URL_VARIABLE: PRESENTATOR_REDIS_URL
+        run: tests/redis/app_url_names_the_redis_service_in_its_namespace.sh
+
       - name: Assert that presentator's two build workers are Ready behind the Service build-worker with the web's key file at mode 0400 as root's, and that the web alone connects to a worker
         if: matrix.part == 'presentator'
         run: tests/presentator/build_workers_are_two_pods_behind_one_service_with_one_key.sh
