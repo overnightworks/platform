@@ -1,8 +1,0 @@
-claim_id = "a03e4fb164ca40f78aad238326b4dcfc"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "9ad7bdddfec4dda3cd5808eb4befd9c08e081688"
-branch = "claude/issue-631-main-s-cluster-job-passes-on-a-healthy-r"
-scope = [".github/workflows/ci.yml", "infrastructure/keycloak/config-cli.yaml", "tests/flux", "tests/keycloak", "tests/presentator", "tests/workloads"]
-opened_commit = "13c2c6fc23a3c6ccb705c678490705e573d6d31e"
-whole_reason = "the cluster parts run 14.5 to 17 minutes against their 17-minute cap; the lane splits the tight parts"
