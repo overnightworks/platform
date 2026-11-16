@@ -1,0 +1,8 @@
+claim_id = "db308343d78143b9aee278dc305be318"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "d8342cf42cdbb2bfbed7b876480e45141df0355e"
+branch = "claude/issue-657-presentator-gets-redis-in-its-namespace"
+scope = [".github/workflows/ci.yml", "apps/presentator", "tests/redis"]
+opened_commit = "ae60c0f3cba204b5660d76f922ab958b8a3c8d3a"
+whole_reason = "the Redis base include in apps/presentator and its parameter set in the shared Redis URL test, as #647 did for skat"
