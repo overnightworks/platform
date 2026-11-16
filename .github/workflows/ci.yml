@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
     # The part ai-gateway-outage waits out the rule's ten minutes after the reconcile and its healthy read, about 25 minutes in all.
-    timeout-minutes: ${{ matrix.part == 'ai-gateway-outage' && 35 || 17 }}
+    timeout-minutes: ${{ matrix.part == 'ai-gateway-outage' && 38 || 20 }}
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.

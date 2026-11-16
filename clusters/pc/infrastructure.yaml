@@ -178,7 +178,9 @@ spec:
   path: ./infrastructure/keycloak
   prune: true
   wait: true
-  timeout: 5m0s
+  # Keycloak's start on a CI runner takes minutes, and the Job config-cli, which waits for it, then runs two JVMs; both
+  # count against this timeout.
+  timeout: 8m0s
   sourceRef:
     kind: GitRepository
     name: flux-system
