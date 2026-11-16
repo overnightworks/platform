@@ -721,6 +721,10 @@ jobs:
         if: matrix.part == 'presentator'
         run: tests/presentator/postgres_is_reached_by_the_web_and_never_by_the_sealed_worker.sh
 
+      - name: Assert that presentator's web is Ready on its Postgres, that its init container migrate ended 0 with the same two database variables, and that alembic_version holds one row
+        if: matrix.part == 'presentator'
+        run: tests/presentator/the_web_serves_from_its_postgres.sh
+
       - name: Assert that presentator's PRESENTATOR_REDIS_URL names its Redis Service and port
         if: matrix.part == 'presentator'
         env:

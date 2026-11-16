@@ -17,16 +17,9 @@ namespace=presentator
 
 made_backups=()
 made_jobs=()
-key_tables=
 cleanup() {
   local cell_status=$?
   delete_restic_objects
-  if [ -n "$key_tables" ]; then
-    for table in $key_tables; do
-      delete_object --namespace "$namespace" exec postgres-0 --container postgres -- \
-        psql --no-psqlrc --set=ON_ERROR_STOP=1 --command="DROP TABLE IF EXISTS \"$table\""
-    done
-  fi
   [ "${#made_backups[@]}" = 0 ] ||
     delete_object --namespace "$namespace" delete backup.k8up.io "${made_backups[@]}" --ignore-not-found --wait --timeout=2m
   [ "${#made_jobs[@]}" = 0 ] ||
@@ -38,6 +31,7 @@ trap cleanup EXIT
 
 apply_stand_in
 kubectl --namespace "$namespace" wait pod/postgres-0 --for=condition=Ready --timeout=5m
+kubectl --namespace "$namespace" rollout status deployment/web --timeout=5m
 key_tables="$(kubectl --namespace "$namespace" get configmap postgres --output jsonpath='{.data.key-tables}')"
 sqlite_table="$(kubectl --namespace "$namespace" get configmap sqlite --output jsonpath='{.data.key-table}')"
 sqlite_file="$(kubectl --namespace "$namespace" get configmap sqlite --output jsonpath='{.data.snapshot-file}')"
@@ -48,15 +42,13 @@ schedules="$(kubectl --namespace "$namespace" get schedules.k8up.io --output jso
 [ "$schedules" = backup ] || fail "$namespace holds the k8up Schedules '$schedules', not the one Schedule backup"
 echo "$namespace holds one k8up Schedule, backup, for both databases"
 
-# Each database holds what its restore test needs: the SQLite key table a row, and every Postgres key table exists with
-# the first one holding a row. The Postgres tables are dropped on exit; the app writes none yet.
-sql() { kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --set=ON_ERROR_STOP=1 --command="$1" >/dev/null; }
-first_table=
-for table in $key_tables; do
-  sql "CREATE TABLE \"$table\" (name text)"
-  first_table="${first_table:-$table}"
-done
-sql "INSERT INTO \"$first_table\" VALUES ('planted')"
+# Each database holds what its restore test needs: the SQLite key table a row, and the Postgres key tables the schema
+# that the web's init container migrate made on the stand-in, the first one holding a row. The cell leaves that schema.
+first_table="${key_tables%% *}"
+postgres_rows="$(kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc \
+  --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT count(*) FROM \"$first_table\"")" ||
+  fail "the Postgres key table $first_table cannot be read, so migrate did not make the schema"
+[ "${postgres_rows:-0}" -gt 0 ] || fail "the Postgres key table $first_table holds no row after migrate"
 read -r -d '' plant_script <<'PYTHON' || true
 import os, sqlite3
 live, table = os.environ["PRESENTATOR_DATABASE"], os.environ["TABLE"]
