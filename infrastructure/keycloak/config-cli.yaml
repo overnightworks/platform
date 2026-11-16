@@ -8,7 +8,8 @@ metadata:
     # A Job's template is immutable, so a changed one is applied by deleting and recreating the Job.
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
-  # The run that changes master's front end ends on its own then invalid token; a retry converges.
+  # A retry covers a pod lost or a Keycloak restarted mid-run, never the front end: the init container sets it before
+  # config-cli signs in, so a refusal fails every attempt alike.
   backoffLimit: 3
   template:
     metadata:
@@ -22,6 +23,45 @@ spec:
         runAsUser: 65534
         seccompProfile:
           type: RuntimeDefault
+      # Keycloak checks an admin token's issuer against master's front end, and a token issued before master.yaml's
+      # `frontendUrl` stands no longer carries it: config-cli, which signs in once, would end on its own token in the
+      # run that changes it, on every empty database. This container sets the value first with Keycloak's own kcadm,
+      # whose update is its last call, so config-cli's one token already carries the issuer it is checked against and
+      # master.yaml's value then equals the stored one. It leaves a stored value as it is.
+      initContainers:
+        - name: front-end
+          # The image of Keycloak's own container, which kustomization.yaml copies here from keycloak.yaml.
+          command:
+            - bash
+            - -ceu
+            - |
+              deadline=$((SECONDS + 600))
+              until (exec 3<>/dev/tcp/keycloak/8080 && printf 'GET /realms/master HTTP/1.0\r\nHost: keycloak\r\n\r\n' >&3 \
+                && read -r status <&3 && [[ $status == *' 200 '* ]]) 2>/dev/null; do
+                [ "$SECONDS" -lt "$deadline" ] || { echo 'front-end: Keycloak did not answer within 600 seconds' >&2; exit 1; }
+                sleep 2
+              done
+              kcadm=(/opt/keycloak/bin/kcadm.sh)
+              "${kcadm[@]}" config credentials --config /tmp/kcadm.config --server http://keycloak:8080 --realm master --client config-cli
+              stored="$("${kcadm[@]}" get realms/master --config /tmp/kcadm.config --fields 'attributes(frontendUrl)' --format csv --noquotes)"
+              [ "$stored" = "$KC_HOSTNAME_ADMIN" ] || "${kcadm[@]}" update realms/master --config /tmp/kcadm.config -s "attributes.frontendUrl=$KC_HOSTNAME_ADMIN"
+          env:
+            # Keycloak's own value, which kustomization.yaml copies here from keycloak.yaml.
+            - name: KC_HOSTNAME_ADMIN
+            # kcadm reads the client secret of its service account from this variable, never from an argument.
+            - name: KC_CLI_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak
+                  key: config-cli-secret
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: config-cli
           image: docker.io/adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274
