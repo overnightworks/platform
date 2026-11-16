@@ -54,11 +54,13 @@ alerts are `NoOnlineAceStepWorker`, silent while the Deployment `acestep-worker`
 
 The card has one user at a time because the PC holds one: `mise run gpu:use speech` stops `acestep-worker`, runs the
 Deployment `speech-runtime-gpu` and waits until it is Ready, which takes minutes while it loads its models, then
-stops the small `speech-runtime`; `mise run gpu:use songs` runs the small `speech-runtime` and waits until it is Ready,
+stops the small `speech-runtime`; `mise run gpu:use songs` runs the small `speech-runtime` at two pods and waits until both are Ready,
 stops `speech-runtime-gpu` and waits until its pod is gone, then runs `acestep-worker` and waits until it is Ready.
 The Service `speech-runtime` reaches whichever speech Deployment is Ready, so its callers' URL stays, yet the GPU
 image offers other voices and a different hearing model than the small one, so a caller that names a voice follows the
-switch. Git names no replica count for these three Deployments, so Flux keeps the choice.
+switch. The two small pods let a rollout or a drain leave one serving; the GPU image runs at one, since the card is one.
+Git names no replica count for these three Deployments, so Flux keeps the choice, and a Deployment applied afresh runs
+one small pod until the first `gpu:use songs`.
 
 ## The PC's disk and its bounds (`host/disk/` and the user units of `mise.toml`)
 

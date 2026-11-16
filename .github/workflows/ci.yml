@@ -378,6 +378,10 @@ jobs:
         if: matrix.part == 'core'
         run: tests/workloads/pull_layers_finish_before_their_app_rolls.sh
 
+      - name: Assert that speech's CPU image runs two Ready pods behind its Service, each answering its readiness check, and that a rollout restart keeps a Ready endpoint
+        if: matrix.part == 'core'
+        run: tests/speech_runtime/two_cpu_pods_serve_behind_the_service.sh
+
       - name: Assert that Traefik refuses the back-channel logout path and its spellings on every routed host while a neighbouring path reaches the app, that the Service still answers it in-namespace, and that the refusal holds in a restarted pod
         if: matrix.part == 'core'
         env:

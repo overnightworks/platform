@@ -3,7 +3,9 @@
 # model are baked into the image and only read, so it needs no egress apart from that key set. This pod runs on the CPU,
 # as the service holds one synthesis and one decode at a time. The GPU image's Deployment, speech-runtime-gpu, stands
 # beside it and the Service below reaches whichever one runs; neither Deployment names a replica count, since the
-# operator gives the card to speech or to songmaker with `mise run gpu:use`, and Flux keeps what that sets.
+# operator gives the card to speech or to songmaker with `mise run gpu:use`, and Flux keeps what that sets: `songs`
+# runs this one at two pods, so a rollout or a drain leaves a Ready pod serving, and `speech` at none. Until the first
+# `gpu:use songs` an applied Deployment runs one pod.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
