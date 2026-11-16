@@ -15,6 +15,8 @@ breach() {
 }
 
 mapfile -t layers < <("$part_closure" --layers)
+declare -A layer_exists=()
+for layer in "${layers[@]}"; do layer_exists["$layer"]=1; done
 mapfile -t parts < <(yq 'keys | .[]' "$PARTS_FILE")
 mapfile -t tracked < <(git -C "$tree_directory" ls-files)
 
@@ -34,7 +36,7 @@ for part in "${parts[@]}"; do
   [ "$part" != core ] || continue
   stale=0
   while IFS= read -r layer; do
-    if ! printf '%s\n' "${layers[@]}" | grep -qxF "$layer"; then
+    if [ -z "${layer_exists[$layer]:-}" ]; then
       breach "the part $part of $PARTS_FILE names the layer $layer, which $LAYERS_DIRECTORY does not hold"
       stale=1
     fi
