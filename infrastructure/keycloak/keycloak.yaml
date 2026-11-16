@@ -81,6 +81,12 @@ spec:
               containerPort: 8080
             - name: management
               containerPort: 9000
+          # A pod without a request has the lowest CPU weight, and while every layer starts at once Keycloak's start, which
+          # rebuilds the server and migrates an empty database, takes minutes instead of seconds; the request gives it a
+          # weight above the pods that ask for none.
+          resources:
+            requests:
+              cpu: 500m
           # Each start rebuilds the server before it serves.
           startupProbe:
             httpGet:

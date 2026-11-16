@@ -5,8 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/stand_in.sh"
 # `backup:now` on the stand-in layer of presentator: a namespace with no Schedule `backup` or `postgres`, one with a Schedule
 # and no CronJob restore-test, and one with both Schedules each end non-zero with a refusal that says what to do and make
 # no Backup and no Job; and on a key table with no row, the Backup succeeds and the restore test Job fails, both named.
-# It runs in the part presentator-backup, after backup_streams_a_consistent_copy_that_fetch_and_load_restore.sh, whose
-# repository it adds a snapshot to. Prints names, counts and verdicts, never a row.
+# It runs first in the part presentator-backup-2 and adds a snapshot to presentator's repository. Prints names, counts and verdicts, never a row.
 export KUBECONFIG="$HOME/.kube/config"
 namespace=presentator
 bare_namespace=presentator-backup-now-bare

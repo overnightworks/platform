@@ -125,9 +125,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator, presentator-backup, ai-gateway-outage]
+        part: [core, observability, observability-2, access, litellm, agents, apps, load-1, load-2, backup-1, backup-2, presentator, presentator-2, presentator-backup, presentator-backup-2, ai-gateway-outage]
     runs-on: ubuntu-latest
-    # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
+    # A part carries cells for about 14 minutes at most, so the reconcile's wait, which varies by more than a minute, leaves the limit three minutes away on a slow runner.
     # The part ai-gateway-outage waits out the rule's ten minutes after the reconcile and its healthy read, about 25 minutes in all.
     timeout-minutes: ${{ matrix.part == 'ai-gateway-outage' && 35 || 17 }}
     permissions:
@@ -146,7 +146,7 @@ jobs:
       CANDIDATE_SOURCE_PORT: "8081"
       CLUSTER_NAME: platform
       # The test agents whose P2 cells a part runs, by part name.
-      TEST_AGENTS_BY_PART: '{"presentator": "agent-humboldt agent-curie", "load-1": "agent-lovelace", "load-2": "agent-hildegard"}'
+      TEST_AGENTS_BY_PART: '{"presentator": "agent-humboldt agent-curie", "agents": "agent-lovelace agent-hildegard"}'
       # The k3s configuration the PC and this cluster share.
       K3S_CONFIG_SOURCE: host/k3s/config.yaml
       # The k3d-managed registry serving the job's platform-secrets source: the cluster reaches it by its address on
@@ -545,9 +545,9 @@ jobs:
           tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
           tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh
 
-      # The second agent's run of the cells, in a part with room: the access part's time limit holds no second run.
+      # The second agent's run of the cells, in the part agents: the access part's time limit holds no second run.
       - name: P2 cells for the second agent
-        if: matrix.part == 'observability'
+        if: matrix.part == 'agents'
         env:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
@@ -562,7 +562,7 @@ jobs:
           tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
 
       # The four test agents' runs of the same cells, which share Mozart's declaration and allowlist. A run takes
-      # about two minutes, so they stand in the parts with room, none with more than two.
+      # about two minutes, so they stand in the parts agents and presentator, none with more than two.
       - name: P2 cells for the test agents
         if: fromJSON(env.TEST_AGENTS_BY_PART)[matrix.part] != null
         env:
@@ -588,7 +588,7 @@ jobs:
         run: tests/cutover/load_refuses_a_real_keycloak_dump_naming_its_platform_objects.sh
 
       - name: P7c cells
-        if: matrix.part == 'access'
+        if: matrix.part == 'litellm'
         env:
           # LiteLLM's namespace, an app namespace its front admits, a namespace it does not, and an SNI no router of
           # agent-egress allows.
@@ -675,7 +675,7 @@ jobs:
           PROMETHEUS_NAMESPACE: prometheus
         run: tests/prometheus/backup_alerts_read_every_schedule_and_namespace.sh
       - name: P9c-2 cells
-        if: matrix.part == 'backup-2'
+        if: matrix.part == 'litellm'
         env:
           LITELLM_NAMESPACE: litellm
           KEYCLOAK_NAMESPACE: keycloak
@@ -689,14 +689,14 @@ jobs:
 
       # The step suspends the Kustomization litellm, which would otherwise restore the table it changes.
       - name: P9c cells
-        if: matrix.part == 'load-1'
+        if: matrix.part == 'litellm'
         env:
           LITELLM_NAMESPACE: litellm
           APP_NAMESPACE: hopin
         run: tests/litellm/keys_table_drives_budgets_and_the_app_key.sh
 
       - name: Assert that presentator's web and its pull layer's Job pass restricted, its worker baseline without its init's NET_ADMIN, nothing else runs looser, and its render holds the contract
-        if: matrix.part == 'apps'
+        if: matrix.part == 'presentator-2'
         run: |
           kubectl kustomize apps/presentator >"$RUNNER_TEMP/presentator.yaml"
           kubectl kustomize apps/presentator/pull >"$RUNNER_TEMP/presentator-pull.yaml"
@@ -722,7 +722,7 @@ jobs:
         run: tests/presentator/build_workers_are_two_pods_behind_one_service_with_one_key.sh
 
       - name: Assert that presentator:load-database refuses before any change, replaces the live file whole or leaves the old one, keeps a suspension it found, and that a killed run and a second run at once converge on the same command
-        if: matrix.part == 'presentator'
+        if: matrix.part == 'presentator-2'
         run: tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh
 
       - name: Assert that presentator's restore test reads with the operator's restic at the Postgres test's schedule, fails without a snapshot and on an empty, missing or damaged copy, passes on a good copy written after it, and that presentator reaches only its own repository
@@ -742,23 +742,23 @@ jobs:
         run: tests/presentator/backup_streams_a_consistent_copy_that_fetch_and_load_restore.sh
 
       - name: Assert that backup:now refuses a namespace with no Schedule, with one Schedule and no CronJob restore-test and with both Schedules, making no object, and fails naming the restore test Job on an empty key table after a Backup that succeeded
-        if: matrix.part == 'presentator-backup'
+        if: matrix.part == 'presentator-backup-2'
         run: tests/presentator/backup_now_refuses_what_it_cannot_run_and_fails_on_an_empty_key_table.sh
 
-      # After the cells above, whose repository this one adds snapshots to; it leaves the SQLite stream's latest snapshot foreign.
+      # After the step above, whose repository this one adds snapshots to; it leaves the SQLite stream's latest snapshot foreign.
       - name: Assert that one Backup leaves one snapshot each of presentator's SQLite copy and Postgres dump, that each restore test passes on its own stream and fails alone on a foreign latest snapshot of its path, and that a second Backup supersedes it
-        if: matrix.part == 'presentator-backup'
+        if: matrix.part == 'presentator-backup-2'
         run: tests/presentator/both_databases_are_backed_up_by_one_schedule_and_restored_by_their_own_tests.sh
 
       # Last of its part, which has room for the pull of a second release image: the cell leaves presentator on a release
       # that may not start, so no step after it reads presentator.
       - name: Assert that a release with a changed reference replaces the pull layer's Job, that the app's layer creates its new pods only after the new Job completed and that they find the image already present
-        if: matrix.part == 'presentator-backup'
+        if: matrix.part == 'presentator-backup-2'
         run: tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh presentator
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells
-        if: matrix.part == 'core'
+        if: matrix.part == 'observability-2'
         env:
           SONGMAKER_NAMESPACE: songmaker
         run: tests/backup/load_replaces_database_and_files_together.sh
@@ -783,7 +783,7 @@ jobs:
         run: tests/loki/loki_keeps_lines_under_28_days.sh
 
       - name: Assert that Gatus shows every endpoint healthy, shows a stopped service unhealthy and healthy again, and answers no Pod
-        if: matrix.part == 'observability'
+        if: matrix.part == 'observability-2'
         env:
           # The service the cell stops and restores, by its Namespace, Deployment and Gatus endpoint, and a namespace for
           # the Pod that must get no answer.

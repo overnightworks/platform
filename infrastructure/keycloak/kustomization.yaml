@@ -59,3 +59,23 @@ replacements:
           - spec.template.spec.containers.[name=config-cli].env.[name=KC_HOSTNAME_ADMIN].value
         options:
           create: true
+      - select:
+          kind: Job
+          name: config-cli
+        fieldPaths:
+          - spec.template.spec.initContainers.[name=front-end].env.[name=KC_HOSTNAME_ADMIN].value
+        options:
+          create: true
+  # The init container of config-cli's Job runs Keycloak's own image.
+  - source:
+      kind: Deployment
+      name: keycloak
+      fieldPath: spec.template.spec.containers.[name=keycloak].image
+    targets:
+      - select:
+          kind: Job
+          name: config-cli
+        fieldPaths:
+          - spec.template.spec.initContainers.[name=front-end].image
+        options:
+          create: true
