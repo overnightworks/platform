@@ -22,7 +22,7 @@ load-2: {layers: [litellm, songmaker, hopin, skat], paths: [tests/postgres/*, te
 backup-1: {layers: [backup, prometheus, keycloak, litellm, personas, presentator, skat, songmaker], paths: [tests/backup/*, tests/personas/*, tests/prometheus/*]}
 backup-2: {layers: [backup, songmaker], paths: [tests/backup/*, tests/disk/*]}
 # The test agents' cells drive Keycloak.
-presentator: {layers: [presentator, keycloak], paths: [tests/presentator/*, tests/redis/*]}
+presentator: {layers: [presentator, keycloak], paths: [tests/keycloak/*, tests/presentator/*, tests/redis/*]}
 presentator-2: {layers: [presentator], paths: [tests/presentator/*]}
 # The restore test reads the schedule of the first namespace that includes the Postgres backup component, Keycloak's.
 presentator-backup: {layers: [presentator, backup, keycloak], paths: [tests/presentator/*]}
