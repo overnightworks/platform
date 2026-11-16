@@ -1,7 +1,9 @@
 # presentator's web, pulled from its private package through the Secret ghcr-pull and started from the files of the
-# Secret presentator, both from platform-secrets. One pod runs with Recreate, as the claims are ReadWriteOnce and the
-# database is a single file. It shares its process namespace so that a pull's git and ssh children have a reaper. It
-# holds no token and no right in the API.
+# Secret presentator, both from platform-secrets. It serves from the Postgres of this namespace, which its init container
+# migrates to the image's head before the web starts; the first run may find Postgres not ready yet, and the init
+# container's backoff heals that. The claim `database` stays mounted with the SQLite file that served before, which
+# nothing writes now. One pod runs with Recreate, as the claims are ReadWriteOnce. It shares its process namespace so that
+# a pull's git and ssh children have a reaper. It holds no token and no right in the API.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,6 +40,27 @@ spec:
         runAsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: ghcr.io/overnightworks/presentator
+          args: [presentator, migrate]
+          env:
+            # The URL names no password: the file below is the password's one owner, the namespace's Postgres.
+            - name: PRESENTATOR_DATABASE_URL
+              value: postgresql://presentator@postgres:5432/presentator
+            - name: PRESENTATOR_DATABASE_PASSWORD_FILE
+              value: /run/postgres/password
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: postgres-password
+              mountPath: /run/postgres
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: web
           image: ghcr.io/overnightworks/presentator
@@ -81,6 +104,11 @@ spec:
               value: /run/secrets/build-worker-key/key
             - name: PRESENTATOR_REDIS_URL
               value: redis://redis:6379/0
+            # The web connects to Postgres itself, with no pooling proxy between.
+            - name: PRESENTATOR_DATABASE_URL
+              value: postgresql://presentator@postgres:5432/presentator
+            - name: PRESENTATOR_DATABASE_PASSWORD_FILE
+              value: /run/postgres/password
           # The Host check admits the public host only, so the kubelet's probe names it.
           readinessProbe:
             httpGet:
@@ -97,6 +125,9 @@ spec:
           volumeMounts:
             - name: secrets
               mountPath: /run/secrets
+              readOnly: true
+            - name: postgres-password
+              mountPath: /run/postgres
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -124,6 +155,9 @@ spec:
                   items:
                     - key: key
                       path: build-worker-key/key
+        - name: postgres-password
+          secret:
+            secretName: postgres
         - name: tmp
           emptyDir:
             medium: Memory
