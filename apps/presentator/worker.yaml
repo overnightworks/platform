@@ -1,22 +1,32 @@
-# presentator's build worker: the sealed process that runs every step of a deck's build, which is code, for the web
-# over the socket in the claim build-socket. A deck's code reaches nothing, so the pod holds lo alone: the init
-# container remove-link deletes eth0 before the worker starts, the one program of tests/no_network/remove_link.sh, and
-# the pod holds no token. The worker starts as root, with the web's group, and drops to its build uids per child, so
-# its capabilities are exactly SETUID, SETGID and KILL. Its Namespace enforces no Pod Security level, as the init's
-# NET_ADMIN is outside baseline; tests/presentator/pods_stay_within_their_levels.sh holds the exception to this pod.
+# presentator's build workers: the sealed processes that run every step of a deck's build, which is code, for the web over
+# TCP behind the Service build-worker. Two pods run beside each other and share nothing: each serves one life at a time
+# and keeps no claim. The pod has a link, so its init container nft-rules loads worker.nft before the worker starts: the
+# pod accepts connections to the worker's port alone and sends nothing off the loopback but the replies of what it
+# accepted, so a deck's code, which runs as the image's build and wire users, reaches only the pod itself. The
+# NetworkPolicy build-worker lets only the web's pods reach the port and the pod send nothing at all, and the key file,
+# readable by root alone, makes the worker answer only a web that holds the same key. The pod holds no token. The worker
+# starts as root and drops to its build uids per child, so its capabilities are exactly SETUID, SETGID and KILL. Its
+# Namespace enforces no Pod Security level, as the init's NET_ADMIN is outside baseline;
+# tests/presentator/pods_stay_within_their_levels.sh holds the exception to this pod.
 # Every exit of the worker ends its pod: the container's restartPolicy is Never, so the kubelet makes the pod terminal
 # and the StatefulSet deletes it and creates it again, a fresh pod with the init run again, whatever the exit status.
 # A removed sandbox ended the worker's container as ContainerStatusUnknown, and the StatefulSet replaced the pod; a re-run
 # in the same pod was not observed and is not excluded, and if it happens presentator's scratch check refuses it.
-# The claim build-socket is local-path, so the web and this pod run on its node.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: build-worker
   namespace: presentator
+  annotations:
+    # podManagementPolicy is immutable and the StatefulSet that ran before it was set holds the default, so Flux's apply is
+    # refused until it deletes and creates the StatefulSet. The StatefulSet owns no claim, so nothing is lost with it.
+    kustomize.toolkit.fluxcd.io/force: enabled
 spec:
-  replicas: 1
+  replicas: 2
   serviceName: build-worker
+  # A pod is replaced after every life, so the second must not wait for the first, which OrderedReady makes it do: a pod
+  # serving a life is not ready.
+  podManagementPolicy: Parallel
   selector:
     matchLabels:
       app.kubernetes.io/name: build-worker
@@ -34,27 +44,9 @@ spec:
       imagePullSecrets:
         - name: ghcr-pull
       initContainers:
-        - name: remove-link
-          image: docker.io/library/busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
-          command:
-            - sh
-            - -c
-            - |-
-              # shellcheck shell=sh
-              # The program of the init container remove-link, run by busybox sh: with lo alone it is done; with eth0 besides it
-              # deletes eth0, reads again and admits lo alone. A failed read, any other link and a failed delete name themselves and
-              # end 1, whatever status ip ended with. busybox sh ignores set -e inside a command substitution, so each read of the
-              # links is a plain assignment at the top level with its own failure branch, and the function only parses.
-              set -eu
-              link_names() { printf '%s\n' "$1" | sed -n 's/^[0-9]*: \([^:@ ]*\).*/\1/p' | sort; }
-              links="$(ip -o link)" || { echo "remove-link: the read of the links failed" >&2; exit 1; }
-              names="$(link_names "$links")"
-              [ "$names" = lo ] && exit 0
-              [ "$names" = "$(printf 'eth0\nlo')" ] || { echo "remove-link: unexpected links: $(echo $names)" >&2; exit 1; }
-              ip link delete eth0 || { echo "remove-link: the delete of eth0 failed" >&2; exit 1; }
-              links="$(ip -o link)" || { echo "remove-link: the second read of the links failed" >&2; exit 1; }
-              names="$(link_names "$links")"
-              [ "$names" = lo ] || { echo "remove-link: links left after the delete: $(echo $names)" >&2; exit 1; }
+        - name: nft-rules
+          image: registry.k8s.io/build-image/distroless-iptables:v0.11.2@sha256:5517fe2d12edec9f133a1ba58e5dd700f9adf5d0ccd7d50e67c7609509e4e53f
+          command: [/usr/sbin/nft, --file, /etc/nftables/worker.nft]
           securityContext:
             runAsUser: 0
             allowPrivilegeEscalation: false
@@ -64,12 +56,24 @@ spec:
             capabilities:
               drop: [ALL]
               add: [NET_ADMIN]
+          volumeMounts:
+            - name: rules
+              mountPath: /etc/nftables
+              readOnly: true
       containers:
         - name: worker
           image: ghcr.io/overnightworks/presentator
           # The image's entrypoint is a shell that exports its own variables, which the worker's self-check refuses.
-          command: [presentator-worker]
+          command:
+            - presentator-worker
+            - --key-file
+            - /run/secrets/build-worker-key/key
+            - --port
+            - '7100'
           restartPolicy: Never
+          ports:
+            - name: build
+              containerPort: 7100
           env:
             - name: PRESENTATOR_WORKER_SEAL
               value: kubernetes
@@ -77,13 +81,18 @@ spec:
               value: '300'
             - name: PRESENTATOR_BUILD_OUTPUT_MEGABYTES
               value: '300'
+          # The probe reads the worker's socket table and spends no life, where a verified hello would. A worker serving a
+          # life is not ready, so the Service sends the web's next step to the idle pod.
+          readinessProbe:
+            exec:
+              command: [presentator-worker, --ready, --port, '7100']
+            periodSeconds: 2
+            timeoutSeconds: 5
           resources:
             limits:
               memory: 4Gi
           securityContext:
             runAsUser: 0
-            # The web's gid: the worker's socket directory belongs to its own group, and at gid 0 the web gets EACCES.
-            runAsGroup: 1001
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             seccompProfile:
@@ -98,9 +107,13 @@ spec:
               mountPath: /tmp
             - name: shm
               mountPath: /dev/shm
-            - name: build-socket
-              mountPath: /run/presentator-build
+            - name: key
+              mountPath: /run/secrets/build-worker-key
+              readOnly: true
       volumes:
+        - name: rules
+          configMap:
+            name: build-worker-rules
         - name: work
           emptyDir:
             medium: Memory
@@ -113,6 +126,46 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 256Mi
-        - name: build-socket
-          persistentVolumeClaim:
-            claimName: build-socket
+        # Owned by root and readable by root alone, as the pod sets no fsGroup: the build and wire users cannot read the key.
+        - name: key
+          secret:
+            secretName: build-worker-key
+            defaultMode: 0400
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: build-worker
+  namespace: presentator
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: build-worker
+  ports:
+    - name: build
+      port: 7100
+      targetPort: build
+---
+# Only the web's pods reach the worker's port, and the worker sends nothing: the egress list is empty. The kubelet's probe
+# is an exec in the container and needs neither direction. http-from-traefik-only and backchannel-from-keycloak select
+# every pod of the Namespace and add their ports, which the worker does not name.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: build-worker
+  namespace: presentator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: build-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+      ports:
+        - port: build
+          protocol: TCP

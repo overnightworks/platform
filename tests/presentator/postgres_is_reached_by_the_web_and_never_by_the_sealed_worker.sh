@@ -3,8 +3,9 @@ set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # presentator's Postgres in the layer as Flux applied it: Ready, its Service and its Pod accepting a TCP connection on
-# the Postgres port from the web's container, and neither accepting one from the sealed build worker's container, whose
-# pod holds lo alone. The web's connection is the positive control for the worker's refusal; names and verdicts only.
+# the Postgres port from the web's container, and neither accepting one from either build worker's container, whose
+# pods send nothing off the loopback by their rules and their NetworkPolicy. The web's connection is the positive
+# control for the workers' refusal; names and verdicts only.
 export KUBECONFIG="$HOME/.kube/config"
 namespace=presentator
 
@@ -16,7 +17,7 @@ pod_address="$(kubectl --namespace "$namespace" get pod postgres-0 --output json
 [ -n "$service_address" ] && [ -n "$service_port" ] && [ -n "$pod_address" ] ||
   fail "the Service postgres or the Pod postgres-0 of $namespace names no address or no port"
 
-# Addresses, not names: the worker has no resolver to reach, and a name would fail for that and not for the route.
+# Addresses, not names: the worker reaches no resolver, and a name would fail for that and not for the route.
 read -r -d '' connect_script <<'PYTHON' || true
 import socket, sys
 try:
@@ -27,16 +28,22 @@ except OSError as error:
 print("connected")
 PYTHON
 
-kubectl --namespace "$namespace" wait pod/build-worker-0 --for=condition=Ready --timeout=5m
+workers="$(kubectl --namespace "$namespace" get statefulset build-worker --output jsonpath='{.spec.replicas}')"
+[ "$workers" -ge 1 ] || fail "the StatefulSet build-worker runs '$workers' replicas"
+for ordinal in $(seq 0 $((workers - 1))); do
+  kubectl --namespace "$namespace" wait "pod/build-worker-$ordinal" --for=condition=Ready --timeout=5m
+done
 for address in "$service_address" "$pod_address"; do
   web_answer="$(kubectl --namespace "$namespace" exec deployment/web --container web -- python3 -I -c "$connect_script" "$address" "$service_port" 2>&1)" ||
     fail "the web did not connect to Postgres at $address:$service_port: $web_answer"
   echo "the web connects to Postgres at $address:$service_port"
-  worker_status=0
-  worker_answer="$(kubectl --namespace "$namespace" exec build-worker-0 --container worker -- python3 -I -c "$connect_script" "$address" "$service_port" 2>&1)" ||
-    worker_status=$?
-  [ "$worker_status" != 0 ] || fail "the sealed worker connected to Postgres at $address:$service_port: $worker_answer"
-  [[ $worker_answer == "no connection: "* ]] ||
-    fail "the sealed worker's attempt at $address:$service_port ended $worker_status without the script's own verdict: $worker_answer"
-  echo "the sealed worker cannot connect to Postgres at $address:$service_port: $worker_answer"
+  for ordinal in $(seq 0 $((workers - 1))); do
+    worker_status=0
+    worker_answer="$(kubectl --namespace "$namespace" exec "build-worker-$ordinal" --container worker -- python3 -I -c "$connect_script" "$address" "$service_port" 2>&1)" ||
+      worker_status=$?
+    [ "$worker_status" != 0 ] || fail "the sealed worker $ordinal connected to Postgres at $address:$service_port: $worker_answer"
+    [[ $worker_answer == "no connection: "* ]] ||
+      fail "the sealed worker $ordinal's attempt at $address:$service_port ended $worker_status without the script's own verdict: $worker_answer"
+    echo "the sealed worker $ordinal cannot connect to Postgres at $address:$service_port: $worker_answer"
+  done
 done

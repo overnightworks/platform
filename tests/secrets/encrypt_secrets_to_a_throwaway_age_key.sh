@@ -71,6 +71,17 @@ for manifest in $APP_MANIFESTS; do
   plain_secret "$pull_secret" "$app_namespace" kubernetes.io/dockerconfigjson
 done
 
+# presentator's build workers read the key of their hello from a file of a Secret of their own, which the web reads from its
+# volume of Secret files; the web's item names the file, and the workers' volume the Secret.
+worker_key_secret="$(yq 'select(.kind == "StatefulSet") | .spec.template.spec.volumes[] | select(.secret) | .secret.secretName' apps/presentator/worker.yaml)"
+worker_key_file="$(WORKER_KEY_SECRET="$worker_key_secret" yq 'select(.kind == "Deployment") | .spec.template.spec.volumes[] | select(.name == "secrets")
+  | .projected.sources[] | select(.secret.name == strenv(WORKER_KEY_SECRET)) | .secret.items[0].key' apps/presentator/web.yaml)"
+[ -n "$worker_key_secret" ] && [ -n "$worker_key_file" ] || fail "presentator's worker and web name no Secret of the workers' key"
+worker_key="$(openssl rand -hex 32)"
+echo "::add-mask::$worker_key"
+printf '%s' "$worker_key" > "$(secret_files "$worker_key_secret" presentator)/$worker_key_file"
+plain_secret "$worker_key_secret" presentator Opaque
+
 # Prometheus mounts songmaker's monitoring token as a file, which the secretKeyRef scan below does not find, so its Secret
 # takes the value of the key songmaker reads it from.
 monitoring_files="$(secret_files songmaker-monitoring prometheus)"

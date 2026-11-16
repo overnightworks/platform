@@ -1,0 +1,24 @@
+# The packet filter of a build worker's pod, loaded by its init container before the worker starts, and the one rule file:
+# a pod's network namespace holds only these rules, and nothing in the pod keeps CAP_NET_ADMIN to change them.
+#
+# Input admits the loopback, the replies of connections the pod holds, and new connections to the worker's port alone.
+# Output admits the loopback and, off it, only the replies of the worker's accepted connections: a socket's owner is the
+# uid of the process that accepted it, and the controller that accepts runs as uid 0. A new connection or datagram of
+# any uid is dropped off the loopback, so the build uid 61001 and the wire uid 61002, whose steps run a deck's code, can
+# send nothing but to the pod itself, and root opens no connection of its own.
+flush ruleset
+
+table inet build_worker {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iif "lo" accept
+    ct state established,related accept
+    tcp dport 7100 accept
+  }
+
+  chain output {
+    type filter hook output priority filter; policy drop;
+    oif "lo" accept
+    meta skuid 0 ct state established,related accept
+  }
+}
