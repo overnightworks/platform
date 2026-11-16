@@ -49,6 +49,7 @@ WORKER_SERVICE='select(.kind == "Service" and .metadata.name == "build-worker")'
 WORKER_LABELS="select($WORKER_DOCUMENT) | .spec.template.metadata.labels"
 WEB_LABELS='select(.kind == "Deployment" and .metadata.name == "web") | .spec.template.metadata.labels'
 WORKER_POLICY='select(.kind == "NetworkPolicy" and .metadata.name == "build-worker")'
+REDIS_POLICY='select(.kind == "NetworkPolicy" and .metadata.name == "redis")'
 WORKER_CONTAINER="$WORKER | .containers[] | select(.name == \"worker\")"
 NET_ADMIN_HOLDER='select((.securityContext.capabilities.add // []) | any_c(. == "NET_ADMIN")) | .name'
 WORKER_INIT="$WORKER | .initContainers[0]"
@@ -176,10 +177,11 @@ judge_structure() {
   found "$manifest" "a template other than the web's shares its process namespace" \
     "select((.kind == \"Deployment\" and .metadata.name == \"web\") | not) | $SPECS | select(.shareProcessNamespace == true)"
   found "$manifest" "a template sets fsGroup" "$SPECS | select(.securityContext.fsGroup != null)"
-  # The platform's Postgres base reads its readiness through `pg_isready`, an exec probe; it is held to restricted above.
+  # The platform's Postgres and Redis bases probe through `pg_isready` and `redis-cli`, exec probes; both are held to
+  # restricted above.
   # The worker's readiness is an exec probe too, since a verified hello would spend a life; it has no other.
   found "$manifest" "a container has an exec probe or a postStart hook" \
-    "select(.kind + \"/\" + .metadata.name != \"StatefulSet/postgres\" and .kind + \"/\" + .metadata.name != \"$WORKER_KEY\") | $SPECS | [.initContainers[], .containers[]][] | select(.livenessProbe.exec != null or .readinessProbe.exec != null or .startupProbe.exec != null or .lifecycle.postStart != null)"
+    "select(.kind + \"/\" + .metadata.name != \"StatefulSet/postgres\" and .kind + \"/\" + .metadata.name != \"StatefulSet/redis\" and .kind + \"/\" + .metadata.name != \"$WORKER_KEY\") | $SPECS | [.initContainers[], .containers[]][] | select(.livenessProbe.exec != null or .readinessProbe.exec != null or .startupProbe.exec != null or .lifecycle.postStart != null)"
   found "$manifest" "a container of the worker has a probe or a postStart hook other than the worker's readiness exec" \
     "$WORKER | [.initContainers[], .containers[]][] | select(.livenessProbe != null or .startupProbe != null or .lifecycle.postStart != null or (.name != \"worker\" and .readinessProbe != null))"
   exactly "$manifest" "the worker's readiness probe is no exec" "$WORKER_CONTAINER | .readinessProbe | has(\"exec\")" 'true'
@@ -225,6 +227,12 @@ judge_structure() {
     '"1,1,podSelector,1,build,TCP"'
   same "$manifest" "$WORKER_POLICY | .spec.ingress[0].from[0].podSelector.matchLabels" "$WEB_LABELS" "the NetworkPolicy build-worker does not admit the web's pods"
   same "$manifest" "$WORKER_POLICY | .spec.podSelector.matchLabels" "$WORKER_LABELS" "the NetworkPolicy build-worker does not select the worker's pods"
+  # Only the web holds store credentials: Redis admits the web's pods alone, and the worker names no Redis.
+  exactly "$manifest" "the NetworkPolicy redis does not admit exactly one peer, a podSelector" \
+    "$REDIS_POLICY | .spec.ingress | (length | tostring) + \",\" + (.[0].from | length | tostring) + \",\" + (.[0].from[0] | keys | join(\"+\"))" \
+    '"1,1,podSelector"'
+  same "$manifest" "$REDIS_POLICY | .spec.ingress[0].from[0].podSelector.matchLabels" "$WEB_LABELS" "the NetworkPolicy redis does not admit the web's pods"
+  found "$manifest" "the worker names a Redis variable" "$WORKER_CONTAINER | (.env // [])[] | select(.name | test(\"REDIS\"))"
   exactly "$manifest" "the worker has no command" "$WORKER_CONTAINER | .command | length > 0" 'true'
   exactly "$manifest" "the worker's seal is not set" \
     "$WORKER_CONTAINER | .env[] | select(.name == \"PRESENTATOR_WORKER_SEAL\") | (.value // \"\") != \"\"" 'true'
@@ -470,6 +478,10 @@ mutant "the NetworkPolicy build-worker does not admit exactly one peer" "($WORKE
 mutant "the NetworkPolicy build-worker does not admit exactly one peer" "del($WORKER_POLICY | .spec.ingress[0].ports)"
 mutant "the NetworkPolicy build-worker does not admit the web's pods" "($WORKER_POLICY | .spec.ingress[0].from[0].podSelector.matchLabels) = {\"app.kubernetes.io/name\": \"build-worker\"}"
 mutant "the NetworkPolicy build-worker does not select the worker's pods" "($WORKER_POLICY | .spec.podSelector) = {}"
+# Redis's ingress and the worker's environment.
+mutant "the NetworkPolicy redis does not admit exactly one peer" "($REDIS_POLICY | .spec.ingress[0].from) = [{\"podSelector\": {}}, {\"namespaceSelector\": {}}]"
+mutant "the NetworkPolicy redis does not admit the web's pods" "($REDIS_POLICY | .spec.ingress[0].from[0].podSelector) = {}"
+mutant "the worker names a Redis variable" "($on_worker | $worker_container | .env) += [{\"name\": \"PRESENTATOR_REDIS_URL\", \"value\": \"redis://redis:6379/0\"}]"
 # Command, seal and memory bound.
 mutant "the worker has no command" "del($on_worker | $worker_container | .command)"
 mutant "the worker's seal is not set" "del($on_worker | $worker_container | .env[] | select(.name == \"PRESENTATOR_WORKER_SEAL\"))"

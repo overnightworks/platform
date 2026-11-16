@@ -8,6 +8,7 @@ resources:
   - worker.yaml
   - ../../infrastructure/sqlite
   - postgres
+  - ../../infrastructure/redis
 components:
   - release
 configMapGenerator:
@@ -23,6 +24,18 @@ configMapGenerator:
       - backup-repository=http://rest-server.backup.svc.cluster.local:8000/presentator/
       # k8up names a stream /<namespace>-<container><extension>: the web's, with the extension .sqlite3.
       - snapshot-file=presentator-web.sqlite3
+patches:
+  # Only the web holds store credentials; the build workers, the backups and the restore tests reach no Redis.
+  - target:
+      kind: NetworkPolicy
+      name: redis
+    patch: |-
+      - op: replace
+        path: /spec/ingress/0/from
+        value:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: web
 replacements:
   - source:
       kind: ConfigMap
