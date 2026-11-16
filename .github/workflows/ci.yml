@@ -53,6 +53,17 @@ jobs:
           scripts/bootstrap_pc.sh --only tools
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Check that part_closure.sh follows dependsOn and refuses an unknown part and a missing layer, and that the reconcile script refuses an unset or unknown CLUSTER_PART
+        run: |
+          mise exec -- tests/flux/part_closure_follows_dependson.sh
+          mise exec -- tests/flux/reconcile_refuses_an_unset_or_unknown_part.sh
+
+      - name: Check that every layer is in the closure of a part, that the parts are the matrix's, and that the check names each breach
+        run: |
+          mise exec -- tests/flux/every_layer_is_in_a_part.sh
+          mise exec -- tests/flux/every_layer_is_in_a_part_names_each_breach.sh
+          mise exec -- tests/flux/loki_readers_run_with_alloy.sh
+
       - name: Check that cutover:preflight names each missing precondition, exits 1, 3 or 2, writes its evidence only at 0 and makes only reads
         run: mise exec -- tests/cutover/preflight_names_each_missing_precondition.sh
 
@@ -143,6 +154,9 @@ jobs:
       # push. The job checks it out and serves it to Flux as the one branch of a repository on the runner.
       CANDIDATE_REVISION: ${{ github.sha }}
       CANDIDATE_BRANCH: candidate
+      # The part this leg runs: it applies the layers tests/flux/parts.yaml names for it and what they depend on, and
+      # core applies every layer. The overlay reads it, also when a cell applies it again.
+      CLUSTER_PART: ${{ matrix.part }}
       CANDIDATE_SOURCE_PORT: "8081"
       CLUSTER_NAME: platform
       # The test agents whose P2 cells a part runs, by part name.
@@ -334,7 +348,11 @@ jobs:
       - name: Reconcile the candidate tree
         run: tests/flux/reconcile_the_candidate_tree.sh
 
-      - name: Assert that Flux reconciled the candidate commit and decrypted the dummy
+      - name: Assert that the part's layers are Ready and applied the candidate commit
+        run: tests/flux/scoped_layers_reconcile_the_candidate.sh
+
+      - name: Assert that the root's inventory and health checks hold, that Flux decrypted the dummy and that the root reverts a deleted NetworkPolicy
+        if: matrix.part == 'core'
         run: tests/flux/flux_reconciled_the_candidate_and_decrypted_the_dummy.sh
 
       - name: Assert that a GitRepository at the committed root's url and branch turns Ready
@@ -418,7 +436,8 @@ jobs:
         run: tests/cloudflared/tunnel_applied_at_zero_replicas.sh
 
       - name: Assert cloudflared's ingress from Pods built from its Deployment's template
-        if: matrix.part == 'backup-2'
+        # Every host the tunnel names meets the Ingress of its layer, so the part applies them all.
+        if: matrix.part == 'core'
         run: tests/cloudflared/ingress_from_pods_built_from_its_template.sh
 
       - name: P7a cells
