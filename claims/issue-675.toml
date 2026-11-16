@@ -1,8 +1,0 @@
-claim_id = "359b2e4e1d574026812753c57649f6f8"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "6d396ef298b9a18d9c72522e28fbd50290f525c9"
-branch = "claude/issue-675-a-pull-request-runs-only-the-cluster-par"
-scope = [".github/workflows/ci.yml", "tests/flux", "tests/prometheus"]
-opened_commit = "e29bca9eecd1aaf75d7bdc09f011bac09ca603d4"
-whole_reason = "the selector lives in tests/flux and OPS-17's promtool citation in tests/prometheus; one slice"
