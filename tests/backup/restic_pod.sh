@@ -102,3 +102,4 @@ run_restore_test() {
   kubectl --namespace "$namespace" delete job "$job" --cascade=foreground --wait --timeout=2m >/dev/null
 }
 
+#
