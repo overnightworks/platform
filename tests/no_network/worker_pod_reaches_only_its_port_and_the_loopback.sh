@@ -95,10 +95,11 @@ worker_pod unfiltered '.metadata.labels = {"probe": "unfiltered"} | del(.spec.in
 worker_pod policed 'del(.spec.initContainers)' | k create -f -
 NAME=client IMAGE="$PROBE_IMAGE" yq --null-input '{"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(NAME), "labels": {"probe": "client"}},
   "spec": {"terminationGracePeriodSeconds": 1, "containers": [{"name": "client", "image": strenv(IMAGE), "command": ["nc", "-ll", "-p", "9000", "-e", "echo", "client"]}]}}' | k create -f -
-# web: the render's web template with the volume of the Secret files and a stand-in container, so the key is read as the web reads it.
+# web: the render's web template with the volume of the Secret files and a stand-in container, so the key is read as the web reads it;
+# its migrate init container needs a database this Pod does not have, so it is left out.
 IMAGE="$PROBE_IMAGE" VOLUME="$web_volume" yq --no-doc "$WEB
   | {\"apiVersion\": \"v1\", \"kind\": \"Pod\", \"metadata\": {\"name\": \"web\", \"labels\": .spec.template.metadata.labels}, \"spec\": .spec.template.spec}
-  | del(.spec.serviceAccountName, .spec.imagePullSecrets, .spec.shareProcessNamespace)
+  | del(.spec.serviceAccountName, .spec.imagePullSecrets, .spec.shareProcessNamespace, .spec.initContainers)
   | .spec.terminationGracePeriodSeconds = 1
   | .spec.volumes = [.spec.volumes[] | select(.name == strenv(VOLUME))]
   | .spec.containers = [{\"name\": \"web\", \"image\": strenv(IMAGE), \"command\": [\"sleep\", \"3600\"],
