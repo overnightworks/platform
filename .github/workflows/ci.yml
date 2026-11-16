@@ -181,7 +181,8 @@ jobs:
 
   cluster:
     needs: scope
-    # GitHub appends matrix values to a literal job name, and the gate looks for the name cluster.
+    # The gate looks for the job name cluster, which a matrix value in the name would change, so the leg's part
+    # stands in its first step's name and in CLUSTER_PART.
     name: ${{ github.job }}
     strategy:
       fail-fast: false
@@ -266,7 +267,7 @@ jobs:
       SQLITE_COMPONENT: infrastructure/sqlite
       REST_SERVER_MANIFEST: infrastructure/backup/rest-server.yaml
     steps:
-      - name: Check out
+      - name: Check out for the part ${{ matrix.part }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The served repository holds this commit with its history, since a shallow one cannot be pushed.
