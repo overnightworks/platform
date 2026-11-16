@@ -1,7 +1,0 @@
-claim_id = "d7cee4ad278847cd8d804d3083e7dcdd"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "4227c9952a97ecbc9299a4e8973be86e0d0b255d"
-branch = "claude/issue-664-presentator-s-web-serves-from-its-postgr"
-scope = [".github/workflows/ci.yml", "apps/presentator/web.yaml", "tests/presentator/the_web_serves_from_its_postgres.sh"]
-opened_commit = "e66489d128bf32f726f580a6c44b6bfcb17d2d09"
