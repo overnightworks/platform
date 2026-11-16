@@ -39,4 +39,4 @@ while [ "${#pending[@]}" -gt 0 ]; do
   # shellcheck disable=SC2206 # a layer's dependencies are names without whitespace.
   pending+=(${dependencies[$layer]})
 done
-printf '%s\n' "${!closure[@]}" | sort
+[ "${#closure[@]}" -eq 0 ] || printf '%s\n' "${!closure[@]}" | sort
