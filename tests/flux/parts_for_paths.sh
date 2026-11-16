@@ -16,6 +16,7 @@ part_closure="$(dirname "${BASH_SOURCE[0]}")/part_closure.sh"
 mode="${1:?--all, or the base commit and the head commit}"
 
 mapfile -t parts < <(yq 'keys | .[]' "$parts_file")
+case " ${parts[*]} " in *" core "*) ;; *) echo "::error::$parts_file lists no part core; is yq on the PATH?" >&2; exit 1 ;; esac
 declare -A nightly_only=() selected=()
 while read -r part; do nightly_only["$part"]=1; done < <(yq 'to_entries | .[] | select(.value.nightly_only == true) | .key' "$parts_file")
 
