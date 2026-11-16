@@ -1,0 +1,8 @@
+claim_id = "b9d5e6406e90497dbe59d5e34adefc61"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "4227c9952a97ecbc9299a4e8973be86e0d0b255d"
+branch = "claude/issue-663-speech-s-cpu-image-runs-as-two-pods"
+scope = [".github/workflows/ci.yml", "apps/speech-runtime/speech-runtime.yaml", "docs/operations.md", "scripts/gpu_use.sh", "tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh", "tests/speech_runtime/two_cpu_pods_serve_behind_the_service.sh"]
+opened_commit = "bfa7681e344289b028621227946ec65bfa3b7104"
+whole_reason = "the replica count is set by gpu:use, so the script, its test, the Deployment's comment, a new cluster cell, ci.yml and the operations doc change together"
