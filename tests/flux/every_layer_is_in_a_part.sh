@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Every layer Kustomization of LAYERS_DIRECTORY is in the closure of a part other than core, so a scoped part applies it;
-# every layer a part of PARTS_FILE names exists; core applies all layers; and the parts of PARTS_FILE are the parts of the
-# cluster job's matrix in WORKFLOW_FILE. Names each breach and fails after the last.
+# every layer a part of PARTS_FILE names exists; core applies all layers; and every glob of `paths` in PARTS_FILE matches a
+# file the git repository at TREE_DIRECTORY tracks. Names each breach and fails after the last.
 set -euo pipefail
 export PARTS_FILE="${PARTS_FILE:-$(dirname "${BASH_SOURCE[0]}")/parts.yaml}"
 export LAYERS_DIRECTORY="${LAYERS_DIRECTORY:-clusters/pc}"
-workflow_file="${WORKFLOW_FILE:-.github/workflows/ci.yml}"
+tree_directory="${TREE_DIRECTORY:-.}"
 part_closure="$(dirname "${BASH_SOURCE[0]}")/part_closure.sh"
 
 breaches=0
@@ -16,20 +16,18 @@ breach() {
 
 mapfile -t layers < <("$part_closure" --layers)
 mapfile -t parts < <(yq 'keys | .[]' "$PARTS_FILE")
-mapfile -t matrix_parts < <(yq '.jobs.cluster.strategy.matrix.part[]' "$workflow_file")
-
-for part in "${parts[@]}"; do
-  if ! printf '%s\n' "${matrix_parts[@]}" | grep -qxF "$part"; then
-    breach "the part $part of $PARTS_FILE is no leg of the matrix in $workflow_file"
-  fi
-done
-for part in "${matrix_parts[@]}"; do
-  if ! printf '%s\n' "${parts[@]}" | grep -qxF "$part"; then
-    breach "the matrix in $workflow_file runs the part $part, which $PARTS_FILE does not declare"
-  fi
-done
+mapfile -t tracked < <(git -C "$tree_directory" ls-files)
 
 [ "$(yq '.core.layers' "$PARTS_FILE")" = all ] || breach "the part core of $PARTS_FILE does not apply all layers"
+
+while read -r part glob; do
+  matched=0
+  for file in "${tracked[@]}"; do
+    # shellcheck disable=SC2053 # the glob is the point.
+    if [[ $file == $glob ]]; then matched=1; break; fi
+  done
+  [ "$matched" -eq 1 ] || breach "the glob $glob of the part $part in $PARTS_FILE matches no tracked file"
+done < <(yq 'to_entries | .[] | .key as $part | (.value.paths // [])[] | $part + " " + .' "$PARTS_FILE")
 
 declare -A in_a_scoped_part=()
 for part in "${parts[@]}"; do
@@ -49,4 +47,4 @@ for layer in "${layers[@]}"; do
 done
 
 [ "$breaches" -eq 0 ] || exit 1
-echo "every one of ${#layers[@]} layers is in a part's closure, and the ${#parts[@]} parts are the matrix's"
+echo "every one of ${#layers[@]} layers is in a part's closure, and every glob of the ${#parts[@]} parts matches a tracked file"

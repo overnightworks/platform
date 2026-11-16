@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# every_layer_is_in_a_part.sh passes on a tree whose every layer is in a part and whose parts are the matrix's, and names
-# an orphan layer, a part that names a missing layer, a part outside the matrix, a matrix leg outside the parts and a core
-# that applies less than all layers.
+# every_layer_is_in_a_part.sh passes on a tree whose every layer is in a part and whose globs match tracked files, and names
+# an orphan layer, a part that names a missing layer, a glob that matches no tracked file and a core that applies less
+# than all layers.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -33,13 +33,9 @@ fresh stale
 yq --inplace '.single.layers = ["alone", "retired"]' "$PARTS_FILE"
 expect_breach "a stale name" "the part single of $PARTS_FILE names the layer retired"
 
-fresh unlisted
-yq --inplace '.parts_outside_the_matrix = {"layers": ["alone"]}' "$PARTS_FILE"
-expect_breach "a part outside the matrix" "the part parts_outside_the_matrix of $PARTS_FILE is no leg of the matrix"
-
-fresh unplanned
-yq --inplace '.jobs.cluster.strategy.matrix.part += ["unplanned"]' "$WORKFLOW_FILE"
-expect_breach "a leg outside the parts" "runs the part unplanned, which $PARTS_FILE does not declare"
+fresh dead_glob
+yq --inplace '.chain.paths += ["moved-cells/*"]' "$PARTS_FILE"
+expect_breach "a glob that matches nothing" "the glob moved-cells/* of the part chain in $PARTS_FILE matches no tracked file"
 
 fresh partial_core
 yq --inplace '.core.layers = ["base"]' "$PARTS_FILE"

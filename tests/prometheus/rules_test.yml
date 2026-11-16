@@ -1,4 +1,5 @@
 # promtool test rules: each alert waits its for duration, fires, and resolves when its cause ends.
+# The AI gateway test proves docs/operations.md OPS-17 (the rule); the nightly cell proves the chain to Alertmanager.
 rule_files:
   - rules.yml
 evaluation_interval: 1m

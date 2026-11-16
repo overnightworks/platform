@@ -5,6 +5,10 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # The full matrix, which the part ai-gateway-outage joins, runs nightly on main and on demand.
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -58,7 +62,10 @@ jobs:
           mise exec -- tests/flux/part_closure_follows_dependson.sh
           mise exec -- tests/flux/reconcile_refuses_an_unset_or_unknown_part.sh
 
-      - name: Check that every layer is in the closure of a part, that the parts are the matrix's, and that the check names each breach
+      - name: Check that the parts a run executes are core alone for a docs-only diff, those a changed layer or glob selects, and every part but the nightly-only ones for an unknown path, a zero base or a failing diff
+        run: mise exec -- tests/flux/parts_for_paths_selects_by_changed_paths.sh
+
+      - name: Check that every layer is in the closure of a part, that every glob of a part matches a tracked file, and that the check names each breach
         run: |
           mise exec -- tests/flux/every_layer_is_in_a_part.sh
           mise exec -- tests/flux/every_layer_is_in_a_part_names_each_breach.sh
@@ -130,13 +137,55 @@ jobs:
       - name: Check that every pull layer mounts each app ref its app renders and every image volume of its Job, and that a missing ref and an unmounted volume fail
         run: mise exec -- tests/workloads/pull_layers_mount_every_app_ref_their_app_runs.sh
 
+  # The legs of cluster: core and the parts the run's changed paths select, which tests/flux/parts.yaml owns. cluster is
+  # never skipped, since the gate reads a skipped mandatory job as red, so a scope that selects nothing but core still has a leg.
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      parts: ${{ steps.select.outputs.parts }}
+    steps:
+      - name: Check out with the history a push's diff needs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install the pinned tools
+        run: |
+          scripts/bootstrap_pc.sh --only tools
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Select the parts this run executes
+        id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_COMMIT: ${{ github.event.before }}
+          HEAD_COMMIT: ${{ github.sha }}
+        run: |
+          # On a pull request the checkout is the merge commit, whose first parent is main.
+          case "$EVENT_NAME" in
+            schedule | workflow_dispatch) parts="$(mise exec -- tests/flux/parts_for_paths.sh --all)" ;;
+            pull_request) parts="$(mise exec -- tests/flux/parts_for_paths.sh HEAD^1 HEAD)" ;;
+            push) parts="$(mise exec -- tests/flux/parts_for_paths.sh "$BEFORE_COMMIT" "$HEAD_COMMIT")" ;;
+            *)
+              echo "::error::the event $EVENT_NAME selects no parts"
+              exit 1
+              ;;
+          esac
+          echo "the parts of this run: $parts"
+          echo "parts=$parts" >> "$GITHUB_OUTPUT"
+
   cluster:
+    needs: scope
     # GitHub appends matrix values to a literal job name, and the gate looks for the name cluster.
     name: ${{ github.job }}
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, observability-2, access, litellm, agents, apps, load-1, load-2, backup-1, backup-2, presentator, presentator-2, presentator-backup, presentator-backup-2, ai-gateway-outage]
+        part: ${{ fromJSON(needs.scope.outputs.parts) }}
     runs-on: ubuntu-latest
     # A part carries cells for about 14 minutes at most, so the reconcile's wait, which varies by more than a minute, leaves the limit three minutes away on a slow runner.
     # The part ai-gateway-outage waits out the rule's ten minutes after the reconcile and its healthy read, about 25 minutes in all.
@@ -1032,6 +1081,22 @@ jobs:
 
       - name: Check that the Keycloak hold serves hallucinai's realm to an app's proof and leaves no container, network or volume
         run: mise exec -- tests/keycloak/hold_serves_the_realm_and_leaves_nothing.sh
+
+  # A failed full run has no pull request to show it, so it comments on the standing item where the platform head reads it.
+  report-failed-full-run:
+    if: failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    needs: [checks, scope, cluster, bootstrap, opentofu, images, keycloak-hold]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Comment the run's link on the standing item
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: gh issue comment 674 --repo "$GITHUB_REPOSITORY" --body "A $EVENT_NAME run of ci failed, see $RUN_URL"
 
   quality:
     if: always()

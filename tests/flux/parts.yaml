@@ -1,26 +1,30 @@
 # The layers each part of the cluster job applies, by the name of their Kustomization in clusters/pc: what its cells
 # read, beside which part_closure.sh adds every layer they depend on. The part core applies every layer and runs the
-# checks of the whole tree. Every part is a leg of the matrix in .github/workflows/ci.yml.
-core: {layers: all}
+# checks of the whole tree. The parts are the legs of the cluster job's matrix, which parts_for_paths.sh computes: a run
+# of a pull request or a push executes core and the parts a changed path selects, through a layer's directory or a glob
+# of `paths` (a bash pattern, in which * also crosses /), and every part when a path is unknown. `paths` holds the
+# directories of a part's cells; the paths of core are those that select no other part, since no cell of core reads them.
+# A part marked nightly_only runs only in a scheduled or dispatched run.
+core: {layers: all, paths: [docs/*, "*.md"]}
 # The realm and its route; skat is the caller whose namespace and Service Keycloak's policies are probed against.
-access: {layers: [keycloak, skat, litellm, traefik]}
-agents: {layers: [keycloak]}
-litellm: {layers: [litellm, keycloak]}
+access: {layers: [keycloak, skat, litellm, traefik], paths: [tests/cutover/*, tests/keycloak/*, tests/litellm/*]}
+agents: {layers: [keycloak], paths: [tests/keycloak/*]}
+litellm: {layers: [litellm, keycloak], paths: [tests/litellm/*]}
 # Prometheus scrapes songmaker's web and Gatus, and reads litellm's CronJob; Grafana's cell reads a Loki stream, which only alloy ships.
-observability: {layers: [prometheus, grafana, loki, alloy, gatus, speech-runtime, songmaker, litellm]}
+observability: {layers: [prometheus, grafana, loki, alloy, gatus, speech-runtime, songmaker, litellm], paths: [tests/grafana/*, tests/prometheus/*, tests/speech_runtime/*]}
 # Gatus probes every endpoint of its configuration.
-observability-2: {layers: [gatus, traefik, hopin, skat, keycloak, speech-runtime, loki, prometheus, grafana, litellm, songmaker, backup]}
-apps: {layers: [presentator, songmaker, keycloak, hopin, legal, traefik, tunnel, loki, alloy]}
+observability-2: {layers: [gatus, traefik, hopin, skat, keycloak, speech-runtime, loki, prometheus, grafana, litellm, songmaker, backup], paths: [tests/backup/*, tests/gatus/*]}
+apps: {layers: [presentator, songmaker, keycloak, hopin, legal, traefik, tunnel, loki, alloy], paths: [tests/alloy/*, tests/keycloak/*, tests/legal/*, tests/loki/*, tests/no_network/*, tests/presentator/*, tests/songmaker/*]}
 # The Postgres cells loop over every namespace whose layer includes the Postgres base.
-load-1: {layers: [keycloak, litellm, personas, presentator, skat, songmaker, nvidia, traefik]}
-load-2: {layers: [litellm, songmaker, hopin, skat]}
+load-1: {layers: [keycloak, litellm, personas, presentator, skat, songmaker, nvidia, traefik], paths: [tests/nvidia/*, tests/postgres/*, tests/songmaker/*]}
+load-2: {layers: [litellm, songmaker, hopin, skat], paths: [tests/postgres/*, tests/redis/*]}
 # The backup cells loop over every namespace whose layer includes the Postgres backup component, and Prometheus' rules over their Schedules.
-backup-1: {layers: [backup, prometheus, keycloak, litellm, personas, presentator, skat, songmaker]}
-backup-2: {layers: [backup, songmaker]}
+backup-1: {layers: [backup, prometheus, keycloak, litellm, personas, presentator, skat, songmaker], paths: [tests/backup/*, tests/personas/*, tests/prometheus/*]}
+backup-2: {layers: [backup, songmaker], paths: [tests/backup/*, tests/disk/*]}
 # The test agents' cells drive Keycloak.
-presentator: {layers: [presentator, keycloak]}
-presentator-2: {layers: [presentator]}
+presentator: {layers: [presentator, keycloak], paths: [tests/presentator/*, tests/redis/*]}
+presentator-2: {layers: [presentator], paths: [tests/presentator/*]}
 # The restore test reads the schedule of the first namespace that includes the Postgres backup component, Keycloak's.
-presentator-backup: {layers: [presentator, backup, keycloak]}
-presentator-backup-2: {layers: [presentator, backup]}
-ai-gateway-outage: {layers: [litellm, gatus, prometheus]}
+presentator-backup: {layers: [presentator, backup, keycloak], paths: [tests/presentator/*]}
+presentator-backup-2: {layers: [presentator, backup], paths: [tests/presentator/*, tests/workloads/*]}
+ai-gateway-outage: {layers: [litellm, gatus, prometheus], nightly_only: true, paths: [tests/prometheus/*]}
