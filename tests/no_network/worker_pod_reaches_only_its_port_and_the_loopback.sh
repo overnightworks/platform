@@ -103,7 +103,11 @@ IMAGE="$PROBE_IMAGE" VOLUME="$web_volume" yq --no-doc "$WEB
   | .spec.containers = [{\"name\": \"web\", \"image\": strenv(IMAGE), \"command\": [\"sleep\", \"3600\"],
       \"securityContext\": .spec.containers[0].securityContext, \"volumeMounts\": [.spec.containers[0].volumeMounts[] | select(.name == strenv(VOLUME))]}]" \
   "$work/presentator.yaml" | k create -f -
-k wait pod/filtered pod/unfiltered pod/policed pod/client pod/web --for=condition=Ready --timeout=3m
+k wait pod/filtered pod/unfiltered pod/policed pod/client pod/web --for=condition=Ready --timeout=3m || {
+  k get pods -o wide
+  k get events --sort-by=.lastTimestamp
+  fail "a Pod of the cell did not turn Ready within 3 minutes"
+}
 
 # run_in <pod> <container> <command>: runs it in a shell there and sets run_status and run_output; fails when the exec
 # did not run, so that a probe that never ran is no verdict.
