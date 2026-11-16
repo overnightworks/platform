@@ -87,3 +87,4 @@ set_enabled() { put_changed "$1" '.enabled = $enabled' --argjson enabled "$2"; }
 sorted_list() { tr ' ' '\n' | grep . | LC_ALL=C sort; }
 # file_groups_of <username>: the groups REALM_FILE gives the user, sorted, one per line.
 file_groups_of() { USER="$1" yq '.users[] | select(.username == strenv(USER)) | .groups[]' "$REALM_FILE" | sorted_list; }
+#
