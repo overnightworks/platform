@@ -51,7 +51,22 @@ echo "::add-mask::$master_key"
 forward_log="$RUNNER_TEMP/litellm-port-forward.log"
 kubectl --namespace "$namespace" port-forward service/litellm ":$litellm_port" > "$forward_log" 2>&1 &
 forward=$!
-trap 'kill "$forward" 2>/dev/null || true' EXIT
+app_key="" budget_made="" end_user=litellm-cells
+# Removes on every exit what the cell made in LiteLLM, which the next cell on this cluster expects without budgets: the
+# end user a request created, the key and the budget; best effort, as the cell's own result stands.
+cleanup() {
+  if [ -n "${local_port:-}" ] && [ -n "$budget_made" ]; then
+    {
+      admin /customer/delete "$(USER_ID="$end_user" yq --null-input --output-format json --indent 0 \
+        '{"user_ids": [strenv(USER_ID)]}')"
+      [ -z "$app_key" ] || admin /key/delete "$(KEY="$app_key" yq --null-input --output-format json --indent 0 \
+        '{"keys": [strenv(KEY)]}')"
+      admin /budget/delete "$(ID="$budget_made" yq --null-input --output-format json --indent 0 '{"id": strenv(ID)}')"
+    } > /dev/null 2>&1 || true
+  fi
+  kill "$forward" 2>/dev/null || true
+}
+trap cleanup EXIT
 for _ in $(seq 30); do grep -q '^Forwarding from 127.0.0.1:' "$forward_log" && break; sleep 1; done
 local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$forward_log" | head -n 1)"
 [ -n "$local_port" ] || fail "kubectl port-forward to the Service litellm did not start"
@@ -111,8 +126,8 @@ authorized=(--header "Authorization: Bearer $app_key")
 # post <url> <body> [<curl argument>...]: a JSON POST from the app namespace.
 post() { call "$APP_NAMESPACE" "$1" --header 'Content-Type: application/json' --data "$2" "${@:3}"; }
 completion() {
-  MODEL="$model" MOCK="${1-}" yq --null-input --output-format json --indent 0 '
-    {"model": strenv(MODEL), "messages": [{"role": "user", "content": "probe"}], "user": "litellm-cells"} +
+  MODEL="$model" MOCK="${1-}" USER_ID="$end_user" yq --null-input --output-format json --indent 0 '
+    {"model": strenv(MODEL), "messages": [{"role": "user", "content": "probe"}], "user": strenv(USER_ID)} +
     ((strenv(MOCK) | select(. != "") | {"mock_response": .}) // {})'
 }
 
