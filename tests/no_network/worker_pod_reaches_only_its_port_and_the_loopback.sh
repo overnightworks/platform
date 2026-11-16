@@ -68,12 +68,13 @@ k create secret generic "$web_secret"
 # The stand-in serves a reply on the worker's port and on the one beside it as root, as the worker's controller does for its one port.
 SERVE="nc -ll -p $worker_port -e echo pong & exec nc -ll -p $other_port -e echo pong"
 # worker_pod <name> <yq filter>: the Pod of the StatefulSet's template, its worker container the stand-in, no probe and no
-# restart policy, its container port, init container and volumes the render's, and no ServiceAccount or pull Secret.
+# restart policy, its container port, init container and volumes the render's, and no ServiceAccount or pull Secret. The
+# stand-in drops the worker's resources, whose request three such Pods beside the two workers would not fit in k3d's node.
 worker_pod() {
   NAME="$1" IMAGE="$PROBE_IMAGE" PROGRAM="$SERVE" yq --no-doc "$WORKER
     | {\"apiVersion\": \"v1\", \"kind\": \"Pod\", \"metadata\": {\"name\": strenv(NAME), \"labels\": .spec.template.metadata.labels}, \"spec\": .spec.template.spec}
     | del(.spec.serviceAccountName, .spec.imagePullSecrets)
-    | .spec.containers[0] |= (.image = strenv(IMAGE) | .command = [\"sh\", \"-c\", strenv(PROGRAM)] | del(.readinessProbe, .restartPolicy))
+    | .spec.containers[0] |= (.image = strenv(IMAGE) | .command = [\"sh\", \"-c\", strenv(PROGRAM)] | del(.readinessProbe, .restartPolicy, .resources))
     | $2" "$work/presentator.yaml"
 }
 # user_container <name> <uid>: a container of a non-root user, with no capability, the key's mount and nothing
