@@ -1,6 +1,8 @@
 # One endpoint per service, each asked every 60 seconds with a fixed request. The apps behind Traefik are asked through
 # its web port with their own Host header, the way the tunnel asks; the others directly at their Service. Gatus holds no
 # key, so the LiteLLM front is healthy when it and LiteLLM answer a call without one with 401.
+# Prometheus scrapes the results, which AiGatewayProbeFailing reads.
+metrics: true
 storage:
   type: memory
 web:

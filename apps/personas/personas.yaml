@@ -1,9 +1,11 @@
-# The personas runner: Mozart and Leonardo as agents of hopin and skat, Mozart also of songmaker, pulled from its
-# package through the Secret ghcr-pull and started from the Secret personas' files, both from platform-secrets. The
+# The personas runner: six agents, Mozart and Leonardo as agents of hopin and skat, Mozart also of songmaker, and four
+# test agents, pulled from its package through the Secret ghcr-pull and started from the Secret personas' files, both from
+# platform-secrets. The
 # runner opens no port, so there is no Service and no Ingress; it is Ready once the first loop's standing was answered,
 # which creates its ready_file.
-# The Secret holds a copy of two client secrets that the Secret keycloak also holds (client-agent-mozart,
-# client-agent-leonardo), since a Secret cannot be mounted across namespaces: a rotation writes both.
+# The Secret holds a copy of six client secrets that the Secret keycloak also holds (client-agent-mozart,
+# client-agent-leonardo, client-agent-humboldt, client-agent-curie, client-agent-lovelace, client-agent-hildegard),
+# since a Secret cannot be mounted across namespaces: rotating a client's secret updates both Secrets.
 # The init container migrates the memory's database to the image's head, which the runner demands at start; its first run
 # may find Postgres not ready yet, and the init container's backoff heals that. The runner's history in memory is empty
 # after a restart; what the agents read is kept in the namespace's Postgres, which the runner tells them as the day.
@@ -35,7 +37,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: ghcr.io/overnightworks/personas:2026.11.14.4@sha256:2312b3725fd2c4c26ec2e2f623a332f963b2e69c21de21f1dc83b5d95a1ea120
+          image: ghcr.io/overnightworks/personas:2026.11.15.2@sha256:fc49d945c421b236c0c3008f8b3833c716b1e577f24875f70ed6eee676f65457
           args: [personas, migrate]
           # The command reads the whole configuration, so it mounts what the runner does.
           env:
@@ -60,7 +62,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: personas
-          image: ghcr.io/overnightworks/personas:2026.11.14.4@sha256:2312b3725fd2c4c26ec2e2f623a332f963b2e69c21de21f1dc83b5d95a1ea120
+          image: ghcr.io/overnightworks/personas:2026.11.15.2@sha256:fc49d945c421b236c0c3008f8b3833c716b1e577f24875f70ed6eee676f65457
           env:
             - name: PERSONAS_CONFIG
               value: /etc/personas/personas.toml

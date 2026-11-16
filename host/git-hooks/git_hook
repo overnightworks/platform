@@ -1,0 +1,30 @@
+#!/bin/sh
+# The global pre-commit and pre-merge-commit hook: one file, deployed under both names, which tells them apart by $0.
+# git runs it in the work tree, where quality scans what the commit records.
+# quality finds mise on PATH, which a git client may not carry, so only its call gets mise's directory.
+quality="$HOME/.local/bin/quality"
+mise_directory="$HOME/.local/bin"
+hook=${0##*/}
+
+scan_staged() {
+    PATH="$PATH:$mise_directory" "$quality" check secrets --staged
+}
+
+if [ ! -x "$quality" ]; then
+    echo "$hook: quality is missing ($quality), the commit is blocked. Install it: mise run bootstrap:hook" >&2
+    exit 2
+fi
+
+scan_staged || exit $?
+
+# A repository hook may stage files and only the final index is committed, so it is
+# followed by a second scan. The guard stops a repository hook that is a copy of this one.
+if [ -z "$PLATFORM_GIT_HOOK_CHAINED" ]; then
+    repository_hook="$(git rev-parse --git-common-dir)/hooks/$hook"
+    if [ -x "$repository_hook" ]; then
+        PLATFORM_GIT_HOOK_CHAINED=1 "$repository_hook" "$@" || exit $?
+        scan_staged
+        exit $?
+    fi
+fi
+exit 0

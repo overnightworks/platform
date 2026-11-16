@@ -17,8 +17,15 @@ passes with no annotated Secret. (OPS-1)
 prints the address of the status page once kubectl listens, none when the forward fails, which exits non-zero; the page
 has no other way in. (OPS-2)
 
-Its own NetworkPolicy admits no sender: `mise run gatus:open` forwards `127.0.0.1` to its Service at a free port and
-prints the address, the only way to the page. (OPS-3)
+Its own NetworkPolicies admit one sender, Prometheus' server, to its port for the scrape of `/metrics`: any other pod gets no
+answer, and `mise run gatus:open` forwards `127.0.0.1` to its Service at a free port and prints the address, the only way
+for a person to the page. (OPS-3)
+
+Prometheus scrapes Gatus' results, and `AiGatewayProbeFailing` mails once when the `litellm` endpoint, the AI gateway's
+front, fails its probe for 10 minutes, and again when it resolves. The probe is healthy only on the front's 401 for a call
+without a key, so a front or LiteLLM that answers 5xx, times out or refuses the connection fails it; a provider's refusal of
+one model reaches the caller as that call's answer and fails nothing here. A Gatus that stops answering is `TargetDown`'s.
+(OPS-17)
 
 ## Grafana
 
@@ -93,11 +100,12 @@ person's customer row and three spend log rows; `mise run litellm:cache-probe --
 
 Besides `text/sonnet`, `text/haiku` and `text/opus`, LiteLLM names `text/sonnet-medium`, `text/sonnet-low`,
 `text/haiku-medium` and `text/haiku-low`: each is its family's model with Anthropic's effort set by `output_config` in
-`litellm-config.yaml`, so an app tries one by its name alone; a key lists the names it may use. `mise run
-litellm:measure <key file> [<requests per name>]` is the operator's measurement, since it spends money: it sends
-synthetic streamed requests to the six sonnet and haiku names in turn and prints each name's median time to the first
-content chunk and its median and total cost, from the stream's usage and the prices of `/model/info`;
-`mise run litellm:measure --remove` deletes its test person's row.
+`litellm-config.yaml`, so an app tries one by its name alone; `text/sonnet-fast` and `text/haiku-fast` are sonnet and
+haiku at effort low with thinking off. A request that names `reasoning_effort` gets LiteLLM's adaptive thinking at that
+effort instead. A key lists the names it may use. `mise run litellm:measure <key file> [<requests per name>]` is the
+operator's measurement, since it spends money: it sends synthetic streamed requests to the eight sonnet and haiku names
+in turn and prints each name's median time to the first content chunk and its median and total cost, from the stream's
+usage and the prices of `/model/info`; `mise run litellm:measure --remove` deletes its test person's row.
 
 `mise run litellm:keys [--plan]` makes the person budget (the id of `max_end_user_budget_id`) and each row's key equal
 to it, sending only the fields that differ, so a pure budget change keeps the period's reset; it prints the revision

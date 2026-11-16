@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # On the pinned LiteLLM image, with no network and nothing sent upstream: a call through the router built from
-# litellm-config.yaml's model_list to each text name that ends in -medium or -low sends that effort to Anthropic in the
-# raw request, any other name sends none, and a request that names reasoning_effort (low) outranks the
-# configured effort, as litellm-config.yaml says, so a gateway bump that drops the effort, changes the precedence or a
-# name whose effort cannot be set goes red.
+# litellm-config.yaml's model_list to each text name sends Anthropic, in the raw request, the effort and the thinking
+# that name's entry configures, none where it configures none, and a request that names reasoning_effort (low) outranks
+# the configured effort and thinking, as litellm-config.yaml says, so a gateway bump that drops the effort or the
+# thinking, changes the effort's precedence or a name whose effort or thinking cannot be set goes red.
 # Usage: tests/litellm/configured_effort_reaches_the_provider_request.sh
-# Proves the four effort names of litellm-config.yaml.
+# Proves the effort names, text/sonnet-fast and text/haiku-fast of litellm-config.yaml.
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -70,9 +70,11 @@ async def main():
                 pass
             if len(sent) != 1:
                 sys.exit(f"{name}: {len(sent)} requests rendered, not 1")
+            configured = entry["litellm_params"]
             report.append({"name": name, "named_reasoning_effort": bool(extra),
-                           "expected": "low" if extra else name.rpartition("-")[2] if name.endswith(("-medium", "-low")) else None,
-                           "sent": sent[0].get("output_config", {}).get("effort")})
+                           "expected": "low" if extra else configured.get("output_config", {}).get("effort"),
+                           "sent": sent[0].get("output_config", {}).get("effort"),
+                           "thinking_as_configured": bool(extra) or sent[0].get("thinking") == configured.get("thinking")})
     print("SENT " + jsonlib.dumps(report))
 
 
@@ -83,4 +85,6 @@ PYTHON
 
 mismatch="$(yq --input-format json '[.[] | select(.expected != .sent) | .name + " (reasoning_effort named: " + (.named_reasoning_effort | tostring) + ")"] | join(", ")' <<<"$report")"
 [ -z "$mismatch" ] || fail "the effort sent to Anthropic differs from the configured one for: $mismatch"
-echo "each of $(yq --input-format json 'length' <<<"$report") requests to the text names sent the effort its name ends in, none otherwise, and the request's reasoning_effort outranked it"
+mismatch="$(yq --input-format json '[.[] | select(.thinking_as_configured | not) | .name] | join(", ")' <<<"$report")"
+[ -z "$mismatch" ] || fail "the thinking sent to Anthropic differs from the configured one for: $mismatch"
+echo "each of $(yq --input-format json 'length' <<<"$report") requests to the text names sent the effort and the thinking its entry configures, none otherwise, and the request's reasoning_effort outranked the effort"

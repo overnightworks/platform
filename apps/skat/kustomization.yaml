@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: skat
 resources:
   - ../../infrastructure/postgres
+  - ../../infrastructure/redis
   - skat.yaml
 components:
   - ../../infrastructure/postgres/backup

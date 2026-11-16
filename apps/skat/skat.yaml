@@ -82,6 +82,8 @@ spec:
                 secretKeyRef:
                   name: skat
                   key: operator_account_id
+            - name: SKAT_REDIS_URL
+              value: redis://redis:6379/0
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicy below admits
             # only Traefik's, so no other pod can name a client address in X-Forwarded-For.
             - name: SKAT_TRUSTED_PROXIES

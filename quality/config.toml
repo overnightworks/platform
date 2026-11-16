@@ -35,3 +35,8 @@ reason = "the names are the wheel's and hal's, which the served tree and the equ
 path = "infrastructure/design/design-0.18.0/fonts/oswald-LICENSE"
 rule = "file-suffix"
 reason = "the names are the wheel's and hal's, which the served tree and the equality cell keep byte for byte, so a rename is counterproductive"
+
+[[layout.allow]]
+path = "host/git-hooks/git_hook"
+rule = "script-name"
+reason = "the template the bootstrap copies to the host as git's pre-commit and pre-merge-commit; it belongs with the other files written onto the host, so a move into scripts/ is counterproductive"

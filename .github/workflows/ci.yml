@@ -125,10 +125,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator, presentator-backup]
+        part: [core, observability, access, apps, load-1, load-2, backup-1, backup-2, presentator, presentator-backup, ai-gateway-outage]
     runs-on: ubuntu-latest
     # The slowest part takes about 13 minutes and the reconcile's wait varies by more than a minute, so a limit of 15 would cut a healthy part on a slow runner.
-    timeout-minutes: 17
+    # The part ai-gateway-outage waits out the rule's ten minutes after the reconcile and its healthy read, about 25 minutes in all.
+    timeout-minutes: ${{ matrix.part == 'ai-gateway-outage' && 35 || 17 }}
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
@@ -144,6 +145,8 @@ jobs:
       CANDIDATE_BRANCH: candidate
       CANDIDATE_SOURCE_PORT: "8081"
       CLUSTER_NAME: platform
+      # The test agents whose P2 cells a part runs, by part name.
+      TEST_AGENTS_BY_PART: '{"presentator": "agent-humboldt agent-curie", "load-1": "agent-lovelace", "load-2": "agent-hildegard"}'
       # The k3s configuration the PC and this cluster share.
       K3S_CONFIG_SOURCE: host/k3s/config.yaml
       # The k3d-managed registry serving the job's platform-secrets source: the cluster reaches it by its address on
@@ -225,6 +228,24 @@ jobs:
         if: matrix.part == 'core'
         run: tests/prometheus/rules_pass_promtool_and_their_tests.sh
 
+      - name: Route Docker Hub pulls through the mirror and pull the registry image at its digest
+        run: |
+          # Google's public pull-through cache of Docker Hub needs no credential: the runner's Docker daemon and the
+          # cluster's containerd ask it first, since the matrix parts share runner addresses Docker Hub rate-limits (429).
+          mirror=https://mirror.gcr.io
+          # k3d's registry, which k3d pulls as docker.io/library/registry:2 when the runner holds no such image.
+          registry_image=docker.io/library/registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+          # The mirror serves what it holds or fetches from Docker Hub itself. Containerd and Docker both fall back to
+          # docker.io when the mirror fails or lacks an image, so a failing mirror costs the rate limit again, never a pull.
+          sudo mkdir -p /etc/docker
+          jq --null-input --arg mirror "$mirror" '{"registry-mirrors": [$mirror]}' |
+            sudo tee /etc/docker/daemon.json >/dev/null
+          sudo systemctl restart docker
+          docker pull --quiet "$registry_image"
+          # k3d pulls only an image it does not find under this name.
+          docker tag "$registry_image" docker.io/library/registry:2
+          printf 'mirrors:\n  docker.io:\n    endpoint:\n      - "%s"\n' "$mirror" > "$RUNNER_TEMP/registries.yaml"
+
       - name: Create the k3d cluster with its registry
         id: create-cluster
         run: |
@@ -237,6 +258,7 @@ jobs:
           # shared file's iptables-localhost-nodeports=false keeps it 0, so CoreDNS would answer SERVFAIL.
           K3D_FIX_DNS=0 k3d cluster create "$CLUSTER_NAME" --image "rancher/k3s:${K3S_VERSION//+/-}" \
             --volume "$PWD/$K3S_CONFIG_SOURCE:/etc/rancher/k3s/config.yaml:ro@server:0" \
+            --registry-config "$RUNNER_TEMP/registries.yaml" \
             --registry-create "${REGISTRY_NAME}:127.0.0.1:${REGISTRY_PORT}" --enforce-registry-port-match \
             --wait --timeout 3m
 
@@ -445,7 +467,19 @@ jobs:
         if: matrix.part == 'load-2'
         env:
           APP_NAMESPACE: hopin
-        run: tests/hopin/redis_url_names_the_redis_service_in_its_namespace.sh
+          APP_DEPLOYMENT: hopin
+          APP_CONTAINER: hopin
+          REDIS_URL_VARIABLE: HOPIN_REDIS_URL
+        run: tests/redis/app_url_names_the_redis_service_in_its_namespace.sh
+
+      - name: Assert that skat's SKAT_REDIS_URL names its Redis Service and port
+        if: matrix.part == 'load-2'
+        env:
+          APP_NAMESPACE: skat
+          APP_DEPLOYMENT: skat
+          APP_CONTAINER: skat
+          REDIS_URL_VARIABLE: SKAT_REDIS_URL
+        run: tests/redis/app_url_names_the_redis_service_in_its_namespace.sh
 
       - name: Assert that songmaker's web is Ready at its full ref, migrated, closed to other namespaces, read-only and holds its audio claim
         if: matrix.part == 'load-1'
@@ -526,6 +560,26 @@ jobs:
         run: |
           tests/keycloak/agent_client_tokens_and_groups.sh
           tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
+
+      # The four test agents' runs of the same cells, which share Mozart's declaration and allowlist. A run takes
+      # about two minutes, so they stand in the parts with room, none with more than two.
+      - name: P2 cells for the test agents
+        if: fromJSON(env.TEST_AGENTS_BY_PART)[matrix.part] != null
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+          TEST_AGENTS: ${{ fromJSON(env.TEST_AGENTS_BY_PART)[matrix.part] }}
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /apps/songmaker/mcp /agent-owners /services/speech-service
+          EXCHANGING_CLIENT: hopin
+          EXCHANGE_SCOPE: speech-service-audience
+          REFUSED_CLIENT: presentator
+          BASE_REF: origin/main
+        run: |
+          for AGENT_CLIENT in $TEST_AGENTS; do
+            export AGENT_CLIENT
+            tests/keycloak/agent_client_tokens_and_groups.sh
+            tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
+          done
 
       - name: Assert that cutover:load refuses the cluster's own Keycloak dump, naming agent_owner and the platform's six objects, before it loads anything
         if: matrix.part == 'access'
@@ -737,6 +791,7 @@ jobs:
           STOPPED_DEPLOYMENT: speech-runtime
           STOPPED_ENDPOINT: speech
           OTHER_NAMESPACE: gatus-client
+          PROMETHEUS_NAMESPACE: prometheus
         run: tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh
 
       - name: Assert that Alloy ships a pod's line to Loki with three labels, holds one ClusterRole with exactly two rules and answers nobody
@@ -762,6 +817,19 @@ jobs:
           # The suspended CronJob in that namespace whose Job exits 1.
           FAILING_CRONJOB: prometheus-probe
         run: tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh
+
+      # The part holds only this cell, which waits out the rule's ten minutes beside no other cell.
+      - name: Assert that Prometheus reads Gatus' probe of the AI gateway and that a failing probe fires its alert to the mail receiver and clears with the probe
+        if: matrix.part == 'ai-gateway-outage'
+        env:
+          PROMETHEUS_NAMESPACE: prometheus
+          # The gateway the cell stops and restores, by its Namespace, Deployment and Gatus endpoint, and the Kustomization
+          # of its layer that the cell suspends meanwhile.
+          GATEWAY_NAMESPACE: litellm
+          GATEWAY_DEPLOYMENT: litellm-front
+          GATEWAY_ENDPOINT: litellm
+          GATEWAY_KUSTOMIZATION: litellm
+        run: tests/prometheus/ai_gateway_probe_failure_fires_the_alert_to_the_mail_receiver_and_clears.sh
 
       - name: Print Flux's state and the controllers' errors
         if: failure() && steps.create-cluster.outcome == 'success'
@@ -798,8 +866,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install the pinned tools
-        run: scripts/bootstrap_pc.sh --only tools
+      - name: Install the pinned tools and write the commit hooks
+        run: scripts/bootstrap_pc.sh --only tools,dotfiles
 
       - name: Assert that every locked tool is installed and runs
         run: tests/bootstrap/every_locked_tool_runs.sh
@@ -824,6 +892,33 @@ jobs:
 
       - name: Check that the journal's drop-in is read by systemd, its limits add up to under 30 days and its notification names a declared service
         run: tests/journald/retention_drop_in_keeps_every_entry_under_30_days.sh
+
+      - name: Check that the dotfiles step writes both commit hooks as mode 755 and leaves core.hooksPath unset
+        run: tests/bootstrap/dotfiles_write_both_hooks_with_mode_755.sh
+
+      - name: Check that core.hooksPath stays unset when quality cannot be installed
+        run: tests/bootstrap/hooks_path_stays_unset_when_quality_cannot_install.sh
+
+      - name: Check that bootstrap:hook installs quality at the gate pin with its engines and sets core.hooksPath
+        run: tests/bootstrap/bootstrap_hook_installs_quality_at_the_gate_pin_and_sets_hooks_path.sh
+
+      - name: Check that the hook refuses a commit that stages a dummy secret
+        run: tests/bootstrap/hook_refuses_a_commit_staging_a_dummy_secret.sh
+
+      - name: Check that the hook refuses a merge commit that stages a dummy secret
+        run: tests/bootstrap/hook_refuses_a_merge_commit_staging_a_dummy_secret.sh
+
+      - name: Check that the hook passes a clean commit and a clean merge commit
+        run: tests/bootstrap/hook_passes_a_clean_commit_and_a_clean_merge_commit.sh
+
+      - name: Check that the hook runs the repository's hook and scans again after it
+        run: tests/bootstrap/hook_runs_the_repository_hook_and_scans_again_after_it.sh
+
+      - name: Check that the hook blocks the commit with exit 2 when quality is missing
+        run: tests/bootstrap/hook_blocks_the_commit_with_exit_2_when_quality_is_missing.sh
+
+      - name: Run the dotfiles step and bootstrap:hook again and assert that they change nothing
+        run: tests/bootstrap/hook_second_run_changes_nothing.sh
 
   opentofu:
     runs-on: ubuntu-latest

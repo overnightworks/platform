@@ -74,3 +74,8 @@ request "$OTHER_NAMESPACE" gatus-denied-request gatus.gatus.svc "http://gatus.ga
 { [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; }; } ||
   fail "a Pod in namespace $OTHER_NAMESPACE got '$status' from Gatus, curl exit code $exit_code, not no answer"
 echo "a Pod in namespace $OTHER_NAMESPACE gets no answer from Gatus"
+# Only Prometheus' server pod gets through: a client Pod in Prometheus' own namespace carries no server labels.
+request "$PROMETHEUS_NAMESPACE" gatus-denied-sibling-request gatus.gatus.svc "http://gatus.gatus.svc:$port/api/v1/endpoints/statuses"
+{ [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; }; } ||
+  fail "a Pod in namespace $PROMETHEUS_NAMESPACE beside the server got '$status' from Gatus, curl exit code $exit_code, not no answer"
+echo "a Pod in namespace $PROMETHEUS_NAMESPACE other than Prometheus' server gets no answer from Gatus"
