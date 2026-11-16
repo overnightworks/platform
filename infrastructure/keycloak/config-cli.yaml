@@ -27,7 +27,7 @@ spec:
       # `frontendUrl` stands no longer carries it: config-cli, which signs in once, would end on its own token in the
       # run that changes it, on every empty database. This container sets the value first with Keycloak's own kcadm,
       # whose update is its last call, so config-cli's one token already carries the issuer it is checked against and
-      # master.yaml's value then equals the stored one. It leaves a stored value as it is.
+      # master.yaml's value then equals the stored one. It leaves an equal stored value as it is.
       initContainers:
         - name: front-end
           # The image of Keycloak's own container, which kustomization.yaml copies here from keycloak.yaml.
