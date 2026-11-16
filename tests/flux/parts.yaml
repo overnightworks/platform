@@ -1,0 +1,26 @@
+# The layers each part of the cluster job applies, by the name of their Kustomization in clusters/pc: what its cells
+# read, beside which part_closure.sh adds every layer they depend on. The part core applies every layer and runs the
+# checks of the whole tree. Every part is a leg of the matrix in .github/workflows/ci.yml.
+core: {layers: all}
+# The realm and its route; skat is the caller whose namespace and Service Keycloak's policies are probed against.
+access: {layers: [keycloak, skat, litellm, traefik]}
+agents: {layers: [keycloak]}
+litellm: {layers: [litellm, keycloak]}
+# Prometheus scrapes songmaker's web and Gatus, and reads litellm's CronJob.
+observability: {layers: [prometheus, grafana, loki, gatus, speech-runtime, songmaker, litellm]}
+# Gatus probes every endpoint of its configuration.
+observability-2: {layers: [gatus, traefik, hopin, skat, keycloak, speech-runtime, loki, prometheus, grafana, litellm, songmaker, backup]}
+apps: {layers: [presentator, songmaker, keycloak, hopin, legal, traefik, tunnel, loki, alloy]}
+# The Postgres cells loop over every namespace whose layer includes the Postgres base.
+load-1: {layers: [keycloak, litellm, personas, presentator, skat, songmaker, nvidia, traefik]}
+load-2: {layers: [litellm, songmaker, hopin, skat]}
+# The backup cells loop over every namespace whose layer includes the Postgres backup component, and Prometheus' rules over their Schedules.
+backup-1: {layers: [backup, prometheus, keycloak, litellm, personas, presentator, skat, songmaker]}
+backup-2: {layers: [backup, songmaker]}
+# The test agents' cells drive Keycloak.
+presentator: {layers: [presentator, keycloak]}
+presentator-2: {layers: [presentator]}
+# The restore test reads the schedule of the first namespace that includes the Postgres backup component, Keycloak's.
+presentator-backup: {layers: [presentator, backup, keycloak]}
+presentator-backup-2: {layers: [presentator, backup]}
+ai-gateway-outage: {layers: [litellm, gatus, prometheus]}

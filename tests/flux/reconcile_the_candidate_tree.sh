@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # The job root is the PC's own clusters/pc/flux-system as a kustomize base, no file copied. The overlay adds
-# only Flux's spec.patches on the root and the source's url and ref, which serve the run's candidate.
+# only Flux's spec.patches on the root and the source's url and ref, which serve the run's candidate. The part
+# CLUSTER_PART names applies its own layers and what they depend on (tests/flux/parts.yaml); the root's patches delete
+# every other layer's Kustomization, and the part core deletes none.
+part_closure="$(dirname "${BASH_SOURCE[0]}")/part_closure.sh"
+: "${CLUSTER_PART:?the part of the cluster job, one of tests/flux/parts.yaml}"
+applied_layers="$("$part_closure" "$CLUSTER_PART")"
+mapfile -t layers_outside_the_part < <(comm -13 <(printf '%s\n' "$applied_layers") <("$part_closure" --layers))
 overlay="$RUNNER_TEMP/candidate-root"
 mkdir "$overlay"
 printf 'resources:\n  - %s\n' "$(realpath --relative-to="$overlay" clusters/pc/flux-system)" \
@@ -123,6 +129,26 @@ patches:
                         path: /spec/template/spec/nodeSelector
                         value: {nvidia.com/gpu.present: "true"}
 YAML
+# The layers outside the part never exist, so nothing waits for them; a layer that depends on one of them is in the part's
+# closure by construction.
+deleted_layer_patch="$(cat <<'YAML'
+      - op: add
+        path: /spec/patches/-
+        value:
+          target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: @LAYER@}
+          patch: |
+            $patch: delete
+            apiVersion: kustomize.toolkit.fluxcd.io/v1
+            kind: Kustomization
+            metadata: {name: @LAYER@, namespace: flux-system}
+YAML
+)"
+if [ "${#layers_outside_the_part[@]}" -gt 0 ]; then
+  {
+    printf '%s\n' '  - target: {group: kustomize.toolkit.fluxcd.io, kind: Kustomization, name: flux-system}' '    patch: |'
+    for layer in "${layers_outside_the_part[@]}"; do printf '%s\n' "${deleted_layer_patch//@LAYER@/${layer}}"; done
+  } >> "$overlay/kustomization.yaml"
+fi
 # The source is the job's own repository, which holds the run's commit on one branch: Flux reads that commit and
 # nothing a landing or a push moves. It stays so in the object applied here and in Flux's build.
 candidate_ref="{branch: ${CANDIDATE_BRANCH}, commit: ${CANDIDATE_REVISION}}"
