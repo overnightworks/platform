@@ -56,6 +56,11 @@ spec:
                 secretKeyRef:
                   name: keycloak
                   key: config-cli-secret
+          # Both containers start a JVM; a request gives each a CPU weight above the pods that ask for none, as Keycloak's
+          # container has.
+          resources:
+            requests:
+              cpu: 250m
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -68,6 +73,9 @@ spec:
         - name: config-cli
           image: docker.io/adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274
           command: [java, -jar, /app/keycloak-config-cli.jar]
+          resources:
+            requests:
+              cpu: 250m
           env:
             - name: KEYCLOAK_URL
               value: http://keycloak:8080
