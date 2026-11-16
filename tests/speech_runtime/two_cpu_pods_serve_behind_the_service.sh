@@ -14,7 +14,6 @@ namespace=speech-runtime
 deployment=speech-runtime
 service=speech-runtime
 pods_wanted=2
-selector="app.kubernetes.io/name=$deployment"
 
 found_replicas="$(kubectl --namespace "$namespace" get "deployment/$deployment" -o jsonpath='{.spec.replicas}')"
 restore() {
