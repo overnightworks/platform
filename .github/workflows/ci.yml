@@ -1085,7 +1085,7 @@ jobs:
   # A failed full run has no pull request to show it, so it comments on the standing item where the platform head reads it.
   report-failed-full-run:
     if: failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    needs: [checks, scope, cluster, bootstrap, opentofu, images, keycloak-hold]
+    needs: [checks, scope, cluster, bootstrap, opentofu, images, keycloak-hold, quality]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
