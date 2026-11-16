@@ -36,8 +36,10 @@ spec:
             - -ceu
             - |
               deadline=$((SECONDS + 600))
-              until (exec 3<>/dev/tcp/keycloak/8080 && printf 'GET /realms/master HTTP/1.0\r\nHost: keycloak\r\n\r\n' >&3 \
-                && read -r status <&3 && [[ $status == *' 200 '* ]]) 2>/dev/null; do
+              # One attempt ends after 2 s: a connection opened while the Service has no endpoint hangs in the kernel's
+              # connect give-up of about 135 s, and a second one opened just before Keycloak is Ready hangs again.
+              until timeout 2 bash -c 'exec 3<>/dev/tcp/keycloak/8080 && printf "GET /realms/master HTTP/1.0\r\nHost: keycloak\r\n\r\n" >&3 \
+                && read -r status <&3 && [[ $status == *" 200 "* ]]' 2>/dev/null; do
                 [ "$SECONDS" -lt "$deadline" ] || { echo 'front-end: Keycloak did not answer within 600 seconds' >&2; exit 1; }
                 sleep 2
               done
