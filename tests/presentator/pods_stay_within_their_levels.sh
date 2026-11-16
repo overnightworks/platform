@@ -177,10 +177,11 @@ judge_structure() {
   found "$manifest" "a template other than the web's shares its process namespace" \
     "select((.kind == \"Deployment\" and .metadata.name == \"web\") | not) | $SPECS | select(.shareProcessNamespace == true)"
   found "$manifest" "a template sets fsGroup" "$SPECS | select(.securityContext.fsGroup != null)"
-  # The platform's Postgres base reads its readiness through `pg_isready`, an exec probe; it is held to restricted above.
+  # The platform's Postgres and Redis bases probe through `pg_isready` and `redis-cli`, exec probes; both are held to
+  # restricted above.
   # The worker's readiness is an exec probe too, since a verified hello would spend a life; it has no other.
   found "$manifest" "a container has an exec probe or a postStart hook" \
-    "select(.kind + \"/\" + .metadata.name != \"StatefulSet/postgres\" and .kind + \"/\" + .metadata.name != \"$WORKER_KEY\") | $SPECS | [.initContainers[], .containers[]][] | select(.livenessProbe.exec != null or .readinessProbe.exec != null or .startupProbe.exec != null or .lifecycle.postStart != null)"
+    "select(.kind + \"/\" + .metadata.name != \"StatefulSet/postgres\" and .kind + \"/\" + .metadata.name != \"StatefulSet/redis\" and .kind + \"/\" + .metadata.name != \"$WORKER_KEY\") | $SPECS | [.initContainers[], .containers[]][] | select(.livenessProbe.exec != null or .readinessProbe.exec != null or .startupProbe.exec != null or .lifecycle.postStart != null)"
   found "$manifest" "a container of the worker has a probe or a postStart hook other than the worker's readiness exec" \
     "$WORKER | [.initContainers[], .containers[]][] | select(.livenessProbe != null or .startupProbe != null or .lifecycle.postStart != null or (.name != \"worker\" and .readinessProbe != null))"
   exactly "$manifest" "the worker's readiness probe is no exec" "$WORKER_CONTAINER | .readinessProbe | has(\"exec\")" 'true'
