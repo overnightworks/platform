@@ -2,9 +2,10 @@
 # Drive `mise run gpu:use` against a fake kubectl that records its calls and fails the one it is told to, for the
 # outcomes the cluster cannot arrange: `speech` stops songmaker's worker and waits until its pod is gone, starts the GPU
 # image and waits until it is Ready, and only then stops the small image, so the Service speech-runtime never has no
-# Ready pod; `songs` does it the other way round, starting the small image before the GPU image stops and the card
-# is free; every wait for a Deployment is for its ready replica and never for its rollout status, which a progress
-# deadline that ran out while a pod waited for the card would fail; a wait that fails ends non-zero, names the
+# Ready pod; `songs` does it the other way round, starting the small image at two pods and waiting until both are
+# Ready before the GPU image stops and the card is free; every wait for a Deployment is for the ready replicas it was
+# scaled to and never for its rollout status, which a progress deadline that ran out while a pod waited for the card
+# would fail; a wait that fails ends non-zero, names the
 # Deployment and the way back and makes none of the later calls; an unknown user is refused before any call.
 # Usage: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh
 set -euo pipefail
@@ -58,8 +59,8 @@ expect_calls "speech" \
 switch_to songs
 [ "$status" -eq 0 ] || fail "songs ended $status: $output"
 expect_calls "songs" \
-  "scale --namespace speech-runtime deployment/speech-runtime --replicas=1" \
-  "wait --namespace speech-runtime deployment/speech-runtime --for=jsonpath={.status.readyReplicas}=1" \
+  "scale --namespace speech-runtime deployment/speech-runtime --replicas=2" \
+  "wait --namespace speech-runtime deployment/speech-runtime --for=jsonpath={.status.readyReplicas}=2" \
   "scale --namespace speech-runtime deployment/speech-runtime-gpu --replicas=0" \
   "wait --namespace speech-runtime --for=delete pod" \
   "scale --namespace songmaker deployment/acestep-worker --replicas=1" \
