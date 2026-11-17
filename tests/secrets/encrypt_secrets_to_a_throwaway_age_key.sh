@@ -82,6 +82,36 @@ echo "::add-mask::$worker_key"
 printf '%s' "$worker_key" > "$(secret_files "$worker_key_secret" presentator)/$worker_key_file"
 plain_secret "$worker_key_secret" presentator Opaque
 
+# The object store's Secret holds the files its StatefulSet reads its two secrets from, in the hex form Garage takes. Each
+# namespace the Job apply makes a bucket for holds its key in the Secret that namespace's web mounts as its credentials
+# file, an access key ID of GK and 24 hex digits and a secret of 64, in the INI form the SDKs read.
+garage_statefulset="$(yq 'select(.kind == "StatefulSet")' "$OBJECTSTORE_LAYER/garage.yaml")"
+garage_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$garage_statefulset")"
+garage_namespace="$(yq '.metadata.namespace' <<<"$garage_statefulset")"
+garage_files="$(secret_files "$garage_secret" "$garage_namespace")"
+while IFS= read -r garage_secret_file; do
+  value="$(openssl rand -hex 32)"
+  echo "::add-mask::$value"
+  printf '%s' "$value" > "$garage_files/${garage_secret_file##*/}"
+done < <(yq '.spec.template.spec.containers[0].env[] | select(.value | test("^/run/secrets/")) | .value' <<<"$garage_statefulset")
+[ -n "$(ls -A "$garage_files")" ] || fail "$OBJECTSTORE_LAYER/garage.yaml names no secret file"
+plain_secret "$garage_secret" "$garage_namespace" Opaque
+web_deployment="$(yq 'select(.kind == "Deployment")' apps/presentator/web.yaml)"
+credentials_path="$(yq '.spec.template.spec.containers[0].env[] | select(.name == "AWS_SHARED_CREDENTIALS_FILE") | .value' <<<"$web_deployment")"
+secrets_mount="$(yq '.spec.template.spec.containers[0].volumeMounts[] | select(.name == "secrets") | .mountPath' <<<"$web_deployment")"
+read -r store_secret store_key < <(CREDENTIALS_ITEM="${credentials_path#"$secrets_mount"/}" yq '.spec.template.spec.volumes[] | select(.name == "secrets")
+  | .projected.sources[] | select(.secret.items[0].path == strenv(CREDENTIALS_ITEM)) | .secret.name + " " + .secret.items[0].key' <<<"$web_deployment")
+[ -n "$store_secret" ] && [ -n "$store_key" ] || fail "presentator's web mounts no Secret as its AWS_SHARED_CREDENTIALS_FILE"
+while IFS= read -r bucket_namespace; do
+  access_key_id="GK$(openssl rand -hex 12)"
+  secret_access_key="$(openssl rand -hex 32)"
+  echo "::add-mask::$access_key_id"
+  echo "::add-mask::$secret_access_key"
+  printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$access_key_id" "$secret_access_key" \
+    > "$(secret_files "$store_secret" "$bucket_namespace")/$store_key"
+  plain_secret "$store_secret" "$bucket_namespace" Opaque
+done < "$OBJECTSTORE_LAYER/namespaces.txt"
+
 # Prometheus mounts songmaker's monitoring token as a file, which the secretKeyRef scan below does not find, so its Secret
 # takes the value of the key songmaker reads it from.
 monitoring_files="$(secret_files songmaker-monitoring prometheus)"

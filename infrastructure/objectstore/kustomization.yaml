@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - garage.yaml
+  - apply.yaml
+configMapGenerator:
+  # Garage's configuration; a changed file changes the name, so Flux rolls the pod.
+  - name: garage-config
+    namespace: objectstore
+    files:
+      - garage.toml
+  # The namespaces that get a bucket and a key; apply_buckets.sh reads the key from each one's Secret object-store. A changed
+  # list or script changes the name, so Flux recreates the Job.
+  - name: buckets
+    namespace: objectstore
+    files:
+      - namespaces.txt
+  - name: apply-script
+    namespace: objectstore
+    files:
+      - scripts/apply_buckets.sh

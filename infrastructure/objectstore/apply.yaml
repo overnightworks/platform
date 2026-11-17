@@ -1,0 +1,142 @@
+# The Job apply makes the buckets and keys: for each namespace of the ConfigMap buckets, a bucket of that name, and the
+# key its Secret object-store holds, read and write on that bucket alone. The keys are made outside the cluster and only
+# imported here, so no secret is made at runtime. It runs once per change of its template; a rotated key runs it again by
+# deleting the Job, which Flux then recreates (docs/runbooks/change-an-object-store-key.md).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: apply
+  namespace: objectstore
+---
+# Reads the Secret object-store, which no namespace of a bucket needs a Role for: a cluster-wide grant by name leaves
+# every namespace's own objects to its own layer, and reaches no other Secret.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: object-store-credentials
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [object-store]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: object-store-credentials
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: object-store-credentials
+subjects:
+  - kind: ServiceAccount
+    name: apply
+    namespace: objectstore
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: apply
+  namespace: objectstore
+  annotations:
+    # A Job's template is immutable, so a changed one is applied by deleting and recreating the Job.
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  # A retry covers a pod lost or Garage not yet answering; a refusal of a key fails every attempt alike.
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: apply
+    spec:
+      restartPolicy: Never
+      serviceAccountName: apply
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # The group reads the admin token's file at mode 0440.
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: apply
+          # The image of k8up's operator, which ships curl, jq and kubectl; its digest moves with k8up's bump.
+          image: ghcr.io/k8up-io/k8up:v2.16.1@sha256:f59bfa37c51511d5ad67e53816fb55c62d0e6411890e59bb6b965923129f30b5
+          command: [sh, /apply/apply_buckets.sh]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: script
+              mountPath: /apply
+              readOnly: true
+            - name: buckets
+              mountPath: /buckets
+              readOnly: true
+            - name: garage
+              mountPath: /run/secrets/garage
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: script
+          configMap:
+            name: apply-script
+        - name: buckets
+          configMap:
+            name: buckets
+        - name: garage
+          secret:
+            secretName: garage
+            items:
+              - key: admin_token
+                path: admin_token
+            defaultMode: 0440
+        - name: tmp
+          emptyDir:
+            medium: Memory
+---
+# The Job sends only to cluster DNS, Garage's admin port and the API server, whose address after the Service's translation
+# is the node's own port 6443.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apply
+  namespace: objectstore
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apply
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: garage
+      ports:
+        - port: 3903
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.42.0.0/16, 10.43.0.0/16]
+      ports:
+        - port: 6443
+          protocol: TCP

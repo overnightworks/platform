@@ -1,0 +1,23 @@
+# One node, one copy of each object, and read-after-write. Both fsyncs narrow what a crash or a power loss can take
+# from an answered write; Garage's configuration reference names the cost, a significant drop in write speed.
+replication_factor = 1
+consistency_mode = "consistent"
+db_engine = "sqlite"
+metadata_dir = "/data/meta"
+data_dir = "/data/data"
+metadata_fsync = true
+data_fsync = true
+# The newest two snapshots stay in /data/meta/snapshots; docs/runbooks/restore-the-object-store-metadata.md copies one back.
+metadata_auto_snapshot_interval = "6h"
+
+# The node talks to itself only; rpc_secret comes from GARAGE_RPC_SECRET_FILE.
+rpc_bind_addr = "127.0.0.1:3901"
+rpc_public_addr = "127.0.0.1:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "0.0.0.0:3900"
+
+# admin_token comes from GARAGE_ADMIN_TOKEN_FILE.
+[admin]
+api_bind_addr = "0.0.0.0:3903"

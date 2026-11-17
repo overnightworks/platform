@@ -259,6 +259,8 @@ jobs:
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
       POSTGRES_BASE: infrastructure/postgres
+      # The object store's layer, whose Secret garage and whose buckets' Secrets object-store the job's platform-secrets serves.
+      OBJECTSTORE_LAYER: infrastructure/objectstore
       # The component a Postgres layer includes to be backed up, and the rest-server it backs up to.
       POSTGRES_BACKUP_COMPONENT: infrastructure/postgres/backup
       # The component that holds the weekly Schedule every backed-up namespace gets.
@@ -817,6 +819,15 @@ jobs:
         env:
           SONGMAKER_NAMESPACE: songmaker
         run: tests/backup/load_replaces_database_and_files_together.sh
+
+      - name: Assert that a Pod furnished as presentator's web reaches its bucket in the object store with the contract's environment alone and no other bucket, that only such Pods reach the S3 port and none the admin port, that a second run of the Job apply changes nothing and a rotated key loses its access
+        if: matrix.part == 'objectstore'
+        env:
+          APP_NAMESPACE: presentator
+          APP_MANIFEST: apps/presentator/web.yaml
+          # A namespace for the Pods that are no app's.
+          OTHER_NAMESPACE: objectstore-client
+        run: tests/objectstore/bucket_key_reaches_only_its_bucket.sh
 
       - name: Assert that the three legal pages and every asset reach a Pod beside cloudflared through Traefik with the committed bytes and headers, /favicon.ico and the asset directories get nginx's 404 and everything else Traefik's
         if: matrix.part == 'apps'
