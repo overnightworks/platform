@@ -1062,13 +1062,13 @@ jobs:
 
       - name: Start Garage
         id: garage
-        uses: ./.github/actions/garage
+        uses: $/.github/actions/garage
 
       - name: Put, get, list and delete an object through the exported environment alone
         env:
           BUCKET: ${{ steps.garage.outputs.bucket }}
         run: |
-          uv run --no-project --with 'boto3>=1.36' python -I - <<'PYTHON'
+          uv run --no-project --no-build --with boto3==1.44.5 python -I - <<'PYTHON'
           import os
 
           import boto3
