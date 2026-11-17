@@ -36,8 +36,23 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
   stays until the next release replaces the Job, so the node keeps the image.
 - Provenance: platform's `images` job checks a bumped ref's tag, attestation and signer. Admission on the PC checks the
   ref's form only.
+- An S3-compatible object store, for a file that more than one pod needs: the Service `s3` in Namespace `objectstore`,
+  Garage behind it, one bucket and one key per app (`infrastructure/objectstore`). The bucket is named like the app's
+  Namespace and holds read and write rights for its key alone; the key neither owns the bucket nor makes another. An app
+  gets a bucket in a pull request that adds its Namespace to `infrastructure/objectstore/namespaces`, a Role that lets
+  the Job `apply` read its Secret `object-store`, and the Secret in `platform-secrets`. The contract, in the web's
+  environment:
+  - `AWS_ENDPOINT_URL_S3`, the Service's address, and `AWS_DEFAULT_REGION`, the store's region, which the SDK reads by
+    these names;
+  - `AWS_SHARED_CREDENTIALS_FILE`, a file of the Secret `object-store`, key `credentials`, in the INI form the SDKs
+    read (`[default]`, `aws_access_key_id`, `aws_secret_access_key`);
+  - `<APP>_S3_BUCKET`, the bucket's name.
 
-Provided for an app's database: a weekly k8up backup into its own repository on the platform, kept 4 weekly and 3 monthly, with a monthly `restic check` and a monthly restore test (`infrastructure/postgres/backup`, which keycloak, litellm, skat and songmaker include). Not provided: a backup of an app's files, a database's backup without its layer including that component, and a copy of anything off the PC. A dead disk loses every app's data.
+  The app's adapter addresses the bucket by path, as cluster DNS resolves no bucket subdomain. The store has no object
+  versioning and no `If-None-Match` on a write. Plain HTTP stays inside the cluster. A bucket has no backup: it holds
+  what the app can rebuild, and a file that is the app's only copy stays out of it until the platform backs buckets up.
+
+Provided for an app's database: a weekly k8up backup into its own repository on the platform, kept 4 weekly and 3 monthly, with a monthly `restic check` and a monthly restore test (`infrastructure/postgres/backup`, which keycloak, litellm, skat and songmaker include). Where an app's layer also includes `infrastructure/postgres/backup/files` and names a claim, the backup copies that claim beside the dump. Not provided: a backup of a claim that no layer names, a database's backup without its layer including that component, a backup of an object store bucket, and a copy of anything off the PC. A dead disk loses every app's data.
 
 ## What every app offers
 
