@@ -75,8 +75,11 @@ jobs:
       - name: Check that cutover:preflight names each missing precondition, exits 1, 3 or 2, writes its evidence only at 0 and makes only reads
         run: mise exec -- tests/cutover/preflight_names_each_missing_precondition.sh
 
-      - name: Check that backup:now ends non-zero naming a Backup that failed or did not complete without a restore test Job, and the Job it could not make after a Backup that succeeded
+      - name: Check that backup:now ends non-zero naming a Backup that failed or did not complete without a restore test Job, the Job it could not make or that failed after a Backup that succeeded, and refuses a namespace without exactly one Schedule or without the CronJob making no object
         run: mise exec -- tests/backup/backup_now_ends_non_zero_naming_a_failed_backup_or_the_job_it_could_not_make.sh
+
+      - name: Check that backup:fetch ends non-zero naming a file that holds no custom-format dump and deletes it, and keeps a dump at mode 0600
+        run: mise exec -- tests/backup/backup_fetch_deletes_a_file_that_holds_no_custom_format_dump.sh
 
       - name: Check that gpu:use orders its steps so speech always has a Ready pod, waits for each Deployment's ready replica, names the step and the way back of a failed wait and refuses an unknown user
         run: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh
