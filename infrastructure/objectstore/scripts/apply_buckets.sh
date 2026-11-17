@@ -1,5 +1,5 @@
 #!/bin/sh
-# Makes, for each namespace of /buckets/namespaces, the bucket of that name and grants the key of the namespace's Secret
+# Makes, for each namespace of /buckets/namespaces.txt, the bucket of that name and grants the key of the namespace's Secret
 # object-store read and write on it, and every other key nothing: the grants of this Job are the grants there are. The key
 # is imported as it stands, so no secret is made here. A second run changes nothing. A failure names the step, the
 # namespace, a key ID or a status, never a secret or an answer's body.
@@ -100,4 +100,4 @@ while read -r namespace || [ -n "$namespace" ]; do
   import_key "$namespace"
   grant "$namespace"
   echo "apply: bucket $namespace holds key $key_id"
-done </buckets/namespaces
+done </buckets/namespaces.txt

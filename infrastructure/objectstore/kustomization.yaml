@@ -1,4 +1,3 @@
-# Every object states its namespace, as the Role below lives in an app's namespace and a namespace field here would move it.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -10,13 +9,13 @@ configMapGenerator:
     namespace: objectstore
     files:
       - garage.toml
-  # The namespaces that get a bucket and a key; apply.sh reads the key from each one's Secret object-store. A changed
+  # The namespaces that get a bucket and a key; apply_buckets.sh reads the key from each one's Secret object-store. A changed
   # list or script changes the name, so Flux recreates the Job.
   - name: buckets
     namespace: objectstore
     files:
-      - namespaces
+      - namespaces.txt
   - name: apply-script
     namespace: objectstore
     files:
-      - apply.sh
+      - scripts/apply_buckets.sh

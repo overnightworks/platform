@@ -42,7 +42,7 @@ read -r service_name service_port <<<"$s3_service"
   fail "the web's AWS_ENDPOINT_URL_S3 is not the Service $service_name in $store_namespace on port $service_port"
 [ "$(web_env AWS_DEFAULT_REGION)" = "$(yq -p toml -o yaml '.s3_api.s3_region' "$layer/garage.toml")" ] ||
   fail "the web's AWS_DEFAULT_REGION is not the s3_region of garage.toml"
-grep -qxF "$bucket" "$layer/namespaces" || fail "the bucket $bucket of the web is no namespace the Job apply makes a bucket for"
+grep -qxF "$bucket" "$layer/namespaces.txt" || fail "the bucket $bucket of the web is no namespace the Job apply makes a bucket for"
 [ "$bucket" = "$APP_NAMESPACE" ] || fail "the bucket $bucket is not named like the namespace $APP_NAMESPACE"
 echo "the web's endpoint, region and bucket $bucket equal what the store's manifests give"
 

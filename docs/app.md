@@ -39,8 +39,8 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
 - An S3-compatible object store, for a file that more than one pod needs: the Service `s3` in Namespace `objectstore`,
   Garage behind it, one bucket and one key per app (`infrastructure/objectstore`). The bucket is named like the app's
   Namespace and holds read and write rights for its key alone; the key neither owns the bucket nor makes another. An app
-  gets a bucket in a pull request that adds its Namespace to `infrastructure/objectstore/namespaces`, a Role that lets
-  the Job `apply` read its Secret `object-store`, and the Secret in `platform-secrets`. The contract, in the web's
+  gets a bucket in a pull request that adds its Namespace to `infrastructure/objectstore/namespaces.txt`, and the Secret
+  `object-store` in `platform-secrets`, which the Job `apply` reads through its ClusterRole. The contract, in the web's
   environment:
   - `AWS_ENDPOINT_URL_S3`, the Service's address, and `AWS_DEFAULT_REGION`, the store's region, which the SDK reads by
     these names;

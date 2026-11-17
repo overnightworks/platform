@@ -19,10 +19,9 @@ Impact: the app's pods get 403 from the store until they hold the key that the J
    Rights granted by hand through the admin API are revoked too, by design.
 3. An agent: `kubectl -n <namespace> rollout restart deployment <web>`. The pods that kept the old key get 403 until they
    restart, since the key file is read at start.
-4. A first bucket for a namespace, a pull request: its name in `infrastructure/objectstore/namespaces`, a Role and
-   binding for the Job `apply` beside the existing ones in `infrastructure/objectstore/apply.yaml`, the namespace's pods
-   in the NetworkPolicy `garage` of `infrastructure/objectstore/garage.yaml`, and the Secret in `platform-secrets`.
-   The change of the list recreates the Job.
+4. A first bucket for a namespace, a pull request: its name in `infrastructure/objectstore/namespaces.txt`, the
+   namespace's pods in the NetworkPolicy `garage` of `infrastructure/objectstore/garage.yaml`, and the Secret in
+   `platform-secrets`. The change of the list recreates the Job.
 
 Rollback: the old value back in `platform-secrets`, then steps 2 and 3. The key that was revoked is granted again, and
 the new one loses its rights.
