@@ -1044,6 +1044,46 @@ jobs:
       - name: Run the fixture cases through the script
         run: mise exec -- tests/images/run.sh
 
+  app-garage:
+    # The action an app's CI runs for its object store, driven the way an app drives it: a boto3 client with no endpoint,
+    # region or key argument.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Start Garage
+        id: garage
+        uses: ./.github/actions/garage
+
+      - name: Put, get, list and delete an object through the exported environment alone
+        env:
+          BUCKET: ${{ steps.garage.outputs.bucket }}
+        run: |
+          uv run --no-project --with 'boto3>=1.36' python -I - <<'PYTHON'
+          import os
+
+          import boto3
+          from botocore.config import Config
+
+          client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
+          bucket = os.environ["BUCKET"]
+          client.put_object(Bucket=bucket, Key="probe/object", Body=b"payload")
+          assert client.get_object(Bucket=bucket, Key="probe/object")["Body"].read() == b"payload"
+          assert [item["Key"] for item in client.list_objects_v2(Bucket=bucket)["Contents"]] == ["probe/object"]
+          client.delete_object(Bucket=bucket, Key="probe/object")
+          assert "Contents" not in client.list_objects_v2(Bucket=bucket)
+          print("put, get, list and delete passed")
+          PYTHON
+
   keycloak-hold:
     runs-on: ubuntu-latest
     timeout-minutes: 15

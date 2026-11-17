@@ -48,7 +48,16 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
     read (`[default]`, `aws_access_key_id`, `aws_secret_access_key`);
   - `<APP>_S3_BUCKET`, the bucket's name.
 
-  The app's adapter addresses the bucket by path, as cluster DNS resolves no bucket subdomain. The store has no object
+  A Python app's adapter uses boto3 from 1.36 on, made with no endpoint, region or key argument, since botocore reads the
+  three variables above, and with `Config(s3={"addressing_style": "path"})`, as cluster DNS resolves no bucket subdomain.
+  It makes one client per process, so a rotated key takes effect at the restart that reads it, and an async app calls it
+  through anyio's threadpool. aiobotocore lags botocore's releases and pulls aiohttp, obstore does not read the shared
+  credentials file, and minio-py reads no endpoint from the environment. An app's CI drives its adapter against the real
+  Garage through the action `.github/actions/garage`, never an imitation of AWS: it starts Garage at the image and with the
+  `garage.toml` that `infrastructure/objectstore` holds at the commit it is pinned at, makes the bucket named by its input
+  `bucket` (default the repository's name), imports a key it generates, and exports the three variables above, with the
+  bucket as its output `bucket`. An app pins it as `uses: overnightworks/platform/.github/actions/garage@<commit sha>`.
+  The store has no object
   versioning and no `If-None-Match` on a write. Plain HTTP stays inside the cluster. A bucket has no backup: it holds
   what the app can rebuild, and a file that is the app's only copy stays out of it until the platform backs buckets up.
 

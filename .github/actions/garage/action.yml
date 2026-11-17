@@ -1,0 +1,26 @@
+name: Garage for an app's CI
+description: >-
+  Starts a single-node Garage at the image and with the configuration infrastructure/objectstore pins, makes one bucket and
+  imports a key generated in the job, and exports the contract an app's S3 client reads.
+inputs:
+  bucket:
+    description: The bucket's name.
+    default: ${{ github.event.repository.name }}
+outputs:
+  bucket:
+    description: The bucket's name.
+    value: ${{ steps.start.outputs.bucket }}
+  endpoint:
+    description: The S3 endpoint, also exported as AWS_ENDPOINT_URL_S3.
+    value: ${{ steps.start.outputs.endpoint }}
+  credentials-file:
+    description: The credentials file, also exported as AWS_SHARED_CREDENTIALS_FILE.
+    value: ${{ steps.start.outputs.credentials-file }}
+runs:
+  using: composite
+  steps:
+    - id: start
+      shell: sh
+      env:
+        BUCKET: ${{ inputs.bucket }}
+      run: ${{ github.action_path }}/start.sh
