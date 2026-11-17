@@ -50,10 +50,13 @@ done
 
 # admin <step> <path> <json>: the body reaches curl through stdin.
 admin() {
-  status=$(printf '%s' "$3" | curl --silent --max-time 30 --output "$RUNNER_TEMP/garage-answer" --write-out '%{http_code}' \
+  step=$1
+  path=$2
+  body=$3
+  status=$(printf '%s' "$body" | curl --silent --max-time 30 --output "$RUNNER_TEMP/garage-answer" --write-out '%{http_code}' \
     --request POST --header @"$RUNNER_TEMP/garage-admin-header" --header 'Content-Type: application/json' \
-    --data-binary @- "$admin$2") || fail "$1: Garage did not answer"
-  [ "$status" = 200 ] || fail "$1: Garage answered $status"
+    --data-binary @- "$admin$path") || fail "$step: Garage did not answer"
+  [ "$status" = 200 ] || fail "$step: Garage answered $status"
 }
 
 admin "creating the bucket" /v2/CreateBucket "$(jq -nc --arg alias "$BUCKET" '{globalAlias: $alias}')"
