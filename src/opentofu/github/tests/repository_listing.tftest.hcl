@@ -33,6 +33,7 @@ run "a_listing_that_agrees_with_the_declarations_passes" {
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech", "archived": false, "private": false, "fork": false},
           {"name": "tandem", "archived": false, "private": false, "fork": false},
+          {"name": "video", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
           {"name": "ACE-Step-1.5", "archived": false, "private": false, "fork": true},
           {"name": "retired-project", "archived": true, "private": false, "fork": false}
@@ -73,6 +74,7 @@ run "an_undeclared_listed_repository_fails" {
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech", "archived": false, "private": false, "fork": false},
           {"name": "tandem", "archived": false, "private": false, "fork": false},
+          {"name": "video", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
           {"name": "ACE-Step-1.5", "archived": false, "private": false, "fork": true},
           {"name": "undeclared", "archived": false, "private": false, "fork": false}
@@ -114,6 +116,7 @@ run "a_managed_repository_missing_from_the_listing_fails" {
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech", "archived": false, "private": false, "fork": false},
           {"name": "tandem", "archived": false, "private": false, "fork": false},
+          {"name": "video", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
           {"name": "ACE-Step-1.5", "archived": false, "private": false, "fork": true}
         ]
@@ -155,6 +158,7 @@ run "a_managed_repository_listed_as_archived_fails" {
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech", "archived": false, "private": false, "fork": false},
           {"name": "tandem", "archived": false, "private": false, "fork": false},
+          {"name": "video", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
           {"name": "ACE-Step-1.5", "archived": false, "private": false, "fork": true}
         ]
@@ -196,6 +200,7 @@ run "a_managed_repository_listed_as_a_fork_fails" {
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech", "archived": false, "private": false, "fork": false},
           {"name": "tandem", "archived": false, "private": false, "fork": false},
+          {"name": "video", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
           {"name": "ACE-Step-1.5", "archived": false, "private": false, "fork": true}
         ]
@@ -237,6 +242,7 @@ run "a_listing_with_a_next_page_cannot_be_judged" {
           {"name": "songmaker", "archived": false, "private": false, "fork": false},
           {"name": "speech", "archived": false, "private": false, "fork": false},
           {"name": "tandem", "archived": false, "private": false, "fork": false},
+          {"name": "video", "archived": false, "private": false, "fork": false},
           {"name": "webauth", "archived": false, "private": false, "fork": false},
           {"name": "ACE-Step-1.5", "archived": false, "private": false, "fork": true}
         ]

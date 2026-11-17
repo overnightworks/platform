@@ -18,6 +18,7 @@ locals {
     "songmaker",
     "speech",
     "tandem",
+    "video",
     "webauth",
   ])
 
