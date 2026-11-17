@@ -1,8 +1,0 @@
-claim_id = "3c4bcd8c44214216a23132a02e3d9bed"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "b3ed82715e9c91f73b078156f8add46a9b3fd426"
-branch = "claude/issue-679-presentator-s-sqlite-path-leaves-platfor"
-scope = [".github/workflows/ci.yml", "apps/presentator", "docs/runbooks/restore-a-database.md", "infrastructure/sqlite", "mise.toml", "scripts/presentator_load_database.sh", "tests/backup", "tests/flux", "tests/presentator", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
-opened_commit = "ce3e5ba2aa370322d9d6179e7776985619af7dd7"
-whole_reason = "one predecessor spans its manifests, task, cells, CI legs and runbook"
