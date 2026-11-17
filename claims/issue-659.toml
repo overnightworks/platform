@@ -1,8 +1,0 @@
-claim_id = "32eec82e31e349e4bf78c44ccd05cee0"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "b60a5401880da3e905c676ed4942abbc78fa032b"
-branch = "claude/issue-659-presentator-gets-an-s3-compatible-object"
-scope = [".github/workflows/ci.yml", "apps/presentator", "clusters/pc/apps.yaml", "clusters/pc/infrastructure.yaml", "docs/app.md", "docs/runbooks", "infrastructure/admission/image-vendors.yaml", "infrastructure/namespaces", "infrastructure/objectstore", "tests/flux", "tests/no_network/worker_pod_reaches_only_its_port_and_the_loopback.sh", "tests/objectstore", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
-opened_commit = "50a389c4f770864e258fd515922be644c83053c6"
-whole_reason = "one new layer, its first bucket, its cell and its contract doc are one end-to-end slice"
