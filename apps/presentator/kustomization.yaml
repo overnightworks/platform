@@ -6,24 +6,22 @@ resources:
   - rbac.yaml
   - web.yaml
   - worker.yaml
-  - ../../infrastructure/sqlite
-  - postgres
+  - ../../infrastructure/postgres
   - ../../infrastructure/redis
 components:
+  - ../../infrastructure/postgres/backup
   - release
 configMapGenerator:
   # The one rule file of the workers' packet filter; its hash suffix rolls the pods when a rule changes.
   - name: build-worker-rules
     files:
       - worker.nft
-  - name: sqlite
+  - name: postgres
     behavior: merge
     literals:
-      # One row per person who ever signed in.
-      - key-table=users
+      # alembic_version, which presentator migrate writes, comes first: the restore test fails on an empty first table.
+      - key-tables=alembic_version users sources decks
       - backup-repository=http://rest-server.backup.svc.cluster.local:8000/presentator/
-      # k8up names a stream /<namespace>-<container><extension>: the web's, with the extension .sqlite3.
-      - snapshot-file=presentator-web.sqlite3
 patches:
   # Only the web holds store credentials; the build workers, the backups and the restore tests reach no Redis.
   - target:
@@ -39,57 +37,11 @@ patches:
 replacements:
   - source:
       kind: ConfigMap
-      name: sqlite
+      name: postgres
       fieldPath: data.backup-repository
     targets:
       - select:
           kind: Schedule
-          name: backup
-        fieldPaths:
-          - spec.backend.rest.url
-      # Both databases share the one repository, whose URL this layer states once.
-      - select:
-          kind: ConfigMap
           name: postgres
         fieldPaths:
-          - data.backup-repository
-        options:
-          create: true
-  # The restore test checks the copy in the image and as the user that wrote it. A selector also matches a renamed object by
-  # its first name, so the Postgres restore test, which postgres/ renames, is rejected by its own.
-  - source:
-      kind: Deployment
-      name: web
-      fieldPath: spec.template.spec.containers.[name=web].image
-    targets:
-      - select:
-          kind: CronJob
-          name: restore-test
-        reject:
-          - name: postgres-restore-test
-        fieldPaths:
-          - spec.jobTemplate.spec.template.spec.containers.[name=restore-test].image
-  - source:
-      kind: Deployment
-      name: web
-      fieldPath: spec.template.spec.securityContext.runAsUser
-    targets:
-      - select:
-          kind: CronJob
-          name: restore-test
-        reject:
-          - name: postgres-restore-test
-        fieldPaths:
-          - spec.jobTemplate.spec.template.spec.securityContext.runAsUser
-  - source:
-      kind: Deployment
-      name: web
-      fieldPath: spec.template.spec.securityContext.runAsGroup
-    targets:
-      - select:
-          kind: CronJob
-          name: restore-test
-        reject:
-          - name: postgres-restore-test
-        fieldPaths:
-          - spec.jobTemplate.spec.template.spec.securityContext.runAsGroup
+          - spec.backend.rest.url
