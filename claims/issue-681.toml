@@ -1,0 +1,7 @@
+claim_id = "80d0de59af1240ee86b97d4e65724fe2"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "b60a5401880da3e905c676ed4942abbc78fa032b"
+branch = "claude/issue-681-personas-second-migrate-assertion-leaves"
+scope = [".github/workflows/ci.yml", "tests/personas/migrate_fills_the_key_tables_and_runs_again_unchanged.sh"]
+opened_commit = "799756e622d2b31ffa5d572cdb1b3d1556943108"
