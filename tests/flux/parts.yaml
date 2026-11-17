@@ -24,4 +24,6 @@ backup-2: {layers: [backup, songmaker], paths: [tests/backup/*, tests/disk/*]}
 # The test agents' cells drive Keycloak.
 presentator: {layers: [presentator, keycloak], paths: [tests/keycloak/*, tests/no_network/*, tests/presentator/*, tests/redis/*]}
 presentator-2: {layers: [presentator], paths: [tests/presentator/*, tests/workloads/*]}
+# The object store's cell drives Garage and its Job from client Pods in presentator's Namespace, which holds no layer here.
+objectstore: {layers: [objectstore], paths: [tests/objectstore/*]}
 ai-gateway-outage: {layers: [litellm, gatus, prometheus], nightly_only: true, paths: [tests/prometheus/*]}
