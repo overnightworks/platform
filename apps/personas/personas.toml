@@ -106,7 +106,7 @@ client_id = "agent-mozart"
 secret_file = "/run/secrets/mozart_client_secret"
 persona_file = "/app/characters/mozart.md"
 model = "text/haiku-fast"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.13.2/mozart.vrm", sha256 = "085a5d49db270d6ce06235bce163bfd0895e6d5be546834c9aa48bddf79f5b7e" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.17.1/mozart.vrm", sha256 = "61ddbe483b0de6ace152f7b8b0a972abcc444101523572afb6293e70320350e2" }
 # ryan exists only in speech's GPU image; Thorsten is speech's male German Piper voice for the CPU.
 voice = { names = ["ryan", "de_DE-thorsten-medium"] }
 
@@ -114,7 +114,7 @@ voice = { names = ["ryan", "de_DE-thorsten-medium"] }
 client_id = "agent-leonardo"
 secret_file = "/run/secrets/leonardo_client_secret"
 persona_file = "/app/characters/leonardo.md"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.13.2/leonardo.vrm", sha256 = "c14f6b5d47612fdb00c881cf5c94877117cd3d9dd3a4b1788791c4676dc9d590" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.17.1/leonardo.vrm", sha256 = "0d439c692756c7e26340e9ea2699ae309cbade0d7139959f684a7fe75a6cea33" }
 # ryan exists only in speech's GPU image; Thorsten is speech's male German Piper voice for the CPU.
 voice = { names = ["ryan", "de_DE-thorsten-medium"] }
 
