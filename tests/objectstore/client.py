@@ -1,3 +1,4 @@
+# ruff: noqa: T201 - the program's one output owner
 """An app's S3 client for bucket_key_reaches_only_its_bucket.sh: botocore with only the environment the web's manifest
 holds, the bucket named in the variable that argv names, addressed by path as the apps' adapters do.
 
@@ -18,6 +19,11 @@ MEBIBYTE = 1024 * 1024
 
 def status_of(error: ClientError) -> int:
     return error.response["ResponseMetadata"]["HTTPStatusCode"]
+
+
+def require(condition: bool, description: str) -> None:
+    if not condition:
+        raise SystemExit(f"FAIL: {description}")
 
 
 def refused_with(status: int, description: str, call) -> None:
@@ -44,17 +50,17 @@ def allowed(client, bucket: str, other_bucket: str) -> None:
     prefix = f"cell-{uuid.uuid4().hex}/"
     small, large = prefix + "small", prefix + "large"
     client.put_object(Bucket=bucket, Key=small, Body=b"0123456789")
-    assert client.get_object(Bucket=bucket, Key=small)["Body"].read() == b"0123456789", "the small object came back changed"
+    require(client.get_object(Bucket=bucket, Key=small)["Body"].read() == b"0123456789", "the small object came back changed")
     print("ok: put and get of a small object")
     multipart_put(client, bucket, large)
-    assert client.head_object(Bucket=bucket, Key=large)["ContentLength"] == 6 * MEBIBYTE, "the multipart object has another size"
+    require(client.head_object(Bucket=bucket, Key=large)["ContentLength"] == 6 * MEBIBYTE, "the multipart object has another size")
     print("ok: multipart put of 6 MiB in two parts, and head")
     ranged = client.get_object(Bucket=bucket, Key=large, Range=f"bytes={5 * MEBIBYTE - 2}-{5 * MEBIBYTE + 1}")
-    assert ranged["ResponseMetadata"]["HTTPStatusCode"] == 206, "a ranged get did not answer 206"
-    assert ranged["Body"].read() == b"aabb", "a ranged get across the part boundary returned other bytes"
+    require(ranged["ResponseMetadata"]["HTTPStatusCode"] == 206, "a ranged get did not answer 206")
+    require(ranged["Body"].read() == b"aabb", "a ranged get across the part boundary returned other bytes")
     print("ok: ranged get answers 206 with the bytes across the boundary of two parts")
     listed = [item["Key"] for item in client.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents", [])]
-    assert sorted(listed) == [large, small], f"a list by prefix returned {listed}"
+    require(sorted(listed) == [large, small], f"a list by prefix returned {listed}")
     print("ok: list by prefix")
     for key in (small, large):
         client.delete_object(Bucket=bucket, Key=key)
