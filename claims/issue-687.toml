@@ -3,6 +3,6 @@ agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
 role = "builder"
 base = "408bedde643306923a15338e2be519212b1968db"
 branch = "claude/issue-687-every-app-s-s3-client-and-its-ci-store-f"
-scope = [".github/actions", "docs/app.md", "infrastructure/objectstore"]
+scope = [".github/actions", ".github/workflows/ci.yml", "docs/app.md", "infrastructure/objectstore"]
 opened_commit = "aa8a59cc2c8dc4690e195fc152d9664a8a1ae96d"
 whole_reason = "the doc line, the action and its one use are one slice"
