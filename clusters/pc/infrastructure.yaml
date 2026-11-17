@@ -241,6 +241,27 @@ spec:
     kind: GitRepository
     name: flux-system
 ---
+# The S3-compatible store, its Secret garage and each bucket's Secret object-store from platform-secrets, and its claim
+# through storage. Apps that hold a bucket wait for it, so their buckets and keys exist before their pods start.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: objectstore
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+    - name: platform-secrets
+    - name: storage
+  interval: 10m0s
+  path: ./infrastructure/objectstore
+  prune: true
+  wait: true
+  timeout: 10m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
 # The node's one GPU through the RuntimeClass nvidia and NVIDIA's device plugin. No other layer depends on it, so a card
 # that is not offered stops only this layer.
 apiVersion: kustomize.toolkit.fluxcd.io/v1

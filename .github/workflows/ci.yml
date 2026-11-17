@@ -259,6 +259,8 @@ jobs:
       SECRETS_LAYER: flux-system/platform-secrets
       # The Postgres base the layers under infrastructure/ and apps/ include.
       POSTGRES_BASE: infrastructure/postgres
+      # The object store's layer, whose Secret garage and whose buckets' Secrets object-store the job's platform-secrets serves.
+      OBJECTSTORE_LAYER: infrastructure/objectstore
       # The component a Postgres layer includes to be backed up, and the rest-server it backs up to.
       POSTGRES_BACKUP_COMPONENT: infrastructure/postgres/backup
       # The component that holds the weekly Schedule every backed-up namespace gets.

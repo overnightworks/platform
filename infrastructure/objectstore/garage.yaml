@@ -1,0 +1,161 @@
+# The platform's S3-compatible store: one Garage pod, one bucket and one key per app. The Service s3 is the endpoint every
+# app names, so a different store behind it changes no app. Its two secrets are files of the Secret garage from
+# platform-secrets: rpc_secret and admin_token.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: garage
+  namespace: objectstore
+spec:
+  replicas: 1
+  serviceName: garage
+  # The claim outlives the StatefulSet, so a pruned or deleted layer keeps the objects.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: garage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: garage
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        # The group reads the Secret's files at mode 0440, as a non-root user must.
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: garage
+          image: docker.io/dxflrs/garage:v2.5.0@sha256:677e5b758e4425a325b811c425c026bf35a4bf42f7ddbaa773de3f4fd779a5a5
+          # --single-node lays out the one node by itself, without replication.
+          command: [/garage]
+          args: [server, --single-node]
+          env:
+            - name: GARAGE_CONFIG_FILE
+              value: /etc/garage/garage.toml
+            - name: GARAGE_RPC_SECRET_FILE
+              value: /run/secrets/garage/rpc_secret
+            - name: GARAGE_ADMIN_TOKEN_FILE
+              value: /run/secrets/garage/admin_token
+            # Garage refuses a secret file with any group or other bit. A Secret's files are root's, read by the group
+            # fsGroup names at mode 0440 and by no other, so the check is off for them.
+            - name: GARAGE_ALLOW_WORLD_READABLE_SECRETS
+              value: "true"
+          ports:
+            - name: s3
+              containerPort: 3900
+            - name: admin
+              containerPort: 3903
+          # 200 once Garage has a quorum, which one node always is; the endpoint needs no token.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: admin
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: admin
+            periodSeconds: 20
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/garage
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets/garage
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: garage-config
+        - name: secrets
+          secret:
+            secretName: garage
+            defaultMode: 0440
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations:
+          kustomize.toolkit.fluxcd.io/prune: disabled
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 10Gi
+---
+# The apps' endpoint: http://s3.objectstore.svc.cluster.local:3900.
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+  namespace: objectstore
+spec:
+  selector:
+    app.kubernetes.io/name: garage
+  ports:
+    - name: s3
+      port: 3900
+      targetPort: s3
+---
+# The StatefulSet's own name and the admin API, which only this namespace's pods reach (the policy below).
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage
+  namespace: objectstore
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: garage
+  ports:
+    - name: admin
+      port: 3903
+      targetPort: admin
+---
+# The S3 port admits only the pods that carry a bucket's key, the web of presentator; a namespace that gets a bucket joins
+# this list with its pods. The admin port admits only the pods of this namespace, which the apply Job is. Garage sends
+# nothing: its one node talks to itself on the loopback.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: garage
+  namespace: objectstore
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: garage
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: presentator
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+      ports:
+        - port: 3900
+          protocol: TCP
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 3903
+          protocol: TCP

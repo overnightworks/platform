@@ -97,6 +97,17 @@ spec:
               value: /run/secrets/build-worker-key/key
             - name: PRESENTATOR_REDIS_URL
               value: redis://redis:6379/0
+            # The platform's object store, whose Service s3 is the endpoint of every app: the SDK reads the endpoint, the
+            # region and the key file from these names, and the adapter addresses the bucket by path. The bucket holds only
+            # what the web can rebuild, so it has no backup.
+            - name: AWS_ENDPOINT_URL_S3
+              value: http://s3.objectstore.svc.cluster.local:3900
+            - name: AWS_DEFAULT_REGION
+              value: garage
+            - name: AWS_SHARED_CREDENTIALS_FILE
+              value: /run/secrets/object-store/credentials
+            - name: PRESENTATOR_S3_BUCKET
+              value: presentator
             # The web connects to Postgres itself, with no pooling proxy between.
             - name: PRESENTATOR_DATABASE_URL
               value: postgresql://presentator@postgres:5432/presentator
@@ -130,8 +141,9 @@ spec:
               mountPath: /data/builds
       volumes:
         # Every key of the Secret presentator becomes a file: presentator_secret_key, oidc_client_secret and litellm_key.
-        # The workers' key lies beside them as /run/secrets/build-worker-key/key, readable by uid 1001: a volume of its own
-        # there would nest a mount inside this read-only one.
+        # The workers' key lies beside them as /run/secrets/build-worker-key/key, readable by uid 1001, and the object
+        # store's key file as /run/secrets/object-store/credentials: a volume of its own there would nest a mount inside
+        # this read-only one.
         - name: secrets
           projected:
             defaultMode: 0444
@@ -143,6 +155,11 @@ spec:
                   items:
                     - key: key
                       path: build-worker-key/key
+              - secret:
+                  name: object-store
+                  items:
+                    - key: credentials
+                      path: object-store/credentials
         - name: postgres-password
           secret:
             secretName: postgres
