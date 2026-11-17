@@ -1,9 +1,8 @@
 # presentator's web, pulled from its private package through the Secret ghcr-pull and started from the files of the
 # Secret presentator, both from platform-secrets. It serves from the Postgres of this namespace, which its init container
 # migrates to the image's head before the web starts; the first run may find Postgres not ready yet, and the init
-# container's backoff heals that. The claim `database` stays mounted with the SQLite file that served before, which
-# nothing writes now. One pod runs with Recreate, as the claims are ReadWriteOnce. It shares its process namespace so that
-# a pull's git and ssh children have a reaper. It holds no token and no right in the API.
+# container's backoff heals that. One pod runs with Recreate, as the claims are ReadWriteOnce. It shares its process
+# namespace so that a pull's git and ssh children have a reaper. It holds no token and no right in the API.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,12 +19,6 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: web
-      annotations:
-        # k8up execs this in the running pod and streams its stdout to restic, which names the file in the snapshot
-        # /<namespace>-<container><extension>, here /presentator-web.sqlite3. The path is read from the container's
-        # environment, so the image owns it.
-        k8up.io/backupcommand: sh -c 'exec python3 -I /etc/sqlite/sqlite_copy.py copy "$PRESENTATOR_DATABASE"'
-        k8up.io/file-extension: .sqlite3
     spec:
       serviceAccountName: web
       automountServiceAccountToken: false
@@ -131,15 +124,10 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
-            - name: database
-              mountPath: /data/database
             - name: mirrors
               mountPath: /data/mirrors
             - name: builds
               mountPath: /data/builds
-            - name: sqlite
-              mountPath: /etc/sqlite
-              readOnly: true
       volumes:
         # Every key of the Secret presentator becomes a file: presentator_secret_key, oidc_client_secret and litellm_key.
         # The workers' key lies beside them as /run/secrets/build-worker-key/key, readable by uid 1001: a volume of its own
@@ -162,18 +150,12 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 512Mi
-        - name: database
-          persistentVolumeClaim:
-            claimName: database
         - name: mirrors
           persistentVolumeClaim:
             claimName: mirrors
         - name: builds
           persistentVolumeClaim:
             claimName: builds
-        - name: sqlite
-          configMap:
-            name: sqlite
 ---
 apiVersion: v1
 kind: Service

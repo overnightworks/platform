@@ -75,8 +75,11 @@ jobs:
       - name: Check that cutover:preflight names each missing precondition, exits 1, 3 or 2, writes its evidence only at 0 and makes only reads
         run: mise exec -- tests/cutover/preflight_names_each_missing_precondition.sh
 
-      - name: Check that backup:now ends non-zero naming a Backup that failed or did not complete without a restore test Job, and the Job it could not make after a Backup that succeeded
+      - name: Check that backup:now ends non-zero naming a Backup that failed or did not complete without a restore test Job, the Job it could not make or that failed after a Backup that succeeded, and refuses a namespace without exactly one Schedule or without the CronJob making no object
         run: mise exec -- tests/backup/backup_now_ends_non_zero_naming_a_failed_backup_or_the_job_it_could_not_make.sh
+
+      - name: Check that backup:fetch ends non-zero naming a file that holds no custom-format dump and deletes it, and keeps a dump at mode 0600
+        run: mise exec -- tests/backup/backup_fetch_deletes_a_file_that_holds_no_custom_format_dump.sh
 
       - name: Check that gpu:use orders its steps so speech always has a Ready pod, waits for each Deployment's ready replica, names the step and the way back of a failed wait and refuses an unknown user
         run: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh
@@ -94,9 +97,6 @@ jobs:
 
       - name: Check that check:secrets-expiry passes no annotated Secret and a date 31 days out and names each Secret within 30 days, past, unparseable or unlisted
         run: tests/secrets/expiry_check_names_each_breach.sh
-
-      - name: Run the unit test of the SQLite copy script on Python 3.14
-        run: mise run sqlite:test
 
       - name: Run the legal project's tests at 100 % branch coverage
         run: mise run legal:test
@@ -263,8 +263,6 @@ jobs:
       POSTGRES_BACKUP_COMPONENT: infrastructure/postgres/backup
       # The component that holds the weekly Schedule every backed-up namespace gets.
       BACKUP_SCHEDULE_COMPONENT: infrastructure/backup/schedule
-      # The base a SQLite layer includes, which backs it up beside the Postgres ones.
-      SQLITE_COMPONENT: infrastructure/sqlite
       REST_SERVER_MANIFEST: infrastructure/backup/rest-server.yaml
     steps:
       - name: Check out for the part ${{ matrix.part }}
@@ -359,10 +357,6 @@ jobs:
       - name: Check that db:load-dump and interrupt_load.sh end as they owe where a command fails, a signal arrives or a table is empty
         if: matrix.part == 'core'
         run: tests/postgres/load_dump.sh
-
-      - name: Check that presentator:load-database names its state where the load is refused, its outcome is unknown, the rollout fails after a verified load, a signal arrives or the lock is unavailable
-        if: matrix.part == 'core'
-        run: tests/presentator/load_database.sh
 
       - name: Assert that k3s runs with host/k3s/config.yaml
         if: matrix.part == 'core'
@@ -776,6 +770,11 @@ jobs:
           kubectl kustomize apps/presentator/pull >"$RUNNER_TEMP/presentator-pull.yaml"
           tests/presentator/pods_stay_within_their_levels.sh "$RUNNER_TEMP/presentator.yaml" "$RUNNER_TEMP/presentator-pull.yaml"
 
+      # Last of its part: the cell leaves presentator on a release that may not start, so no step after it reads presentator.
+      - name: Assert that a release with a changed reference replaces the pull layer's Job, that the app's layer creates its new pods only after the new Job completed and that they find the image already present
+        if: matrix.part == 'presentator-2'
+        run: tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh presentator
+
       - name: Assert that presentator's Namespace enforces nothing and warns and audits at restricted, and that no Pod template of a layer runs as 61001 or 61002
         if: matrix.part == 'apps'
         run: tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh
@@ -808,40 +807,9 @@ jobs:
         if: matrix.part == 'presentator'
         run: tests/presentator/build_workers_are_two_pods_behind_one_service_with_one_key.sh
 
-      - name: Assert that presentator:load-database refuses before any change, replaces the live file whole or leaves the old one, keeps a suspension it found, and that a killed run and a second run at once converge on the same command
-        if: matrix.part == 'presentator-2'
-        run: tests/presentator/load_database_replaces_the_file_whole_or_not_at_all.sh
-
-      - name: Assert that presentator's restore test reads with the operator's restic at the Postgres test's schedule, fails without a snapshot and on an empty, missing or damaged copy, passes on a good copy written after it, and that presentator reaches only its own repository
-        if: matrix.part == 'presentator-backup'
-        env:
-          # A namespace with no repository, which gets no answer from the rest-server.
-          OUTSIDE_NAMESPACE: hopin
-        run: tests/presentator/restore_test_reads_the_latest_copy.sh
-
       - name: Assert that every exit of presentator's worker container gives a fresh pod, that a running pod is left alone, that an exit loop makes one pod at a time and leaves the node as it was, and that a removed sandbox ends in a fresh pod
         if: matrix.part == 'presentator'
         run: tests/presentator/a_used_worker_pod_is_replaced_by_a_fresh_one.sh
-
-      # After the restore test's step, whose repository this one adds snapshots to.
-      - name: Assert that a Backup under a concurrent writer leaves one consistent copy of presentator's database that its restore test passes and backup:fetch writes at 0600, refuses to overwrite and refuses when the latest snapshot is no SQLite copy, and that presentator:load-database loads it through a loader without the backup annotation
-        if: matrix.part == 'presentator-backup'
-        run: tests/presentator/backup_streams_a_consistent_copy_that_fetch_and_load_restore.sh
-
-      - name: Assert that backup:now refuses a namespace with no Schedule, with one Schedule and no CronJob restore-test and with both Schedules, making no object, and fails naming the restore test Job on an empty key table after a Backup that succeeded
-        if: matrix.part == 'presentator-backup-2'
-        run: tests/presentator/backup_now_refuses_what_it_cannot_run_and_fails_on_an_empty_key_table.sh
-
-      # After the step above, whose repository this one adds snapshots to; it leaves the SQLite stream's latest snapshot foreign.
-      - name: Assert that one Backup leaves one snapshot each of presentator's SQLite copy and Postgres dump, that each restore test passes on its own stream and fails alone on a foreign latest snapshot of its path, and that a second Backup supersedes it
-        if: matrix.part == 'presentator-backup-2'
-        run: tests/presentator/both_databases_are_backed_up_by_one_schedule_and_restored_by_their_own_tests.sh
-
-      # Last of its part, which has room for the pull of a second release image: the cell leaves presentator on a release
-      # that may not start, so no step after it reads presentator.
-      - name: Assert that a release with a changed reference replaces the pull layer's Job, that the app's layer creates its new pods only after the new Job completed and that they find the image already present
-        if: matrix.part == 'presentator-backup-2'
-        run: tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh presentator
 
       # The step changes songmaker's database and audio claim, which no later step of this part reads.
       - name: P7f cells

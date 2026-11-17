@@ -5,8 +5,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # presentator's web in the layer as Flux applied it: Ready, which its readiness probe answers only with /health at 200 and
 # so with a database that holds a revision row, the init container migrate terminated with 0, the web and migrate carry
 # the same URL (no password, query or fragment) and the same password file, which a read-only mount of the Secret
-# postgres holds, and the database holds one alembic_version row. The claim database stays mounted. Names, verdicts and
-# the row count only.
+# postgres holds, and the database holds one alembic_version row. Names, verdicts and the row count
+# only.
 export KUBECONFIG="$HOME/.kube/config"
 namespace=presentator
 url_variable=PRESENTATOR_DATABASE_URL
@@ -51,10 +51,6 @@ for container_list in containers initContainers; do
   [ "$holding" = 1 ] || fail "$holding mounts of the $container_list of $pod hold $password_file, not 1"
 done
 echo "$file_variable lies in a read-only mount of the Secret postgres in the web and in migrate"
-
-[ "$(yq '[.spec.containers[] | select(.name == "web") | .volumeMounts[] | select(.name == "database")] | length' <<<"$pod_json")" = 1 ] ||
-  fail "the web of $pod does not mount the claim database"
-echo "the web still mounts the claim database"
 
 # The user and the database are the ones in the URL.
 database_user="${web_url#postgresql://}" database_user="${database_user%%@*}"
