@@ -110,7 +110,7 @@ while IFS= read -r bucket_namespace; do
   printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$access_key_id" "$secret_access_key" \
     > "$(secret_files "$store_secret" "$bucket_namespace")/$store_key"
   plain_secret "$store_secret" "$bucket_namespace" Opaque
-done < "$OBJECTSTORE_LAYER/namespaces"
+done < "$OBJECTSTORE_LAYER/namespaces.txt"
 
 # Prometheus mounts songmaker's monitoring token as a file, which the secretKeyRef scan below does not find, so its Secret
 # takes the value of the key songmaker reads it from.
