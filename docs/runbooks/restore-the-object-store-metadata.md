@@ -13,8 +13,11 @@ Impact: every app with a bucket (presentator) cannot read or write its objects u
 
 ## Fix
 
-1. The operator's yes, since the store stops: an agent suspends the layer, `flux suspend kustomization objectstore`, then
-   scales the pod away, `kubectl -n objectstore scale statefulset garage --replicas 0`.
+1. The operator's yes, since the store stops: an agent suspends the apps' layer and the store's, `flux suspend
+   kustomization presentator` and `flux suspend kustomization objectstore`, scales the app's pods away,
+   `kubectl -n presentator scale deployment web --replicas 0`, which keeps S3 access closed until step 6 has reconciled
+   the restored store, then scales the store away, `kubectl -n objectstore scale statefulset garage --replicas 0`, and
+   deletes the Job, `kubectl -n objectstore delete job apply`.
 2. An agent starts a Pod in `objectstore` that mounts the claim `data-garage-0` at `/data`, runs as user and group 1000
    with the busybox image of `PROBE_IMAGE` in `.github/workflows/ci.yml`, and meets Pod Security `restricted`
    (`automountServiceAccountToken: false`, no privilege escalation, every capability dropped, a seccomp profile of
@@ -22,10 +25,15 @@ Impact: every app with a bucket (presentator) cannot read or write its objects u
 3. In that Pod, an agent lists `/data/meta/snapshots`: one entry per snapshot, named by the UTC time it was taken,
    `metadata_auto_snapshot_interval` (6 hours) apart, the newest two kept. It moves `/data/meta/db.sqlite` aside as
    `/data/meta/db.sqlite.corrupt` and copies the newest snapshot to `/data/meta/db.sqlite`, then deletes the Pod.
-4. An agent resumes and scales up: `kubectl -n objectstore scale statefulset garage --replicas 1`, `flux resume
-   kustomization objectstore`, and waits for `garage-0` to be Ready.
+4. An agent scales up, `kubectl -n objectstore scale statefulset garage --replicas 1`, and waits for `garage-0` to be Ready.
 5. An agent: `kubectl -n objectstore exec garage-0 -- /garage repair -a --yes tables`. It makes the tables consistent
    with the restored database.
+6. The snapshot holds the keys and grants of its time, so after a key rotation it still authorizes the revoked key and
+   lacks the current one. An agent resumes the store's layer, `flux resume kustomization objectstore`, which recreates
+   the Job `apply`: it imports the current key from each namespace's Secret `object-store` and revokes every other key's
+   rights, and the layer is Ready only when the Job has completed. Only then an agent resumes the apps, `flux resume
+   kustomization presentator`, which starts the web again, and checks that `kubectl -n objectstore logs job/apply` ends
+   with one line `bucket <namespace> holds key <id>` per bucket.
 
 Objects written after the snapshot lose their metadata: they are unreachable, and their blocks stay on the claim until
 Garage's own sweep. presentator rebuilds what its bucket holds; a later app that keeps a file only in a bucket restores
@@ -36,6 +44,6 @@ returns to the state before step 3.
 
 ## Escalate
 
-No snapshot is older than the corruption, `/data/meta/snapshots` is empty, or Garage still fails after step 5: stop and
-give the pod's log to the head. A store that is rebuilt from nothing deletes `data-garage-0`, which is the operator's
+No snapshot is older than the corruption, `/data/meta/snapshots` is empty, Garage still fails after step 5, or the Job
+`apply` fails in step 6: stop and give the pod's log to the head. A store that is rebuilt from nothing deletes `data-garage-0`, which is the operator's
 call, and every app then fills its bucket anew.
