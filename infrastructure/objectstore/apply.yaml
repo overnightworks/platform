@@ -8,12 +8,12 @@ metadata:
   name: apply
   namespace: objectstore
 ---
-# Reads one Secret of one namespace; a namespace that gets a bucket adds its own Role and binding here.
+# Reads the Secret object-store, which no namespace of a bucket needs a Role for: a cluster-wide grant by name leaves
+# every namespace's own objects to its own layer, and reaches no other Secret.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: object-store-credentials
-  namespace: presentator
 rules:
   - apiGroups: [""]
     resources: [secrets]
@@ -21,13 +21,12 @@ rules:
     verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
   name: object-store-credentials
-  namespace: presentator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
+  kind: ClusterRole
   name: object-store-credentials
 subjects:
   - kind: ServiceAccount
