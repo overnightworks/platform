@@ -3,92 +3,36 @@
 token_endpoint = "https://auth.hallucinai.de/realms/hallucinai/protocol/openid-connect/token"
 ready_file = "/tmp/ready"
 
+# A turn binds every tool an app lists when it starts; the app decides what an agent may do. Leonardo's client lacks
+# mcp-songmaker, so the runner's request for the scope is refused on each of his turns and logs tools_only_app_failed:
+# visible and harmless, and his turn runs on the other apps' tools.
 [[apps]]
 mcp_url = "https://hopin.hallucinai.de/mcp"
 scope = "mcp-hopin"
-tools = ["say"]
 max_tool_calls = 2
 
-# The whole list skat declares in its MCP tools/list, in its order, so an agent may use every tool the release declares.
-# Only `accept_invitation` is absent, since the runner calls it itself. A turn binds only those named here that the app
-# lists when the turn starts.
 [[apps]]
 mcp_url = "https://skat.hallucinai.de/mcp"
 scope = "mcp-skat"
-tools = [
-  "open_table",
-  "sit_down",
-  "stand_up",
-  "read_table",
-  "read_rule_sets",
-  "save_rule_set",
-  "auction_bid",
-  "auction_hold",
-  "auction_pass",
-  "auction_play",
-  "take_skat",
-  "put_back_cards",
-  "declare_game",
-  "ramsch_take_skat",
-  "ramsch_put_back_cards",
-  "ramsch_push_skat",
-  "ramsch_declare_grand_hand",
-  "play_card",
-  "give_up_game",
-  "agree_to_give_up",
-  "decline_give_up",
-  "throw_down_cards",
-  "say_kontra",
-  "say_no_word",
-  "continue_after_result",
-  "start_new_series",
-  "agree_to_end_series",
-  "refuse_to_end_series",
-  "agree_to_abort_hand",
-  "refuse_to_abort_hand",
-  "read_series_list",
-  "read_paused_tables",
-  "nudge_seat",
-]
 max_tool_calls = 4
 
-# The tools songmaker's release v2026.11.13.1 declares in its MCP tools/list, in its order (src/songmaker_cli/agent/
-# mcp.py serves the routes marked with `agent_tool`; src/songmaker_cli/api.py orders the routers), that an agent with
-# an account of its own needs to make an album and a song, generate it, follow the generation, and share or unshare:
-# `share_song` is open to such an agent only, and the album has `unshare_album` alone, since songmaker declares no
-# `share_album`. Nothing that deletes, rewrites or reads another part of the library is named. Six calls fit a turn that
-# makes an album and a song, starts the generation, follows it once and shares the song. If the app no longer declares
-# a tool named here, it lends none of its tools: the turn reports that once and runs on the other apps' tools.
-# Leonardo's client lacks mcp-songmaker, so the runner's request for the scope is refused on each of his turns and logs
-# tools_only_app_failed: visible and harmless, and his turn runs on the other apps' tools.
 [[apps]]
 mcp_url = "https://songmaker.hallucinai.de/mcp"
 scope = "mcp-songmaker"
 listens = false
-tools = [
-  "list_albums",
-  "create_album",
-  "unshare_album",
-  "list_songs",
-  "get_song",
-  "create_song",
-  "share_song",
-  "unshare_song",
-  "generate_song",
-  "get_active_generation",
-  "get_last_failed_generation",
-  "get_job",
-]
 max_tool_calls = 6
 
-# The agents' memory: every line they read, in the Postgres of this namespace, whose password is the Secret postgres'
-# file. A line is kept 30 days, which the table states so that a new default of the release does not change it.
-[memory]
+# The runner's Postgres in this namespace, whose password is the Secret postgres' file: ownership of each agent, his
+# history and, with [memory], every line he read.
+[database]
 host = "postgres"
 port = 5432
 dbname = "personas"
 user = "personas"
 password_file = "/run/postgres/password"
+
+# A line is kept 30 days, which the table states so that a new default of the release does not change it.
+[memory]
 lines_keep_days = 30
 
 # Every agent's token carries /agents, and the gateway refuses a turn whose person is outside the group.
@@ -106,7 +50,7 @@ client_id = "agent-mozart"
 secret_file = "/run/secrets/mozart_client_secret"
 persona_file = "/app/characters/mozart.md"
 model = "text/haiku-fast"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.13.2/mozart.vrm", sha256 = "085a5d49db270d6ce06235bce163bfd0895e6d5be546834c9aa48bddf79f5b7e" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.17.1/mozart.vrm", sha256 = "61ddbe483b0de6ace152f7b8b0a972abcc444101523572afb6293e70320350e2" }
 # ryan exists only in speech's GPU image; Thorsten is speech's male German Piper voice for the CPU.
 voice = { names = ["ryan", "de_DE-thorsten-medium"] }
 
@@ -114,7 +58,7 @@ voice = { names = ["ryan", "de_DE-thorsten-medium"] }
 client_id = "agent-leonardo"
 secret_file = "/run/secrets/leonardo_client_secret"
 persona_file = "/app/characters/leonardo.md"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.13.2/leonardo.vrm", sha256 = "c14f6b5d47612fdb00c881cf5c94877117cd3d9dd3a4b1788791c4676dc9d590" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.17.1/leonardo.vrm", sha256 = "0d439c692756c7e26340e9ea2699ae309cbade0d7139959f684a7fe75a6cea33" }
 # ryan exists only in speech's GPU image; Thorsten is speech's male German Piper voice for the CPU.
 voice = { names = ["ryan", "de_DE-thorsten-medium"] }
 
