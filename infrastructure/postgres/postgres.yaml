@@ -32,11 +32,13 @@ spec:
         - name: postgres
           image: docker.io/library/postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
           # The limits tests/postgres/connections_stay_within_max_connections.sh reads: every Deployment that opens this
-          # database declares its connections per pod, and what can run at once, a rollout's surge included, plus the
-          # backup's dump, stays within max_connections less the reserved slots.
+          # database declares its connections per pod, and what can run at once, a rolling update's old pods that may
+          # still be stopping and its surge included, plus the backup's dump, stays within max_connections less the
+          # reserved slots. 200 holds personas' 2 replicas at 31 connections, which its rollout can raise to 5 pods;
+          # an idle slot costs the server little memory.
           args:
             - -c
-            - max_connections=100
+            - max_connections=200
             - -c
             - superuser_reserved_connections=3
           env:
