@@ -46,13 +46,15 @@ case "${1:-}" in
   --covered-by)
     shift
     [ "$#" -gt 0 ] || fail "--covered-by names no part"
+    layers="$(backup_layers)"
+    [ -n "$layers" ] || fail "no layer includes ${POSTGRES_BACKUP_COMPONENT:-<POSTGRES_BACKUP_COMPONENT unset>}, so there is no backup namespace to cover"
     held=" $(for part in "$@"; do namespaces_of_part "$part"; done | tr '\n' ' ')"
     missing=
     while read -r _ namespace; do
       [[ $held == *" $namespace "* ]] || missing="$missing $namespace"
-    done < <(backup_layers)
+    done <<<"$layers"
     [ -z "$missing" ] || fail "the namespaces$missing back up but no part of: $* holds them"
-    echo "the parts $* hold every backup namespace: $(backup_layers | cut -d' ' -f2 | tr '\n' ' ')"
+    echo "the parts $* hold every backup namespace: $(cut -d' ' -f2 <<<"$layers" | tr '\n' ' ')"
     ;;
   *) namespaces_of_part "$1" | tr '\n' ' ' | sed 's/ $//'; echo ;;
 esac
