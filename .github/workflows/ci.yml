@@ -138,6 +138,9 @@ jobs:
       - name: Check that every pull layer mounts each app ref its app renders and every image volume of its Job, and that a missing ref and an unmounted volume fail
         run: mise exec -- tests/workloads/pull_layers_mount_every_app_ref_their_app_runs.sh
 
+      - name: Check that the Deployments of songmaker's and personas' namespaces, a rollout's surge included, plus the backup stay within their Postgres' max_connections, and that a raised replica, surge or pool, a missing declaration and a lowered limit are each red
+        run: mise exec -- tests/postgres/connections_stay_within_max_connections.sh apps/songmaker apps/personas
+
   # The legs of cluster: core and the parts the run's changed paths select, which tests/flux/parts.yaml owns. cluster is
   # never skipped, since the gate reads a skipped mandatory job as red, so a scope that selects nothing but core still has a leg.
   scope:

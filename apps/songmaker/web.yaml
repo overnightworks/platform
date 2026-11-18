@@ -60,6 +60,12 @@ spec:
           env:
             - name: DATABASE_URL
               value: postgresql://songmaker@postgres:5432/songmaker
+            # songmaker's documented defaults, stated so that the connections this process may hold, pool + overflow + 1,
+            # are read from here by tests/postgres/connections_stay_within_max_connections.sh.
+            - name: DATABASE_POOL_SIZE
+              value: '5'
+            - name: DATABASE_MAX_OVERFLOW
+              value: '10'
             - name: REDIS_URL
               value: redis://redis:6379/0
             - name: LOG_FORMAT
