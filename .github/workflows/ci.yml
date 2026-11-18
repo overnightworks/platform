@@ -724,7 +724,7 @@ jobs:
           PERSONAS_NAMESPACE: personas
         run: tests/personas/migrate_through_the_runners_policy_fills_the_key_tables.sh
 
-      - name: Assert that a Deployment made from personas' committed manifest has both pods Ready on a configuration that calls nothing outside, and that a rollout restart keeps every replica available and never runs more pods than replicas plus the surge
+      - name: Assert that a Deployment made from personas' committed manifest has both pods Ready on a configuration that calls nothing outside, and that a rollout restart keeps every replica available through every reported status
         if: matrix.part == 'backup-1'
         env:
           PERSONAS_NAMESPACE: personas

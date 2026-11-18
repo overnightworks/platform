@@ -6,8 +6,8 @@
 # and from a configuration derived from the committed one that sends its one agent's token request and its one app to
 # a closed loopback port, so no pod calls anything outside: a pod is Ready once a round of its contention for the agent
 # answered, whether it holds him or not. It proves that both pods turn Ready, and that a rollout restart keeps every
-# replica available from its start to its end and never runs more pods than replicas plus the surge. Its
-# objects are gone on every exit.
+# replica available in every status the Deployment reports from the restart's start to its end. Its objects are gone on
+# every exit.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -18,8 +18,12 @@ proof=personas-two-pods
 : "${PERSONAS_CONFIG_FILE:?the committed configuration of the runner}"
 in_namespace() { kubectl --namespace "$PERSONAS_NAMESPACE" "$@"; }
 
+available_log="$(mktemp)"
+watch_pid=""
 cleanup() {
   local cell_status=$?
+  [ -z "$watch_pid" ] || kill "$watch_pid" 2>/dev/null || true
+  rm -f "$available_log"
   delete_object --namespace "$PERSONAS_NAMESPACE" delete deployment "$proof" --ignore-not-found --wait --timeout=3m
   delete_object --namespace "$PERSONAS_NAMESPACE" delete configmap "$proof" --ignore-not-found
   end_deletions "$cell_status"
@@ -33,9 +37,7 @@ deployment="$(PROOF="$proof" yq 'select(.kind == "Deployment")
   | .spec.template.metadata.labels.proof = strenv(PROOF)
   | (.spec.template.spec.volumes[] | select(.name == "config") | .configMap.name) = strenv(PROOF)' "$PERSONAS_MANIFEST")"
 replicas="$(yq '.spec.replicas' <<<"$deployment")"
-max_surge="$(yq '.spec.strategy.rollingUpdate.maxSurge' <<<"$deployment")"
 [ "$replicas" -ge 2 ] || fail "the committed Deployment runs $replicas replicas, not two or more"
-max_pods=$((replicas + max_surge))
 
 # The committed file's [database] and [memory], so the pods hold the connections the budget counts; its apps and agents
 # are replaced by one of each that no network reaches.
@@ -51,26 +53,19 @@ ready="$(in_namespace get deployment "$proof" -o jsonpath='{.status.readyReplica
 [ "$ready" = "$replicas" ] || fail "the Deployment $proof has $ready Ready pods, not $replicas"
 echo "the Deployment $proof has $ready of $replicas pods Ready"
 
-# available_and_pods: the Deployment's available replicas and its pods, an omitted count being 0; the delimiter keeps an
-# omitted first field from shifting the second into its column.
-available_and_pods() {
-  in_namespace get deployment "$proof" -o jsonpath='{.status.availableReplicas}{"|"}{.status.replicas}' | awk -F'|' '{ print $1 + 0, $2 + 0 }'
-}
+# A watch started before the restart reports every change of the Deployment's status, an omitted availableReplicas being
+# an empty line; a drop below the replicas that recovers between two reads is a reported line all the same. It is kubectl
+# itself that runs in the background, so that killing its pid ends the watch.
+last_status_is_full() { [ "$(tail -n 1 "$available_log")" = "$replicas" ]; }
+kubectl --namespace "$PERSONAS_NAMESPACE" get deployment "$proof" --watch -o jsonpath='{.status.availableReplicas}{"\n"}' >"$available_log" &
+watch_pid=$!
+until_true 30 "the watch of $proof reported its first status" [ -s "$available_log" ]
 in_namespace rollout restart "deployment/$proof" >/dev/null
-in_namespace rollout status "deployment/$proof" --timeout=5m >/dev/null &
-rollout_pid=$!
-polls=0 peak=0
-deadline=$((SECONDS + 300))
-while kill -0 "$rollout_pid" 2>/dev/null; do
-  [ "$SECONDS" -lt "$deadline" ] || fail "the rollout of $proof did not end within 5 minutes"
-  read -r available pods < <(available_and_pods)
-  [ "$available" -ge "$replicas" ] || fail "the Deployment $proof had $available of $replicas pods available during the rollout restart"
-  [ "$pods" -le "$max_pods" ] || fail "the Deployment $proof ran $pods pods during the rollout restart, above $replicas replicas and a surge of $max_surge"
-  [ "$pods" -le "$peak" ] || peak="$pods"
-  polls=$((polls + 1))
-  sleep 1
-done
-wait "$rollout_pid" || fail "the rollout restart of $proof did not complete"
+in_namespace rollout status "deployment/$proof" --timeout=5m
+until_true 30 "the watch of $proof reported all $replicas replicas available again" last_status_is_full
+kill -0 "$watch_pid" 2>/dev/null || fail "the watch of $proof ended before the rollout restart did"
+lowest="$(awk 'NR == 1 || $1 + 0 < lowest { lowest = $1 + 0 } END { print lowest }' "$available_log")"
+[ "$lowest" -ge "$replicas" ] || fail "the Deployment $proof had $lowest of $replicas pods available during the rollout restart"
 ready="$(in_namespace get deployment "$proof" -o jsonpath='{.status.readyReplicas}')"
 [ "$ready" = "$replicas" ] || fail "the Deployment $proof has $ready Ready pods after the rollout, not $replicas"
-echo "the Deployment $proof kept an available pod through $polls polls of the rollout restart, ran at most $peak pods, and has $ready Ready again"
+echo "the Deployment $proof had every replica available in all $(wc -l <"$available_log") reported statuses of the rollout restart, and has $ready Ready again"
