@@ -1,8 +1,0 @@
-claim_id = "3b9e7142ae0b41299ddedfe56ff42cff"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "297af68fd6a5fc128e3d9873ea71673fab8fbd16"
-branch = "claude/issue-705-the-connection-budget-counts-the-pods-a"
-scope = ["apps/personas/personas.yaml", "docs/app.md", "infrastructure/postgres", "tests/postgres/connections_stay_within_max_connections.sh"]
-opened_commit = "895b89ed84a0ff3c8002ac4cd85a3c8f3ffbc1f9"
-whole_reason = "max_connections is set once for every Postgres in the base's StatefulSet"
