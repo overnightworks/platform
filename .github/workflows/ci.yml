@@ -745,6 +745,7 @@ jobs:
           # The Kustomization and Namespace of the rest-server, a namespace with no repository, which gets no answer, and a
           # Keycloak table its realm leaves empty.
           BACKUP_LAYER: backup
+          SONGMAKER_NAMESPACE: songmaker
           LITELLM_NAMESPACE: litellm
           OUTSIDE_NAMESPACE: hopin
           EMPTY_KEY_NAMESPACE: keycloak

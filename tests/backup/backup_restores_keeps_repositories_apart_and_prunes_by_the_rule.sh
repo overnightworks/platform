@@ -57,6 +57,19 @@ for namespace in $BACKUP_NAMESPACES; do
 done
 echo "the restore test of each namespace reads with the operator's own image"
 
+# Every restore test reads its dump by path, and a namespace other than songmaker's, which has a PreBackupPod, keeps the
+# backup command on its postgres StatefulSet.
+for namespace in $BACKUP_NAMESPACES; do
+  command="$(kubectl --namespace "$namespace" get cronjob restore-test \
+    --output jsonpath='{.spec.jobTemplate.spec.template.spec.initContainers[0].command[2]}')"
+  [[ $command == *'--path "/$(NAMESPACE)-postgres.dump"'* ]] || fail "the restore test of $namespace reads its dump without --path"
+  [ "$namespace" != "$SONGMAKER_NAMESPACE" ] || continue
+  [ -n "$(kubectl --namespace "$namespace" get statefulset postgres \
+    --output jsonpath='{.spec.template.metadata.annotations.k8up\.io/backupcommand}')" ] ||
+    fail "the StatefulSet postgres of $namespace carries no backup command, though it has no PreBackupPod"
+done
+echo "every restore test reads its dump by path, and each namespace without a PreBackupPod keeps its backup command"
+
 # The restore test fails on the empty repository that restic init made; its positive control follows.
 ready_endpoints="$(kubectl --namespace "$BACKUP_LAYER" get endpointslice --selector kubernetes.io/service-name=rest-server \
   --output jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[0]}')"
