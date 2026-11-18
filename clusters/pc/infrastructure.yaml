@@ -178,7 +178,8 @@ spec:
   path: ./infrastructure/keycloak
   prune: true
   wait: true
-  timeout: 5m0s
+  # Keycloak turns Ready only after its Postgres and the config-cli Job, which took over five minutes in CI.
+  timeout: 10m0s
   sourceRef:
     kind: GitRepository
     name: flux-system
