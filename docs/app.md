@@ -91,7 +91,7 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 | Image form (listed vendor at a digest, or a full app ref) on every Pod create or change | admission policy `app-and-vendor-images` |
 | Namespace enforces `restricted`; Deployment is `Recreate` or a `RollingUpdate` that never takes a pod away before its replacement is Ready, Available with all its replicas Ready, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
 | A Deployment's pods, with a rollout's surge and the backup, stay within its Postgres' `max_connections` | the `checks` job, by rendering `apps/songmaker` and `apps/personas` |
-| Two pods are Ready and a rollout restart leaves one available | the `cluster` job, for personas |
+| Two pods are Ready and a rollout restart keeps both available | the `cluster` job, for personas |
 | Manifests live under `apps/<app>/` and reconcile | the `cluster` job through the app's own Kustomization, named like its directory, which the `checks` job requires for every directory, and for a pull layer `<app>-pull` |
 | Every app ref an app renders is an image volume of its pull layer's Job, and a container mounts every volume | the `checks` job, by rendering both |
 | The pull layer's Job completes before the app's ReplicaSet is created, and the app's pods find the image on the node | the `cluster` job |

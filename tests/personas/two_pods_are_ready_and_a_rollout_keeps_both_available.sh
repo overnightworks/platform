@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Usage: PERSONAS_NAMESPACE=personas PERSONAS_MANIFEST=apps/personas/personas.yaml PERSONAS_CONFIG_FILE=apps/personas/personas.toml \
-#   tests/personas/two_pods_are_ready_and_a_rollout_keeps_one_available.sh
+#   tests/personas/two_pods_are_ready_and_a_rollout_keeps_both_available.sh
 # The runner's Deployment is held at 0 replicas in k3d, whose pods would call the PC's apps with dummy secrets. This cell
 # makes a Deployment of its own from the committed manifest, which keeps its replicas, strategy, pod template and mounts,
 # and from a configuration derived from the committed one that sends its one agent's token request and its one app to
 # a closed loopback port, so no pod calls anything outside: a pod is Ready once a round of its contention for the agent
-# answered, whether it holds him or not. It proves that both pods turn Ready, and that a rollout restart leaves at least
-# one available pod from its start to its end and never runs more pods than replicas plus the surge. Its
+# answered, whether it holds him or not. It proves that both pods turn Ready, and that a rollout restart keeps every
+# replica available from its start to its end and never runs more pods than replicas plus the surge. Its
 # objects are gone on every exit.
 set -euo pipefail
 # shellcheck source=../failure.sh
@@ -64,7 +64,7 @@ deadline=$((SECONDS + 300))
 while kill -0 "$rollout_pid" 2>/dev/null; do
   [ "$SECONDS" -lt "$deadline" ] || fail "the rollout of $proof did not end within 5 minutes"
   read -r available pods < <(available_and_pods)
-  [ "$available" -ge 1 ] || fail "the Deployment $proof had no available pod during the rollout restart"
+  [ "$available" -ge "$replicas" ] || fail "the Deployment $proof had $available of $replicas pods available during the rollout restart"
   [ "$pods" -le "$max_pods" ] || fail "the Deployment $proof ran $pods pods during the rollout restart, above $replicas replicas and a surge of $max_surge"
   [ "$pods" -le "$peak" ] || peak="$pods"
   polls=$((polls + 1))
