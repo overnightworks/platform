@@ -51,9 +51,10 @@ ready="$(in_namespace get deployment "$proof" -o jsonpath='{.status.readyReplica
 [ "$ready" = "$replicas" ] || fail "the Deployment $proof has $ready Ready pods, not $replicas"
 echo "the Deployment $proof has $ready of $replicas pods Ready"
 
-# available_and_pods: the Deployment's available replicas and its pods, an empty count being 0.
+# available_and_pods: the Deployment's available replicas and its pods, an omitted count being 0; the delimiter keeps an
+# omitted first field from shifting the second into its column.
 available_and_pods() {
-  in_namespace get deployment "$proof" -o jsonpath='{.status.availableReplicas}{" "}{.status.replicas}' | awk '{ print $1 + 0, $2 + 0 }'
+  in_namespace get deployment "$proof" -o jsonpath='{.status.availableReplicas}{"|"}{.status.replicas}' | awk -F'|' '{ print $1 + 0, $2 + 0 }'
 }
 in_namespace rollout restart "deployment/$proof" >/dev/null
 in_namespace rollout status "deployment/$proof" --timeout=5m >/dev/null &
