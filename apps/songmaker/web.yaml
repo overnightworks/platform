@@ -106,9 +106,9 @@ spec:
               value: mcp-songmaker
             - name: AGENT__MCP_AGENT_GROUP
               value: /agents
-            # The platform's object store, whose Service s3 is the endpoint of every app: the SDK reads the endpoint, the
-            # region and the key file from these names, and the bucket is the Namespace's own. Only the web reads or writes
-            # it, and the bucket holds only what songmaker can rebuild, so it has no backup.
+            # The platform's object store, whose Service s3 is the endpoint of every app: the SDK reads the endpoint,
+            # the region and the key file from these names, and the bucket is the Namespace's own. Only the web reads
+            # or writes it, and the bucket holds only what songmaker can rebuild, so it has no backup.
             - name: AWS_ENDPOINT_URL_S3
               value: http://s3.objectstore.svc.cluster.local:3900
             - name: AWS_DEFAULT_REGION
@@ -150,8 +150,8 @@ spec:
             - name: tmp
               mountPath: /tmp
       volumes:
-        # Every key of the Secret songmaker becomes a file, beside the Postgres password under the name songmaker reads and
-        # the object store's key file as object-store-credentials.
+        # Every key of the Secret songmaker becomes a file, beside the Postgres password under the name songmaker reads
+        # and the object store's key file as object-store-credentials.
         - name: secrets
           projected:
             sources:

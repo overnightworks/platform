@@ -841,6 +841,14 @@ jobs:
           OTHER_NAMESPACE: objectstore-client
         run: tests/objectstore/bucket_key_reaches_only_its_bucket.sh
 
+      - name: Assert that a Pod furnished as songmaker's web reaches its bucket in the object store with the contract's environment alone and no other bucket, that only such Pods reach the S3 port and none the admin port, that a second run of the Job apply changes nothing and a rotated key loses its access
+        if: matrix.part == 'objectstore'
+        env:
+          APP_NAMESPACE: songmaker
+          APP_MANIFEST: apps/songmaker/web.yaml
+          OTHER_NAMESPACE: objectstore-client
+        run: tests/objectstore/bucket_key_reaches_only_its_bucket.sh
+
       - name: Assert that the three legal pages and every asset reach a Pod beside cloudflared through Traefik with the committed bytes and headers, /favicon.ico and the asset directories get nginx's 404 and everything else Traefik's
         if: matrix.part == 'apps'
         env:
