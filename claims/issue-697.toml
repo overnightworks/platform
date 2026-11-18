@@ -1,8 +1,0 @@
-claim_id = "33b1d9595cdd4088ad0307f290e9973a"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "c366b6ec610b4dff1c58eadfd9bd4462a3a32b2c"
-branch = "claude/issue-697-the-songmaker-cell-keeps-only-what-platf"
-scope = [".github/workflows/ci.yml", "tests/songmaker"]
-opened_commit = "a50995eff0477aaf0fd9657dd4a21403068e617c"
-whole_reason = "the cell and its ci.yml call are one rename"
