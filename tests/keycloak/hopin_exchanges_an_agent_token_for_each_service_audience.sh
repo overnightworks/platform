@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# hopin_exchanges_an_agent_token_for_the_speech_audience.sh: EXCHANGING_CLIENT of REALM_FILE, as config-cli applied it,
-# trades the mcp-hopin token of the agent client AGENT_CLIENT for a token of its own with the scope EXCHANGE_SCOPE, and
+# hopin_exchanges_an_agent_token_for_each_service_audience.sh: EXCHANGING_CLIENT of REALM_FILE, as config-cli applied it,
+# trades the mcp-hopin token of the agent client AGENT_CLIENT for a token of its own with each scope of EXCHANGE_SCOPES
+# (space-separated, each adding one service's audience), which names that service's audience and no other service's, and
 # no other client, scope, subject, subject token or switch-off lets a token through, and a person's token at every client is
-# what the base of BASE_REF gave. Prints names and outcomes, never a token or a secret; every throwaway user, client and
-# realm is deleted on every exit.
+# what the base of BASE_REF gave. The cells that name no service run for the first scope only. Prints names and
+# outcomes, never a token or a secret; every throwaway user, client and realm is deleted on every exit.
 set -euo pipefail
 umask 077
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
@@ -12,7 +13,8 @@ agent="$AGENT_CLIENT"
 exchanger="$EXCHANGING_CLIENT"
 refused_exchanger="$REFUSED_CLIENT"
 base_ref="$BASE_REF"
-exchange_scope="$EXCHANGE_SCOPE"
+exchange_scopes="$EXCHANGE_SCOPES"
+exchange_scope="${exchange_scopes%% *}"
 # shellcheck source=admin_api.sh
 source "$(dirname "${BASH_SOURCE[0]}")/admin_api.sh"
 
@@ -62,21 +64,28 @@ remove_throwaways() {
 trap remove_throwaways EXIT
 trap 'exit 143' TERM INT
 
-speech_audience="$(yq --exit-status '.clientScopes[] | select(.name == "'"$exchange_scope"'") | .protocolMappers[].config."included.client.audience" | select(. != null)' "$REALM_FILE")"
-speech_group="/services/$speech_audience"
+# audience_of <scope>: the one service audience the scope adds.
+audience_of() {
+  SCOPE="$1" yq --exit-status '.clientScopes[] | select(.name == strenv(SCOPE)) | .protocolMappers[].config."included.client.audience"
+    | select(. != null)' "$REALM_FILE"
+}
 exchange_enabled_in_file="$(yq '[.clients[] | select(.attributes."standard.token.exchange.enabled" == "true") | .clientId] | join(" ")' "$REALM_FILE")"
 [ "$exchange_enabled_in_file" = "$exchanger" ] ||
   fail "$REALM_FILE enables the standard token exchange for '$exchange_enabled_in_file', not for $exchanger alone"
 mcp_audience="$(yq --exit-status '.clientScopes[] | select(.name == "mcp-hopin") | .protocolMappers[]
   | select(.name == "mcp-hopin-audience") | .config."included.custom.audience"' "$REALM_FILE")"
 file_groups="$(file_groups_of "service-account-$agent")"
-for needed in /apps/hopin "$speech_group"; do
-  grep -qxF "$needed" <<<"$file_groups" || fail "$REALM_FILE does not put the service account of $agent into $needed"
+for scope in $exchange_scopes; do
+  for needed in /apps/hopin "/services/$(audience_of "$scope")"; do
+    grep -qxF "$needed" <<<"$file_groups" || fail "$REALM_FILE does not put the service account of $agent into $needed"
+  done
 done
 # The scopes the file offers the exchanging client, and every other scope it declares.
 offered_scopes="$(CLIENT="$exchanger" yq '.clients[] | select(.clientId == strenv(CLIENT))
   | ((.defaultClientScopes // []) + (.optionalClientScopes // []))[]' "$REALM_FILE" | sorted_list)"
-grep -qxF "$exchange_scope" <<<"$offered_scopes" || fail "$REALM_FILE does not offer $exchange_scope to $exchanger"
+for scope in $exchange_scopes; do
+  grep -qxF "$scope" <<<"$offered_scopes" || fail "$REALM_FILE does not offer $scope to $exchanger"
+done
 other_scopes="$(yq '.clientScopes[].name' "$REALM_FILE" | grep -vxFf <(printf '%s\n' "$offered_scopes"))" ||
   fail "$REALM_FILE declares no scope that $exchanger is not offered"
 
@@ -121,39 +130,138 @@ expect_refusal() {
   echo "$1 is refused with $2 $3"
 }
 
-# The exchange: the agent's own sub and groups, hopin's authorized party, the speech service as the only audience hopin's
-# scope adds, an expiry at most a second after the subject token's.
-[ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant with scope=mcp-hopin was refused"
-subject_claims="$(jwt_part 2 "$(<"$subject_file")")"
-exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
-[ "$exchange_status" = 200 ] || fail "$exchanger's exchange of $agent's mcp-hopin token got $exchange_status '$(exchange_error)'"
-[ "$(jq --raw-output '[.issued_token_type, .token_type, has("refresh_token")] | join(" ")' "$scratch/answer")" = \
-  "urn:ietf:params:oauth:token-type:access_token Bearer false" ] ||
-  fail "the exchange response is not a Bearer access token without a refresh token"
-exchanged_claims="$(jwt_part 2 "$(jq --raw-output .access_token "$scratch/answer")")"
-exchanged() { jq --raw-output "$1" <<<"$exchanged_claims"; }
-[ "$(exchanged .azp)" = "$exchanger" ] || fail "the exchanged token's azp is not $exchanger"
-[ "$(exchanged .sub)" = "$(jq --raw-output .sub <<<"$subject_claims")" ] || fail "the exchanged token's sub is not the agent's"
-[ "$(exchanged '[.aud] | flatten | index("'"$speech_audience"'") != null')" = true ] ||
-  fail "the exchanged token's aud does not hold $speech_audience"
-[ "$(exchanged '[.aud] | flatten | index("'"$mcp_audience"'") == null')" = true ] ||
-  fail "the exchanged token still names the MCP audience $mcp_audience"
-[ "$(exchanged '.groups | sort | join(" ")')" = "${file_groups//$'\n'/ }" ] ||
-  fail "the exchanged token's groups are '$(exchanged '.groups | sort | join(" ")')', not the file's '${file_groups//$'\n'/ }'"
-expiry_gap="$(jq --null-input --argjson exchanged "$exchanged_claims" --argjson subject "$subject_claims" '$exchanged.exp - $subject.exp')"
-[ "$expiry_gap" -le 1 ] || fail "the exchanged token outlives the subject token by $expiry_gap s"
-echo "$exchanger's exchange of $agent's mcp-hopin token with scope=$exchange_scope: azp $exchanger, the agent's sub, aud $speech_audience, groups '${file_groups//$'\n'/ }', expiry at most 1 s after the subject's"
+# service_cells <scope>: the scope's exchange, the refusal of the client that may not exchange, a person's token and the
+# membership of the service's group.
+service_cells() {
+  local scope="$1" other_scope service_audience service_group other_audiences=""
+  service_audience="$(audience_of "$scope")"
+  service_group="/services/$service_audience"
+  for other_scope in $exchange_scopes; do
+    [ "$other_scope" = "$scope" ] || other_audiences+=" $(audience_of "$other_scope")"
+  done
+  # The exchange: the agent's own sub and groups, hopin's authorized party, the scope's service as the only service audience,
+  # an expiry at most a second after the subject token's.
+  [ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant with scope=mcp-hopin was refused"
+  subject_claims="$(jwt_part 2 "$(<"$subject_file")")"
+  exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$scope"
+  [ "$exchange_status" = 200 ] || fail "$exchanger's exchange of $agent's mcp-hopin token got $exchange_status '$(exchange_error)'"
+  [ "$(jq --raw-output '[.issued_token_type, .token_type, has("refresh_token")] | join(" ")' "$scratch/answer")" = \
+    "urn:ietf:params:oauth:token-type:access_token Bearer false" ] ||
+    fail "the exchange response is not a Bearer access token without a refresh token"
+  exchanged_claims="$(jwt_part 2 "$(jq --raw-output .access_token "$scratch/answer")")"
+  exchanged() { jq --raw-output "$1" <<<"$exchanged_claims"; }
+  [ "$(exchanged .azp)" = "$exchanger" ] || fail "the exchanged token's azp is not $exchanger"
+  [ "$(exchanged .sub)" = "$(jq --raw-output .sub <<<"$subject_claims")" ] || fail "the exchanged token's sub is not the agent's"
+  [ "$(exchanged '[.aud] | flatten | index("'"$service_audience"'") != null')" = true ] ||
+    fail "the exchanged token's aud does not hold $service_audience"
+  for other_audience in $other_audiences; do
+    [ "$(exchanged '[.aud] | flatten | index("'"$other_audience"'") == null')" = true ] ||
+      fail "the exchanged token for $scope names $other_audience"
+  done
+  [ "$(exchanged '[.aud] | flatten | index("'"$mcp_audience"'") == null')" = true ] ||
+    fail "the exchanged token still names the MCP audience $mcp_audience"
+  [ "$(exchanged '.groups | sort | join(" ")')" = "${file_groups//$'\n'/ }" ] ||
+    fail "the exchanged token's groups are '$(exchanged '.groups | sort | join(" ")')', not the file's '${file_groups//$'\n'/ }'"
+  expiry_gap="$(jq --null-input --argjson exchanged "$exchanged_claims" --argjson subject "$subject_claims" '$exchanged.exp - $subject.exp')"
+  [ "$expiry_gap" -le 1 ] || fail "the exchanged token outlives the subject token by $expiry_gap s"
+  echo "$exchanger's exchange of $agent's mcp-hopin token with scope=$scope: azp $exchanger, the agent's sub, aud $service_audience and no other service, groups '${file_groups//$'\n'/ }', expiry at most 1 s after the subject's"
 
-# The refusals.
-exchange "$refused_exchanger" "$refused_secret_file" "$subject_file" --data "scope=$exchange_scope"
-expect_refusal "$refused_exchanger's exchange of the same token" 400 invalid_request
-# With the exchange switched on for it, the client still names no hopin audience, which is the issuer's own refusal.
-refused_exchanger_path="$realm/clients/$(admin GET "$realm/clients?clientId=$refused_exchanger" | jq --raw-output '.[0].id')"
-put_changed "$refused_exchanger_path" '.attributes["standard.token.exchange.enabled"] = "true"'
-exchange "$refused_exchanger" "$refused_secret_file" "$subject_file" --data "scope=$exchange_scope"
-expect_refusal "$refused_exchanger's exchange of the same token with its exchange switched on" 403 access_denied
-put_changed "$refused_exchanger_path" '.attributes["standard.token.exchange.enabled"] = null'
-refused_exchanger_path=""
+  # The refusals.
+  exchange "$refused_exchanger" "$refused_secret_file" "$subject_file" --data "scope=$scope"
+  expect_refusal "$refused_exchanger's exchange of the same token" 400 invalid_request
+  # With the exchange switched on for it, the client still names no hopin audience, which is the issuer's own refusal.
+  refused_exchanger_path="$realm/clients/$(admin GET "$realm/clients?clientId=$refused_exchanger" | jq --raw-output '.[0].id')"
+  put_changed "$refused_exchanger_path" '.attributes["standard.token.exchange.enabled"] = "true"'
+  exchange "$refused_exchanger" "$refused_secret_file" "$subject_file" --data "scope=$scope"
+  expect_refusal "$refused_exchanger's exchange of the same token with its exchange switched on" 403 access_denied
+  put_changed "$refused_exchanger_path" '.attributes["standard.token.exchange.enabled"] = null'
+  refused_exchanger_path=""
+
+  join_group "$realm" "$service_group"
+  member_claims="$(person_claims)"
+  [ "$(jq '[.aud] | flatten | index("'"$exchanger"'") == null' <<<"$member_claims")" = true ] ||
+    fail "a person's token names $exchanger in its audience"
+  [ "$(jq --arg audience "$service_audience" '([.aud] | flatten | index($audience)) == null and ((.resource_access // {}) | has($audience) | not)' \
+    <<<"$member_claims")" = true ] || fail "the token of a member of $service_group names $service_audience without asking for it"
+  exchange "$exchanger" "$exchanger_secret_file" "$scratch/person-token" --data "scope=$scope"
+  expect_refusal "the exchange of a person's token" 403 access_denied
+  member_scoped_claims="$(person_claims --data "scope=$scope")"
+  [ "$(jq --arg audience "$service_audience" '[.aud] | flatten | index($audience) != null' <<<"$member_scoped_claims")" = true ] ||
+    fail "a person's sign-in with scope=$scope does not name $service_audience"
+  admin DELETE "$person_membership_path"
+  [ "$(audience_and_roles "$member_claims")" = "$(audience_and_roles "$(person_claims)")" ] ||
+    fail "the audiences or roles of a person's sign-in depend on $service_group"
+  [ "$(audience_and_roles "$member_scoped_claims")" = "$(audience_and_roles "$(person_claims --data "scope=$scope")")" ] ||
+    fail "the audiences or roles of a person's sign-in with scope=$scope depend on $service_group"
+  echo "a person's audiences and roles are the same in and out of $service_group, with and without scope=$scope"
+
+  # The exchanged token names the service's group only while the principal is in it, which is all the realm adds: the
+  # service decides by the group.
+  removed_membership_path="$account_path/groups/$group_id"
+  admin DELETE "$removed_membership_path"
+  [ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant outside $service_group was refused"
+  exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$scope"
+  [ "$exchange_status" = 200 ] || fail "the exchange of $agent's token outside $service_group got $exchange_status '$(exchange_error)'"
+  [ "$(jwt_part 2 "$(jq --raw-output .access_token "$scratch/answer")" | jq --arg group "$service_group" '.groups | index($group) == null')" = true ] ||
+    fail "the exchanged token names $service_group though $agent is not in it"
+  admin PUT "$removed_membership_path"
+  removed_membership_path=""
+  echo "the exchanged token names $service_group only while $agent is in it"
+}
+
+# A person's token holds no hopin audience, so it is not exchangeable either. Keycloak grants no role or scope for a
+# service's group, so a person's token is the same in and out of it at every client: the service decides by the group.
+create_person_body() {
+  jq --null-input --arg username "$person" --rawfile password "$password_file" \
+    '{username: $username, enabled: true, email: ($username + "@example.invalid"), emailVerified: true,
+      firstName: "Probe", lastName: "Person", credentials: [{type: "password", value: $password, temporary: false}]}'
+}
+# create_member <realm>: the throwaway person in the realm; sets person_id.
+create_member() {
+  create_person_body >"$scratch/body"
+  admin POST "$1/users" "@$scratch/body" >/dev/null
+  rm -f -- "$scratch/body"
+  # A create adds the realm's default actions whatever it names, so only an update clears the terms.
+  person_id="$(admin GET "$1/users?exact=true&username=$person" | jq --raw-output '.[0].id')"
+  admin PUT "$1/users/$person_id" '{"requiredActions": []}' >/dev/null
+}
+# join_group <realm> <group path>: the person into the group; sets group_id and person_membership_path.
+join_group() {
+  group_id="$(admin GET "$1/group-by-path$2" | jq --raw-output .id)"
+  person_membership_path="$1/users/$person_id/groups/$group_id"
+  admin PUT "$person_membership_path" >/dev/null
+}
+create_member "$realm"
+# The throwaway client has the scopes presentator signs a person in with that matter here: the roles scope, and the service
+# audiences as optional ones.
+admin POST "$realm/clients" "$(jq --null-input --arg id "$password_client" --arg scopes "$exchange_scopes" '{clientId: $id,
+  publicClient: true, directAccessGrantsEnabled: true, standardFlowEnabled: false,
+  defaultClientScopes: ["basic", "profile", "email", "roles", "groups"], optionalClientScopes: ($scopes | split(" "))}')" >/dev/null
+# person_claims_at <token endpoint> <client> <curl argument>...: a person's password grant at the client; the access token
+# goes to person-token, the claims to stdout.
+person_claims_at() {
+  local endpoint="$1" client="$2"
+  shift 2
+  curl --silent --show-error --fail --output "$scratch/person-answer" --data grant_type=password \
+    --data-urlencode "client_id=$client" --data-urlencode "username=$person" --data-urlencode "password@$password_file" \
+    "$@" "$endpoint" || return
+  jq --raw-output .access_token "$scratch/person-answer" | tr -d '\n' >"$scratch/person-token"
+  jwt_part 2 "$(<"$scratch/person-token")"
+}
+person_claims() { person_claims_at "$token_endpoint" "$password_client" "$@"; }
+# audience_and_roles <claims> [<audience to leave out>]: the claims a role or a scope would change, as a service's group
+# must not. A realm's default role carries the realm's name, which the base's realm does not share. A token without an audience
+# has none, not a null one, so a scope's gained audience is the whole difference.
+audience_and_roles() {
+  jq --compact-output --arg left_out "${2:-}" 'def roles: if . == null then null
+      else .roles |= (map(if startswith("default-roles-") then "default-roles" else . end) | sort) end;
+    {aud: (([.aud // empty] | flatten | sort) - [$left_out]), realm_access: (.realm_access | roles),
+     resource_access: ((.resource_access // {}) | map_values(roles))}' <<<"$1"
+}
+for exchange_service_scope in $exchange_scopes; do
+  service_cells "$exchange_service_scope"
+done
+
 for other_scope in $other_scopes; do
   exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$other_scope"
   expect_refusal "$exchanger's exchange for the scope $other_scope, which the file does not offer it" 400 invalid_scope
@@ -180,83 +288,6 @@ expect_refusal "the exchange of an expired token" 400 invalid_request
 [ "$(agent_token)" = 200 ] || fail "$agent's grant without a scope was refused"
 exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
 expect_refusal "the exchange of $agent's token asked without mcp-hopin" 403 access_denied
-
-# A person's token holds no hopin audience, so it is not exchangeable either. Keycloak grants no role or scope for the
-# speech group, so a person's token is the same in and out of it at every client: the speech service decides by the group.
-create_person_body() {
-  jq --null-input --arg username "$person" --rawfile password "$password_file" \
-    '{username: $username, enabled: true, email: ($username + "@example.invalid"), emailVerified: true,
-      firstName: "Probe", lastName: "Person", credentials: [{type: "password", value: $password, temporary: false}]}'
-}
-# add_member <realm>: the throwaway person in the realm and in the speech group; sets person_id, group_id and
-# person_membership_path.
-add_member() {
-  create_person_body >"$scratch/body"
-  admin POST "$1/users" "@$scratch/body" >/dev/null
-  rm -f -- "$scratch/body"
-  # A create adds the realm's default actions whatever it names, so only an update clears the terms.
-  person_id="$(admin GET "$1/users?exact=true&username=$person" | jq --raw-output '.[0].id')"
-  admin PUT "$1/users/$person_id" '{"requiredActions": []}' >/dev/null
-  group_id="$(admin GET "$1/group-by-path$speech_group" | jq --raw-output .id)"
-  person_membership_path="$1/users/$person_id/groups/$group_id"
-  admin PUT "$person_membership_path" >/dev/null
-}
-add_member "$realm"
-# The throwaway client has the scopes presentator signs a person in with that matter here: the roles scope, and the speech
-# audience as an optional one.
-admin POST "$realm/clients" "$(jq --null-input --arg id "$password_client" --arg scope "$exchange_scope" '{clientId: $id,
-  publicClient: true, directAccessGrantsEnabled: true, standardFlowEnabled: false,
-  defaultClientScopes: ["basic", "profile", "email", "roles", "groups"], optionalClientScopes: [$scope]}')" >/dev/null
-# person_claims_at <token endpoint> <client> <curl argument>...: a person's password grant at the client; the access token
-# goes to person-token, the claims to stdout.
-person_claims_at() {
-  local endpoint="$1" client="$2"
-  shift 2
-  curl --silent --show-error --fail --output "$scratch/person-answer" --data grant_type=password \
-    --data-urlencode "client_id=$client" --data-urlencode "username=$person" --data-urlencode "password@$password_file" \
-    "$@" "$endpoint" || return
-  jq --raw-output .access_token "$scratch/person-answer" | tr -d '\n' >"$scratch/person-token"
-  jwt_part 2 "$(<"$scratch/person-token")"
-}
-person_claims() { person_claims_at "$token_endpoint" "$password_client" "$@"; }
-# audience_and_roles <claims> [<audience to leave out>]: the claims a role or a scope would change, as the speech group
-# must not. A realm's default role carries the realm's name, which the base's realm does not share. A token without an audience
-# has none, not a null one, so a scope's gained audience is the whole difference.
-audience_and_roles() {
-  jq --compact-output --arg left_out "${2:-}" 'def roles: if . == null then null
-      else .roles |= (map(if startswith("default-roles-") then "default-roles" else . end) | sort) end;
-    {aud: (([.aud // empty] | flatten | sort) - [$left_out]), realm_access: (.realm_access | roles),
-     resource_access: ((.resource_access // {}) | map_values(roles))}' <<<"$1"
-}
-member_claims="$(person_claims)"
-[ "$(jq '[.aud] | flatten | index("'"$exchanger"'") == null' <<<"$member_claims")" = true ] ||
-  fail "a person's token names $exchanger in its audience"
-[ "$(jq --arg audience "$speech_audience" '([.aud] | flatten | index($audience)) == null and ((.resource_access // {}) | has($audience) | not)' \
-  <<<"$member_claims")" = true ] || fail "the token of a member of $speech_group names $speech_audience without asking for it"
-exchange "$exchanger" "$exchanger_secret_file" "$scratch/person-token" --data "scope=$exchange_scope"
-expect_refusal "the exchange of a person's token" 403 access_denied
-member_scoped_claims="$(person_claims --data "scope=$exchange_scope")"
-[ "$(jq --arg audience "$speech_audience" '[.aud] | flatten | index($audience) != null' <<<"$member_scoped_claims")" = true ] ||
-  fail "a person's sign-in with scope=$exchange_scope does not name $speech_audience"
-admin DELETE "$person_membership_path"
-[ "$(audience_and_roles "$member_claims")" = "$(audience_and_roles "$(person_claims)")" ] ||
-  fail "the audiences or roles of a person's sign-in depend on $speech_group"
-[ "$(audience_and_roles "$member_scoped_claims")" = "$(audience_and_roles "$(person_claims --data "scope=$exchange_scope")")" ] ||
-  fail "the audiences or roles of a person's sign-in with scope=$exchange_scope depend on $speech_group"
-echo "a person's audiences and roles are the same in and out of $speech_group, with and without scope=$exchange_scope"
-
-# The exchanged token names the speech service's group only while the principal is in it, which is all the realm adds: the
-# service decides by the group.
-removed_membership_path="$account_path/groups/$group_id"
-admin DELETE "$removed_membership_path"
-[ "$(agent_token --data scope=mcp-hopin)" = 200 ] || fail "$agent's grant outside $speech_group was refused"
-exchange "$exchanger" "$exchanger_secret_file" "$subject_file" --data "scope=$exchange_scope"
-[ "$exchange_status" = 200 ] || fail "the exchange of $agent's token outside $speech_group got $exchange_status '$(exchange_error)'"
-[ "$(jwt_part 2 "$(jq --raw-output .access_token "$scratch/answer")" | jq --arg group "$speech_group" '.groups | index($group) == null')" = true ] ||
-  fail "the exchanged token names $speech_group though $agent is not in it"
-admin PUT "$removed_membership_path"
-removed_membership_path=""
-echo "the exchanged token names $speech_group only while $agent is in it"
 
 # A switch-off of the exchanging client, the agent client or its service account stops the exchange of a token minted
 # before.
@@ -286,7 +317,8 @@ BASE_REALM="$base_realm" yq --output-format json '.realm = strenv(BASE_REALM) | 
   | (.clients[] | select(has("secret")) | .secret) = "unused"' "$scratch/base-realm.yaml" |
   jq --argjson shipped "$shipped_scopes" '.clientScopes += $shipped' >"$scratch/base-realm.json"
 admin POST "" "@$scratch/base-realm.json" >/dev/null
-add_member "$base_realm"
+create_member "$base_realm"
+join_group "$base_realm" "/services/$(audience_of "$exchange_scope")"
 base_token_endpoint="$local_url/realms/$base_realm/protocol/openid-connect/token"
 # add_twin <realm> <realm file> <client>: the client as the file states it, under the twin's id, public, with the password
 # grant and without what a password grant never reads or refuses.
@@ -321,7 +353,7 @@ for compared in $(yq '.clients[] | select(.bearerOnly != true) | .clientId' "$RE
       | (.optionalClientScopes // [])[] | select(. == strenv(SCOPE))' "$scratch/base-realm.yaml")" ]; then
       base_arguments=()
       gained_audiences="$(SCOPE="$scope" yq --output-format json --indent 0 '[.clientScopes[] | select(.name == strenv(SCOPE))
-        | .protocolMappers[] | select(.protocolMapper == "oidc-audience-mapper") | .config["included.custom.audience"]]' "$REALM_FILE")"
+        | .protocolMappers[] | select(.protocolMapper == "oidc-audience-mapper") | .config["included.custom.audience"] // .config["included.client.audience"]]' "$REALM_FILE")"
       [ "$gained_audiences" != '[]' ] || fail "the realm file's scope $scope adds no audience to $compared"
     fi
     candidate_claims="$(person_claims_at "$token_endpoint" "$twin_client" "${scope_arguments[@]}")"

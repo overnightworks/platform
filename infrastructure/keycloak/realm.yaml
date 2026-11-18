@@ -80,6 +80,8 @@ roles:
   realm:
     - name: speech-workload
       description: Service-account-only marker of an app workload calling the speech service.
+    - name: video-workload
+      description: Service-account-only marker of an app workload calling the video service.
 groups:
   - name: apps
     subGroups:
@@ -107,6 +109,8 @@ groups:
     subGroups:
       # Exactly this path is the speech service's right; it has no subgroup.
       - name: speech-service
+      # Exactly this path is the video service's right; it has no subgroup.
+      - name: video-service
       # Exactly this path is the AI right. keycloak:move-group moves the members of
       # /services/agent-service/api here; no realm file declares that group, so no apply creates it.
       - name: litellm
@@ -365,6 +369,24 @@ clientScopes:
           # Stated, because Keycloak would otherwise default it on create and the next apply flip it.
           userinfo.token.claim: "false"
           introspection.token.claim: "true"
+  - name: video-service-audience
+    description: Adds video-service to the access token audience
+    protocol: openid-connect
+    attributes:
+      include.in.token.scope: "false"
+      display.on.consent.screen: "false"
+    protocolMappers:
+      - name: video-service-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          included.client.audience: video-service
+          id.token.claim: "false"
+          access.token.claim: "true"
+          # Stated, because Keycloak would otherwise default it on create and the next apply flip it.
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
   - name: mcp-songmaker
     description: An agent's access to songmaker's MCP front
     protocol: openid-connect
@@ -493,6 +515,7 @@ users:
     serviceAccountClientId: hopin
     realmRoles:
       - speech-workload
+      - video-workload
   - username: service-account-agent-mozart
     serviceAccountClientId: agent-mozart
     groups:
@@ -503,6 +526,7 @@ users:
       - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
+      - /services/video-service
   - username: service-account-agent-leonardo
     serviceAccountClientId: agent-leonardo
     groups:
@@ -512,6 +536,7 @@ users:
       - /apps/skat/mcp
       - /agent-owners
       - /services/speech-service
+      - /services/video-service
   - username: service-account-agent-humboldt
     serviceAccountClientId: agent-humboldt
     groups:
@@ -522,6 +547,7 @@ users:
       - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
+      - /services/video-service
   - username: service-account-agent-curie
     serviceAccountClientId: agent-curie
     groups:
@@ -532,6 +558,7 @@ users:
       - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
+      - /services/video-service
   - username: service-account-agent-lovelace
     serviceAccountClientId: agent-lovelace
     groups:
@@ -542,6 +569,7 @@ users:
       - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
+      - /services/video-service
   - username: service-account-agent-hildegard
     serviceAccountClientId: agent-hildegard
     groups:
@@ -552,10 +580,22 @@ users:
       - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
+      - /services/video-service
 clients:
   # Audience only: the speech service accepts tokens issued for it and never signs anyone in.
   - clientId: speech-service
     name: speech-service
+    enabled: true
+    bearerOnly: true
+    publicClient: false
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    frontchannelLogout: false
+  # Audience only, as the speech service's: the video service accepts tokens issued for it and never signs anyone in.
+  - clientId: video-service
+    name: video-service
     enabled: true
     bearerOnly: true
     publicClient: false
@@ -600,10 +640,10 @@ clients:
     optionalClientScopes: []
   # hopin signs people in the same way as songmaker and is logged out the same way, at its own Service.
   # It holds a refresh token per session, named as on so a merge cannot keep an earlier off, and its service
-  # account is a workload of the speech service, whose audience it asks for by the optional scope
-  # speech-service-audience. It reads no email, web origin or acr, so it has none of those scopes. It is the only
-  # client that may exchange a token: standard.token.exchange.enabled lets it trade the token of an agent, which names
-  # hopin through mcp-hopin, for one with the speech audience.
+  # account is a workload of the speech service and of the video service, whose audiences it asks for by the optional
+  # scopes speech-service-audience and video-service-audience. It reads no email, web origin or acr, so it has none of
+  # those scopes. It is the only client that may exchange a token: standard.token.exchange.enabled lets it trade the
+  # token of an agent, which names hopin through mcp-hopin, for one with the speech or the video audience.
   - clientId: hopin
     name: hopin
     enabled: true
@@ -633,6 +673,7 @@ clients:
       - service_account
     optionalClientScopes:
       - speech-service-audience
+      - video-service-audience
   # One client for presentator's two hosts. A sign-out in Keycloak calls presentator's back-channel logout at
   # its web Service; the route answers under any Host but the talk host's, and the NetworkPolicies decide
   # whether the call arrives. Its service account is a workload of the speech service, whose audience it asks

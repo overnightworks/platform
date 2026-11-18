@@ -2,7 +2,7 @@
 # access_tokens_hold_no_profile_or_email_claim.sh: a person signs in to every client of REALM_FILE with the standard
 # flow (authorization code with PKCE, then a refresh grant), and no access token holds a claim that a mapper of the live
 # scopes profile and email names, while the ID tokens keep the identity the apps read and the account's language, and the
-# tokens for the speech service keep their audience, subject, authorized party and groups. Prints names and outcomes,
+# tokens for a service keep their audience, subject, authorized party and groups. Prints names and outcomes,
 # never a token, a claim value, a secret or a password; the throwaway person is deleted on every exit.
 set -euo pipefail
 umask 077
@@ -47,8 +47,16 @@ declared_mappers="$(yq '[.clientScopes[] | select(.name == "profile" or .name ==
   fail "the live mappers hold $live_mappers mappers but name $(jq length <<<"$claim_names") distinct claims"
 echo "the live scopes profile and email hold $live_mappers mappers naming $(jq length <<<"$claim_names") claims"
 
-speech_audience="$(yq --exit-status '.clientScopes[] | select(.name == "speech-service-audience") | .protocolMappers[0].config."included.client.audience"' "$REALM_FILE")"
-speech_group="/services/$speech_audience"
+# The scopes that add a service's audience, and the audience and group of each.
+service_scopes="$(yq '.clientScopes[] | select(.protocolMappers[0].config."included.client.audience" != null) | .name' "$REALM_FILE")"
+[ -n "$service_scopes" ] || fail "$REALM_FILE declares no scope that adds a service audience"
+audience_of() {
+  SCOPE="$1" yq --exit-status '.clientScopes[] | select(.name == strenv(SCOPE)) | .protocolMappers[0].config."included.client.audience"' "$REALM_FILE"
+}
+service_groups=""
+for service_scope in $service_scopes; do
+  service_groups+=" /services/$(audience_of "$service_scope")"
+done
 openssl rand -hex 24 | tr -d '\n' >"$password_file"
 mask_secret "$(<"$password_file")"
 jq --null-input --arg username "$person" --rawfile password "$password_file" \
@@ -60,7 +68,7 @@ rm -f -- "$scratch/body"
 person_id="$(admin GET "$realm/users?exact=true&username=$person" | jq --raw-output '.[0].id')"
 # A create adds the realm's default actions whatever it names, so only an update clears the terms.
 admin PUT "$realm/users/$person_id" '{"requiredActions": []}' >/dev/null
-for group in "$speech_group" $(yq '.groups[] | select(.name == "apps") | .subGroups[] | "/apps/" + .name' "$REALM_FILE"); do
+for group in $service_groups $(yq '.groups[] | select(.name == "apps") | .subGroups[] | "/apps/" + .name' "$REALM_FILE"); do
   admin PUT "$realm/users/$person_id/groups/$(admin GET "$realm/group-by-path$group" | jq --raw-output .id)" >/dev/null
 done
 person_groups="$(admin GET "$realm/users/$person_id/groups" | jq --compact-output '[.[].path] | sort')"
@@ -92,12 +100,12 @@ check_id() {
   [ -z "$missing" ] || fail "the ID token of $client ($label) lacks the claims: $missing"
   echo "the ID token of $client ($label) holds $*"
 }
-# check_speech <label> <access token>: the audience, the person, the authorized party and the groups.
-check_speech() {
-  jq --exit-status --arg audience "$speech_audience" --arg client "$client" --arg person "$person_id" --argjson groups "$person_groups" \
+# check_service <label> <access token> <audience>: the audience, the person, the authorized party and the groups.
+check_service() {
+  jq --exit-status --arg audience "$3" --arg client "$client" --arg person "$person_id" --argjson groups "$person_groups" \
     '([.aud] | flatten | index($audience)) != null and .sub == $person and .azp == $client and (.groups | sort) == $groups' \
-    >/dev/null <<<"$(claims_of "$2")" || fail "the access token of $client ($1) misses $speech_audience as audience, the person, the client as azp or the groups"
-  echo "the access token of $client ($1) names $speech_audience, the person, the client as azp and the person's groups"
+    >/dev/null <<<"$(claims_of "$2")" || fail "the access token of $client ($1) misses $3 as audience, the person, the client as azp or the groups"
+  echo "the access token of $client ($1) names $3, the person, the client as azp and the person's groups"
 }
 
 # form_action <page>: the first form's action path, which names the public hostname that the runner cannot reach.
@@ -159,7 +167,12 @@ for client in $(yq '.clients[] | select(.standardFlowEnabled != false) | .client
     mask_secret "$(<"$secret_file")"
     client_auth=(--data-urlencode "client_secret@$secret_file")
   fi
-  speaks="$(jq --raw-output '(.optionalClientScopes // []) | index("speech-service-audience") != null' <<<"$entry")"
+  # The service scopes the client may ask for.
+  asked_service_scopes=""
+  for service_scope in $service_scopes; do
+    [ "$(jq --raw-output --arg scope "$service_scope" '(.optionalClientScopes // []) | index($scope) != null' <<<"$entry")" = false ] ||
+      asked_service_scopes+=" $service_scope"
+  done
   has_profile="$(jq --raw-output '(.defaultClientScopes // []) | index("profile") != null' <<<"$entry")"
   id_claims=(groups)
   [ "$has_profile" = false ] || id_claims+=(preferred_username locale)
@@ -170,7 +183,9 @@ for client in $(yq '.clients[] | select(.standardFlowEnabled != false) | .client
   access_token="$(jq --raw-output .access_token "$response_file")"
   check_access "code exchange" "$access_token"
   check_id "code exchange" "$(jq --raw-output .id_token "$response_file")" "${id_claims[@]}"
-  [ "$speaks" = false ] || check_speech "code exchange" "$access_token"
+  for service_scope in $asked_service_scopes; do
+    check_service "code exchange" "$access_token" "$(audience_of "$service_scope")"
+  done
   refreshes="$(jq --raw-output '(.attributes["use.refresh.tokens"] // "true") != "false"' <<<"$entry")"
   if [ "$refreshes" = true ]; then
     jq --exit-status '.refresh_token' "$response_file" >/dev/null || fail "the code exchange of $client returns no refresh token"
@@ -179,18 +194,24 @@ for client in $(yq '.clients[] | select(.standardFlowEnabled != false) | .client
     access_token="$(jq --raw-output .access_token "$response_file")"
     check_access "refresh grant" "$access_token"
     check_id "refresh grant" "$(jq --raw-output .id_token "$response_file")" "${id_claims[@]}"
-    [ "$speaks" = false ] || check_speech "refresh grant" "$access_token"
+    for service_scope in $asked_service_scopes; do
+      check_service "refresh grant" "$access_token" "$(audience_of "$service_scope")"
+    done
   else
     echo "$client is declared without refresh tokens, so no refresh grant is made"
   fi
 
-  if [ "$speaks" = true ]; then
-    workload_role="$(CLIENT="service-account-$client" yq '.users[] | select(.username == strenv(CLIENT)) | .realmRoles[0]' "$REALM_FILE")"
-    request_token --data grant_type=client_credentials --data scope=speech-service-audience
-    jq --exit-status --arg role "$workload_role" --arg audience "$speech_audience" --arg client "$client" \
+  # A service account's workload token: its realm role of the service, the client and the service's audience. The role
+  # is the account's one that starts with the audience's service name.
+  for service_scope in $asked_service_scopes; do
+    service_audience="$(audience_of "$service_scope")"
+    workload_role="$(CLIENT="service-account-$client" PREFIX="${service_audience%-service}-" yq '.users[] | select(.username == strenv(CLIENT))
+      | .realmRoles[] | select(test("^" + strenv(PREFIX)))' "$REALM_FILE")"
+    request_token --data grant_type=client_credentials --data "scope=$service_scope"
+    jq --exit-status --arg role "$workload_role" --arg audience "$service_audience" --arg client "$client" \
       '(.realm_access.roles | index($role)) != null and .client_id == $client and ([.aud] | flatten | index($audience)) != null' \
       >/dev/null <<<"$(claims_of "$(jq --raw-output .access_token "$response_file")")" ||
-      fail "the workload token of $client misses the role $workload_role, client_id or the audience $speech_audience"
-    echo "the workload token of $client holds the role $workload_role, its client_id and the audience $speech_audience"
-  fi
+      fail "the workload token of $client misses the role $workload_role, client_id or the audience $service_audience"
+    echo "the workload token of $client holds the role $workload_role, its client_id and the audience $service_audience"
+  done
 done

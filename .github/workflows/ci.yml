@@ -602,17 +602,18 @@ jobs:
           # The agent client whose tokens the cells mint, and the allowlist of its service account's groups; the second
           # agent's is its own in the step below, since songmaker's group is Mozart's alone.
           AGENT_CLIENT: agent-mozart
-          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /apps/songmaker/mcp /agent-owners /services/speech-service
-          # The client that exchanges an agent's token, the scope it asks for, and a client that must be refused.
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /apps/songmaker/mcp /agent-owners /services/speech-service /services/video-service
+          # The client that exchanges an agent's token, the scopes it asks for, each adding one service's audience, and a client
+          # that must be refused.
           EXCHANGING_CLIENT: hopin
-          EXCHANGE_SCOPE: speech-service-audience
+          EXCHANGE_SCOPES: speech-service-audience video-service-audience
           REFUSED_CLIENT: presentator
           # The ref whose merge base holds the realm file a person's token is compared with.
           BASE_REF: origin/main
         run: |
           tests/keycloak/agent_owner_names_what_a_failed_write_left.sh
           tests/keycloak/agent_client_tokens_and_groups.sh
-          tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
+          tests/keycloak/hopin_exchanges_an_agent_token_for_each_service_audience.sh
           tests/keycloak/access_tokens_hold_no_profile_or_email_claim.sh
 
       # The second agent's run of the cells, in the part agents: the access part's time limit holds no second run.
@@ -622,14 +623,14 @@ jobs:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
           AGENT_CLIENT: agent-leonardo
-          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /agent-owners /services/speech-service
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /agent-owners /services/speech-service /services/video-service
           EXCHANGING_CLIENT: hopin
-          EXCHANGE_SCOPE: speech-service-audience
+          EXCHANGE_SCOPES: speech-service-audience video-service-audience
           REFUSED_CLIENT: presentator
           BASE_REF: origin/main
         run: |
           tests/keycloak/agent_client_tokens_and_groups.sh
-          tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
+          tests/keycloak/hopin_exchanges_an_agent_token_for_each_service_audience.sh
 
       # The four test agents' runs of the same cells, which share Mozart's declaration and allowlist. A run takes
       # about two minutes, so they stand in the parts agents and presentator, none with more than two.
@@ -639,16 +640,16 @@ jobs:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
           TEST_AGENTS: ${{ fromJSON(env.TEST_AGENTS_BY_PART)[matrix.part] }}
-          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /apps/songmaker/mcp /agent-owners /services/speech-service
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /apps/songmaker/mcp /agent-owners /services/speech-service /services/video-service
           EXCHANGING_CLIENT: hopin
-          EXCHANGE_SCOPE: speech-service-audience
+          EXCHANGE_SCOPES: speech-service-audience video-service-audience
           REFUSED_CLIENT: presentator
           BASE_REF: origin/main
         run: |
           for AGENT_CLIENT in $TEST_AGENTS; do
             export AGENT_CLIENT
             tests/keycloak/agent_client_tokens_and_groups.sh
-            tests/keycloak/hopin_exchanges_an_agent_token_for_the_speech_audience.sh
+            tests/keycloak/hopin_exchanges_an_agent_token_for_each_service_audience.sh
           done
 
       - name: Assert that cutover:load refuses the cluster's own Keycloak dump, naming agent_owner and the platform's six objects, before it loads anything
