@@ -11,7 +11,7 @@ fail() {
   exit 1
 }
 
-repository=$(cd "$(dirname "$0")/../../.." && pwd)
+repository=$(cd "$(dirname "$0")/../../../.." && pwd)
 objectstore=$repository/infrastructure/objectstore
 : "${BUCKET:?}"
 printf '%s' "$BUCKET" | grep -Eq '^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$' || fail "the bucket name $BUCKET is not 3 to 63 of a-z, 0-9 and -"
