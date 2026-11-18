@@ -1,0 +1,7 @@
+claim_id = "ea46771c80a34894b133987bb62bf7a3"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "297af68fd6a5fc128e3d9873ea71673fab8fbd16"
+branch = "claude/issue-712-ci-s-backup-1-part-ends-within-its-17-mi"
+scope = [".github/workflows/ci.yml", "tests/flux/parts.yaml"]
+opened_commit = "3d77cf2334b4e428835456a91523d82fec9e673d"
