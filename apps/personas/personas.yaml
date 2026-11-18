@@ -1,8 +1,8 @@
 # The personas runner: six agents, Mozart and Leonardo as agents of hopin and skat, Mozart also of songmaker, and four
 # test agents, pulled from its package through the Secret ghcr-pull and started from the Secret personas' files, both from
 # platform-secrets. The
-# runner opens no port, so there is no Service and no Ingress; it is Ready once the first loop's standing was answered,
-# which creates its ready_file.
+# runner opens no port, so there is no Service and no Ingress; it is Ready once a round of its contention for the agents
+# was answered, which creates its ready_file, whether it won an agent or not.
 # The Secret holds a copy of six client secrets that the Secret keycloak also holds (client-agent-mozart,
 # client-agent-leonardo, client-agent-humboldt, client-agent-curie, client-agent-lovelace, client-agent-hildegard),
 # since a Secret cannot be mounted across namespaces: rotating a client's secret updates both Secrets.
@@ -14,10 +14,21 @@ kind: Deployment
 metadata:
   name: personas
   namespace: personas
+  annotations:
+    # A pod holds at most 31 connections with [memory]: one for its locks, the history store's pool of 5 and overflow of
+    # 10, and as many again for the line store (personas' README, The connection budget). The runner fixes them, so they
+    # are stated here, and tests/postgres/connections_stay_within_max_connections.sh reads them.
+    hallucinai.de/postgres-connections-per-pod: '31'
 spec:
-  replicas: 1
+  # Two pods, so a kill or a rollout leaves one that can take the agents over. A surge pod turns Ready while it contends
+  # and holds no agent, and no pod stops before its replacement is Ready, so one Ready pod stays throughout. The
+  # surge of one runs three pods; their 93 connections are what the Postgres of this namespace has room for.
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: personas
@@ -66,8 +77,8 @@ spec:
           env:
             - name: PERSONAS_CONFIG
               value: /etc/personas/personas.toml
-          # The runner creates its ready_file when an app accepted a token, so a wrong secret or URL shows as not
-          # ready. No liveness probe: a restart empties every history.
+          # The runner creates its ready_file once a round of its contention answered, so a pod that cannot reach its
+          # Postgres shows as not ready. No liveness probe: a restart empties every history.
           readinessProbe:
             exec:
               command: [test, -e, /tmp/ready]

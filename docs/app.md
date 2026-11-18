@@ -72,6 +72,11 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 - **Pod shape.** Each pod passes Pod Security `restricted` in its namespace and admission's image policy.
 - **Readiness.** Each long-running process exposes a readiness check, an HTTP route or a command, that fails while it
   cannot serve. Flux reports a layer Ready only once its pods are, so a check that passes too early hides a broken start.
+- **Connections.** A Deployment that opens its Postgres declares the connections one pod may hold: the pool and overflow
+  variables its container sets (`DATABASE_POOL_SIZE` and `DATABASE_MAX_OVERFLOW`, counting one more for init-time
+  engines), or, where the app fixes them, the annotation `hallucinai.de/postgres-connections-per-pod`. The sum over the
+  namespace's Deployments of (replicas + surge) x that figure, plus the backup's dump, must stay within the base's
+  `max_connections` less its reserved slots.
 - **Configuration.** Live settings come from the manifest's environment, secrets from files `platform-secrets`
   supplies; no live secret is a plain environment value, since an environment value passes to every child process. How
   the app finds its files (`*_FILE`, a secrets directory) is the app's.
@@ -84,7 +89,9 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 |---|---|
 | Image ref is a full app ref at a release, verified by tag, attestation and signer; the image comes from quality's path | platform's `images` job (tag, attestation, signer commit on quality's main); [quality's release path](https://github.com/overnightworks/quality/blob/main/docs/release.md) in the app's own release |
 | Image form (listed vendor at a digest, or a full app ref) on every Pod create or change | admission policy `app-and-vendor-images` |
-| Namespace enforces `restricted`; Deployment is `Recreate`, Available with one Ready pod, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
+| Namespace enforces `restricted`; Deployment is `Recreate` or a `RollingUpdate` that never takes a pod away before its replacement is Ready, Available with all its replicas Ready, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
+| A Deployment's pods, with a rollout's surge and the backup, stay within its Postgres' `max_connections` | the `checks` job, by rendering `apps/songmaker` and `apps/personas` |
+| Two pods are Ready and a rollout restart keeps both available | the `cluster` job, for personas |
 | Manifests live under `apps/<app>/` and reconcile | the `cluster` job through the app's own Kustomization, named like its directory, which the `checks` job requires for every directory, and for a pull layer `<app>-pull` |
 | Every app ref an app renders is an image volume of its pull layer's Job, and a container mounts every volume | the `checks` job, by rendering both |
 | The pull layer's Job completes before the app's ReplicaSet is created, and the app's pods find the image on the node | the `cluster` job |
