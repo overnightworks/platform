@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: hopin
-          image: ghcr.io/overnightworks/hopin:2026.11.17.1@sha256:7c641d793d794c0913a538eee11abb3c05c78a627c947c752a5543f5911ef028
+          image: ghcr.io/overnightworks/hopin:2026.11.18.2@sha256:f34a8893218be515f02e85f88c350449eb7c98ab871a18e25e39509ee11c5c3f
           ports:
             - name: http
               containerPort: 8080
@@ -51,8 +51,6 @@ spec:
               value: /run/secrets/turn_key_id
             - name: HOPIN_TURN_API_TOKEN_FILE
               value: /run/secrets/turn_api_token
-            - name: HOPIN_AGENT__BACKEND
-              value: litellm
             - name: HOPIN_AGENT__GATEWAY__ORIGIN
               value: http://litellm-front.litellm:4000
             - name: HOPIN_AGENT__GATEWAY__KEY_FILE
