@@ -38,6 +38,9 @@ spec:
       labels:
         app.kubernetes.io/name: personas
     spec:
+      # personas finishes its calls within `[ownership] stop_seconds` (default 10) after SIGTERM; 15 leaves room
+      # for its exit before the kubelet kills it.
+      terminationGracePeriodSeconds: 15
       automountServiceAccountToken: false
       enableServiceLinks: false
       imagePullSecrets:
@@ -49,7 +52,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: ghcr.io/overnightworks/personas:2026.11.17.2@sha256:8cc80939d81eec4a5b62913f2db1904c192309a95f10facba23f9cacfe53dc89
+          image: ghcr.io/overnightworks/personas:2026.11.18.1@sha256:08d2fc15892d99e57cf75210d417f66e6a81311bd23f55430326077c1a4ff055
           args: [personas, migrate]
           # The command reads the whole configuration, so it mounts what the runner does.
           env:
@@ -74,7 +77,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: personas
-          image: ghcr.io/overnightworks/personas:2026.11.17.2@sha256:8cc80939d81eec4a5b62913f2db1904c192309a95f10facba23f9cacfe53dc89
+          image: ghcr.io/overnightworks/personas:2026.11.18.1@sha256:08d2fc15892d99e57cf75210d417f66e6a81311bd23f55430326077c1a4ff055
           env:
             - name: PERSONAS_CONFIG
               value: /etc/personas/personas.toml
