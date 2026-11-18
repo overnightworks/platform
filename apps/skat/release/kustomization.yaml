@@ -6,7 +6,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: ghcr.io/overnightworks/skat
-    newTag: 2026.11.18.1
-    digest: sha256:ad78126fce1afde1e77dbbf02a3837101eb7df178a9dd9e000eb78def0c91711
+    newTag: 2026.11.18.2
+    digest: sha256:0510e17df147a28feaf44f80d815155d3dce1da1103d5f959a14793388402d19
 configurations:
   - image-volume.yaml
