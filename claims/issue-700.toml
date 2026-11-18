@@ -1,0 +1,8 @@
+claim_id = "9fb150d4d81146b683f4d20dc5bfd090"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "4a7b12665cbd31ebe19b9736059cb92c50accb3a"
+branch = "claude/issue-700-songmaker-gets-its-bucket"
+scope = ["apps/songmaker", "infrastructure/objectstore"]
+opened_commit = "97e91d57d3b5fada5636942bff0aa10c2e363b67"
+whole_reason = "the bucket, its grants, its policy and its one consumer are one slice"
