@@ -127,8 +127,8 @@ mutant apps/personas "exceed max_connections" "($personas | .spec.strategy.rolli
 mutant apps/personas "exceed max_connections" "($personas | .spec.strategy.rollingUpdate.maxSurge) = \"300%\""
 mutant apps/personas "declares no connections per pod" "del($personas | .metadata.annotations)"
 mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^max_connections=\"))) = \"max_connections=96\""
-# The next two sit one connection from the budget as personas renders: 100 holds (replicas + surge) x 31 + the backup,
-# so only the pods still stopping make it red, and 159 holds everything but the surge pod's migrate.
+# The next two are max_connections values against personas' 157 connections: 100 leaves 97 slots, 60 short, and 159
+# leaves 156, one connection short, so only the 159 mutant sits one connection beyond the budget.
 mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^max_connections=\"))) = \"max_connections=100\""
 mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^max_connections=\"))) = \"max_connections=159\""
 mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^superuser_reserved_connections=\"))) = \"superuser_reserved_connections=50\""
