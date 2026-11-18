@@ -212,11 +212,13 @@ for plain_file in "${plain_files[@]}"; do
   echo "every data value in $encrypted_file is sops ciphertext, and no plain value is in it"
 done
 
+# Every namespace gets its Secrets, but the backup cells of this leg loop over the ones its part applies. The list is
+# read apart from the echo, so a failing derivation stops the step instead of leaving the loops empty.
+part_backup_namespaces="$("$(dirname "${BASH_SOURCE[0]}")/../backup/backup_namespaces.sh" "$CLUSTER_PART")"
 {
   echo "AGE_KEY_FILE=$key_file"
   echo "DUMMY_FILE=$dummy_file"
   echo "SECRETS_ARTIFACT_DIR=$artifact_dir"
   echo "POSTGRES_NAMESPACES=${postgres_namespaces[*]}"
-  # Every namespace gets its Secrets, but the backup cells of this leg loop over the ones its part applies.
-  echo "BACKUP_NAMESPACES=$("$(dirname "${BASH_SOURCE[0]}")/../backup/backup_namespaces.sh" "$CLUSTER_PART")"
+  echo "BACKUP_NAMESPACES=$part_backup_namespaces"
 } >> "$GITHUB_ENV"
