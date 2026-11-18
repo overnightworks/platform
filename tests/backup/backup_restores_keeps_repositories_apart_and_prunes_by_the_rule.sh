@@ -69,25 +69,28 @@ for namespace in $BACKUP_NAMESPACES; do
 done
 echo "the restore test of each namespace fails on its repository without a snapshot"
 
-# LiteLLM's first key table needs a row for its restore test to pass; the master key, through a port-forward, makes the
-# key by LiteLLM's own API, so the cell relies on no other cell. The key stays, like the backups below, until the
-# namespace goes. The master key travels from kubectl's stdout through shell variables to curl's stdin, never in an
-# argument; the reply is read only for the key's presence and goes nowhere else.
-kubectl --namespace "$LITELLM_NAMESPACE" rollout status deployment/litellm --timeout=5m
-master_key="$(kubectl --namespace "$LITELLM_NAMESPACE" get secret litellm --output jsonpath='{.data.master_key}' | base64 --decode)"
-echo "::add-mask::$master_key"
-litellm_port="$(kubectl --namespace "$LITELLM_NAMESPACE" get service litellm --output jsonpath='{.spec.ports[0].port}')"
-forward_log="$RUNNER_TEMP/litellm-port-forward.log"
-kubectl --namespace "$LITELLM_NAMESPACE" port-forward service/litellm ":$litellm_port" > "$forward_log" 2>&1 &
-forward=$!
-for _ in $(seq 30); do grep -q '^Forwarding from 127.0.0.1:' "$forward_log" && break; sleep 1; done
-local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$forward_log" | head -n 1)"
-[ -n "$local_port" ] || fail "kubectl port-forward to the Service litellm did not start"
-key_made="$(printf '%s\n' "header = \"Authorization: Bearer $master_key\"" 'header = "Content-Type: application/json"' 'data = "{}"' |
-  curl --silent --show-error --fail-with-body --max-time 30 --config - "http://127.0.0.1:$local_port/key/generate")"
-[ "$(yq --input-format json '.key | length > 0' <<<"$key_made")" = true ] || fail "the master key made no key in LiteLLM"
-kill "$forward"
-echo "the master key made the key that LiteLLM's first key table holds for its restore test"
+# A part that does not apply LiteLLM's layer has no key table to fill.
+if [[ " $BACKUP_NAMESPACES " == *" $LITELLM_NAMESPACE "* ]]; then
+  # LiteLLM's first key table needs a row for its restore test to pass; the master key, through a port-forward, makes the
+  # key by LiteLLM's own API, so the cell relies on no other cell. The key stays, like the backups below, until the
+  # namespace goes. The master key travels from kubectl's stdout through shell variables to curl's stdin, never in an
+  # argument; the reply is read only for the key's presence and goes nowhere else.
+  kubectl --namespace "$LITELLM_NAMESPACE" rollout status deployment/litellm --timeout=5m
+  master_key="$(kubectl --namespace "$LITELLM_NAMESPACE" get secret litellm --output jsonpath='{.data.master_key}' | base64 --decode)"
+  echo "::add-mask::$master_key"
+  litellm_port="$(kubectl --namespace "$LITELLM_NAMESPACE" get service litellm --output jsonpath='{.spec.ports[0].port}')"
+  forward_log="$RUNNER_TEMP/litellm-port-forward.log"
+  kubectl --namespace "$LITELLM_NAMESPACE" port-forward service/litellm ":$litellm_port" > "$forward_log" 2>&1 &
+  forward=$!
+  for _ in $(seq 30); do grep -q '^Forwarding from 127.0.0.1:' "$forward_log" && break; sleep 1; done
+  local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$forward_log" | head -n 1)"
+  [ -n "$local_port" ] || fail "kubectl port-forward to the Service litellm did not start"
+  key_made="$(printf '%s\n' "header = \"Authorization: Bearer $master_key\"" 'header = "Content-Type: application/json"' 'data = "{}"' |
+    curl --silent --show-error --fail-with-body --max-time 30 --config - "http://127.0.0.1:$local_port/key/generate")"
+  [ "$(yq --input-format json '.key | length > 0' <<<"$key_made")" = true ] || fail "the master key made no key in LiteLLM"
+  kill "$forward"
+  echo "the master key made the key that LiteLLM's first key table holds for its restore test"
+fi
 
 for namespace in $BACKUP_NAMESPACES; do
   # One backup, as the Schedule would start it.
@@ -159,18 +162,21 @@ for namespace in $BACKUP_NAMESPACES; do
   echo "the prune Job of $namespace keeps exactly: $(tr '\n' ' ' <<<"$actual_rule")"
 done
 
-# The restore test fails on an empty first key table: the same test, with a key-tables file whose first table the database leaves empty.
-empty_namespace="${BACKUP_NAMESPACES%% *}"
-[ "$(kubectl --namespace "$empty_namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only --no-align \
-  --command="SELECT count(*) FROM $EMPTY_KEY_TABLE")" = 0 ] || fail "the table $EMPTY_KEY_TABLE of $empty_namespace is not empty"
-kubectl --namespace "$empty_namespace" get configmap postgres --output json |
-  TABLE="$EMPTY_KEY_TABLE" yq --output-format json '{ "apiVersion": "v1", "kind": "ConfigMap",
-    "metadata": { "name": "postgres-empty-first-table" }, "data": (.data | .["key-tables"] = strenv(TABLE)) }' |
-  kubectl --namespace "$empty_namespace" create --filename - >/dev/null
-run_restore_test "$empty_namespace" empty-first-table-test postgres-empty-first-table
-kubectl --namespace "$empty_namespace" delete configmap postgres-empty-first-table >/dev/null
-[ "$status" = failed ] || fail "the restore test of $empty_namespace passed on an empty first key table"
-echo "the restore test of $empty_namespace fails on an empty first key table"
+# The restore test fails on an empty first key table: the same test, with a key-tables file whose first table the
+# database leaves empty. A part that does not apply that namespace's layer has no such table.
+if [[ " $BACKUP_NAMESPACES " == *" $EMPTY_KEY_NAMESPACE "* ]]; then
+  empty_namespace="$EMPTY_KEY_NAMESPACE"
+  [ "$(kubectl --namespace "$empty_namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only --no-align \
+    --command="SELECT count(*) FROM $EMPTY_KEY_TABLE")" = 0 ] || fail "the table $EMPTY_KEY_TABLE of $empty_namespace is not empty"
+  kubectl --namespace "$empty_namespace" get configmap postgres --output json |
+    TABLE="$EMPTY_KEY_TABLE" yq --output-format json '{ "apiVersion": "v1", "kind": "ConfigMap",
+      "metadata": { "name": "postgres-empty-first-table" }, "data": (.data | .["key-tables"] = strenv(TABLE)) }' |
+    kubectl --namespace "$empty_namespace" create --filename - >/dev/null
+  run_restore_test "$empty_namespace" empty-first-table-test postgres-empty-first-table
+  kubectl --namespace "$empty_namespace" delete configmap postgres-empty-first-table >/dev/null
+  [ "$status" = failed ] || fail "the restore test of $empty_namespace passed on an empty first key table"
+  echo "the restore test of $empty_namespace fails on an empty first key table"
+fi
 
 # A namespace reaches only its own repository; no credentials reach none; a namespace without one reaches the server not.
 # A fresh Pod's first connection can meet a refusal before the network policy admits its address, so the requests that

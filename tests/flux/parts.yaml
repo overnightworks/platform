@@ -18,9 +18,14 @@ apps: {layers: [presentator, songmaker, keycloak, hopin, legal, traefik, tunnel,
 # The Postgres cells loop over every namespace whose layer includes the Postgres base.
 load-1: {layers: [keycloak, litellm, personas, presentator, skat, songmaker, nvidia, traefik], paths: [tests/nvidia/*, tests/postgres/*, tests/songmaker/*]}
 load-2: {layers: [litellm, songmaker, hopin, skat], paths: [tests/postgres/*, tests/redis/*]}
-# The backup cells loop over every namespace whose layer includes the Postgres backup component, and Prometheus' rules over their Schedules.
-backup-1: {layers: [backup, prometheus, keycloak, litellm, personas, presentator, skat, songmaker], paths: [tests/backup/*, tests/personas/*, tests/prometheus/*]}
+# The backup cells loop over the backup namespaces whose layer the part applies (tests/backup/backup_namespaces.sh), and
+# Prometheus' rules over their Schedules. The two parts split those namespaces so that each stays within its time; a
+# namespace that no backup part applies fails the check of the checks job. The cell that makes LiteLLM's key runs where
+# litellm is, the Keycloak table check where keycloak is, songmaker's dump cell and personas' cells in the part that
+# applies their layer.
+backup-1: {layers: [backup, prometheus, keycloak, litellm, personas], paths: [tests/backup/*, tests/personas/*, tests/prometheus/*]}
 backup-2: {layers: [backup, songmaker], paths: [tests/backup/*, tests/disk/*]}
+backup-3: {layers: [backup, prometheus, presentator, skat, songmaker], paths: [tests/backup/*, tests/prometheus/*]}
 # The test agents' cells drive Keycloak.
 presentator: {layers: [presentator, keycloak], paths: [tests/keycloak/*, tests/no_network/*, tests/presentator/*, tests/redis/*]}
 presentator-2: {layers: [presentator], paths: [tests/presentator/*, tests/workloads/*]}
