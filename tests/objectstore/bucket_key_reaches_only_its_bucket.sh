@@ -45,6 +45,12 @@ read -r service_name service_port <<<"$s3_service"
 grep -qxF "$bucket" "$layer/namespaces.txt" || fail "the bucket $bucket of the web is no namespace the Job apply makes a bucket for"
 [ "$bucket" = "$APP_NAMESPACE" ] || fail "the bucket $bucket is not named like the namespace $APP_NAMESPACE"
 echo "the web's endpoint, region and bucket $bucket equal what the store's manifests give"
+# The app's layer, named like its namespace, applies after the store's Job has made the bucket and granted the key.
+store_layer="$(basename "$layer")"
+APP_LAYER="$APP_NAMESPACE" STORE_LAYER="$store_layer" yq -e 'select(.kind == "Kustomization" and .metadata.name == strenv(APP_LAYER))
+  | .spec.dependsOn[] | select(.name == strenv(STORE_LAYER))' clusters/pc/apps.yaml >/dev/null ||
+  fail "the Kustomization $APP_NAMESPACE in clusters/pc/apps.yaml does not wait for $store_layer, so its web may start before its bucket and key exist"
+echo "the Kustomization $APP_NAMESPACE waits for $store_layer"
 
 # The admin API through a port-forward, which no NetworkPolicy sees.
 admin_token_file="$RUNNER_TEMP/object-store-admin-token"

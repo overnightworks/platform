@@ -37,8 +37,9 @@ Impact: every app with a bucket (presentator and songmaker) cannot read or write
    with one line `bucket <namespace> holds key <id>` per bucket.
 
 Objects written after the snapshot lose their metadata: they are unreachable, and their blocks stay on the claim until
-Garage's own sweep. presentator rebuilds what its bucket holds; a later app that keeps a file only in a bucket restores
-it from that bucket's backup, which the platform does not make yet.
+Garage's own sweep. presentator rebuilds what its bucket holds, and songmaker's bucket holds only what it can rebuild
+(its queue's stream snapshots); a later app that keeps a file only in a bucket restores it from that bucket's backup,
+which the platform does not make yet.
 
 Rollback: the corrupt file stays at `/data/meta/db.sqlite.corrupt` until the operator deletes it; copying it back
 returns to the state before step 3.
