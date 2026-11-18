@@ -2,6 +2,8 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+# shellcheck source=../layer_includes.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../layer_includes.sh"
 # The key, the values and the plain manifests exist only in this runner's temp directory; no step prints them.
 umask 077
 private_dir="$RUNNER_TEMP/decryption-proof"
@@ -124,20 +126,6 @@ postgres_statefulset="$(yq 'select(.kind == "StatefulSet")' "$POSTGRES_BASE/post
 postgres_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.secretName' <<<"$postgres_statefulset")"
 password_file="$(yq '.spec.template.spec.containers[0].env[] | select(.name == "POSTGRES_PASSWORD_FILE") | .value' \
   <<<"$postgres_statefulset")"
-# layer_includes <kustomization file> <resources|components> <directory>: the field of the layer names the directory, or,
-# for resources, a layer inside its own directory does. Components are not followed.
-layer_includes() {
-  local layer="$1" field="$2" directory entry resolved
-  directory="$(realpath --canonicalize-missing "$3")"
-  while IFS= read -r entry; do
-    resolved="$(realpath --canonicalize-missing "${layer%/*}/$entry")"
-    [ "$resolved" != "$directory" ] || return 0
-    if [ "$field" = resources ] && [[ $resolved == "$(realpath "${layer%/*}")"/* ]] && [ -f "$resolved/kustomization.yaml" ]; then
-      ! layer_includes "$resolved/kustomization.yaml" resources "$3" || return 0
-    fi
-  done < <(FIELD="$field" yq '.[strenv(FIELD)] // [] | .[]' "$layer")
-  return 1
-}
 postgres_namespaces=()
 for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
   layer_includes "$layer" resources "$POSTGRES_BASE" || continue
@@ -163,9 +151,7 @@ rest_users_secret="$(yq 'select(.kind == "Deployment") | .spec.template.spec.vol
   "$REST_SERVER_MANIFEST")"
 rest_users_files="$(secret_files "$rest_users_secret" "$rest_namespace")"
 backup_namespaces=()
-for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
-  backup_namespace="$(yq '.namespace' "$layer")"
-  layer_includes "$layer" components "$POSTGRES_BACKUP_COMPONENT" || continue
+while read -r _ backup_namespace; do
   backup_namespaces+=("$backup_namespace")
   restic_files="$(secret_files "$restic_secret" "$backup_namespace")"
   # rest-server's --private-repos admits a user only to the path that starts with its name, and the repository's path
@@ -179,7 +165,7 @@ for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
   done
   cp "$restic_files/$password_key" "$rest_users_files/$rest_user"
   plain_secret "$restic_secret" "$backup_namespace" Opaque
-done
+done < <("$(dirname "${BASH_SOURCE[0]}")/../backup/backup_namespaces.sh")
 [ "${#backup_namespaces[@]}" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $POSTGRES_BACKUP_COMPONENT"
 plain_secret "$rest_users_secret" "$rest_namespace" Opaque
 
@@ -226,10 +212,13 @@ for plain_file in "${plain_files[@]}"; do
   echo "every data value in $encrypted_file is sops ciphertext, and no plain value is in it"
 done
 
+# Every namespace gets its Secrets, but the backup cells of this leg loop over the ones its part applies. The list is
+# read apart from the echo, so a failing derivation stops the step instead of leaving the loops empty.
+part_backup_namespaces="$("$(dirname "${BASH_SOURCE[0]}")/../backup/backup_namespaces.sh" "$CLUSTER_PART")"
 {
   echo "AGE_KEY_FILE=$key_file"
   echo "DUMMY_FILE=$dummy_file"
   echo "SECRETS_ARTIFACT_DIR=$artifact_dir"
   echo "POSTGRES_NAMESPACES=${postgres_namespaces[*]}"
-  echo "BACKUP_NAMESPACES=${backup_namespaces[*]}"
+  echo "BACKUP_NAMESPACES=$part_backup_namespaces"
 } >> "$GITHUB_ENV"

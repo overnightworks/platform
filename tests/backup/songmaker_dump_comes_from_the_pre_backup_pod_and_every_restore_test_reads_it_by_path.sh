@@ -74,16 +74,10 @@ stale="$(kubectl --namespace "$namespace" exec "$check_pod" -- sh -c "$backup_sc
 echo "the backup command of $namespace streams a fresh dump and refuses an old one with no output"
 kubectl --namespace "$namespace" delete pod "$check_pod" --wait --timeout=2m >/dev/null
 
-# No StatefulSet carries a backup command in songmaker, and one does in a namespace without ./files.
+# No StatefulSet carries a backup command in songmaker, and no pod does outside a Backup.
 [ -z "$(kubectl --namespace "$namespace" get statefulset postgres \
   --output jsonpath='{.spec.template.metadata.annotations.k8up\.io/backupcommand}')" ] ||
   fail "the StatefulSet postgres of $namespace still carries a backup command"
-for other in $BACKUP_NAMESPACES; do
-  [ "$other" != "$namespace" ] || continue
-  [ -n "$(kubectl --namespace "$other" get statefulset postgres \
-    --output jsonpath='{.spec.template.metadata.annotations.k8up\.io/backupcommand}')" ] ||
-    fail "the StatefulSet postgres of $other carries no backup command, though it has no PreBackupPod"
-done
 [ "$(backup_pods "$namespace")" = 0 ] || fail "a Pod of $namespace carries a backup command outside a Backup"
 echo "no StatefulSet of $namespace carries a backup command, and no pod does outside a Backup"
 
@@ -136,12 +130,7 @@ mapfile -t listing <<<"$restic_output"
 [ "${listing[4]}" = PGDMP ] || fail "the latest dump snapshot of $namespace holds no custom-format dump"
 echo "the Backup left two more snapshots in $namespace, $dump_path in custom format and the staging claim's"
 
-# Every restore test reads its dump by path, and passes.
-for target in $BACKUP_NAMESPACES; do
-  command="$(kubectl --namespace "$target" get cronjob restore-test \
-    --output jsonpath='{.spec.jobTemplate.spec.template.spec.initContainers[0].command[2]}')"
-  [[ $command == *'--path "/$(NAMESPACE)-postgres.dump"'* ]] || fail "the restore test of $target reads its dump without --path"
-  run_restore_test "$target" pre-backup-pod-restore-test
-  [ "$status" = passed ] || fail "the restore test of $target failed"
-  echo "the restore test of $target reads its dump by path and passes"
-done
+# The restore test reads the dump by path, and passes.
+run_restore_test "$namespace" pre-backup-pod-restore-test
+[ "$status" = passed ] || fail "the restore test of $namespace failed"
+echo "the restore test of $namespace reads its dump by path and passes"
