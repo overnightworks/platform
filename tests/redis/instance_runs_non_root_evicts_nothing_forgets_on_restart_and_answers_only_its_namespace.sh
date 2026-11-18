@@ -59,5 +59,6 @@ kubectl --namespace "$APP_NAMESPACE" wait pod/redis-0 --for=create --timeout=1m
 kubectl --namespace "$APP_NAMESPACE" wait pod/redis-0 --for=condition=Ready --timeout=2m
 [ "$(kubectl --namespace "$APP_NAMESPACE" get pod redis-0 -o jsonpath='{.metadata.uid}')" != "$old_pod" ] ||
   fail "the Redis pod is the one before the deletion"
-[ "$(redis_cli dbsize)" = 0 ] || fail "the new Redis pod in $APP_NAMESPACE holds keys after a restart"
+# The app's own pods write keys again as soon as the new Redis answers, so only the proof key is judged.
+[ "$(redis_cli exists "$key")" = 0 ] || fail "the new Redis pod in $APP_NAMESPACE still holds the key $key after a restart"
 echo "the key $key is gone after Redis's pod in $APP_NAMESPACE was deleted and came back Ready"
