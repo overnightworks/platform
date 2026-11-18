@@ -1062,7 +1062,7 @@ jobs:
 
       - name: Start Garage
         id: garage
-        uses: ./.github/actions/garage
+        uses: $/.github/actions/garage
 
       - name: Put, get, list and delete an object through the exported environment alone
         env:
