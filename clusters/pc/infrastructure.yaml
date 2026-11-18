@@ -198,7 +198,8 @@ spec:
   path: ./infrastructure/litellm
   prune: true
   wait: true
-  timeout: 5m0s
+  # LiteLLM turns Ready only after its Postgres and its own migrations, which took over five minutes in CI.
+  timeout: 10m0s
   sourceRef:
     kind: GitRepository
     name: flux-system
