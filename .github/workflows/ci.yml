@@ -1068,21 +1068,7 @@ jobs:
         env:
           BUCKET: ${{ steps.garage.outputs.bucket }}
         run: |
-          uv run --no-project --no-build --with boto3==1.44.5 python -I - <<'PYTHON'
-          import os
-
-          import boto3
-          from botocore.config import Config
-
-          client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
-          bucket = os.environ["BUCKET"]
-          client.put_object(Bucket=bucket, Key="probe/object", Body=b"payload")
-          assert client.get_object(Bucket=bucket, Key="probe/object")["Body"].read() == b"payload"
-          assert [item["Key"] for item in client.list_objects_v2(Bucket=bucket)["Contents"]] == ["probe/object"]
-          client.delete_object(Bucket=bucket, Key="probe/object")
-          assert "Contents" not in client.list_objects_v2(Bucket=bucket)
-          print("put, get, list and delete passed")
-          PYTHON
+          uv run --project tests/objectstore/app_client --locked --no-build python -I tests/objectstore/app_client/put_get_list_delete.py
 
   keycloak-hold:
     runs-on: ubuntu-latest

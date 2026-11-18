@@ -1,0 +1,9 @@
+[project]
+name = "app-client"
+version = "0"
+description = "An app's S3 client as the app-garage job drives it"
+requires-python = ">=3.12"
+dependencies = ["boto3==1.44.5"]
+
+[tool.uv]
+package = false
