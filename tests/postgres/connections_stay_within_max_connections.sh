@@ -43,7 +43,7 @@ server_limit() {
 
 # judge <rendered>: prints one problem line for each breach and, last, one summary line for the render's namespace.
 judge() {
-  local rendered="$1" max reserved total=0 name replicas strategy surge pool overflow declared opens per_pod pods namespace
+  local rendered="$1" max reserved total=0 name replicas strategy surge pool overflow declared opens per_pod pods namespace rows value
   namespace="$(yq --no-doc 'select(.kind == "StatefulSet" and .metadata.name == "postgres") | .metadata.namespace' "$rendered")"
   max="$(server_limit "$rendered" max_connections)"
   reserved="$(server_limit "$rendered" superuser_reserved_connections)"
@@ -51,8 +51,18 @@ judge() {
     echo "problem: $namespace: the Postgres StatefulSet gives no max_connections and superuser_reserved_connections"
     return
   fi
+  rows="$(deployments "$rendered")" || {
+    echo "problem: $namespace: the Deployments do not read from the render"
+    return
+  }
   while IFS='|' read -r name replicas strategy surge pool overflow declared opens; do
     [ -n "$name" ] && [ "$opens" -gt 0 ] || continue
+    for value in "$pool" "$overflow" "$declared"; do
+      if [ -n "$value" ] && ! [[ $value =~ ^(0|[1-9][0-9]*)$ ]]; then
+        echo "problem: $namespace: the Deployment $name declares '$value' connections, not a non-negative integer"
+        continue 2
+      fi
+    done
     if [ -n "$pool$overflow" ] && [ -n "$declared" ]; then
       echo "problem: $namespace: the Deployment $name declares its connections twice, as a pool and as an annotation"
       continue
@@ -71,7 +81,7 @@ judge() {
     fi
     pods=$((replicas + surge))
     total=$((total + pods * per_pod))
-  done < <(deployments "$rendered")
+  done <<<"$rows"
   total=$((total + backup_connections))
   if [ "$total" -gt $((max - reserved)) ]; then
     echo "problem: $namespace: up to $total connections (the Deployments' pods with their surge and the backup) exceed max_connections $max less $reserved reserved"
@@ -110,5 +120,7 @@ mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(tes
 mutant apps/personas "gives no max_connections" "del($postgres | .args)"
 mutant apps/songmaker "exceed max_connections" "($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_POOL_SIZE\") | .value) = \"60\""
 mutant apps/songmaker "declares no connections per pod" "del($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_MAX_OVERFLOW\"))"
+mutant apps/songmaker "not a non-negative integer" "($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_POOL_SIZE\") | .value) = \"5x\""
+mutant apps/personas "not a non-negative integer" "($personas | .metadata.annotations.\"$declared_annotation\") = \"31x\""
 mutant apps/songmaker "declares its connections twice" "($web | .metadata.annotations.\"$declared_annotation\") = \"16\""
 echo "every mutant of the connection budget is red"
