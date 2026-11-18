@@ -1,0 +1,8 @@
+claim_id = "7972ffbe8828442692ca66f0d1674d29"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "a3ec76e2f9968cecc43592b8a032c548aecf9008"
+branch = "claude/issue-709-presentator-s-web-keeps-its-mirrors-and"
+scope = [".github/workflows/ci.yml", "apps/presentator"]
+opened_commit = "ab85287e342086dc9cf65ce8a87007291b3160d4"
+whole_reason = "the claims leave claims.yaml, the layer's kustomization and the web's volumes together"
