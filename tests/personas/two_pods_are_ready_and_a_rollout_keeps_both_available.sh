@@ -18,12 +18,12 @@ proof=personas-two-pods
 : "${PERSONAS_CONFIG_FILE:?the committed configuration of the runner}"
 in_namespace() { kubectl --namespace "$PERSONAS_NAMESPACE" "$@"; }
 
-available_log="$(mktemp)"
+status_log="$(mktemp)"
 watch_pid=""
 cleanup() {
   local cell_status=$?
   [ -z "$watch_pid" ] || kill "$watch_pid" 2>/dev/null || true
-  rm -f "$available_log"
+  rm -f "$status_log"
   delete_object --namespace "$PERSONAS_NAMESPACE" delete deployment "$proof" --ignore-not-found --wait --timeout=3m
   delete_object --namespace "$PERSONAS_NAMESPACE" delete configmap "$proof" --ignore-not-found
   end_deletions "$cell_status"
@@ -53,19 +53,26 @@ ready="$(in_namespace get deployment "$proof" -o jsonpath='{.status.readyReplica
 [ "$ready" = "$replicas" ] || fail "the Deployment $proof has $ready Ready pods, not $replicas"
 echo "the Deployment $proof has $ready of $replicas pods Ready"
 
-# A watch started before the restart reports every change of the Deployment's status, an omitted availableReplicas being
-# an empty line; a drop below the replicas that recovers between two reads is a reported line all the same. It is kubectl
-# itself that runs in the background, so that killing its pid ends the watch.
-last_status_is_full() { [ "$(tail -n 1 "$available_log")" = "$replicas" ]; }
-kubectl --namespace "$PERSONAS_NAMESPACE" get deployment "$proof" --watch -o jsonpath='{.status.availableReplicas}{"\n"}' >"$available_log" &
+# A watch started before the restart reports every change of the Deployment's status as one line of generation,
+# observed generation, replicas, updated replicas and available replicas, an omitted count being empty; a drop below the
+# replicas that recovers between two reads is a reported line all the same. The restart is complete when this same watch
+# reports the restarted generation observed with every replica updated and available and no old pod left, so that no
+# line queued behind it is missed. It is kubectl itself that runs in the background, so that killing its pid ends the
+# watch.
+restart_is_reported_complete() {
+  awk -F, -v first="$first_generation" -v replicas="$replicas" \
+    'END { exit !($1 > first && $2 == $1 && $3 == replicas && $4 == replicas && $5 == replicas) }' "$status_log"
+}
+first_generation="$(in_namespace get deployment "$proof" -o jsonpath='{.metadata.generation}')"
+kubectl --namespace "$PERSONAS_NAMESPACE" get deployment "$proof" --watch \
+  -o jsonpath='{.metadata.generation},{.status.observedGeneration},{.status.replicas},{.status.updatedReplicas},{.status.availableReplicas}{"\n"}' >"$status_log" &
 watch_pid=$!
-until_true 30 "the watch of $proof reported its first status" [ -s "$available_log" ]
+until_true 30 "the watch of $proof reported its first status" [ -s "$status_log" ]
 in_namespace rollout restart "deployment/$proof" >/dev/null
-in_namespace rollout status "deployment/$proof" --timeout=5m
-until_true 30 "the watch of $proof reported all $replicas replicas available again" last_status_is_full
+until_true 300 "the watch of $proof reported the restart complete with all $replicas replicas available" restart_is_reported_complete
 kill -0 "$watch_pid" 2>/dev/null || fail "the watch of $proof ended before the rollout restart did"
-lowest="$(awk 'NR == 1 || $1 + 0 < lowest { lowest = $1 + 0 } END { print lowest }' "$available_log")"
+lowest="$(awk -F, 'NR == 1 || $5 + 0 < lowest { lowest = $5 + 0 } END { print lowest }' "$status_log")"
 [ "$lowest" -ge "$replicas" ] || fail "the Deployment $proof had $lowest of $replicas pods available during the rollout restart"
 ready="$(in_namespace get deployment "$proof" -o jsonpath='{.status.readyReplicas}')"
 [ "$ready" = "$replicas" ] || fail "the Deployment $proof has $ready Ready pods after the rollout, not $replicas"
-echo "the Deployment $proof had every replica available in all $(wc -l <"$available_log") reported statuses of the rollout restart, and has $ready Ready again"
+echo "the Deployment $proof had every replica available in all $(wc -l <"$status_log") reported statuses of the rollout restart, and has $ready Ready again"
