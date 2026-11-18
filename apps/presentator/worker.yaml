@@ -75,8 +75,6 @@ spec:
             - name: build
               containerPort: 7100
           env:
-            - name: PRESENTATOR_WORKER_SEAL
-              value: kubernetes
             - name: PRESENTATOR_BUILD_TIMEOUT_SECONDS
               value: '300'
             - name: PRESENTATOR_BUILD_OUTPUT_MEGABYTES

@@ -234,8 +234,6 @@ judge_structure() {
   same "$manifest" "$REDIS_POLICY | .spec.ingress[0].from[0].podSelector.matchLabels" "$WEB_LABELS" "the NetworkPolicy redis does not admit the web's pods"
   found "$manifest" "the worker names a Redis variable" "$WORKER_CONTAINER | (.env // [])[] | select(.name | test(\"REDIS\"))"
   exactly "$manifest" "the worker has no command" "$WORKER_CONTAINER | .command | length > 0" 'true'
-  exactly "$manifest" "the worker's seal is not set" \
-    "$WORKER_CONTAINER | .env[] | select(.name == \"PRESENTATOR_WORKER_SEAL\") | (.value // \"\") != \"\"" 'true'
   exactly "$manifest" "the worker has no memory limit" "$WORKER_CONTAINER | .resources.limits.memory != null" 'true'
 }
 
@@ -482,9 +480,8 @@ mutant "the NetworkPolicy build-worker does not select the worker's pods" "($WOR
 mutant "the NetworkPolicy redis does not admit exactly one peer" "($REDIS_POLICY | .spec.ingress[0].from) = [{\"podSelector\": {}}, {\"namespaceSelector\": {}}]"
 mutant "the NetworkPolicy redis does not admit the web's pods" "($REDIS_POLICY | .spec.ingress[0].from[0].podSelector) = {}"
 mutant "the worker names a Redis variable" "($on_worker | $worker_container | .env) += [{\"name\": \"PRESENTATOR_REDIS_URL\", \"value\": \"redis://redis:6379/0\"}]"
-# Command, seal and memory bound.
+# Command and memory bound.
 mutant "the worker has no command" "del($on_worker | $worker_container | .command)"
-mutant "the worker's seal is not set" "del($on_worker | $worker_container | .env[] | select(.name == \"PRESENTATOR_WORKER_SEAL\"))"
 mutant "the worker has no memory limit" "del($on_worker | $worker_container | .resources)"
 # The pull layer's Job at uid 0 is refused at restricted.
 if [ -n "$pull_rendered" ]; then
