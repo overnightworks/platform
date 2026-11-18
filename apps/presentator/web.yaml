@@ -167,12 +167,15 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 512Mi
+        # Both are per-pod caches that a restart refills: the bare mirrors of the stored deck sources, which no app
+        # setting caps, so 2Gi is twice their size or more; and copies of the builds the object store holds, capped by
+        # PRESENTATOR_BUILD_CACHE_BYTES (4 GiB by default), beside one build's workspace and its PDFs.
         - name: mirrors
-          persistentVolumeClaim:
-            claimName: mirrors
+          emptyDir:
+            sizeLimit: 2Gi
         - name: builds
-          persistentVolumeClaim:
-            claimName: builds
+          emptyDir:
+            sizeLimit: 6Gi
 ---
 apiVersion: v1
 kind: Service
