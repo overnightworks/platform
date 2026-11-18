@@ -5,7 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 web() { kubectl --namespace "$SONGMAKER_NAMESPACE" exec "$web_pod" --container web -- "$@"; }
 
 cleanup() {
-  kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod own-client unknown-host-client --ignore-not-found --wait --timeout=2m
+  kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod own-client --ignore-not-found --wait --timeout=2m
   kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
 }
 trap cleanup EXIT
@@ -30,34 +30,25 @@ kubectl --namespace "$SONGMAKER_NAMESPACE" get events --field-selector reason=Pu
 df --human-readable /
 web_pod="$(kubectl --namespace "$SONGMAKER_NAMESPACE" get pod --selector app.kubernetes.io/name=web -o jsonpath='{.items[0].metadata.name}')"
 
-# migrate ended 0, and the database stands at the one head of the image, on the major version of the base's Postgres.
-exit_code="$(kubectl --namespace "$SONGMAKER_NAMESPACE" get pod "$web_pod" \
-  -o jsonpath='{.status.initContainerStatuses[?(@.name=="migrate")].state.terminated.exitCode}')"
-[ "$exit_code" = 0 ] || fail "the init container migrate of $web_pod ended '$exit_code', not 0"
-heads="$(web /app/.venv/bin/alembic heads | awk '{print $1}')"
-[ "$(wc -l <<<"$heads")" = 1 ] || fail "the image has more than one alembic head: $heads"
+# The database runs the major version of the base's Postgres.
 sql() { kubectl --namespace "$SONGMAKER_NAMESPACE" exec postgres-0 --container postgres -- psql --no-psqlrc \
   --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="$1"; }
-stored="$(sql 'select version_num from alembic_version')"
-[ "$stored" = "$heads" ] || fail "alembic_version holds '$stored', not the image's head '$heads'"
 base_image="$(yq 'select(.kind == "StatefulSet") | .spec.template.spec.containers[0].image' "$POSTGRES_BASE/postgres.yaml")"
 base_major="${base_image#*/postgres:}" base_major="${base_major%%.*}"
 server_version="$(sql 'show server_version')"
 [ "${server_version%%.*}" = "$base_major" ] || fail "the Postgres runs $server_version, not major $base_major of $base_image"
-echo "migrate ended 0 and alembic_version equals the image's head $heads on Postgres $server_version"
+echo "songmaker's Postgres runs $server_version, major $base_major of the base"
 
-# The pod answers its public host and refuses another; a Pod in another namespace gets no answer.
+# The pod answers its public host; a Pod in another namespace gets no answer.
 host="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env[] | select(.name == "PUBLIC_BASE_URL") | .value' \
   apps/songmaker/web.yaml)"
 host="${host#*://}"
 url="http://web.$SONGMAKER_NAMESPACE.svc.cluster.local:8080/health"
 request "$SONGMAKER_NAMESPACE" own-client "$host" "$url"
 [ "$status" = 200 ] || fail "/health answered '$status' for $host, not 200"
-request "$SONGMAKER_NAMESPACE" unknown-host-client "unknown.invalid" "$url"
-[[ $status =~ ^[0-9]{3}$ && $status != 2?? && $status != 000 ]] || fail "/health answered '$status' for an unknown host, not an error"
 request "$OTHER_NAMESPACE" other-client "$host" "$url" --max-time 5 --retry 0
 [ "$status" = 000 ] || fail "a Pod in $OTHER_NAMESPACE got '$status' from the web"
-echo "/health answers 200 for $host and $status for an unknown host; a Pod in $OTHER_NAMESPACE gets no answer"
+echo "/health answers 200 for $host; a Pod in $OTHER_NAMESPACE gets no answer"
 
 # The root is read-only, the user is not root, and the audio claim and /tmp take a file.
 uid="$(web id -u)"

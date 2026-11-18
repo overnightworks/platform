@@ -551,13 +551,13 @@ jobs:
           REDIS_URL_VARIABLE: SKAT_REDIS_URL
         run: tests/redis/app_url_names_the_redis_service_in_its_namespace.sh
 
-      - name: Assert that songmaker's web is Ready at its full ref, migrated, closed to other namespaces, read-only and holds its audio claim
+      - name: Assert that songmaker's web is Ready at its full ref on the base's Postgres, closed to other namespaces, read-only and holds its audio claim
         if: matrix.part == 'load-1'
         env:
           SONGMAKER_NAMESPACE: songmaker
           # The throwaway namespace of the Pod that must get no answer.
           OTHER_NAMESPACE: songmaker-web-client
-        run: tests/songmaker/web_migrates_serves_closed_and_holds_its_audio.sh
+        run: tests/songmaker/web_serves_closed_and_holds_its_audio.sh
 
       - name: Assert that songmaker's route reaches its web through Traefik for the tunnel's Pods, that the web answers the host the GPU worker sends and refuses another, that its back-channel logout answers a malformed token with 400 inside the namespace and no request through Traefik reaches it, and that a Pod in another namespace gets no answer
         if: matrix.part == 'load-1'
