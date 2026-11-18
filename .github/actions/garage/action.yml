@@ -23,4 +23,4 @@ runs:
       shell: sh
       env:
         BUCKET: ${{ inputs.bucket }}
-      run: ${{ github.action_path }}/start_garage.sh
+      run: ${{ github.action_path }}/scripts/start_garage.sh
