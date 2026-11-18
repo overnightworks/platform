@@ -22,7 +22,8 @@ metadata:
 spec:
   # Two pods, so a kill or a rollout leaves one that can take the agents over. A surge pod turns Ready while it contends
   # and holds no agent, and no pod stops before its replacement is Ready, so one Ready pod stays throughout. The
-  # surge of one runs three pods; their 93 connections are what the Postgres of this namespace has room for.
+  # surge of one lets a third pod start while both old pods may still be stopping, so five pods hold 155 connections
+  # at once; with the surge pod's migrate and the backup's dump that is 157, within the 197 the Postgres has room for.
   replicas: 2
   strategy:
     type: RollingUpdate
