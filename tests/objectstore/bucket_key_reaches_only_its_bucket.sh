@@ -45,6 +45,12 @@ read -r service_name service_port <<<"$s3_service"
 grep -qxF "$bucket" "$layer/namespaces.txt" || fail "the bucket $bucket of the web is no namespace the Job apply makes a bucket for"
 [ "$bucket" = "$APP_NAMESPACE" ] || fail "the bucket $bucket is not named like the namespace $APP_NAMESPACE"
 echo "the web's endpoint, region and bucket $bucket equal what the store's manifests give"
+# The app's layer, named like its namespace, applies after the store's Job has made the bucket and granted the key.
+store_layer="$(basename "$layer")"
+APP_LAYER="$APP_NAMESPACE" STORE_LAYER="$store_layer" yq -e 'select(.kind == "Kustomization" and .metadata.name == strenv(APP_LAYER))
+  | .spec.dependsOn[] | select(.name == strenv(STORE_LAYER))' clusters/pc/apps.yaml >/dev/null ||
+  fail "the Kustomization $APP_NAMESPACE in clusters/pc/apps.yaml does not wait for $store_layer, so its web may start before its bucket and key exist"
+echo "the Kustomization $APP_NAMESPACE waits for $store_layer"
 
 # The admin API through a port-forward, which no NetworkPolicy sees.
 admin_token_file="$RUNNER_TEMP/object-store-admin-token"
@@ -185,6 +191,17 @@ expect_probe() {
   echo "$description: $verdict"
 }
 expect_probe closed "a Pod in $APP_NAMESPACE that is not the web, to the S3 port" "$APP_NAMESPACE" s3-unlabelled '{"cell": "object-store"}' "$s3_host" "$service_port"
+# The app's other workloads, labelled as their templates are, which hold no key.
+worker_number=0
+while IFS= read -r worker_labels; do
+  [ -n "$worker_labels" ] || continue
+  worker_number=$((worker_number + 1))
+  worker_name="$(jq -r '."app.kubernetes.io/name"' <<<"$worker_labels")"
+  expect_probe closed "a Pod labelled as $worker_name in $APP_NAMESPACE, to the S3 port" \
+    "$APP_NAMESPACE" "s3-worker-$worker_number" "$worker_labels" "$s3_host" "$service_port"
+done < <(yq -o json -I0 'select(.kind == "Deployment" or .kind == "StatefulSet") | .spec.template.metadata.labels
+  | select(.["app.kubernetes.io/name"] != "web")' "$(dirname "$APP_MANIFEST")"/*.yaml)
+[ "$worker_number" -gt 0 ] || fail "$(dirname "$APP_MANIFEST") holds no workload besides the web to probe"
 expect_probe closed "a Pod labelled as the web in $OTHER_NAMESPACE, to the S3 port" "$OTHER_NAMESPACE" s3-other-namespace "$web_labels" "$s3_host" "$service_port"
 expect_probe closed "a Pod labelled as the web in $APP_NAMESPACE, to the admin port" "$APP_NAMESPACE" admin-web "$web_labels" "$admin_host" 3903
 expect_probe closed "a Pod in $OTHER_NAMESPACE, to the admin port" "$OTHER_NAMESPACE" admin-other-namespace '{"cell": "object-store"}' "$admin_host" 3903

@@ -128,9 +128,9 @@ spec:
       port: 3903
       targetPort: admin
 ---
-# The S3 port admits only the pods that carry a bucket's key, the web of presentator; a namespace that gets a bucket joins
-# this list with its pods. The admin port admits only the pods of this namespace, which the apply Job is. Garage sends
-# nothing: its one node talks to itself on the loopback.
+# The S3 port admits only the pods that carry a bucket's key, the web of presentator and of songmaker; a namespace that
+# gets a bucket joins this list with its pods. The admin port admits only the pods of this namespace, which the apply
+# Job is. Garage sends nothing: its one node talks to itself on the loopback.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -148,6 +148,12 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: presentator
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: songmaker
           podSelector:
             matchLabels:
               app.kubernetes.io/name: web

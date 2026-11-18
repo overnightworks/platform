@@ -2,7 +2,7 @@
 
 Symptom: the pod `garage-0` in Namespace `objectstore` crash-loops after a power loss or a kill, with an error from its
 metadata database, or the store answers that every object is missing.
-Impact: every app with a bucket (presentator) cannot read or write its objects until Garage is back.
+Impact: every app with a bucket (presentator and songmaker) cannot read or write its objects until Garage is back.
 
 ## Check
 
@@ -13,9 +13,10 @@ Impact: every app with a bucket (presentator) cannot read or write its objects u
 
 ## Fix
 
-1. The operator's yes, since the store stops: an agent suspends the apps' layer and the store's, `flux suspend
-   kustomization presentator` and `flux suspend kustomization objectstore`, scales the app's pods away,
-   `kubectl -n presentator scale deployment web --replicas 0`, which keeps S3 access closed until step 6 has reconciled
+1. The operator's yes, since the store stops: an agent suspends the apps' layers and the store's, `flux suspend
+   kustomization presentator`, `flux suspend kustomization songmaker` and `flux suspend kustomization objectstore`,
+   scales the apps' web pods away, `kubectl -n presentator scale deployment web --replicas 0` and
+   `kubectl -n songmaker scale deployment web --replicas 0`, which keeps S3 access closed until step 6 has reconciled
    the restored store, then scales the store away, `kubectl -n objectstore scale statefulset garage --replicas 0`, and
    deletes the Job, `kubectl -n objectstore delete job apply`.
 2. An agent starts a Pod in `objectstore` that mounts the claim `data-garage-0` at `/data`, runs as user and group 1000
@@ -32,12 +33,13 @@ Impact: every app with a bucket (presentator) cannot read or write its objects u
    lacks the current one. An agent resumes the store's layer, `flux resume kustomization objectstore`, which recreates
    the Job `apply`: it imports the current key from each namespace's Secret `object-store` and revokes every other key's
    rights, and the layer is Ready only when the Job has completed. Only then an agent resumes the apps, `flux resume
-   kustomization presentator`, which starts the web again, and checks that `kubectl -n objectstore logs job/apply` ends
+   kustomization presentator` and `flux resume kustomization songmaker`, which starts the web again, and checks that `kubectl -n objectstore logs job/apply` ends
    with one line `bucket <namespace> holds key <id>` per bucket.
 
 Objects written after the snapshot lose their metadata: they are unreachable, and their blocks stay on the claim until
-Garage's own sweep. presentator rebuilds what its bucket holds; a later app that keeps a file only in a bucket restores
-it from that bucket's backup, which the platform does not make yet.
+Garage's own sweep. presentator rebuilds what its bucket holds, and songmaker's bucket holds only what it can rebuild
+(its queue's stream snapshots); a later app that keeps a file only in a bucket restores it from that bucket's backup,
+which the platform does not make yet.
 
 Rollback: the corrupt file stays at `/data/meta/db.sqlite.corrupt` until the operator deletes it; copying it back
 returns to the state before step 3.
