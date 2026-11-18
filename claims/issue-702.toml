@@ -1,8 +1,0 @@
-claim_id = "9b01986bafb04e9896bb17b1751dcf91"
-agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
-role = "builder"
-base = "a1961591ab6fd28d4291244656a6762e34d77a7e"
-branch = "claude/issue-702-personas-runs-two-pods-within-a-declared"
-scope = [".github/workflows/ci.yml", "apps/personas/personas.yaml", "apps/songmaker", "docs/app.md", "infrastructure/postgres", "tests/personas", "tests/postgres", "tests/workloads/apps_run_at_their_full_ref.sh"]
-opened_commit = "1013a82db4f063a71505cda5123a78005f5267c1"
-whole_reason = "the budget rule, its check and its first two consumers are one slice"
