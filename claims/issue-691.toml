@@ -1,0 +1,8 @@
+claim_id = "96799c78de904784bd7a76678df8bdd1"
+agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
+role = "builder"
+base = "c366b6ec610b4dff1c58eadfd9bd4462a3a32b2c"
+branch = "claude/issue-691-k1-the-realm-entries-for-the-video-servi"
+scope = [".github/workflows/ci.yml", "infrastructure/keycloak/realm.yaml", "tests/keycloak"]
+opened_commit = "7d33f2a6dc2a707d970d436bc5954256f6f3974b"
+whole_reason = "realm entries and their CI exchange check are one rights slice"
