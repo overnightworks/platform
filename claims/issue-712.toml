@@ -3,5 +3,6 @@ agent = "Claude 127b7a99-225a-4e20-ad48-9c801892092b"
 role = "builder"
 base = "297af68fd6a5fc128e3d9873ea71673fab8fbd16"
 branch = "claude/issue-712-ci-s-backup-1-part-ends-within-its-17-mi"
-scope = [".github/workflows/ci.yml", "tests/flux/parts.yaml"]
+scope = [".github/workflows/ci.yml", "tests/backup/backup_namespaces.sh", "tests/backup/backup_namespaces_are_covered_by_the_backup_parts_names_the_one_left_out.sh", "tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh", "tests/backup/songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh", "tests/flux/parts.yaml", "tests/layer_includes.sh", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
 opened_commit = "3d77cf2334b4e428835456a91523d82fec9e673d"
+whole_reason = "the backup cells, their namespace derivation and the parts that run them change together"
