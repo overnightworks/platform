@@ -97,14 +97,14 @@ for manifest in $APP_MANIFESTS; do
     kubectl --namespace "$namespace" wait "deployment/$name" --for=condition=Available --timeout=3m
     ready="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.status.readyReplicas}')"
     replacement="$(strategy "$namespace" "$name")"
-    if ! { [ "$ready" = 1 ] && replaces_safely "$replacement"; }; then
-      fail "the Deployment $deployment reads '$ready|$replacement', not one Ready pod and a safe replacement"
+    if ! { [ "$ready" = "$replicas" ] && replaces_safely "$replacement"; }; then
+      fail "the Deployment $deployment reads '$ready|$replacement', not $replicas Ready pods and a safe replacement"
     fi
   fi
   image="$(kubectl --namespace "$namespace" get deployment "$name" -o jsonpath='{.spec.template.spec.containers[*].image}')"
   [[ $image =~ ^ghcr[.]io/${GITHUB_REPOSITORY_OWNER,,}/[^[:space:]:@]+:[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] ||
     fail "the Deployment $deployment runs '$image', not one full app ref"
-  echo "the Deployment $deployment is Available with one Ready pod, replaced by $replacement, and runs the full app ref $image"
+  echo "the Deployment $deployment is Available with $replicas Ready pod(s), replaced by $replacement, and runs the full app ref $image"
   # What the image cost the runner: the kubelet's own report of each pull, and the disk after it.
   kubectl --namespace "$namespace" get events --field-selector reason=Pulled \
     -o jsonpath='{range .items[*]}{.message}{"\n"}{end}'
