@@ -1,8 +1,0 @@
-claim_id = "8cdb495b505448b78a3dd1eb36316234"
-agent = "Claude 967f7dcc-2486-4b1f-bb70-0df1b0843ebe"
-role = "builder"
-base = "ac5787b0aa7625e4620e5c04ab14ed01643bc152"
-branch = "claude/issue-739-backup-read-only-key-per-bucket"
-scope = [".github/workflows/ci.yml", "clusters/pc/infrastructure.yaml", "docs/app.md", "docs/runbooks/change-an-object-store-key.md", "docs/runbooks/restore-the-object-store-metadata.md", "infrastructure/objectstore/apply.yaml", "infrastructure/objectstore/garage.yaml", "infrastructure/objectstore/kustomization.yaml", "infrastructure/objectstore/scripts/apply_buckets.sh", "tests/objectstore/bucket_key_reaches_only_its_bucket.sh", "tests/objectstore/client.py"]
-opened_commit = "757365c96c797550e7b146be85c18e1939f7a0a0"
-whole_reason = "The Job's grant, its proof and the documents that state who holds which right change together; the platform-secrets value is a sibling lane in its own repository, landed first."
