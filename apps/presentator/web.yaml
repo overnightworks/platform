@@ -76,8 +76,6 @@ spec:
             # The pod network, where Traefik's pods change address on every restart.
             - name: PRESENTATOR_TRUSTED_PROXIES
               value: 10.42.0.0/16
-            - name: PRESENTATOR_AGENT__BACKEND
-              value: litellm
             - name: PRESENTATOR_AGENT__GATEWAY__ORIGIN
               value: http://litellm-front.litellm.svc.cluster.local:4000
             - name: PRESENTATOR_AGENT__GATEWAY__KEY_FILE
