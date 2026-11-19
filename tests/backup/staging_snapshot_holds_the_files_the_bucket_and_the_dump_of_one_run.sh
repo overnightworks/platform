@@ -156,6 +156,11 @@ manifest_dump="$(value manifest-dump)"
 echo "one Backup left /$namespace-postgres.dump and $staging with $expected_top; both dumps equal the MANIFEST's sha256"
 echo "bucket/ equals the bucket $bucket by key, size and bytes: $(value bucket | cut -d' ' -f2) objects, listed in MANIFEST"
 echo "files/ equals $declared_claim by name, size and mtime: $(value listing | cut -d' ' -f2) files"
+# The timed lines of the bucket's pre-sync and the count line, which name no object: the gate before landing reads the sync's
+# throughput from them.
+timed_lines="$(grep -E '^stage: (bucket-pre-sync (started|done) at |bucket [0-9]+ objects [0-9]+ bytes$)' <<<"$run_logs" || true)"
+[ "$(wc -l <<<"$timed_lines")" = 3 ] || fail "the first Backup's log does not hold the bucket pre-sync's start and end lines and one count line"
+echo "$timed_lines"
 run_files staged-dump-owner "backup-staging" true "stat -c 'dump %u:%g %a' /files/postgres.dump"
 [ "$(sed -n 's/^dump //p' <<<"$files_output")" = "70:70 640" ] ||
   fail "the staged dump of $namespace is owned and moded $(sed -n 's/^dump //p' <<<"$files_output"), not 70:70 640"
