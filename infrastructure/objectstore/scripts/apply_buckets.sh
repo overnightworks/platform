@@ -112,7 +112,7 @@ while read -r namespace || [ -n "$namespace" ]; do
   app_key_id=$key_id app_secret=$secret backup_key_id=""
   if has_backup_key "$namespace"; then
     credential "$namespace" object-store-backup
-    [ "$key_id" != "$app_key_id" ] || fail "$namespace: the backup key equals the app key"
+    [ "$key_id" != "$app_key_id" ] || fail "$namespace: the backup key equals the app key: the Secret object-store-backup holds the key of the Secret object-store"
     backup_key_id=$key_id backup_secret=$secret
   fi
   bucket_id "$namespace"
