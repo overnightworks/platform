@@ -18,7 +18,9 @@ Impact: the app's pods get 403 from the store until they hold the key that the J
    `object-store-backup`, made in a `platform-secrets` worktree by an agent, which never sees it:
    `printf '[default]\naws_access_key_id = GK%s\naws_secret_access_key = %s\n' "$(openssl rand -hex 12)" "$(openssl rand -hex 32)" | mise run secrets:put <namespace> object-store-backup credentials`.
    Its rotation is a new key ID the same way, and its removal is the Secret leaving `platform-secrets`. A backup key that
-   equals the app's key fails the Job.
+   equals the app's key fails the Job. Where the app's layer includes `infrastructure/postgres/backup/files/bucket`, the
+   backup's pod reads this Secret at every Backup, so a rotated backup key is imported by the Job (step 2) before the next
+   Backup, or that Backup fails with its step `bucket-pre-sync` named.
 2. An agent: `kubectl -n objectstore delete job apply`, then `flux reconcile kustomization objectstore`. Flux recreates the
    Job, which imports the new keys, grants the app's read and write on the bucket and the backup's read alone, and revokes
    every other key's rights on it, a removed Secret's key included. Rights granted by hand through the admin API are revoked
@@ -27,8 +29,8 @@ Impact: the app's pods get 403 from the store until they hold the key that the J
 3. An agent: `kubectl -n <namespace> rollout restart deployment <web>`. The pods that kept the old key get 403 until they
    restart, since the key file is read at start.
 4. A first bucket for a namespace, a pull request: its name in `infrastructure/objectstore/namespaces.txt`, the
-   namespace's pods in the NetworkPolicy `garage` of `infrastructure/objectstore/garage.yaml`, and the Secret in
-   `platform-secrets`. The change of the list recreates the Job.
+   namespace's pods, and its PreBackupPod's pods where the layer includes `files/bucket`, in the NetworkPolicy `garage`
+   of `infrastructure/objectstore/garage.yaml`, and the Secret in `platform-secrets`. The change of the list recreates the Job.
 
 Rollback: the old value back in `platform-secrets`, then steps 2 and 3. The key that was revoked is granted again, and
 the new one loses its rights. The Job's change reverted, the next run denies the backup key's read, since the old script

@@ -1,0 +1,80 @@
+# What an app adds to files/ to have the backup copy its object store bucket beside the claim and the dump: the container
+# `bucket` of the PreBackupPod and the stager's STAGE_BUCKET. A layer that includes it lists it after ../ (files), and
+# adds the target containers.[name=bucket].securityContext.runAsGroup to its replacement of the reading uid, so that
+# `bucket` runs at that uid as user and group and never in the dump's group 70. The bucket is the Namespace's own and is
+# read with the key of the Secret object-store-backup, which the Job apply of infrastructure/objectstore grants read alone.
+# A custom resource's container lists do not merge by name, so one JSON 6902 patch adds both or none; its `test`
+# operation fails the render when files.yaml's containers are reordered, since STAGE_BUCKET would then reach another
+# container and the stager would run without the bucket. rclone: https://hub.docker.com/r/rclone/rclone
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: PreBackupPod
+      name: files
+    patch: |
+      - op: test
+        path: /spec/pod/spec/containers/2/name
+        value: stager
+      - op: add
+        path: /spec/pod/spec/containers/-
+        value:
+          name: bucket
+          image: docker.io/rclone/rclone:1.76.0@sha256:7cbeec24a44f206067597c0368be4de90ae19a64d5113c7d1938bd737a81e466
+          command: [sh, /etc/stage/stage_files.sh, bucket]
+          # The remote is rclone's environment: the Service s3 of the object store, the region of its garage.toml, the
+          # bucket the Namespace's own, the key the mounted file's. The root is read-only, so rclone's home and cache are tmp.
+          env:
+            - name: HOME
+              value: /tmp
+            - name: RCLONE_CACHE_DIR
+              value: /tmp/rclone
+            - name: RCLONE_S3_PROVIDER
+              value: Other
+            - name: RCLONE_S3_ENV_AUTH
+              value: "true"
+            - name: RCLONE_S3_ENDPOINT
+              value: http://s3.objectstore.svc.cluster.local:3900
+            - name: RCLONE_S3_REGION
+              value: garage
+            - name: RCLONE_S3_FORCE_PATH_STYLE
+              value: "true"
+            - name: AWS_SHARED_CREDENTIALS_FILE
+              value: /run/secrets/object-store-backup/credentials
+            - name: BUCKET
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          securityContext:
+            runAsGroup: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: staging
+              mountPath: /staging
+            - name: scratch
+              mountPath: /scratch
+            - name: stage
+              mountPath: /etc/stage
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: object-store-backup
+              mountPath: /run/secrets/object-store-backup
+              readOnly: true
+      - op: add
+        path: /spec/pod/spec/containers/2/env/-
+        value:
+          name: STAGE_BUCKET
+          value: "true"
+      - op: add
+        path: /spec/pod/spec/volumes/-
+        value:
+          name: object-store-backup
+          secret:
+            secretName: object-store-backup
+            items:
+              - key: credentials
+                path: credentials
