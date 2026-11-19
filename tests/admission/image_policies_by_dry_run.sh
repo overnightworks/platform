@@ -2,6 +2,8 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+# shellcheck source=anonymous_reader.sh
+source "$(dirname "${BASH_SOURCE[0]}")/anonymous_reader.sh"
 # The policy with the vendor list as its parameter, and the system namespaces' policy without one.
 policy="$(yq 'select(.kind == "ValidatingAdmissionPolicy" and .spec.paramKind != null) | .metadata.name' "$POLICY_FILE")"
 binding="$(yq 'select(.kind == "ValidatingAdmissionPolicyBinding" and .spec.paramRef != null) | .metadata.name' "$POLICY_FILE")"
@@ -123,14 +125,10 @@ for ref in "${live_refs[@]}"; do
 done
 
 # Every app ref of every live Pod template, as a Pod of its own namespace without imagePullSecrets, is admitted on
-# Kyverno's own credential; an anonymous token for hopin's package is refused first, so the credential is what admits.
+# Kyverno's own credential; an anonymous reader gets no manifest of hopin's package first, so the credential is what admits.
 hopin_image="$(kubectl --namespace hopin get deployment hopin -o jsonpath='{.spec.template.spec.containers[0].image}')"
 hopin_repository="${hopin_image%%[:@]*}"
-anonymous_token="$(curl --silent --fail "https://ghcr.io/token?scope=repository:${hopin_repository#ghcr.io/}:pull" | yq -p json '.token')"
-anonymous_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --header "Authorization: Bearer $anonymous_token" \
-  --header 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/${hopin_repository#ghcr.io/}/manifests/${hopin_image##*:}")"
-[ "$anonymous_status" != 200 ] || fail "an anonymous token reads $hopin_repository's manifest, so Kyverno's credential would prove nothing"
-echo "an anonymous token is refused for $hopin_repository with status $anonymous_status"
+anonymous_reader_is_refused "$hopin_repository" "${hopin_image##*@}"
 app_pods=0
 while IFS='|' read -r namespace workload; do
   pod_copy="$(kubectl --namespace "$namespace" get "$workload" -o yaml | yq '{"apiVersion": "v1", "kind": "Pod",
