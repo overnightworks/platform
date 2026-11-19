@@ -5,7 +5,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # The object store's bucket and key of one app. A client Pod built from the app's web Deployment, holding only the
 # environment and the key file that manifest gives it, drives botocore against Garage's Service. It needs APP_NAMESPACE,
 # APP_MANIFEST (the app's web manifest), OTHER_NAMESPACE (a namespace for a Pod that is no app's), PROBE_IMAGE and
-# RUNNER_TEMP. The rotation steps suspend platform-secrets, so that it does not revert the Secret the cell changes.
+# RUNNER_TEMP. The rotation and backup-key steps suspend platform-secrets, so that it does not revert the Secrets the cell changes.
 here="$(dirname "${BASH_SOURCE[0]}")"
 layer=infrastructure/objectstore
 mask_secret() { [ -z "${GITHUB_ACTIONS:-}" ] || echo "::add-mask::$1"; }
@@ -30,9 +30,12 @@ credentials_secret="$(CREDENTIALS_ITEM="$credentials_item" yq '.spec.template.sp
   | .projected.sources[] | select(.secret.items[0].path == strenv(CREDENTIALS_ITEM)) | .secret.name' <<<"$web")"
 credentials_key="$(CREDENTIALS_ITEM="$credentials_item" yq '.spec.template.spec.volumes[] | select(.name == "secrets")
   | .projected.sources[] | select(.secret.items[0].path == strenv(CREDENTIALS_ITEM)) | .secret.items[0].key' <<<"$web")"
+# The Secret that holds the backup's read-only key, which the Job's ClusterRole names beside the app's, under the same key.
+backup_secret="$(CREDENTIALS_SECRET="$credentials_secret" yq 'select(.kind == "ClusterRole") | .rules[0].resourceNames[]
+  | select(. != strenv(CREDENTIALS_SECRET))' "$layer/apply.yaml")"
 client_image="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[].image' infrastructure/litellm/litellm.yaml |
   grep -m1 '^ghcr[.]io/berriai/litellm:')"
-[ -n "$bucket" ] && [ -n "$credentials_secret" ] && [ -n "$credentials_key" ] && [ -n "$client_image" ] ||
+[ -n "$bucket" ] && [ -n "$backup_secret" ] && [ -n "$credentials_secret" ] && [ -n "$credentials_key" ] && [ -n "$client_image" ] ||
   fail "the manifests name no bucket, credentials Secret or client image to test with"
 
 # The environment contract, read from both owners: the endpoint is the Service s3 of the store, the region the store's own,
@@ -60,21 +63,29 @@ mask_secret "$(<"$admin_token_file")"
 forward_log="$RUNNER_TEMP/object-store-forward.log"
 timeout 20m kubectl -n "$store_namespace" port-forward --address 127.0.0.1 "pod/$store_pod" :3903 >"$forward_log" 2>&1 &
 forward_pid=$!
-throwaway_id="" suspended=0 original_credentials=""
+throwaway_id="" suspended=0 original_credentials="" original_backup=""
 
 # Every deletion is attempted, whichever fails; the Secret goes back to what platform-secrets holds.
 remove_objects() {
   local cell_status=$?
   [ -z "$original_credentials" ] || set_credentials "$original_credentials" || cell_status=1
+  if [ "$suspended" -eq 1 ]; then
+    if [ -n "$original_backup" ]; then
+      set_backup_credentials "$original_backup" || cell_status=1
+    else
+      delete_object --namespace "$APP_NAMESPACE" delete secret "$backup_secret" --ignore-not-found
+    fi
+  fi
   [ "$suspended" -eq 0 ] || flux resume kustomization platform-secrets --namespace flux-system || cell_status=1
   [ -z "$throwaway_id" ] || admin POST "/v2/DeleteBucket?id=$throwaway_id" || cell_status=1
   kill "$forward_pid" 2>/dev/null || true
   rm -f -- "$admin_token_file"
-  for job in apply-second apply-rotated apply-clash apply-restored; do
+  for job in apply-second apply-rotated apply-clash apply-restored apply-backup apply-backup-second apply-backup-clash \
+    apply-backup-missing apply-backup-empty apply-backup-removed apply-backup-restored; do
     delete_object --namespace "$store_namespace" delete job "$job" --ignore-not-found --wait --timeout=2m
   done
   delete_object --namespace "$APP_NAMESPACE" delete pod --selector cell=object-store --ignore-not-found --wait --timeout=2m
-  delete_object --namespace "$APP_NAMESPACE" delete secret object-store-old --ignore-not-found
+  delete_object --namespace "$APP_NAMESPACE" delete secret object-store-old "$backup_secret-old" --ignore-not-found
   delete_object --namespace "$APP_NAMESPACE" delete configmap object-store-client --ignore-not-found
   delete_object delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
   end_deletions "$cell_status"
@@ -103,6 +114,22 @@ set_credentials() {
   jq --null-input --rawfile content /dev/stdin '{data: {($ARGS.positional[0]): ($content | @base64)}}' --args "$credentials_key" \
     <<<"$1" | kubectl -n "$APP_NAMESPACE" patch secret "$credentials_secret" --type merge --patch-file /dev/stdin
 }
+# set_backup_credentials <the file's content>: the backup Secret holds it under the key credentials, made if it is absent.
+set_backup_credentials() {
+  if [ -n "$(kubectl -n "$APP_NAMESPACE" get secret "$backup_secret" --output name --ignore-not-found)" ]; then
+    jq --null-input --rawfile content /dev/stdin '{data: {credentials: ($content | @base64)}}' <<<"$1" |
+      kubectl -n "$APP_NAMESPACE" patch secret "$backup_secret" --type merge --patch-file /dev/stdin
+  else
+    kubectl -n "$APP_NAMESPACE" create secret generic "$backup_secret" --from-file=credentials=/dev/stdin <<<"$1"
+  fi
+}
+# expected_grants <app key ID> [<backup key ID>]: read and write for the first, read alone for the second, no ownership, no other key.
+expected_grants() {
+  jq --null-input -S --arg app "$1" --arg backup "${2-}" '
+    [{accessKeyId: $app, permissions: {owner: false, read: true, write: true}}]
+    + (if $backup == "" then [] else [{accessKeyId: $backup, permissions: {owner: false, read: true, write: false}}] end)
+    | sort_by(.accessKeyId)'
+}
 credentials_file() { printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$1" "$2"; }
 key_id_of() { sed -n 's/^aws_access_key_id = //p' <<<"$1"; }
 secret_of() { sed -n 's/^aws_secret_access_key = //p' <<<"$1"; }
@@ -115,12 +142,13 @@ echo "$store_pod is Ready and the Job $apply_job completed in $store_namespace, 
 original_credentials="$(kubectl -n "$APP_NAMESPACE" get secret "$credentials_secret" -o go-template="{{index .data \"$credentials_key\" | base64decode}}")"
 mask_secret "$(secret_of "$original_credentials")"
 original_id="$(key_id_of "$original_credentials")"
+original_backup="$(kubectl -n "$APP_NAMESPACE" get secret "$backup_secret" --ignore-not-found -o go-template='{{index .data "credentials" | base64decode}}')"
+original_backup_id="$(key_id_of "$original_backup")"
+[ -z "$original_backup" ] || mask_secret "$(secret_of "$original_backup")"
 initial_grants="$(grants)"
-[ "$(jq -c 'map(.accessKeyId)' <<<"$initial_grants")" = "[\"$original_id\"]" ] ||
-  fail "the bucket $bucket holds rights for other keys than the key of the Secret: $(jq -c 'map(.accessKeyId)' <<<"$initial_grants")"
-[ "$(jq -c '.[0].permissions | [.read, .write, .owner]' <<<"$initial_grants")" = '[true,true,false]' ] ||
-  fail "the key $original_id holds more or less than read and write on $bucket"
-echo "the bucket $bucket holds read and write, no ownership, for the key $original_id alone"
+[ "$initial_grants" = "$(expected_grants "$original_id" "$original_backup_id")" ] ||
+  fail "the bucket $bucket holds other rights than read and write for the key $original_id${original_backup_id:+ and read alone for the key $original_backup_id}: $(jq -c . <<<"$initial_grants")"
+echo "the bucket $bucket holds read and write, no ownership, for the key $original_id${original_backup_id:+, read alone for the key $original_backup_id,} and for no other key"
 
 # A bucket of another app, which the key must not reach.
 throwaway="throwaway-$(openssl rand -hex 4)"
@@ -241,7 +269,8 @@ mask_secret "$new_secret"
 kubectl -n "$APP_NAMESPACE" create secret generic object-store-old --from-file="$credentials_key=/dev/stdin" <<<"$original_credentials"
 set_credentials "$(credentials_file "$new_id" "$new_secret")"
 run_apply apply-rotated Complete
-[ "$(grants | jq -c 'map(.accessKeyId)')" = "[\"$new_id\"]" ] || fail "after the rotation the bucket $bucket holds rights for other keys than $new_id"
+[ "$(grants)" = "$(expected_grants "$new_id" "$original_backup_id")" ] ||
+  fail "after the rotation the bucket $bucket holds other rights than for $new_id${original_backup_id:+ and the backup key}"
 run_client client-rotated "$credentials_secret" allowed "$bucket_variable" "$throwaway"
 run_client client-old-key object-store-old denied "$bucket_variable"
 echo "after the rotation the new key $new_id works and the old key $original_id gets 403"
@@ -262,3 +291,69 @@ run_apply apply-restored Complete
 [ "$(grants)" = "$initial_grants" ] || fail "after the restore the bucket $bucket holds other rights than before the rotation"
 run_client client-restored "$credentials_secret" allowed "$bucket_variable" "$throwaway"
 echo "the original key $original_id is back with the rights it began with"
+
+# The backup's key, its own Secret: it reads the bucket and nothing else. Its key here is the cell's, never a platform-secrets value.
+backup_id="GK$(openssl rand -hex 12)"
+backup_value="$(openssl rand -hex 32)"
+mask_secret "$backup_value"
+object_key="cell-backup-$(openssl rand -hex 4)"
+set_backup_credentials "$(credentials_file "$backup_id" "$backup_value")"
+run_apply apply-backup Complete
+grep -qF "apply: bucket $APP_NAMESPACE holds backup key $backup_id read only" <<<"$apply_log" ||
+  fail "the Job did not report the backup key $backup_id of $APP_NAMESPACE as read only"
+! grep -qF "$backup_value" <<<"$apply_log" || fail "the Job's log holds the backup key's secret"
+[ "$(grants)" = "$(expected_grants "$original_id" "$backup_id")" ] ||
+  fail "the bucket $bucket holds other rights than read and write for $original_id and read alone for $backup_id"
+run_client client-seed "$credentials_secret" put "$bucket_variable" "$object_key"
+run_client client-backup "$backup_secret" read-only "$bucket_variable" "$object_key" "$throwaway"
+run_client client-unseed "$credentials_secret" delete "$bucket_variable" "$object_key"
+echo "the backup key $backup_id reads $bucket and gets 403 on every write and on another bucket"
+
+# A second run changes nothing and reports no change.
+before="$(state)"
+run_apply apply-backup-second Complete
+[ "$(state)" = "$before" ] || fail "a second run of the Job $apply_job with a backup key changed the buckets, keys or grants"
+! grep -qE 'created|imported|denied' <<<"$apply_log" || fail "a second run of the Job $apply_job with a backup key reports a change"
+echo "a second run of the Job $apply_job with a backup key left the buckets, keys and grants equal"
+
+# refused_backup <description>: the failed Job named the namespace and the Secret, held no secret and left the grants as they were.
+refused_backup() {
+  grep -qF "$APP_NAMESPACE" <<<"$apply_log" || fail "$1: the failed Job does not name the namespace"
+  grep -qF "$backup_secret" <<<"$apply_log" || fail "$1: the failed Job does not name the Secret $backup_secret"
+  ! grep -qF -e "$backup_value" -e "$(secret_of "$original_credentials")" <<<"$apply_log" || fail "$1: the failed Job's log holds a secret"
+  [ "$(grants)" = "$(expected_grants "$original_id" "$backup_id")" ] || fail "$1: the failed Job changed the grants"
+  echo "$1: the Job failed, naming $APP_NAMESPACE and $backup_secret and no secret"
+}
+
+# The backup Secret holding the app's key is refused: granting it read alone would take the app's write.
+set_backup_credentials "$original_credentials"
+run_apply apply-backup-clash Failed
+grep -qF "the backup key equals the app key" <<<"$apply_log" || fail "the Job did not refuse the app's key as the backup key"
+refused_backup "the app's key in $backup_secret"
+
+# The Secret without the key credentials, or with it empty, is refused naming the Secret and the key.
+kubectl -n "$APP_NAMESPACE" patch secret "$backup_secret" --type merge --patch '{"data": {"credentials": null}}'
+run_apply apply-backup-missing Failed
+grep -qF "the key credentials" <<<"$apply_log" || fail "the Job does not name the key credentials of $backup_secret"
+refused_backup "$backup_secret without the key credentials"
+kubectl -n "$APP_NAMESPACE" patch secret "$backup_secret" --type merge --patch '{"data": {"credentials": ""}}'
+run_apply apply-backup-empty Failed
+grep -qF "the key credentials" <<<"$apply_log" || fail "the Job does not name the key credentials of $backup_secret"
+refused_backup "$backup_secret with an empty key credentials"
+
+# The Secret removed: the backup key loses its read at the next run, and the Job says that no backup key is granted.
+kubectl -n "$APP_NAMESPACE" create secret generic "$backup_secret-old" --from-file=credentials=/dev/stdin <<<"$(credentials_file "$backup_id" "$backup_value")"
+kubectl -n "$APP_NAMESPACE" delete secret "$backup_secret"
+run_apply apply-backup-removed Complete
+grep -qF "apply: bucket $APP_NAMESPACE has no backup key granted" <<<"$apply_log" ||
+  fail "the Job did not say that $APP_NAMESPACE has no backup key granted"
+[ "$(grants)" = "$(expected_grants "$original_id")" ] || fail "after the removal the bucket $bucket holds other rights than read and write for $original_id"
+run_client client-backup-removed "$backup_secret-old" denied "$bucket_variable"
+run_client client-app-kept "$credentials_secret" allowed "$bucket_variable" "$throwaway"
+echo "after the removal the backup key $backup_id gets 403 and the app key $original_id keeps read and write"
+
+# The backup Secret as it was, absent included, and the grants the bucket began with.
+[ -z "$original_backup" ] || set_backup_credentials "$original_backup"
+run_apply apply-backup-restored Complete
+[ "$(grants)" = "$initial_grants" ] || fail "after the restore of $backup_secret the bucket $bucket holds other rights than at the start"
+echo "$backup_secret is as it was and the bucket $bucket holds the rights it began with"

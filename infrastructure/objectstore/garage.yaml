@@ -1,6 +1,6 @@
-# The platform's S3-compatible store: one Garage pod, one bucket and one key per app. The Service s3 is the endpoint every
-# app names, so a different store behind it changes no app. Its two secrets are files of the Secret garage from
-# platform-secrets: rpc_secret and admin_token.
+# The platform's S3-compatible store: one Garage pod, one bucket per app with the app's key and, for a backed-up bucket, a
+# read-only key. The Service s3 is the endpoint every app names, so a different store behind it changes no app. Its two
+# secrets are files of the Secret garage from platform-secrets: rpc_secret and admin_token.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

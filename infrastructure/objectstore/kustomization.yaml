@@ -9,7 +9,7 @@ configMapGenerator:
     namespace: objectstore
     files:
       - garage.toml
-  # The namespaces that get a bucket and a key; apply_buckets.sh reads the key from each one's Secret object-store. A changed
+  # The namespaces that get a bucket and a key; apply_buckets.sh reads the keys from each one's Secrets object-store and object-store-backup. A changed
   # list or script changes the name, so Flux recreates the Job.
   - name: buckets
     namespace: objectstore

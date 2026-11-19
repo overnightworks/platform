@@ -243,7 +243,7 @@ spec:
     kind: GitRepository
     name: flux-system
 ---
-# The S3-compatible store, its Secret garage and each bucket's Secret object-store from platform-secrets, and its claim
+# The S3-compatible store, its Secret garage and each bucket's Secrets object-store and object-store-backup from platform-secrets, and its claim
 # through storage. Apps that hold a bucket wait for it, so their buckets and keys exist before their pods start.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
