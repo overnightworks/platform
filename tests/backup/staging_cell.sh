@@ -146,3 +146,28 @@ end_backup() {
 # staged_file_exists <path>: whether the refused pod's stager sees the path under /staging or /scratch.
 staged_file_exists() { kubectl --namespace "$namespace" exec "$refused_pod" --container stager -- test -e "$1"; }
 
+# bucket_listing <lines>: the digest of the sorted lines, and their count; the keys stay out of the output.
+# bucket_manifest_lines <size, sha256 and key per line>: size and snapshot path per line, as MANIFEST lists them.
+bucket_listing() {
+  local lines
+  lines="$(printf '%s\n' "$1" | grep . | LC_ALL=C sort || true)"
+  echo "$(printf '%s\n' "$lines" | sha256sum | cut -c1-64) $(printf '%s\n' "$lines" | grep -c . || true)"
+}
+bucket_manifest_lines() {
+  local size key
+  while IFS=$'\t' read -r size _ key; do printf '%s\tbucket/%s\n' "$size" "$key"; done <<<"$1" | LC_ALL=C sort
+}
+
+# What the restic Pod prints for the bucket of the newest staging snapshot: the digest of its size, sha256 and key lines, and
+# their count. It needs tab and staging from the script that holds it.
+snapshot_bucket_digests='
+  bucket_lines="$(restic --no-cache ls --json --recursive --path "$staging" latest "$staging/bucket" |
+    jq --raw-output "select(.type == \"file\") | \"\(.size)\t\(.path)\"")"
+  bucket_digests="$(printf "%s\n" "$bucket_lines" | while IFS="$tab" read -r size path; do
+    echo "$size$tab$(restic --no-cache dump --path "$staging" latest "$path" | sha256sum | cut -c1-64)$tab${path#"$staging/bucket/"}"
+  done | LC_ALL=C sort)"
+  echo "bucket $(printf "%s\n" "$bucket_digests" | sha256sum | cut -c1-64) $(printf "%s\n" "$bucket_digests" | grep -c .)"
+'
+
+# value <key>: the rest of the line of the last restic Pod's output that starts with the key.
+value() { sed -n "s/^$1 //p" <<<"$restic_output"; }

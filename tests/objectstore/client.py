@@ -41,12 +41,18 @@ SETS = {
         "deleted.bin": b"deleted",
     },
     "change": {"rewritten.bin": b"9876543210", "added.bin": b"added"},
-    "clash": {"a": b"file", "a/b": b"under"},
-    "marker": {"d/": b"", "d/x": b"under the marker"},
-    "marker-with-bytes": {"e/": b"bytes"},
-    "newline": {"line\nbreak": b"newline"},
-    "long-segment": {"s" * 256 + "/x": b"long"},
-    "dots": {"../up": b"up", "a/../b": b"inside", "/lead": b"lead", "x//y": b"empty segment", "x/y": b"plain"},
+    "clash": {"refused-clash": b"file", "refused-clash/b": b"under"},
+    "marker": {"refused-marker/": b"", "refused-marker/x": b"under the marker"},
+    "marker-with-bytes": {"refused-bytes/": b"bytes"},
+    "newline": {"refused-line\nbreak": b"newline"},
+    "long-segment": {"refused-long" + "s" * 244 + "/x": b"long"},
+    "dots": {
+        "../refused-up": b"up",
+        "refused-in/../b": b"inside",
+        "/refused-lead": b"lead",
+        "refused-x//y": b"empty segment",
+        "refused-x/y": b"plain",
+    },
 }
 
 
@@ -112,7 +118,7 @@ def plant(client, bucket: str, name: str) -> None:
         multipart_put(client, bucket, LARGE_KEY)
     if name == "change":
         exact_request("DELETE", bucket, "deleted.bin")
-    print(f"ok: planted the set {name}")
+    print(f"ok: planted the set {name}: {len(SETS[name]) + (name == 'base')} objects")
 
 
 def clear(client, bucket: str) -> None:

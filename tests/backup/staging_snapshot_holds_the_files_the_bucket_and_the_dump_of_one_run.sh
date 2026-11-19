@@ -93,20 +93,6 @@ claim_digests='
   echo "listing $(printf "%s\n" "$listing" | sha256sum | cut -c1-64) $(printf "%s\n" "$listing" | grep -c .)"
   echo "content $(cd / && find files -type f -exec sha256sum {} + | LC_ALL=C sort | sha256sum | cut -c1-64)"'
 
-# value <key>: the rest of the line of the last restic Pod's output that starts with the key.
-value() { sed -n "s/^$1 //p" <<<"$restic_output"; }
-
-# What the restic Pod prints for the bucket of the newest staging snapshot: the digest of its size, sha256 and key lines, and
-# their count. It needs tab and staging from the script that holds it.
-snapshot_bucket_digests='
-  bucket_lines="$(restic --no-cache ls --json --recursive --path "$staging" latest "$staging/bucket" |
-    jq --raw-output "select(.type == \"file\") | \"\(.size)\t\(.path)\"")"
-  bucket_digests="$(printf "%s\n" "$bucket_lines" | while IFS="$tab" read -r size path; do
-    echo "$size$tab$(restic --no-cache dump --path "$staging" latest "$path" | sha256sum | cut -c1-64)$tab${path#"$staging/bucket/"}"
-  done | LC_ALL=C sort)"
-  echo "bucket $(printf "%s\n" "$bucket_digests" | sha256sum | cut -c1-64) $(printf "%s\n" "$bucket_digests" | grep -c .)"
-'
-
 # Planted: three files with fixed times, one nested, two names with a space.
 run_files plant-audio "$declared_claim" false "
   set -e
@@ -119,20 +105,9 @@ run_files plant-audio "$declared_claim" false "
 claim_before="$files_output"
 echo "planted 3 files in $declared_claim of $namespace at uid $reading_uid: $(grep '^listing' <<<"$claim_before" | cut -d' ' -f3) files in the claim"
 
-# bucket_listing <lines>: the digest of the sorted lines, and their count; the keys stay out of the output.
-# bucket_manifest_lines <size, sha256 and key per line>: size and snapshot path per line, as MANIFEST lists them.
-bucket_listing() {
-  local lines
-  lines="$(printf '%s\n' "$1" | grep . | LC_ALL=C sort || true)"
-  echo "$(printf '%s\n' "$lines" | sha256sum | cut -c1-64) $(printf '%s\n' "$lines" | grep -c . || true)"
-}
-bucket_manifest_lines() {
-  local size key
-  while IFS=$'\t' read -r size _ key; do printf '%s\tbucket/%s\n' "$size" "$key"; done <<<"$1" | LC_ALL=C sort
-}
 install_client
-run_client plant-clear "$credentials_secret" clear "$bucket_variable" >/dev/null
-run_client plant-base "$credentials_secret" plant "$bucket_variable" base >/dev/null
+run_client plant-clear "$credentials_secret" clear "$bucket_variable"
+run_client plant-base "$credentials_secret" plant "$bucket_variable" base
 client_output digests-first digests "$bucket_variable"
 bucket_before="$client_log"
 echo "planted the bucket $bucket of $namespace through a client Pod furnished as its web: $(bucket_listing "$bucket_before" | cut -d' ' -f2) objects"
@@ -227,7 +202,7 @@ run_files change-audio "$declared_claim" false "
 claim_second="$files_output"
 claim_count="$(grep '^listing' <<<"$claim_second" | cut -d' ' -f3)"
 # The bucket changes between the runs: one object rewritten to the same size, one deleted, one added.
-run_client change-bucket "$credentials_secret" plant "$bucket_variable" change >/dev/null
+run_client change-bucket "$credentials_secret" plant "$bucket_variable" change
 client_output digests-second digests "$bucket_variable"
 bucket_after="$client_log"
 bucket_keys() { printf '%s\n' "$1" | cut -f3 | grep . | LC_ALL=C sort; }
