@@ -3,5 +3,6 @@ agent = "Claude 967f7dcc-2486-4b1f-bb70-0df1b0843ebe"
 role = "builder"
 base = "b235029969434974f528993cc000f2fbf954ca62"
 branch = "claude/issue-723-ci-s-core-part-ends-within-14-minutes"
-scope = [".github/workflows/ci.yml", "tests/flux/parts.yaml"]
+scope = [".github/workflows/ci.yml", "tests/flux/parts.yaml", "tests/ingress/the_cluster_exposes_only_traefik_and_trusts_the_pod_network.sh", "tests/ingress/traefik_answers_only_cloudflared_and_routes_the_app.sh"]
 opened_commit = "b657b2463d8ea35bb9af06813b30c658531cb513"
+whole_reason = "The Traefik cell splits into a core step and an access step, so its two scripts move with the workflow and the parts file."
