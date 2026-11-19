@@ -37,6 +37,8 @@ refused_by_policy() { # <what> <pod yaml>
   if output="$(dry_run <<<"$2" 2>&1)"; then fail "$1 was admitted"; fi
   [[ $output == *"$policy_name"* ]] || fail "$1 was refused without naming $policy_name: $output"
   [[ $output != *"failed calling webhook"* ]] || fail "$1 met a failed webhook call: $output"
+  [[ $output != *"no such "* ]] || fail "$1 met an evaluation error of the policy, not its check: $output"
+  refusal="$output"
   echo "refused by $policy_name: $1"
 }
 generated() { echo "$app_prefix$1:v1.0.0@sha256:$(openssl rand -hex 32)"; }
@@ -46,6 +48,13 @@ for repository in hopin songmaker/web; do
   image="$(generated "$repository")"
   refused_by_policy "$image in a container" "$(pod_yaml "$(container app "$image")")"
   refused_by_policy "$image in an init container only" "$(pod_yaml "$(container app "$PROBE_IMAGE")" "$(container setup "$image")")"
+done
+# An app ref whose repository has no attestor, or only shares a prefix with one, is refused by the policy's own message.
+message="$(yq 'select(.kind == "ImageValidatingPolicy") | .spec.validations[0].message' "$policy_file")"
+for repository in unattested hopin-evil; do
+  image="$(generated "$repository")"
+  refused_by_policy "$image in a container" "$(pod_yaml "$(container app "$image")")"
+  [[ $refusal == *"$message"* ]] || fail "$image was refused without the policy's message: $refusal"
 done
 image="$(generated hopin)"
 refused_by_policy "$image as an image volume" "{apiVersion: v1, kind: Pod, metadata: {name: probe}, spec: {restartPolicy: Never,
