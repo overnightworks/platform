@@ -366,8 +366,8 @@ needles=(
   "credential:$(ini_value "$(secret_value "$credentials_secret" "$credentials_key")" aws_secret_access_key)"
   "credential:$(ini_value "$(secret_value "$bucket_secret" credentials)" aws_access_key_id)"
   "credential:$(ini_value "$(secret_value "$bucket_secret" credentials)" aws_secret_access_key)"
-  "planted object:$(printf '%s\n' "$bucket_before" | cut -f3 | grep -v '^$' | head -n 1)"
-  "planted object:$added_key")
+)
+while IFS= read -r key; do needles+=("planted object:$key"); done < <(cut -f3 <<<"$bucket_before"; printf '%s\n' "$added_key")
 for needle in "${needles[@]}"; do
   [ -n "${needle#*:}" ] || fail "a ${needle%%:*} to look for is empty"
   if grep -qF -- "${needle#*:}" <<<"$run_logs$job_logs"; then fail "a log of $namespace's backup names a ${needle%%:*}"; fi
