@@ -1,0 +1,8 @@
+claim_id = "821c503c4e4444f5afb53ca6f51b8431"
+agent = "Claude 967f7dcc-2486-4b1f-bb70-0df1b0843ebe"
+role = "builder"
+base = "ac5787b0aa7625e4620e5c04ab14ed01643bc152"
+branch = "claude/issue-742-login-theme-design-0-39-0"
+scope = ["infrastructure/design", "infrastructure/keycloak/keycloak.yaml", "infrastructure/keycloak/themes/hallucinai/account/theme.properties", "infrastructure/keycloak/themes/hallucinai/login/resources/css/edge-3.css", "infrastructure/keycloak/themes/hallucinai/login/theme.properties", "infrastructure/legal/built", "infrastructure/legal/frame/datenschutz.html", "infrastructure/legal/frame/impressum.html", "infrastructure/legal/frame/nutzungsbedingungen.html", "infrastructure/legal/legal.yaml", "quality/config.toml", "tests/legal/design_assets_equal_their_release_wheel.sh"]
+opened_commit = "9286f3b878dff449d48b078961c457eeb261485f"
+whole_reason = "One version string stands in every pinning file and must move together, and the classes the theme maps exist only from 0.39.0."
