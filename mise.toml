@@ -1110,7 +1110,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-exec scripts/admission.sh pause
+exec scripts/pause_or_resume_attestation_check.sh pause
 '''
 
 [tasks."admission:resume"]
@@ -1120,7 +1120,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-exec scripts/admission.sh resume
+exec scripts/pause_or_resume_attestation_check.sh resume
 '''
 
 [tasks."gpu:use"]

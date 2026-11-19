@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Drive `scripts/admission.sh` (the tasks admission:pause and admission:resume) against a fake kubectl and a fake gh, for
-# the states the cluster cannot arrange: pause suspends the Kustomization app-attestations, scales Kyverno's admission
-# controller to 0 and only then deletes the webhook configurations Kyverno manages, selected by its label and never by
-# name, and ends the same when repeated or run again after a step failed; resume, while the Kustomization exists, takes
-# the restore branch without any read of GitHub, also while GitHub fails; with the Kustomization gone it takes the
-# removal branch only when the root has applied main's head, then deletes what Flux labelled as applied by
-# app-attestations except a Namespace, the webhook configurations, and the TLS Secrets and Leases that carry Kyverno's
-# owner label; with another applied revision or an unreadable head it refuses, names which, and deletes nothing.
+# Drive `scripts/pause_or_resume_attestation_check.sh` (the tasks admission:pause and admission:resume) against a fake
+# kubectl and a fake gh, for the states the cluster cannot arrange: pause suspends the Kustomization app-attestations,
+# scales Kyverno's admission controller to 0 and only then deletes the webhook configurations Kyverno manages, selected
+# by its label and never by name, and ends the same when repeated or run again after a step failed; resume, while the
+# Kustomization exists, takes the restore branch without any read of GitHub, also while GitHub fails; with the
+# Kustomization gone it takes the removal branch only when the root has applied main's head, then deletes what Flux
+# labelled as applied by app-attestations except a Namespace, the webhook configurations, and the TLS Secrets and Leases
+# that carry Kyverno's owner label; with another applied revision or an unreadable head it refuses, names which, and
+# deletes nothing.
 # Usage: mise exec -- tests/admission/pause_and_resume_stop_and_restore_the_attestation_check.sh
 set -euo pipefail
 
@@ -66,7 +67,7 @@ run_task() {
   : >"$calls"
   status=0
   output="$(PATH="$fake_bin:$PATH" FAKE_CALLS="$calls" FAKE_STATE="$state" KUBECONFIG=/nonexistent ADMISSION_WAIT_SECONDS=2 \
-    ADMISSION_POLL_SECONDS=1 "$repository_root/scripts/admission.sh" "$@" 2>&1)" || status=$?
+    ADMISSION_POLL_SECONDS=1 "$repository_root/scripts/pause_or_resume_attestation_check.sh" "$@" 2>&1)" || status=$?
 }
 made_call() { grep -q -- "$1" "$calls"; }
 call_line() { grep -n -- "$1" "$calls" | head -1 | cut -d: -f1; }

@@ -47,7 +47,7 @@ credential="$(policy '.spec.credentials.secrets[0]')"
 kubectl --namespace "$kyverno_namespace" get secret "$credential" >/dev/null || fail "the credential $credential is not a Secret of $kyverno_namespace"
 echo "the policy fails closed, rewrites no ref, reads $kyverno_namespace/$credential and has no controller kind"
 
-# The live webhooks Kyverno manages, found by the label scripts/admission.sh deletes them by.
+# The live webhooks Kyverno manages, found by the label scripts/pause_or_resume_attestation_check.sh deletes them by.
 webhook_selector="$(sed -n 's/^webhook_selector="\(.*\)"$/\1/p' "$ADMISSION_SCRIPT")"
 [ -n "$webhook_selector" ] || fail "$ADMISSION_SCRIPT names no webhook_selector"
 webhooks="$(kubectl get validatingwebhookconfiguration --selector "$webhook_selector" -o json)"

@@ -503,7 +503,7 @@ jobs:
           VENDOR_LIST: infrastructure/admission/image-vendors.yaml
           POLICY_FILE: infrastructure/admission/image-policy.yaml
           RELEASE_SCRIPT: scripts/verify_image_release.sh
-          ADMISSION_SCRIPT: scripts/admission.sh
+          ADMISSION_SCRIPT: scripts/pause_or_resume_attestation_check.sh
         run: tests/admission/app_attestations_bind_the_release_checks.sh
 
       - name: Assert that namespaces and tunnel applied the candidate and cloudflared runs at 0 replicas

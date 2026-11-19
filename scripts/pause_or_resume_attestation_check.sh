@@ -11,10 +11,10 @@
 # gone (the removal pull request landed on a suspended one) it deletes what Flux applied for it and what Kyverno made,
 # but only when the root Kustomization has applied main's head, read from GitHub, since an older revision would delete
 # Kyverno and the policy while Git still declares them. It never deletes a Namespace and never waits for Ready.
-# Usage: scripts/admission.sh <pause|resume>
+# Usage: scripts/pause_or_resume_attestation_check.sh <pause|resume>
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-verb="${1:?usage: admission.sh <pause|resume>}"
+verb="${1:?usage: pause_or_resume_attestation_check.sh <pause|resume>}"
 fail() { echo "admission:$verb: $1; $2" >&2; exit 1; }
 
 flux_namespace=flux-system
@@ -141,6 +141,6 @@ remove() {
 case "$verb" in
   pause) pause ;;
   resume) if layer_exists; then restore; else remove; fi ;;
-  *) echo "admission.sh: unknown verb '$verb'; use pause or resume" >&2; exit 2 ;;
+  *) echo "pause_or_resume_attestation_check.sh: unknown verb '$verb'; use pause or resume" >&2; exit 2 ;;
 esac
 echo "admission:$verb: done in $SECONDS seconds"
