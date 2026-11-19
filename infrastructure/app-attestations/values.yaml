@@ -1,0 +1,58 @@
+# The source of rendered.yaml, which mise run charts:render generates; a chart bump changes the task's pins and both
+# image tags together. Only the admission controller runs: the policy engine for ImageValidatingPolicy needs no
+# controller of reports, cleanup or background scans.
+fullnameOverride: kyverno
+admissionController:
+  replicas: 1
+  initContainer:
+    image:
+      registry: ghcr.io
+      repository: kyverno/kyvernopre
+      tag: v1.20.0@sha256:339067e083430e0c97007541bef9cfdbac89bee13f7228772c77ae8aead14b8b
+  container:
+    image:
+      registry: ghcr.io
+      repository: kyverno/kyverno
+      tag: v1.20.0@sha256:9de49c5416ea536f00a205527197ac048abdf32c5a75d633cd9afff8928f359d
+backgroundController:
+  enabled: false
+cleanupController:
+  enabled: false
+reportsController:
+  enabled: false
+# A pre-install or pre-delete hook would be applied by Flux as a plain object on every reconcile.
+crds:
+  migration:
+    enabled: false
+webhooksCleanup:
+  enabled: false
+upgrade:
+  legacyPolicyCheck:
+    enabled: false
+features:
+  admissionReports:
+    enabled: false
+  aggregateReports:
+    enabled: false
+  policyReports:
+    enabled: false
+  validatingAdmissionPolicyReports:
+    enabled: false
+  backgroundScan:
+    enabled: false
+  generateValidatingAdmissionPolicy:
+    enabled: false
+  # Flux owns the objects the chart renders, and a ConfigMap or Secret Kyverno labels as generated would be refused.
+  protectGenerationLabels:
+    enabled: false
+  # Kyverno leaves out the objects its own chart installs while it starts.
+  excludeBootstrapResources:
+    enabled: true
+config:
+  # Kyverno's own namespace stays out of the webhooks through excludeKyvernoNamespace at its default.
+  webhooks:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, flux-system]

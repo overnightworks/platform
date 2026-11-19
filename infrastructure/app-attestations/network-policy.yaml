@@ -1,0 +1,12 @@
+# Kyverno's admission controller takes no connection from any pod: the API server calls its webhooks from the node,
+# which the policy leaves alone. Its egress is open, since ghcr.io and Sigstore's TUF mirror are host names.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kyverno
+  namespace: admission
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: kyverno
+  policyTypes: [Ingress]

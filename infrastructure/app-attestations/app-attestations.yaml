@@ -1,0 +1,142 @@
+# The attestation check on every app image of a Pod. An app ref is one under the owner's ghcr.io namespace: a Pod that
+# holds one in a container, init container, ephemeral container or image volume reaches Kyverno on its create and on
+# any change of its image set, and is admitted only when the registry holds an SLSA provenance v1 attestation that
+# quality's image.yml signed for that app's own repository on its main branch. The form rule in infrastructure/admission
+# judges the ref's form and never waits for Kyverno. Kyverno never rewrites a ref, and workload objects are judged by
+# form only.
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: app-attestations
+spec:
+  failurePolicy: Fail
+  validationActions: [Deny]
+  # One call verifies every app ref of a Pod, four in songmaker's pull Job, and the first one reads the TUF mirror.
+  webhookConfiguration:
+    timeoutSeconds: 30
+  autogen:
+    podControllers:
+      controllers: []
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, flux-system, admission]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [UPDATE]
+        resources: [pods/ephemeralcontainers]
+  # Both must hold: a Pod reaches Kyverno only when it names an app ref and, on an update, changed its images. A label
+  # or an owner reference on a running app Pod never does.
+  matchConditions:
+    - name: app-ref
+      expression: >-
+        (
+          object.spec.containers.map(c, c.?image.orValue(''))
+          + object.spec.?initContainers.orValue([]).map(c, c.?image.orValue(''))
+          + object.spec.?ephemeralContainers.orValue([]).map(c, c.?image.orValue(''))
+          + object.spec.?volumes.orValue([]).filter(v, has(v.image)).map(v, v.image.?reference.orValue(''))
+        ).exists(ref, ref.startsWith('ghcr.io/overnightworks/'))
+    - name: image-change
+      expression: >-
+        request.operation != 'UPDATE' || (
+          object.spec.containers.map(c, c.?image.orValue(''))
+          + object.spec.?initContainers.orValue([]).map(c, c.?image.orValue(''))
+          + object.spec.?ephemeralContainers.orValue([]).map(c, c.?image.orValue(''))
+          + object.spec.?volumes.orValue([]).filter(v, has(v.image)).map(v, v.image.?reference.orValue(''))
+        ) != (
+          oldObject.spec.containers.map(c, c.?image.orValue(''))
+          + oldObject.spec.?initContainers.orValue([]).map(c, c.?image.orValue(''))
+          + oldObject.spec.?ephemeralContainers.orValue([]).map(c, c.?image.orValue(''))
+          + oldObject.spec.?volumes.orValue([]).filter(v, has(v.image)).map(v, v.image.?reference.orValue(''))
+        )
+  matchImageReferences:
+    - glob: 'ghcr.io/overnightworks/*'
+  images:
+    - name: imageVolumes
+      expression: >-
+        (object != null ? object : oldObject).spec.?volumes.orValue([]).filter(v, has(v.image)).map(v,
+          v.image.?reference.orValue(''))
+  credentials:
+    secrets: [ghcr-pull]
+  validationConfigurations:
+    mutateDigest: false
+    verifyDigest: true
+    required: true
+  # Each app's attestor: GitHub's issuer, quality's image.yml at the SHA its caller pinned, the app's own repository and
+  # its main branch. The subject carries the called workflow, and the extensions carry the calling repository and ref.
+  attestors:
+    - name: hopin
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: '^https://github\.com/overnightworks/quality/\.github/workflows/image\.yml@.+$'
+          additionalExtensions:
+            githubWorkflowRepository: overnightworks/hopin
+            githubWorkflowRef: refs/heads/main
+    - name: personas
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: '^https://github\.com/overnightworks/quality/\.github/workflows/image\.yml@.+$'
+          additionalExtensions:
+            githubWorkflowRepository: overnightworks/personas
+            githubWorkflowRef: refs/heads/main
+    - name: presentator
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: '^https://github\.com/overnightworks/quality/\.github/workflows/image\.yml@.+$'
+          additionalExtensions:
+            githubWorkflowRepository: overnightworks/presentator
+            githubWorkflowRef: refs/heads/main
+    - name: skat
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: '^https://github\.com/overnightworks/quality/\.github/workflows/image\.yml@.+$'
+          additionalExtensions:
+            githubWorkflowRepository: overnightworks/skat
+            githubWorkflowRef: refs/heads/main
+    - name: songmaker
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: '^https://github\.com/overnightworks/quality/\.github/workflows/image\.yml@.+$'
+          additionalExtensions:
+            githubWorkflowRepository: overnightworks/songmaker
+            githubWorkflowRef: refs/heads/main
+    - name: speech
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: '^https://github\.com/overnightworks/quality/\.github/workflows/image\.yml@.+$'
+          additionalExtensions:
+            githubWorkflowRepository: overnightworks/speech
+            githubWorkflowRef: refs/heads/main
+  attestations:
+    - name: provenance
+      intoto:
+        type: https://slsa.dev/provenance/v1
+  # The path component after the owner names the app, so the attestor is looked up by it; an app without one is refused.
+  validations:
+    - expression: >-
+        (images.containers + images.initContainers + images.ephemeralContainers + images.imageVolumes).all(image,
+          image.split('/')[2].split('@')[0].split(':')[0] in attestors
+          && verifyAttestationSignatures(image, attestations.provenance,
+            [attestors[image.split('/')[2].split('@')[0].split(':')[0]]]) > 0)
+      message: >-
+        every app image needs an attestor of its repository and a verified SLSA provenance v1 attestation from
+        quality's image.yml on that repository's main branch

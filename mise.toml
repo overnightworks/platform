@@ -262,6 +262,8 @@ loki_chart=oci://ghcr.io/grafana/helm-charts/loki:7.5.0@sha256:6006cfff9edd0d5c7
 render loki "$loki_chart" loki "$loki_chart"
 grafana_chart=oci://ghcr.io/grafana-community/helm-charts/grafana:14.4.0@sha256:2d5174fe147de178bb47e8b696b16ac3a614c83e31afb8c74e28684e04118002
 render grafana "$grafana_chart" grafana "$grafana_chart"
+kyverno_chart=oci://ghcr.io/kyverno/charts/kyverno:3.10.0@sha256:290ff54d4b7d015ce2ffe5be84b60e2db5a59d8c5dcea772a8f6e32475c2eba2
+render app-attestations "$kyverno_chart" admission "$kyverno_chart"
 
 k8up_release=https://github.com/k8up-io/k8up/releases/download
 k8up_chart="$k8up_release/k8up-4.10.1/k8up-4.10.1.tgz"
