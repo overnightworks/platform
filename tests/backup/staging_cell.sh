@@ -78,6 +78,10 @@ run_backup() {
         while read -r container verdict; do
           [ "$verdict" = unreadable ] || fail "the $container container of the Backup $name's pod finds the staged dump $verdict, not unreadable"
         done <<<"$verdicts"
+        # The NetworkPolicy garage admits the pod by this label, which k8up gives the pods of a PreBackupPod, valued with its name.
+        [ "$(jq --raw-output '.metadata.labels["k8up.io/preBackupPod"] // ""' <<<"$staged_pod")" = \
+          "$(kubectl --namespace "$namespace" get prebackuppods --output jsonpath='{.items[0].metadata.name}')" ] ||
+          fail "the pod of the Backup $name does not carry the label k8up.io/preBackupPod with the name of its PreBackupPod"
       fi
     fi
     reason="$(kubectl --namespace "$namespace" get backup "$name" \
