@@ -463,10 +463,6 @@ jobs:
         if: matrix.part == 'core'
         run: tests/workloads/pull_layers_finish_before_their_app_rolls.sh
 
-      - name: Assert that speech's CPU image runs two Ready pods behind its Service, each answering its readiness check, and that a rollout restart keeps a Ready endpoint
-        if: matrix.part == 'observability'
-        run: tests/speech_runtime/two_cpu_pods_serve_behind_the_service.sh
-
       - name: Assert that Traefik refuses the back-channel logout path and its spellings on every routed host while a neighbouring path reaches the app, that the Service still answers it in-namespace, and that the refusal holds in a restarted pod
         if: matrix.part == 'core'
         env:
@@ -509,15 +505,6 @@ jobs:
           RELEASE_SCRIPT: scripts/verify_image_release.sh
           ADMISSION_SCRIPT: scripts/admission.sh
         run: tests/admission/app_attestations_bind_the_release_checks.sh
-
-      - name: Probe the attestation check by server-side dry-run, in place, beside a second policy, and Kyverno's Service from a vendor-image Pod
-        if: matrix.part == 'core'
-        env:
-          PROBE_NAMESPACE: attestation-probe
-          ATTESTATION_LAYER: infrastructure/app-attestations
-          HOPIN_MANIFEST: apps/hopin/hopin.yaml
-          LIVE_APP_NAMESPACE: presentator
-        run: tests/admission/app_attestations_refuse_by_dry_run.sh
 
       - name: Assert that namespaces and tunnel applied the candidate and cloudflared runs at 0 replicas
         if: matrix.part == 'core'
@@ -825,6 +812,19 @@ jobs:
           kubectl kustomize apps/presentator >"$RUNNER_TEMP/presentator.yaml"
           kubectl kustomize apps/presentator/pull >"$RUNNER_TEMP/presentator-pull.yaml"
           tests/presentator/pods_stay_within_their_levels.sh "$RUNNER_TEMP/presentator.yaml" "$RUNNER_TEMP/presentator-pull.yaml"
+
+      - name: Probe the attestation check by server-side dry-run, in place, beside a second policy, and Kyverno's Service from a vendor-image Pod
+        if: matrix.part == 'presentator-2'
+        env:
+          PROBE_NAMESPACE: attestation-probe
+          ATTESTATION_LAYER: infrastructure/app-attestations
+          HOPIN_MANIFEST: apps/hopin/hopin.yaml
+          LIVE_APP_NAMESPACE: presentator
+        run: tests/admission/app_attestations_refuse_by_dry_run.sh
+
+      - name: Assert that speech's CPU image runs two Ready pods behind its Service, each answering its readiness check, and that a rollout restart keeps a Ready endpoint
+        if: matrix.part == 'presentator-2'
+        run: tests/speech_runtime/two_cpu_pods_serve_behind_the_service.sh
 
       # Last of its part: the cell leaves presentator on a release that may not start, so no step after it reads presentator.
       - name: Assert that a release with a changed reference replaces the pull layer's Job, that the app's layer creates its new pods only after the new Job completed and that they find the image already present

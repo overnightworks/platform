@@ -74,7 +74,7 @@ while IFS='|' read -r layer depends_on; do
   done <<<"$workloads"
   echo "$layer depends on $ADMISSION_LAYER, and its workloads were created after it"
   while IFS= read -r id; do
-    [[ $id =~ ^[^_]+_[^_]+_apps_(Deployment|StatefulSet)$ ]] || continue
+    [[ $id =~ ^[^_]+_[^_]+_(apps_(Deployment|StatefulSet)|batch_Job)$ ]] || continue
     runs_app_ref "$id" || continue
     [[ $dependencies == *" $ATTESTATION_LAYER "* ]] || fail "$id of $layer runs an app ref, but $layer does not depend on $ATTESTATION_LAYER"
     timestamp="$(created "$id")"

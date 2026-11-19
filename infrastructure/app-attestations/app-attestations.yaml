@@ -131,12 +131,13 @@ spec:
       intoto:
         type: https://slsa.dev/provenance/v1
   # The path component after the owner names the app, so the attestor is looked up by it; an app without one is refused.
+  # The attestors are a lazy map that answers an index and an iteration but no `in`, so the name is searched among its keys.
   validations:
     - expression: >-
         (images.containers + images.initContainers + images.ephemeralContainers + images.imageVolumes).all(image,
-          image.split('/')[2].split('@')[0].split(':')[0] in attestors
-          && verifyAttestationSignatures(image, attestations.provenance,
-            [attestors[image.split('/')[2].split('@')[0].split(':')[0]]]) > 0)
+          [image.split('/')[2].split('@')[0].split(':')[0]].all(app,
+            attestors.exists(name, name == app)
+            && verifyAttestationSignatures(image, attestations.provenance, [attestors[app]]) > 0))
       message: >-
         every app image needs an attestor of its repository and a verified SLSA provenance v1 attestation from
         quality's image.yml on that repository's main branch
