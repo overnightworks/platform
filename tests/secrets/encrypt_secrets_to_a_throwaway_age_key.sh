@@ -73,6 +73,16 @@ for manifest in $APP_MANIFESTS; do
   plain_secret "$pull_secret" "$app_namespace" kubernetes.io/dockerconfigjson
 done
 
+# Kyverno reads its own copy of the pull credential, in its namespace and under the name the attestation policy's
+# credentials.secrets gives, and holds this job's token like the apps' pull Secrets do.
+attestation_pull_secret="$(yq 'select(.kind == "ImageValidatingPolicy") | .spec.credentials.secrets[0]' "$ATTESTATION_LAYER/app-attestations.yaml")"
+attestation_namespace="$(yq 'select(.kind == "Deployment") | .metadata.namespace' "$ATTESTATION_LAYER/rendered.yaml")"
+[ -n "$attestation_pull_secret" ] && [ -n "$attestation_namespace" ] || fail "$ATTESTATION_LAYER names no pull Secret or no namespace of Kyverno"
+attestation_pull_file="$(secret_files "$attestation_pull_secret" "$attestation_namespace")/.dockerconfigjson"
+printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$auth" > "$attestation_pull_file"
+echo "::add-mask::$(base64 --wrap=0 < "$attestation_pull_file")"
+plain_secret "$attestation_pull_secret" "$attestation_namespace" kubernetes.io/dockerconfigjson
+
 # presentator's build workers read the key of their hello from a file of a Secret of their own, which the web reads from its
 # volume of Secret files; the web's item names the file, and the workers' volume the Secret.
 worker_key_secret="$(yq 'select(.kind == "StatefulSet") | .spec.template.spec.volumes[] | select(.secret) | .secret.secretName' apps/presentator/worker.yaml)"

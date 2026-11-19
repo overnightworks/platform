@@ -24,6 +24,23 @@ done < <(inventory "$ADMISSION_LAYER")
 [ -n "$admission_applied" ] || fail "the Kustomization $ADMISSION_LAYER holds no object"
 echo "the last object of $ADMISSION_LAYER was created at $admission_applied"
 
+# A layer whose workload runs an app ref waits for the attestation layer, which also depends on admission, so its Pods
+# are never created before Kyverno judges them.
+attestation_applied=""
+while IFS= read -r id; do
+  timestamp="$(created "$id")"
+  [[ $timestamp < "$attestation_applied" ]] || attestation_applied="$timestamp"
+done < <(inventory "$ATTESTATION_LAYER")
+[ -n "$attestation_applied" ] || fail "the Kustomization $ATTESTATION_LAYER holds no object"
+app_prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/"
+runs_app_ref() {
+  local namespace name group kind
+  IFS=_ read -r namespace name group kind <<<"$1"
+  kubectl --namespace "$namespace" get "$kind.$group" "$name" -o json |
+    jq --exit-status --arg prefix "$app_prefix" '[.spec.template.spec | (((.containers // []) + (.initContainers // []))[].image,
+      ((.volumes // [])[] | .image.reference // empty))] | any(startswith($prefix))' >/dev/null
+}
+
 flux_deployments="$(yq --no-doc 'select(.kind == "Deployment") | .metadata.namespace + "_" + .metadata.name + "_apps_Deployment"' \
   clusters/pc/flux-system/gotk-components.yaml | sort)"
 layers="$(kubectl get kustomizations.kustomize.toolkit.fluxcd.io --all-namespaces \
@@ -56,4 +73,12 @@ while IFS='|' read -r layer depends_on; do
     [[ ! $timestamp < "$admission_applied" ]] || fail "$id of $layer was created at $timestamp, before $ADMISSION_LAYER"
   done <<<"$workloads"
   echo "$layer depends on $ADMISSION_LAYER, and its workloads were created after it"
+  while IFS= read -r id; do
+    [[ $id =~ ^[^_]+_[^_]+_apps_(Deployment|StatefulSet)$ ]] || continue
+    runs_app_ref "$id" || continue
+    [[ $dependencies == *" $ATTESTATION_LAYER "* ]] || fail "$id of $layer runs an app ref, but $layer does not depend on $ATTESTATION_LAYER"
+    timestamp="$(created "$id")"
+    [[ ! $timestamp < "$attestation_applied" ]] || fail "$id of $layer was created at $timestamp, before $ATTESTATION_LAYER"
+    echo "$id runs an app ref, and $layer depends on $ATTESTATION_LAYER, applied before it"
+  done <<<"$workloads"
 done <<<"$layers"

@@ -73,11 +73,19 @@ probe_object() {
   esac
 }
 one_container() { echo "containers: [{name: $1, image: '$2'}]"; }
+# The fields Pod Security's restricted level asks of a container, for a Pod in a namespace that enforces it.
+restricted_container() {
+  echo "containers: [{name: $1, image: '$2', securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]},
+    runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: RuntimeDefault}}}]"
+}
 template_containers='(.spec.template.spec.containers[], .spec.template.spec.initContainers[])'
 
 # Each running workload's Pod template, copied from the live object under a new name; the probes after this
 # loop build on the vendor refs among its images.
-app_prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/"
+# The attestation policy's prefix is the one app refs share with the form rule's pattern; its name is what refuses a ref
+# the form rule admits.
+attestation_policy="$(yq 'select(.kind == "ImageValidatingPolicy") | .metadata.name' "$ATTESTATION_POLICY_FILE")"
+app_prefix="$(yq 'select(.kind == "ImageValidatingPolicy") | .spec.matchImageReferences[0].glob | sub("[*]$"; "")' "$ATTESTATION_POLICY_FILE")"
 live_refs=() live_deployment="" live_pod=""
 while IFS='|' read -r namespace workload; do
   [[ $exempt != *" $namespace "* ]] || continue
@@ -114,6 +122,29 @@ for ref in "${live_refs[@]}"; do
   admitted "$repository:probe@$digest" pod "$repository:probe@$digest"
 done
 
+# Every app ref of every live Pod template, as a Pod of its own namespace without imagePullSecrets, is admitted on
+# Kyverno's own credential; an anonymous token for hopin's package is refused first, so the credential is what admits.
+hopin_image="$(kubectl --namespace hopin get deployment hopin -o jsonpath='{.spec.template.spec.containers[0].image}')"
+hopin_repository="${hopin_image%%[:@]*}"
+anonymous_token="$(curl --silent --fail "https://ghcr.io/token?scope=repository:${hopin_repository#ghcr.io/}:pull" | yq -p json '.token')"
+anonymous_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --header "Authorization: Bearer $anonymous_token" \
+  --header 'Accept: application/vnd.oci.image.index.v1+json' "https://ghcr.io/v2/${hopin_repository#ghcr.io/}/manifests/${hopin_image##*:}")"
+[ "$anonymous_status" != 200 ] || fail "an anonymous token reads $hopin_repository's manifest, so Kyverno's credential would prove nothing"
+echo "an anonymous token is refused for $hopin_repository with status $anonymous_status"
+app_pods=0
+while IFS='|' read -r namespace workload; do
+  pod_copy="$(kubectl --namespace "$namespace" get "$workload" -o yaml | yq '{"apiVersion": "v1", "kind": "Pod",
+    "metadata": {"name": "attested-probe"}, "spec": (.spec.template.spec | del(.imagePullSecrets) | .restartPolicy = "Never")}')"
+  started="$(date +%s.%N)"
+  admitted "a Pod built from $namespace/$workload without imagePullSecrets" create_in "$namespace" <<<"$pod_copy"
+  echo "the call took $(awk -v end="$(date +%s.%N)" -v start="$started" 'BEGIN { printf "%.1f", end - start }') of the 30 seconds the webhook has"
+  app_pods=$((app_pods + 1))
+done < <(kubectl get deployments,statefulsets,jobs --all-namespaces -o json | jq --raw-output --arg prefix "$app_prefix" '.items[]
+  | select([.spec.template.spec | (((.containers // []) + (.initContainers // []))[].image, ((.volumes // [])[] | .image.reference // empty))]
+    | any(startswith($prefix))) | .metadata.namespace + "|" + (.kind | ascii_downcase) + "/" + .metadata.name')
+[ "$app_pods" -gt 0 ] || fail "no live workload holds an app ref"
+echo "$app_pods live workload templates with app refs were admitted as Pods"
+
 generated_digest="sha256:$(openssl rand -hex 32)"
 unlisted="docker.io/someone/hopin@$generated_digest"
 app="${app_prefix}probe-app"
@@ -122,7 +153,10 @@ for image in "$unlisted" "${repository##*/}@$digest" "$repository:probe" "$repos
   "quay.io/${app#ghcr.io/}:v1.0.0@$generated_digest"; do
   refused "$image" app "$image" -- pod "$image"
 done
-admitted "the full app ref $app:v1.0.0@$generated_digest" pod "$app:v1.0.0@$generated_digest"
+# A full app ref passes the form rule and meets the attestation policy, which has no attestor for this repository.
+judged_by=("$attestation_policy")
+refused "the full app ref $app:v1.0.0@$generated_digest" -- pod "$app:v1.0.0@$generated_digest"
+judged_by=("$policy" digest)
 refused "an init container running $unlisted" setup "$unlisted" -- create_in "$PROBE_NAMESPACE" \
   <<<"$(probe_object Pod probe "$(one_container app "$ref"), initContainers: [{name: setup, image: '$unlisted'}]")"
 for kind in Pod Deployment StatefulSet DaemonSet ReplicaSet Job CronJob; do
@@ -139,8 +173,8 @@ refused "$namespace/$pod patched in place to $unlisted" "$unlisted" -- \
 
 # The namespace of the vendor list admits listed vendor refs only.
 refused "the full app ref in ${vendor_list%/*}" app "$app:v1.0.0@$generated_digest" -- create_in "${vendor_list%/*}" \
-  <<<"$(probe_object Pod probe "$(one_container app "$app:v1.0.0@$generated_digest")")"
-admitted "$ref in ${vendor_list%/*}" create_in "${vendor_list%/*}" <<<"$(probe_object Pod probe "$(one_container app "$ref")")"
+  <<<"$(probe_object Pod probe "$(restricted_container app "$app:v1.0.0@$generated_digest")")"
+admitted "$ref in ${vendor_list%/*}" create_in "${vendor_list%/*}" <<<"$(probe_object Pod probe "$(restricted_container app "$ref")")"
 kubectl delete namespace "$PROBE_NAMESPACE" --wait --timeout=2m
 
 # flux-system admits Flux's controller repositories by tag and nothing else.
