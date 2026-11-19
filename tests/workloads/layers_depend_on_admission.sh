@@ -2,12 +2,13 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
-# An inventory id is <namespace>_<name>_<group>_<kind>; Kubernetes names hold no underscore.
+# shellcheck source=inventory_id.sh
+source "$(dirname "${BASH_SOURCE[0]}")/inventory_id.sh"
 workload_id='_(apps_(Deployment|StatefulSet|DaemonSet|ReplicaSet)|batch_(Job|CronJob)|_(Pod|ReplicationController)|helm[.]toolkit[.]fluxcd[.]io_HelmRelease)$'
 created() {
-  local namespace name group kind
-  IFS=_ read -r namespace name group kind <<<"$1"
-  kubectl get "$kind${group:+.$group}" "$name" ${namespace:+"--namespace=$namespace"} \
+  parse_inventory_id "$1"
+  kubectl get "$inventory_kind${inventory_group:+.$inventory_group}" "$inventory_name" \
+    ${inventory_namespace:+"--namespace=$inventory_namespace"} \
     -o jsonpath='{.metadata.creationTimestamp}'
 }
 inventory() {
@@ -34,9 +35,8 @@ done < <(inventory "$ATTESTATION_LAYER")
 [ -n "$attestation_applied" ] || fail "the Kustomization $ATTESTATION_LAYER holds no object"
 app_prefix="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/"
 runs_app_ref() {
-  local namespace name group kind
-  IFS=_ read -r namespace name group kind <<<"$1"
-  kubectl --namespace "$namespace" get "$kind.$group" "$name" -o json |
+  parse_inventory_id "$1"
+  kubectl --namespace "$inventory_namespace" get "$inventory_kind.$inventory_group" "$inventory_name" -o json |
     jq --exit-status --arg prefix "$app_prefix" '[.spec.template.spec | (((.containers // []) + (.initContainers // []))[].image,
       ((.volumes // [])[] | .image.reference // empty))] | any(startswith($prefix))' >/dev/null
 }
