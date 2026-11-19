@@ -1,8 +1,0 @@
-claim_id = "b5448967d4dd4ab398da6966429e8923"
-agent = "Claude 967f7dcc-2486-4b1f-bb70-0df1b0843ebe"
-role = "builder"
-base = "b235029969434974f528993cc000f2fbf954ca62"
-branch = "claude/issue-737-platform-pins-design-v0-38-0-everywhere"
-scope = ["infrastructure/design", "infrastructure/keycloak/keycloak.yaml", "infrastructure/keycloak/themes/hallucinai/account/theme.properties", "infrastructure/keycloak/themes/hallucinai/login/theme.properties", "infrastructure/legal/built", "infrastructure/legal/frame/datenschutz.html", "infrastructure/legal/frame/impressum.html", "infrastructure/legal/frame/nutzungsbedingungen.html", "infrastructure/legal/legal.yaml", "quality/config.toml", "tests/legal/design_assets_equal_their_release_wheel.sh"]
-opened_commit = "6d4acfde973a28169b3986f2915f0d9f2a5502fb"
-whole_reason = "One version string stands in every one of these files and must move together, or the kit and its consumers disagree."
