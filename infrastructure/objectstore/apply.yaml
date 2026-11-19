@@ -1,6 +1,7 @@
-# The Job apply makes the buckets and keys: for each namespace of the ConfigMap buckets, a bucket of that name, and the
-# key its Secret object-store holds, read and write on that bucket alone. The keys are made outside the cluster and only
-# imported here, so no secret is made at runtime. It runs once per change of its template; a rotated key runs it again by
+# The Job apply makes the buckets and keys: for each namespace of the ConfigMap buckets, a bucket of that name, the key its
+# Secret object-store holds, read and write on that bucket, and the key its Secret object-store-backup holds, where it has one,
+# read alone, and no other key a right. The keys are made outside the cluster and only imported here, so no secret is made at
+# runtime. It runs once per change of its template; a rotated key runs it again by
 # deleting the Job, which Flux then recreates (docs/runbooks/change-an-object-store-key.md).
 apiVersion: v1
 kind: ServiceAccount
@@ -8,8 +9,8 @@ metadata:
   name: apply
   namespace: objectstore
 ---
-# Reads the Secret object-store, which no namespace of a bucket needs a Role for: a cluster-wide grant by name leaves
-# every namespace's own objects to its own layer, and reaches no other Secret.
+# Reads the Secrets object-store and object-store-backup, which no namespace of a bucket needs a Role for: a cluster-wide
+# grant by name leaves every namespace's own objects to its own layer, and reaches no other Secret.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -17,7 +18,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [secrets]
-    resourceNames: [object-store]
+    resourceNames: [object-store, object-store-backup]
     verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

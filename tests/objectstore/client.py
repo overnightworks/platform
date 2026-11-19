@@ -4,6 +4,10 @@ holds, the bucket named in the variable that argv names, addressed by path as th
 
 client.py allowed <bucket variable> <other bucket>: everything the key may do on its bucket, and what it may not.
 client.py denied <bucket variable>: every request on the bucket is refused with 403.
+client.py put <bucket variable> <object key> and client.py delete <bucket variable> <object key>: a key with write rights
+makes and removes the object that read-only reads.
+client.py read-only <bucket variable> <object key> <other bucket>: list and get of the object succeed; put, delete, a
+multipart create and a copy onto the bucket get 403, and so do list and get of the other bucket.
 """
 
 import os
@@ -15,6 +19,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 MEBIBYTE = 1024 * 1024
+SEED_BODY = b"read by the backup"
 
 
 def status_of(error: ClientError) -> int:
@@ -83,6 +88,24 @@ def denied(client, bucket: str) -> None:
     refused_with(403, "list of the bucket", lambda: client.list_objects_v2(Bucket=bucket))
 
 
+def read_only(client, bucket: str, key: str, other_bucket: str) -> None:
+    listed = [item["Key"] for item in client.list_objects_v2(Bucket=bucket).get("Contents", [])]
+    require(key in listed, "the list of the bucket lacks the object")
+    print("ok: list of the bucket")
+    require(client.get_object(Bucket=bucket, Key=key)["Body"].read() == SEED_BODY, "the object came back changed")
+    print("ok: get of the object")
+    refused_with(403, "put to the bucket", lambda: client.put_object(Bucket=bucket, Key=f"{key}-written", Body=b"x"))
+    refused_with(403, "delete of the object", lambda: client.delete_object(Bucket=bucket, Key=key))
+    refused_with(403, "a multipart create on the bucket", lambda: client.create_multipart_upload(Bucket=bucket, Key=f"{key}-parts"))
+    refused_with(
+        403,
+        "a copy onto the bucket",
+        lambda: client.copy_object(Bucket=bucket, Key=f"{key}-copy", CopySource={"Bucket": bucket, "Key": key}),
+    )
+    refused_with(403, "list of another bucket", lambda: client.list_objects_v2(Bucket=other_bucket))
+    refused_with(403, "get from another bucket", lambda: client.get_object(Bucket=other_bucket, Key=key))
+
+
 def main(arguments: list[str]) -> None:
     mode, bucket_variable = arguments[0], arguments[1]
     client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
@@ -91,6 +114,14 @@ def main(arguments: list[str]) -> None:
         allowed(client, bucket, arguments[2])
     elif mode == "denied":
         denied(client, bucket)
+    elif mode == "put":
+        client.put_object(Bucket=bucket, Key=arguments[2], Body=SEED_BODY)
+        print("ok: put of the object")
+    elif mode == "delete":
+        client.delete_object(Bucket=bucket, Key=arguments[2])
+        print("ok: delete of the object")
+    elif mode == "read-only":
+        read_only(client, bucket, arguments[2], arguments[3])
     else:
         raise SystemExit(f"FAIL: the mode {mode} is unknown")
 
