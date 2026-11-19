@@ -1,0 +1,8 @@
+claim_id = "7e0c2e642b8f4dfead5cdababd576703"
+agent = "Claude 967f7dcc-2486-4b1f-bb70-0df1b0843ebe"
+role = "builder"
+base = "5c9ddf7c4ea796f2843f6f66484dae49f9887dec"
+branch = "claude/issue-748-bucket-in-songmaker-backup"
+scope = [".github/workflows/ci.yml", "apps/songmaker/kustomization.yaml", "apps/songmaker/web.yaml", "docs/app.md", "docs/runbooks/change-an-object-store-key.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/objectstore/garage.yaml", "infrastructure/postgres/backup/files", "tests/backup", "tests/flux/parts.yaml", "tests/objectstore", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
+opened_commit = "a7ca023c3650a74422a25e2dbf51390375ba14f0"
+whole_reason = "The container, its steps in the stager, its network admission and its vendor entry do nothing apart, and the docs lines must land with the behaviour they state."
