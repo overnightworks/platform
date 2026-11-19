@@ -1103,6 +1103,26 @@ set -euo pipefail
 exec scripts/backup_now.sh "${usage_namespace?}"
 '''
 
+[tasks."admission:pause"]
+description = "Suspend the attestation check of app images: suspend app-attestations, scale Kyverno's admission controller to 0 and delete its webhook configurations, so every Pod the form rule admits starts. Ends the same when repeated; the head runs it"
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+exec scripts/admission.sh pause
+'''
+
+[tasks."admission:resume"]
+description = "Restore the attestation check of app images, or finish its removal: with app-attestations present, resume it and wait until the check is back; with it gone, delete what it left once the root applied main's head. The head runs it"
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+exec scripts/admission.sh resume
+'''
+
 [tasks."gpu:use"]
 description = "Give the PC's card to songmaker's music or to speech"
 usage = '''

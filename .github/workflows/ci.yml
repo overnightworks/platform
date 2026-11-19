@@ -91,6 +91,9 @@ jobs:
       - name: Check that gpu:use orders its steps so speech always has a Ready pod, waits for each Deployment's ready replica, names the step and the way back of a failed wait and refuses an unknown user
         run: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh
 
+      - name: Check that admission:pause suspends app-attestations, scales Kyverno to 0 and deletes its webhooks by label in that order, that admission:resume restores without reading GitHub and removes only once the root applied main's head, and refuses otherwise, deleting nothing
+        run: mise exec -- tests/admission/pause_and_resume_stop_and_restore_the_attestation_check.sh
+
       - name: Check that both speech pods mount /tmp, where an upload is spooled, as a memory-backed emptyDir
         run: mise exec -- tests/speech_runtime/upload_spool_is_memory_backed_in_both_speech_pods.sh
 
