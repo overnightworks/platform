@@ -1,13 +1,21 @@
 /* design family tokens and fonts: what every overnightworks product shares.
    With no theme choice the page follows the device (light, or dark under
    prefers-color-scheme); data-theme='light' and data-theme='dark' force a
-   theme, and each theme sets color-scheme. The state set (--ok, --busy, --fail
-   and their -soft partners) is shared; the app colour (--primary, --accent,
-   --on-accent) and everything domain-specific stay with the app; the
-   sign-in grid value is computed by the SignInPage component. Only the latin
-   and latin-ext subsets, woff2 only. The classes as-typed and legal are the
-   only rules outside the tokens and fonts; legal is the legal row of
-   LegalLinks and of a page that cannot render Svelte. */
+   theme, and each theme sets color-scheme. On the page root the attribute is
+   the person's choice; on any other element it marks a surface that is light
+   or dark in either device mode, and the nearest marked ancestor wins. The
+   state set (--ok, --busy, --fail and their -soft partners) is shared; the
+   stage and glass tokens (--stage, --on-stage, --on-stage-soft, --glass,
+   --glass-dark) are the same in both themes, for what sits on a dark stage
+   such as a video; the app colour (--primary, --accent, --on-accent) and
+   everything domain-specific stay with the app; the sign-in grid value is
+   computed by the SignInPage component. Only the latin and latin-ext
+   subsets, woff2 only. The rules outside the tokens and fonts are the
+   heading rule (h1 and h2 in the display font, spaced and uppercase) and the
+   classes as-typed, legal, sign-in-card and sign-in-action; as-typed takes a
+   word out of the heading rule, legal is the legal row of LegalLinks, and
+   sign-in-card with sign-in-action (primary or secondary) is the card and the
+   buttons of SignInPage, each for a page that cannot render Svelte. */
 
 @font-face {
 	font-family: 'Oswald';
@@ -102,6 +110,15 @@
 }
 
 :root {
+	--stage: #0d1013;
+	--on-stage: #f4f6f8;
+	--on-stage-soft: rgba(244, 246, 248, 0.72);
+	--glass: rgba(255, 255, 255, 0.15);
+	--glass-dark: rgba(12, 14, 17, 0.55);
+}
+
+:root,
+[data-theme='light'] {
 	--bg: #f4f4f6;
 	--bg-deep: #e8e8ec;
 	--surface: #ffffff;
@@ -122,7 +139,8 @@
 	--font-body: 'Open Sans', Arial, sans-serif;
 }
 
-:root[data-theme='dark'] {
+:root[data-theme='dark'],
+[data-theme='dark'] {
 	--bg: #0d0d0d;
 	--bg-deep: #050508;
 	--surface: #111;
@@ -162,6 +180,13 @@
 	}
 }
 
+h1,
+h2 {
+	font-family: var(--font-display);
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
 .as-typed {
 	text-transform: none;
 	letter-spacing: normal;
@@ -197,4 +222,55 @@
 	align-items: center;
 	min-height: 24px;
 	border-bottom: none;
+}
+
+.sign-in-card {
+	position: relative;
+	z-index: 1;
+	width: 340px;
+	max-width: 100%;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 16px;
+	padding: 28px 22px 22px;
+	text-align: center;
+	background: var(--card-bg);
+	border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+	border-radius: 6px;
+	color: var(--text);
+	font-family: var(--font-body);
+}
+.sign-in-action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 44px;
+	padding: 0 14px;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	font-family: var(--font-display);
+	font-size: 14px;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	text-decoration: none;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.sign-in-action.primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--on-accent);
+}
+.sign-in-action.secondary {
+	background: transparent;
+	border-color: var(--border);
+	color: var(--text);
+}
+.sign-in-action:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
 }
