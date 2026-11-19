@@ -766,7 +766,7 @@ jobs:
         if: matrix.part == 'backup-2'
         env:
           SONGMAKER_NAMESPACE: songmaker
-        run: tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh
+        run: tests/backup/staging_snapshot_holds_the_files_the_bucket_and_the_dump_of_one_run.sh
       - name: P9f cells
         if: matrix.part == 'backup-1' || matrix.part == 'backup-3'
         env:

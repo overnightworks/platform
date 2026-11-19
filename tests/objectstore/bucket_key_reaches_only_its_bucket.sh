@@ -18,25 +18,15 @@ admin_secret="$(yq '.spec.template.spec.volumes[] | select(.secret) | .secret.se
 admin_key="$(yq '.spec.template.spec.containers[0].env[] | select(.name == "GARAGE_ADMIN_TOKEN_FILE") | .value | sub(".*/", "")' <<<"$store_set")"
 s3_service="$(yq 'select(.kind == "Service" and .spec.ports[0].name == "s3") | .metadata.name + " " + (.spec.ports[0].port | tostring)' "$layer/garage.yaml")"
 apply_job="$(yq 'select(.kind == "Job") | .metadata.name' "$layer/apply.yaml")"
-web="$(yq 'select(.kind == "Deployment")' "$APP_MANIFEST")"
+# shellcheck source=../layer_includes.sh
+source "$here/../layer_includes.sh"
+# shellcheck source=client_pod.sh
+source "$here/client_pod.sh"
 web_labels="$(yq -o json '.spec.template.metadata.labels' <<<"$web")"
-web_env() { NAME="$1" yq '.spec.template.spec.containers[0].env[] | select(.name == strenv(NAME)) | .value' <<<"$web"; }
-bucket_variable="$(yq '.spec.template.spec.containers[0].env[] | select(.name | test("_S3_BUCKET$")) | .name' <<<"$web")"
-bucket="$(web_env "$bucket_variable")"
-credentials_path="$(web_env AWS_SHARED_CREDENTIALS_FILE)"
-secrets_mount="$(yq '.spec.template.spec.containers[0].volumeMounts[] | select(.name == "secrets") | .mountPath' <<<"$web")"
-credentials_item="${credentials_path#"$secrets_mount"/}"
-credentials_secret="$(CREDENTIALS_ITEM="$credentials_item" yq '.spec.template.spec.volumes[] | select(.name == "secrets")
-  | .projected.sources[] | select(.secret.items[0].path == strenv(CREDENTIALS_ITEM)) | .secret.name' <<<"$web")"
-credentials_key="$(CREDENTIALS_ITEM="$credentials_item" yq '.spec.template.spec.volumes[] | select(.name == "secrets")
-  | .projected.sources[] | select(.secret.items[0].path == strenv(CREDENTIALS_ITEM)) | .secret.items[0].key' <<<"$web")"
 # The Secret that holds the backup's read-only key, which the Job's ClusterRole names beside the app's, under the same key.
 backup_secret="$(CREDENTIALS_SECRET="$credentials_secret" yq 'select(.kind == "ClusterRole") | .rules[0].resourceNames[]
   | select(. != strenv(CREDENTIALS_SECRET))' "$layer/apply.yaml")"
-client_image="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[].image' infrastructure/litellm/litellm.yaml |
-  grep -m1 '^ghcr[.]io/berriai/litellm:')"
-[ -n "$bucket" ] && [ -n "$backup_secret" ] && [ -n "$credentials_secret" ] && [ -n "$credentials_key" ] && [ -n "$client_image" ] ||
-  fail "the manifests name no bucket, credentials Secret or client image to test with"
+[ -n "$backup_secret" ] || fail "the manifests name no Secret that holds the backup's key"
 
 # The environment contract, read from both owners: the endpoint is the Service s3 of the store, the region the store's own,
 # and the bucket one the Job makes.
@@ -154,42 +144,7 @@ echo "the bucket $bucket holds read and write, no ownership, for the key $origin
 throwaway="throwaway-$(openssl rand -hex 4)"
 throwaway_id="$(admin POST /v2/CreateBucket "{\"globalAlias\": \"$throwaway\"}" | jq -r .id)"
 
-# client_pod <name> <Secret of the key file> <client argument>...: a Pod labelled and furnished as the web is.
-client_pod() {
-  local name="$1" secret="$2"
-  shift 2
-  NAME="$name" SECRET="$secret" IMAGE="$client_image" ARGUMENTS="$*" CREDENTIALS_ITEM="$credentials_item" yq '
-    .spec.template.spec as $spec |
-    {"apiVersion": "v1", "kind": "Pod",
-     "metadata": {"name": strenv(NAME), "labels": (.spec.template.metadata.labels + {"cell": "object-store"})},
-     "spec": {"restartPolicy": "Never", "automountServiceAccountToken": false,
-       "securityContext": {"runAsNonRoot": true, "runAsUser": 65534, "seccompProfile": {"type": "RuntimeDefault"}},
-       "containers": [{"name": "client", "image": strenv(IMAGE),
-         "command": ["python", "/cell/client.py"] + (strenv(ARGUMENTS) | split(" ")),
-         "env": ($spec.containers[0].env | map(select(.name | test("^AWS_|_S3_BUCKET$")))) + [{"name": "HOME", "value": "/tmp"}],
-         "securityContext": {"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": {"drop": ["ALL"]}},
-         "volumeMounts": ($spec.containers[0].volumeMounts | map(select(.name == "secrets")))
-           + [{"name": "cell", "mountPath": "/cell", "readOnly": true}, {"name": "tmp", "mountPath": "/tmp"}]}],
-       "volumes": [($spec.volumes[] | select(.name == "secrets")
-           | .projected.sources |= map(select(.secret.items[0].path == strenv(CREDENTIALS_ITEM)) | .secret.name = strenv(SECRET))),
-         {"name": "cell", "configMap": {"name": "object-store-client"}}, {"name": "tmp", "emptyDir": {"medium": "Memory"}}]}}' <<<"$web" |
-    kubectl -n "$APP_NAMESPACE" create -f -
-}
-pod_finished() {
-  local phase
-  phase="$(kubectl -n "$APP_NAMESPACE" get pod "$1" -o jsonpath='{.status.phase}')"
-  [ "$phase" = Succeeded ] || [ "$phase" = Failed ]
-}
-# run_client <name> <Secret> <client argument>...: the client runs to its end, its log is printed and its end must be Succeeded.
-run_client() {
-  local name="$1"
-  client_pod "$@"
-  until_true 600 "the client Pod $name ends" pod_finished "$name"
-  kubectl -n "$APP_NAMESPACE" logs "pod/$name"
-  [ "$(kubectl -n "$APP_NAMESPACE" get pod "$name" -o jsonpath='{.status.phase}')" = Succeeded ] || fail "the client Pod $name failed"
-  kubectl -n "$APP_NAMESPACE" delete pod "$name" --wait --timeout=2m
-}
-kubectl -n "$APP_NAMESPACE" create configmap object-store-client --from-file=client.py="$here/client.py"
+install_client
 
 run_client client-allowed "$credentials_secret" allowed "$bucket_variable" "$throwaway"
 echo "a Pod furnished as the web reached its bucket with the contract's environment alone, and nothing else"
@@ -230,6 +185,33 @@ while IFS= read -r worker_labels; do
 done < <(yq -o json -I0 'select(.kind == "Deployment" or .kind == "StatefulSet") | .spec.template.metadata.labels
   | select(.["app.kubernetes.io/name"] != "web")' "$(dirname "$APP_MANIFEST")"/*.yaml)
 [ "$worker_number" -gt 0 ] || fail "$(dirname "$APP_MANIFEST") holds no workload besides the web to probe"
+# The backup's pod: the pods of a PreBackupPod reach the S3 port where the app's layer includes the Component that gives
+# them the backup's key, and in no other namespace. k8up labels the pods of a PreBackupPod with its name.
+bucket_component=infrastructure/postgres/backup/files/bucket
+prebackup_labels="$(yq -o json -I0 '{"k8up.io/preBackupPod": .metadata.name}' <<<"$(yq 'select(.kind == "PreBackupPod")' "$bucket_component/../files.yaml")")"
+if layer_includes "$(dirname "$APP_MANIFEST")/kustomization.yaml" components "$bucket_component"; then prebackup_verdict=open; else prebackup_verdict=closed; fi
+expect_probe "$prebackup_verdict" "a Pod labelled as the PreBackupPod in $APP_NAMESPACE, to the S3 port" \
+  "$APP_NAMESPACE" s3-prebackup "$prebackup_labels" "$s3_host" "$service_port"
+expect_probe closed "a Pod labelled as the PreBackupPod in $OTHER_NAMESPACE, to the S3 port" \
+  "$OTHER_NAMESPACE" s3-prebackup-other-namespace "$prebackup_labels" "$s3_host" "$service_port"
+# The Component's endpoint, region, bucket and key, read from the owners the web's are read from.
+component_container="$(yq '.patches[] | select(.target.kind == "PreBackupPod") | .patch' "$bucket_component/kustomization.yaml" |
+  yq '.[] | select(.op == "add" and .path == "/spec/pod/spec/containers/-") | .value')"
+component_volume="$(yq '.patches[] | select(.target.kind == "PreBackupPod") | .patch' "$bucket_component/kustomization.yaml" |
+  yq '.[] | select(.op == "add" and .path == "/spec/pod/spec/volumes/-") | .value')"
+component_env() { NAME="$1" yq '.env[] | select(.name == strenv(NAME)) | .value' <<<"$component_container"; }
+[ "$(component_env RCLONE_S3_ENDPOINT)" = "http://$service_name.$store_namespace.svc.cluster.local:$service_port" ] ||
+  fail "the bucket Component's endpoint is not the Service $service_name in $store_namespace on port $service_port"
+[ "$(component_env RCLONE_S3_REGION)" = "$(yq -p toml -o yaml '.s3_api.s3_region' "$layer/garage.toml")" ] ||
+  fail "the bucket Component's region is not the s3_region of garage.toml"
+[ "$(yq '.env[] | select(.name == "BUCKET") | .valueFrom.fieldRef.fieldPath' <<<"$component_container")" = metadata.namespace ] ||
+  fail "the bucket Component's bucket is not the Namespace's own"
+component_mount="$(VOLUME="$(yq '.name' <<<"$component_volume")" yq '.volumeMounts[] | select(.name == strenv(VOLUME)) | .mountPath' <<<"$component_container")"
+[ "$(component_env AWS_SHARED_CREDENTIALS_FILE)" = "$component_mount/$(yq '.secret.items[0].path' <<<"$component_volume")" ] ||
+  fail "the bucket Component's key file is not in the mount of its Secret"
+[ "$(yq '.secret.secretName' <<<"$component_volume")" = "$backup_secret" ] && [ "$(yq '.secret.items[0].key' <<<"$component_volume")" = "$credentials_key" ] ||
+  fail "the bucket Component mounts another Secret or key than $backup_secret and the key $credentials_key the app's Secret holds"
+echo "the bucket Component's endpoint, region, bucket and key equal what the store's manifests and the app's Secret give; the PreBackupPod's pods reach the S3 port: $prebackup_verdict"
 expect_probe closed "a Pod labelled as the web in $OTHER_NAMESPACE, to the S3 port" "$OTHER_NAMESPACE" s3-other-namespace "$web_labels" "$s3_host" "$service_port"
 expect_probe closed "a Pod labelled as the web in $APP_NAMESPACE, to the admin port" "$APP_NAMESPACE" admin-web "$web_labels" "$admin_host" 3903
 expect_probe closed "a Pod in $OTHER_NAMESPACE, to the admin port" "$OTHER_NAMESPACE" admin-other-namespace '{"cell": "object-store"}' "$admin_host" 3903

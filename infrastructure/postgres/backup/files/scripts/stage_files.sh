@@ -85,9 +85,9 @@ dump() {
 # manifest: writes MANIFEST.tmp from the finished tree; refuses a name with a newline, which would split its line.
 manifest() {
   cd "$staging" || exit 1
-  trees=files
-  [ -z "${STAGE_BUCKET:-}" ] || trees="files bucket"
-  for tree in $trees; do
+  set -- files
+  [ -z "${STAGE_BUCKET:-}" ] || set -- files bucket
+  for tree in "$@"; do
     names_with_newline="$(find "$tree" -name "*$newline*" 2>/dev/null)" || exit 1
     if [ -n "$names_with_newline" ]; then
       echo "stage: refused: a name under $tree/ holds a newline" >&2
@@ -96,7 +96,7 @@ manifest() {
   done
   dump_sha256="$(sha256sum postgres.dump)" || exit 1
   dump_size="$(stat -c %s postgres.dump)" || exit 1
-  files="$(find $trees -type f -exec stat -c "file$tab%s$tab%Y$tab%n" {} + 2>/dev/null)" || exit 1
+  files="$(find "$@" -type f -exec stat -c "file$tab%s$tab%Y$tab%n" {} + 2>/dev/null)" || exit 1
   {
     printf 'dump\t%s\t%s\n' "${dump_sha256%% *}" "$dump_size"
     [ -z "$files" ] || printf '%s\n' "$files" | LC_ALL=C sort
