@@ -71,7 +71,7 @@ sync_bucket() {
   skipped="$(printf '%s\n' "$messages" | grep -c 'found in source - ignoring')"
   [ "$status" = 0 ] || return "$status"
   [ "$skipped" = 0 ] || return 1
-  staged="$(find "$staging/bucket" -type f -exec printf 'x\n' {} + | grep -c x)"
+  staged="$(find "$staging/bucket" -type f -exec stat -c x {} + | grep -c x)"
   [ "$staged" -ge "$listed" ]
 }
 
