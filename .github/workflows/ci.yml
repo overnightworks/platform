@@ -518,7 +518,7 @@ jobs:
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
       - name: P7a foreign-session and interrupt cells
-        if: matrix.part == 'load-2'
+        if: matrix.part == 'load-3'
         env:
           # The layer whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
