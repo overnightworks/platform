@@ -7,7 +7,7 @@
 # A part marked nightly_only runs only in a scheduled or dispatched run.
 core: {layers: all, paths: [docs/*, "*.md"]}
 # The realm and its route; skat is the caller whose namespace and Service Keycloak's policies are probed against.
-access: {layers: [keycloak, skat, litellm, traefik], paths: [tests/cutover/*, tests/keycloak/*, tests/litellm/*]}
+access: {layers: [keycloak, skat, litellm, traefik, hopin, speech-runtime], paths: [tests/cutover/*, tests/ingress/traefik_answers_only_cloudflared_and_routes_the_app.sh, tests/keycloak/*, tests/litellm/*]}
 agents: {layers: [keycloak], paths: [tests/keycloak/*]}
 litellm: {layers: [litellm, keycloak], paths: [tests/keycloak/*, tests/litellm/*]}
 # Prometheus scrapes songmaker's web and Gatus, and reads litellm's CronJob; Grafana's cell reads a Loki stream, which only alloy ships.
@@ -32,5 +32,5 @@ presentator-2: {layers: [presentator], paths: [tests/presentator/*, tests/worklo
 # The object store's cell drives Garage and its Job from client Pods in each app's Namespace, which holds no layer here;
 # it reads each app's directory for the web's env contract and credentials projection and for the other workloads, and
 # litellm's manifest for the client image.
-objectstore: {layers: [objectstore], paths: [apps/presentator/*, apps/songmaker/*, infrastructure/litellm/litellm.yaml, tests/objectstore/*]}
+objectstore: {layers: [objectstore], paths: [apps/presentator/*, apps/songmaker/*, infrastructure/litellm/litellm.yaml, tests/k3s/*, tests/objectstore/*, tests/pod-logs/*, tests/postgres/interrupt_load.sh, tests/postgres/load_dump.sh, tests/secrets/bootstrap_secrets.sh, tests/secrets/github_host_keys_pass_only_githubs_own.sh, tests/secrets/new_key_refuses_unsafe_key_paths.sh]}
 ai-gateway-outage: {layers: [litellm, gatus, prometheus], nightly_only: true, paths: [tests/prometheus/*]}

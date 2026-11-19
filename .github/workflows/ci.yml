@@ -363,19 +363,19 @@ jobs:
         run: tests/secrets/new_key_refuses_unsafe_key_paths.sh
 
       - name: Check that bootstrap:secrets prints only its own lines and no key block for a source that turns Ready within the minute
-        if: matrix.part == 'core'
+        if: matrix.part == 'objectstore'
         run: tests/secrets/bootstrap_secrets.sh
 
       - name: Check that db:load-dump and interrupt_load.sh end as they owe where a command fails, a signal arrives or a table is empty
-        if: matrix.part == 'core'
+        if: matrix.part == 'objectstore'
         run: tests/postgres/load_dump.sh
 
       - name: Assert that k3s runs with host/k3s/config.yaml
-        if: matrix.part == 'core'
+        if: matrix.part == 'objectstore'
         run: tests/k3s/k3s_runs_with_the_host_config.sh
 
       - name: Assert that the kubelet keeps the configured log files, reopens a deleted pod log and never compresses one
-        if: matrix.part == 'core'
+        if: matrix.part == 'objectstore'
         run: tests/pod-logs/kubelet_keeps_reopens_and_never_compresses_logs.sh
 
       - name: Encrypt a dummy Secret and the app's Secrets to a throwaway age key
@@ -416,8 +416,13 @@ jobs:
         if: matrix.part == 'core'
         run: tests/flux/committed_source_url_turns_ready.sh
 
-      - name: Assert that Traefik runs from its render, ClusterIP only, answers only cloudflared's and Gatus's pods and routes hopin and skat, and that speech-runtime answers only its callers' pods
+      # It scans every Service and Pod, so it runs where every layer is applied.
+      - name: Assert that no HelmRelease or Traefik CRD exists, that Traefik is ClusterIP only, that no Service or Pod of the cluster is exposed on the node and that web trusts the nodes' pod CIDRs
         if: matrix.part == 'core'
+        run: tests/ingress/the_cluster_exposes_only_traefik_and_trusts_the_pod_network.sh
+
+      - name: Assert that Traefik answers only cloudflared's and Gatus's pods and routes hopin and skat, and that speech-runtime answers only its callers' pods
+        if: matrix.part == 'access'
         env:
           # A client Pod's namespace that is neither Traefik's nor the tunnel's nor speech-runtime's callers', and the
           # host its Ingress routes.
