@@ -1,5 +1,6 @@
-/* hallucinai's look on Keycloak's sign-in pages: the app colour and shapes of songmaker's
-   hallucinai.de, over appkit's tokens and fonts (the first stylesheet), laid over PatternFly.
+/* hallucinai's look on Keycloak's sign-in pages: design's tokens and fonts, and its sign-in-card and
+   sign-in-action classes, which theme.properties puts on the card and the buttons, draw the card and
+   the buttons. This file keeps the page's layout, the ground, the fields and the resets PatternFly needs.
    docs/design/keycloak-theme.html is the picture. */
 
 :root {
@@ -124,17 +125,10 @@ html.login-pf::after {
   padding: 0;
 }
 
-/* ---------- card ---------- */
+/* ---------- card: design's sign-in-card draws it; the content flow and PatternFly's shadow are the page's ---------- */
 
 .pf-v5-c-login__main {
-  background: var(--card-bg);
-  border: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
-  border-radius: 12px;
-  box-shadow: 0 0 60px color-mix(in srgb, var(--primary) 5%, transparent);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  color: var(--text);
-  padding: 30px 30px 18px;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -267,41 +261,28 @@ html.login-pf::after {
   display: none;
 }
 
-/* ---------- buttons: violet acts ---------- */
-
-.pf-v5-c-button {
-  min-height: 44px;
-  border-radius: 4px;
-  font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 400;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
+/* ---------- buttons: design's sign-in-action draws them; PatternFly's hover states are the page's ---------- */
 
 .pf-v5-c-button.pf-m-primary {
-  --pf-v5-c-button--m-primary--BackgroundColor: var(--h-action);
   --pf-v5-c-button--m-primary--hover--BackgroundColor: color-mix(in srgb, var(--h-action) 85%, white);
-  --pf-v5-c-button--m-primary--Color: var(--on-accent);
-  --pf-v5-c-button--m-primary--hover--Color: var(--on-accent);
-  background: var(--h-action);
-  border: 1px solid var(--h-action);
+}
+
+.pf-v5-c-button.pf-m-primary:hover {
+  background: color-mix(in srgb, var(--h-action) 85%, white);
   color: var(--on-accent);
 }
 
-.pf-v5-c-button.pf-m-primary:hover,
-.pf-v5-c-button.pf-m-primary:focus {
-  background: color-mix(in srgb, var(--h-action) 85%, white);
+.sign-in-action.pf-m-block {
+  display: flex;
 }
 
 #authenticateWebAuthnButton {
   margin-top: 16px;
 }
 
-.pf-v5-c-button.pf-m-secondary,
-.pf-v5-c-button.pf-m-tertiary {
+.pf-v5-c-button.pf-m-secondary:hover {
   background: transparent;
-  border: 1px solid var(--border);
+  border-color: var(--accent);
   color: var(--text);
 }
 
@@ -335,9 +316,5 @@ a {
 @media (max-width: 480px) {
   #kc-header-wrapper {
     font-size: 27px;
-  }
-
-  .pf-v5-c-login__main {
-    padding: 24px 20px 16px;
   }
 }

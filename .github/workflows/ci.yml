@@ -874,7 +874,7 @@ jobs:
           SONGMAKER_NAMESPACE: songmaker
         run: tests/backup/load_replaces_database_and_files_together.sh
 
-      - name: Assert that a Pod furnished as presentator's web reaches its bucket in the object store with the contract's environment alone and no other bucket, that only such Pods reach the S3 port and none the admin port, that a second run of the Job apply changes nothing and a rotated key loses its access
+      - name: Assert that a Pod furnished as presentator's web reaches its bucket in the object store with the contract's environment alone and no other bucket, that only such Pods reach the S3 port and none the admin port, that a second run of the Job apply changes nothing, a rotated key loses its access and a backup key that only reads
         if: matrix.part == 'objectstore'
         env:
           APP_NAMESPACE: presentator
@@ -883,7 +883,7 @@ jobs:
           OTHER_NAMESPACE: objectstore-client
         run: tests/objectstore/bucket_key_reaches_only_its_bucket.sh
 
-      - name: Assert that a Pod furnished as songmaker's web reaches its bucket in the object store with the contract's environment alone and no other bucket, that only such Pods reach the S3 port and none the admin port, that a second run of the Job apply changes nothing and a rotated key loses its access
+      - name: Assert that a Pod furnished as songmaker's web reaches its bucket in the object store with the contract's environment alone and no other bucket, that only such Pods reach the S3 port and none the admin port, that a second run of the Job apply changes nothing, a rotated key loses its access and a backup key that only reads
         if: matrix.part == 'objectstore'
         env:
           APP_NAMESPACE: songmaker

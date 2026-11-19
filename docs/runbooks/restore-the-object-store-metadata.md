@@ -31,10 +31,12 @@ Impact: every app with a bucket (presentator and songmaker) cannot read or write
    with the restored database.
 6. The snapshot holds the keys and grants of its time, so after a key rotation it still authorizes the revoked key and
    lacks the current one. An agent resumes the store's layer, `flux resume kustomization objectstore`, which recreates
-   the Job `apply`: it imports the current key from each namespace's Secret `object-store` and revokes every other key's
-   rights, and the layer is Ready only when the Job has completed. Only then an agent resumes the apps, `flux resume
-   kustomization presentator` and `flux resume kustomization songmaker`, which starts the web again, and checks that `kubectl -n objectstore logs job/apply` ends
-   with one line `bucket <namespace> holds key <id>` per bucket.
+   the Job `apply`: it imports the current key from each namespace's Secret `object-store`, and the backup's key from its
+   Secret `object-store-backup` where one exists, and revokes every other key's rights, and the layer is Ready only when the
+   Job has completed. Only then an agent resumes the apps, `flux resume kustomization presentator` and `flux resume
+   kustomization songmaker`, which starts the web again, and checks that `kubectl -n objectstore logs job/apply` ends with
+   one line `bucket <namespace> holds key <id>` per bucket, each followed by `holds backup key <id> read only` or `has no
+   backup key granted`.
 
 Objects written after the snapshot lose their metadata: they are unreachable, and their blocks stay on the claim until
 Garage's own sweep. presentator rebuilds what its bucket holds, and songmaker's bucket holds only what it can rebuild
