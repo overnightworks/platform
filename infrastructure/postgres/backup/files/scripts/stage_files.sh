@@ -58,14 +58,21 @@ sync_files() {
 # sync_bucket: the Namespace's bucket, read with the backup's own key, into bucket/. rclone's output names objects, so
 # stdout is dropped and stderr is held in memory, where only the lines that report a source entry rclone skipped are
 # counted: a key that is also a directory prefix, or two keys on one path, which rclone ignores with exit 0 and which the
-# copy would silently lack. Any such line, or any exit status but 0, fails the step.
+# copy would silently lack. Some keys it drops without any message: one with a `..` segment is not written, and one with
+# an empty segment lands on the path without it. So the objects counted before the sync are compared with the files the
+# copy holds after it, and a copy with fewer fails the step; a key written in between only raises the copy's count.
+# Any such line, a short copy or any exit status but 0 fails the step.
 sync_bucket() {
   mkdir -p "$staging/bucket" || return 1
+  listed="$(rclone size --json ":s3:$BUCKET" 2>/dev/null | sed -n 's/.*"count": *\([0-9][0-9]*\).*/\1/p')"
+  [ -n "$listed" ] || return 1
   status=0
   messages="$(rclone sync ":s3:$BUCKET" "$staging/bucket/" --use-server-modtime 2>&1 >/dev/null)" || status=$?
   skipped="$(printf '%s\n' "$messages" | grep -c 'found in source - ignoring')"
   [ "$status" = 0 ] || return "$status"
-  [ "$skipped" = 0 ]
+  [ "$skipped" = 0 ] || return 1
+  staged="$(find "$staging/bucket" -type f -exec printf 'x\n' {} + | grep -c x)"
+  [ "$staged" -ge "$listed" ]
 }
 
 # dump: the database over the Service into a temporary file, renamed when pg_dump succeeded. A fresh pod can be refused
