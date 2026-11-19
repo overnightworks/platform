@@ -43,6 +43,8 @@ spec:
               value: /etc/speech-runtime/speech.toml
             - name: SPEECH_HOST
               value: 0.0.0.0
+            - name: SPEECH_LIVE_SILENCE_SECONDS
+              value: "0.2"
           # The service and its Qwen server peaked at 12.7 GB of host memory on the card's first run, which is provisional
           # until measured on the PC; the request defaults to the limit. The card holds 13.2 GB of it.
           resources:
