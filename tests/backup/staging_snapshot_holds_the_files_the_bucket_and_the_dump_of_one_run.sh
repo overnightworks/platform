@@ -356,8 +356,6 @@ echo "the bucket container mounts the staging claim and the Secret $bucket_secre
 job_logs="$(kubectl --namespace "$namespace" logs --selector k8upjob=true --all-pods --tail=-1)" || fail "cannot read k8up's Job logs in $namespace"
 [ -n "$job_logs" ] || fail "k8up's Job logs in $namespace are empty"
 [ -n "$run_logs" ] || fail "no log of the PreBackupPod's pods was read"
-secret_value() { kubectl --namespace "$namespace" get secret "$1" --output json | jq --raw-output --arg key "$2" '.data[$key]' | base64 --decode; }
-ini_value() { sed -n "s/^$2 = //p" <<<"$1"; }
 row="$(kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only --no-align \
   --command='SELECT version_num FROM alembic_version')"
 [ -n "$row" ] || fail "the table alembic_version of $namespace holds no row to look for"

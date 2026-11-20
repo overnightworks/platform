@@ -22,8 +22,6 @@ bucket_secret="$(yq '.[] | select(.op == "add" and .path == "/spec/pod/spec/volu
 layer_includes "apps/$namespace/kustomization.yaml" components "$bucket_component" || fail "apps/$namespace does not include $bucket_component"
 expected_top="$(declared_top "apps/$namespace/kustomization.yaml")"
 mask_secret() { [ -z "${GITHUB_ACTIONS:-}" ] || echo "::add-mask::$1"; }
-ini_value() { sed -n "s/^$2 = //p" <<<"$1"; }
-secret_value() { kubectl --namespace "$namespace" get secret "$1" --output json | jq --raw-output --arg key "$2" '.data[$key]' | base64 --decode; }
 
 original_backup_data="$(kubectl --namespace "$namespace" get secret "$bucket_secret" --output json | jq --raw-output '.data.credentials')"
 original_backup_key="$(secret_value "$bucket_secret" credentials)"

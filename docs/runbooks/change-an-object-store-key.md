@@ -18,14 +18,15 @@ Impact: the app's pods get 403 from the store until they hold the key that the J
    `object-store-backup`, made in a `platform-secrets` worktree by an agent, which never sees it:
    `printf '[default]\naws_access_key_id = GK%s\naws_secret_access_key = %s\n' "$(openssl rand -hex 12)" "$(openssl rand -hex 32)" | mise run secrets:put <namespace> object-store-backup credentials`.
    Its rotation is a new key ID the same way, and its removal is the Secret leaving `platform-secrets`. A backup key that
-   equals the app's key fails the Job. Where the app's layer includes `infrastructure/postgres/backup/files/bucket`, the
-   backup's pod reads this Secret at every Backup, so a rotated backup key is imported by the Job (step 2) before the next
-   Backup, or that Backup fails with its step `bucket-pre-sync` named.
+   equals the app's key fails the Job.
 2. An agent: `kubectl -n objectstore delete job apply`, then `flux reconcile kustomization objectstore`. Flux recreates the
    Job, which imports the new keys, grants the app's read and write on the bucket and the backup's read alone, and revokes
    every other key's rights on it, a removed Secret's key included. Rights granted by hand through the admin API are revoked
    too, by design. The Job does not rerun by itself: when its change landed before the Secret `object-store-backup` reached the
-   cluster, or when that Secret left, this step runs once the Secret exists or is gone.
+   cluster, or when that Secret left, this step runs once the Secret exists or is gone. Where the app's layer includes
+   `infrastructure/postgres/backup/files/bucket`, the backup's pod reads the Secret `object-store-backup` at every Backup,
+   so a rotated backup key is imported by this Job before the next Backup, or that Backup fails with its step
+   `bucket-pre-sync` named.
 3. An agent: `kubectl -n <namespace> rollout restart deployment <web>`. The pods that kept the old key get 403 until they
    restart, since the key file is read at start.
 4. A first bucket for a namespace, a pull request: its name in `infrastructure/objectstore/namespaces.txt`, the

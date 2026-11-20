@@ -1,8 +1,9 @@
-# What an app adds to files/ to have the backup copy its object store bucket beside the claim and the dump: the container
-# `bucket` of the PreBackupPod and the stager's STAGE_BUCKET. A layer that includes it lists it after ../ (files), and
-# adds the target containers.[name=bucket].securityContext.runAsGroup to its replacement of the reading uid, so that
-# `bucket` runs at that uid as user and group and never in the dump's group 70. The bucket is the Namespace's own and is
-# read with the key of the Secret object-store-backup, which the Job apply of infrastructure/objectstore grants read alone.
+# What an app adds to files/ to have the backup copy its object store bucket beside the claim and the dump: the
+# container `bucket` of the PreBackupPod and the stager's STAGE_BUCKET. A layer that includes it lists it after ../
+# (files), and adds the target containers.[name=bucket].securityContext.runAsGroup to its replacement of the reading
+# uid, so that `bucket` runs at that uid as user and group and never in the dump's group 70. The bucket is the
+# Namespace's own and is read with the key of the Secret object-store-backup, which the Job apply of
+# infrastructure/objectstore grants read alone.
 # A custom resource's container lists do not merge by name, so one JSON 6902 patch adds both or none; its `test`
 # operation fails the render when files.yaml's containers are reordered, since STAGE_BUCKET would then reach another
 # container and the stager would run without the bucket. rclone: https://hub.docker.com/r/rclone/rclone
@@ -23,7 +24,8 @@ patches:
           image: docker.io/rclone/rclone:1.76.0@sha256:7cbeec24a44f206067597c0368be4de90ae19a64d5113c7d1938bd737a81e466
           command: [sh, /etc/stage/stage_files.sh, bucket]
           # The remote is rclone's environment: the Service s3 of the object store, the region of its garage.toml, the
-          # bucket the Namespace's own, the key the mounted file's. The root is read-only, so rclone's home and cache are tmp.
+          # bucket the Namespace's own, the key the mounted file's. The root is read-only, so rclone's home and cache
+          # are tmp.
           env:
             - name: HOME
               value: /tmp

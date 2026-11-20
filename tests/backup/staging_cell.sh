@@ -183,5 +183,9 @@ declared_top() {
   printf '%s\n' "${names[@]}" | LC_ALL=C sort | tr '\n' ' '
 }
 
+# secret_value <secret> <key>: the decoded value of a Secret of $namespace; ini_value <text> <key>: a line's value of an INI text.
+secret_value() { kubectl --namespace "$namespace" get secret "$1" --output json | jq --raw-output --arg key "$2" '.data[$key]' | base64 --decode; }
+ini_value() { sed -n "s/^$2 = //p" <<<"$1"; }
+
 # value <key>: the rest of the line of the last restic Pod's output that starts with the key.
 value() { sed -n "s/^$1 //p" <<<"$restic_output"; }
