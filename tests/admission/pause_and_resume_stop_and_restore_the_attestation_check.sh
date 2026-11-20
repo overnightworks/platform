@@ -154,3 +154,15 @@ run_task resume
 [[ "$output" == *GitHub* ]] || fail "the refusal for an unreadable head did not name GitHub: $output"
 if made_call '^delete'; then fail "a removal with an unreadable head deleted something"; fi
 echo "the removal refuses a stale applied revision and an unreadable head, naming which, and deletes nothing"
+
+# A read that fails is no absence: nothing is deleted or scaled on an unreadable Kustomization.
+rm "$state/github-down"
+touch "$state/layer"
+FAKE_FAILING_CALL="get kustomization app-attestations --ignore-not-found" run_task resume
+[ "$status" -ne 0 ] || fail "resume ended 0 although the Kustomization could not be read"
+if made_call '^delete'; then fail "resume deleted something after the Kustomization could not be read: $(deletions)"; fi
+FAKE_FAILING_CALL="get kustomization app-attestations --ignore-not-found" run_task pause
+[ "$status" -ne 0 ] || fail "pause ended 0 although the Kustomization could not be read"
+if made_call 'scale deployment'; then fail "pause scaled Kyverno after the Kustomization could not be read"; fi
+rm "$state/layer"
+echo "an unreadable Kustomization deletes and scales nothing"

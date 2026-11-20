@@ -44,8 +44,12 @@ wait_until() {
   done
 }
 
+# A read that fails is no proof of absence: only a successful read that names nothing says the Kustomization is gone.
 layer_exists() {
-  [ -n "$(kubectl --namespace "$flux_namespace" get kustomization "$layer" --ignore-not-found --output name)" ]
+  local names
+  names="$(kubectl --namespace "$flux_namespace" get kustomization "$layer" --ignore-not-found --output name)" ||
+    fail "the Kustomization $layer cannot be read, so its presence is unknown; nothing changed" "$way_back"
+  [ -n "$names" ]
 }
 suspend() {
   kubectl --namespace "$flux_namespace" patch kustomization "$layer" --type merge --patch "{\"spec\":{\"suspend\":$1}}" >/dev/null
