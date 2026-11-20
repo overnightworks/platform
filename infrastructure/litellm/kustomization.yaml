@@ -76,6 +76,6 @@ replacements:
     targets:
       - select:
           kind: Schedule
-          name: postgres
+          name: backup
         fieldPaths:
           - spec.backend.rest.url

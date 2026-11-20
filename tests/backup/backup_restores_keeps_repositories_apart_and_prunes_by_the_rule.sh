@@ -107,7 +107,7 @@ fi
 
 for namespace in $BACKUP_NAMESPACES; do
   # One backup, as the Schedule would start it.
-  schedule="$(kubectl --namespace "$namespace" get schedule postgres --output json)"
+  schedule="$(kubectl --namespace "$namespace" get schedule backup --output json)"
   kubectl --namespace "$namespace" create --filename - <<<"$(yq --output-format json \
     '{ "apiVersion": "k8up.io/v1", "kind": "Backup", "metadata": { "name": "first-backup" },
        "spec": { "backend": .spec.backend, "podConfigRef": .spec.podConfigRef } }' <<<"$schedule")" >/dev/null

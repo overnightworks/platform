@@ -32,7 +32,7 @@ replacements:
     targets:
       - select:
           kind: Schedule
-          name: postgres
+          name: backup
         fieldPaths:
           - spec.backend.rest.url
   # The reading uid: the backup copies the audio files and the bucket, and k8up's Job pods read the copies as the web's
@@ -51,7 +51,7 @@ replacements:
           - spec.pod.spec.containers.[name=bucket].securityContext.runAsGroup
       - select:
           kind: PodConfig
-          name: postgres-backup
+          name: backup
         fieldPaths:
           - spec.template.spec.securityContext.runAsUser
         options:

@@ -89,7 +89,7 @@ snapshots_before="$restic_output"
 
 # One Backup, as the Schedule would start it. At every look during it, at most one Pod of the
 # namespace carries a backup command, and one does at some look.
-kubectl --namespace "$namespace" get schedule postgres --output json |
+kubectl --namespace "$namespace" get schedule backup --output json |
   NAME="$backup_name" yq --input-format json --output-format json \
     '{ "apiVersion": "k8up.io/v1", "kind": "Backup", "metadata": { "name": strenv(NAME) },
        "spec": { "backend": .spec.backend, "podConfigRef": .spec.podConfigRef } }' |

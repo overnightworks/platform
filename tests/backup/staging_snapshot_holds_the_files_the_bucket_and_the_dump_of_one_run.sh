@@ -298,7 +298,7 @@ echo "a name with a newline made the manifest refuse and left no MANIFEST and no
 # k8up_object_succeeds <Prune|Check> <name>: one, as the Schedule would start it, which must succeed.
 k8up_object_succeeds() {
   local kind="$1" name="$2" deadline=$((SECONDS + 600)) reason
-  kubectl --namespace "$namespace" get schedule postgres --output json |
+  kubectl --namespace "$namespace" get schedule backup --output json |
     jq --arg kind "$kind" --arg name "$name" \
       '{ apiVersion: "k8up.io/v1", kind: $kind, metadata: { name: $name },
          spec: ({ backend: .spec.backend, podConfigRef: .spec.podConfigRef } +
