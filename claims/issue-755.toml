@@ -1,8 +1,0 @@
-claim_id = "76baeb68d21f43e7a8a9463274ff08b5"
-agent = "Claude 967f7dcc-2486-4b1f-bb70-0df1b0843ebe"
-role = "builder"
-base = "1633f2b7249e023c6395228a2001757ba3cd2164"
-branch = "claude/issue-755-front-idle-timeout"
-scope = ["infrastructure/litellm/front-traefik.yml", "tests/litellm"]
-opened_commit = "ea7d98072db63405244cd27f63212c8beca9a32d"
-whole_reason = "one setting in the front's Traefik file plus its proof in a cell of tests/litellm, whose file the builder picks"
