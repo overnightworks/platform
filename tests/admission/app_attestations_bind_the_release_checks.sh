@@ -51,7 +51,7 @@ echo "the policy fails closed, rewrites no ref, reads $kyverno_namespace/$creden
 webhook_selector="$(sed -n 's/^webhook_selector="\(.*\)"$/\1/p' "$ADMISSION_SCRIPT")"
 [ -n "$webhook_selector" ] || fail "$ADMISSION_SCRIPT names no webhook_selector"
 webhooks="$(kubectl get validatingwebhookconfiguration --selector "$webhook_selector" -o json)"
-pod_webhooks="$(jq --compact-output '[.items[].webhooks[] | select(any((.rules // [])[].resources[]; . == "pods"))]' <<<"$webhooks")"
+pod_webhooks="$(jq --compact-output '[.items[] | (.webhooks // [])[] | select(any((.rules // [])[].resources[]; . == "pods"))]' <<<"$webhooks")"
 [ "$(jq length <<<"$pod_webhooks")" -gt 0 ] || fail "no live webhook of Kyverno reaches Pods"
 jq --exit-status --argjson expressions "$(policy '[.spec.matchConditions[] | select(.name == "app-ref" or .name == "image-change") | .expression]' | yq -o json -I 0)" '
   all(.[]; .failurePolicy == "Fail"
@@ -63,7 +63,7 @@ jq --exit-status --argjson expressions "$(policy '[.spec.matchConditions[] | sel
     and (any(.matchConditions[]; .name == "kyverno-exclude-bootstrap-resources"))
     and ([.matchConditions[].expression] as $have | all($expressions[]; . as $expression | any($have[]; contains($expression)))))' \
   <<<"$pod_webhooks" >/dev/null || fail "a live webhook that reaches Pods lacks an exclusion, fail closed, a match condition, the bootstrap condition or has other rules: $pod_webhooks"
-mutating="$(kubectl get mutatingwebhookconfiguration --selector "$webhook_selector" -o json | jq '[.items[].webhooks[] | select(any((.rules // [])[].resources[]; . == "pods"))] | length')"
+mutating="$(kubectl get mutatingwebhookconfiguration --selector "$webhook_selector" -o json | jq '[.items[] | (.webhooks // [])[] | select(any((.rules // [])[].resources[]; . == "pods"))] | length')"
 equal "the mutating webhooks of Kyverno that reach Pods" "$mutating" 0
 equal "the live replicas" "$(kubectl --namespace "$kyverno_namespace" get deployment kyverno-admission-controller -o jsonpath='{.spec.replicas}')" \
   "$(yq 'select(.kind == "Deployment") | .spec.replicas' "$render")"

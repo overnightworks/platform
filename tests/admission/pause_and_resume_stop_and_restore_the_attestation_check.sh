@@ -54,9 +54,9 @@ FAKE
 chmod +x "$fake_bin/kubectl" "$fake_bin/gh"
 
 printf '%s' '{"spec":{"matchConditions":[{"name":"app-ref","expression":"app-ref text"},{"name":"image-change","expression":"image-change text"}]}}' >"$state/policy.json"
-# The first webhook configuration holds a webhook without rules, as Kyverno's resource webhooks are while no policy matches.
+# Kyverno's webhook configurations hold no webhooks, or a webhook without rules, while no policy matches.
 cat >"$state/webhooks.json" <<'JSON'
-{"items":[{"webhooks":[{"name":"without-rules"}]},{"webhooks":[{"failurePolicy":"Fail","rules":[{"resources":["pods"]},{"resources":["pods/ephemeralcontainers"]}],
+{"items":[{},{"webhooks":[{"name":"without-rules"}]},{"webhooks":[{"failurePolicy":"Fail","rules":[{"resources":["pods"]},{"resources":["pods/ephemeralcontainers"]}],
 "namespaceSelector":{"matchExpressions":[{"key":"kubernetes.io/metadata.name","operator":"NotIn","values":["kube-system","flux-system","admission"]}]},
 "matchConditions":[{"name":"a","expression":"(app-ref text)"},{"name":"b","expression":"x || image-change text"}]}]}]}
 JSON
