@@ -31,6 +31,11 @@ accessLog:
 entryPoints:
   api:
     address: ":4000"
+    transport:
+      respondingTimeouts:
+        # Stated at Traefik's default so that a bump of the image cannot change it unseen: a caller that pools
+        # connections sets its keepalive below this value.
+        idleTimeout: 180s
     http:
       aliasHeadersStrategy: delete
       sanitizePath: true
