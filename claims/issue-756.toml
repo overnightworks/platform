@@ -1,0 +1,8 @@
+claim_id = "544b006e0edb4bb390a971c9ef8ca135"
+agent = "Claude 967f7dcc-2486-4b1f-bb70-0df1b0843ebe"
+role = "builder"
+base = "1633f2b7249e023c6395228a2001757ba3cd2164"
+branch = "claude/issue-756-gpu-use-free"
+scope = [".github/workflows/ci.yml", "docs/app.md", "docs/operations.md", "mise.toml", "scripts/gpu_use.sh", "tests/gpu"]
+opened_commit = "4ce833ed3586e5a3cf83ef74f747337a8024ca7b"
+whole_reason = "One switch, its test, its CI step name and the two documents that name it; splitting them would leave a mode untested or a document false."
