@@ -143,5 +143,5 @@ gate judges it by its own rules.
 ## The GPU
 
 The platform's node offers its one card to Kubernetes as `nvidia.com/gpu: 1`, through the RuntimeClass `nvidia` and
-NVIDIA's device plugin, with no time-slicing or sharing. By the operator's ruling the card belongs to songmaker's music,
-and the GPU voice stays off. songmaker's GPU worker holds the card; this standard says nothing more about it.
+NVIDIA's device plugin, with no time-slicing or sharing. The card has one user at a time, songmaker's GPU worker or
+speech's GPU voice, chosen live by `mise run gpu:use` and not in Git; `docs/operations.md` owns the switch.

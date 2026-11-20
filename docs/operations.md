@@ -62,6 +62,17 @@ switch. The two small pods let a rollout or a drain leave one serving; the GPU i
 Git names no replica count for these three Deployments, so Flux keeps the choice, and a Deployment applied afresh runs
 one small pod until the first `gpu:use songs`.
 
+`mise run gpu:use free` frees the card for a measurement window and gives it back by itself. It runs only while speech
+holds the card (`acestep-worker` at 0, `speech-runtime-gpu` at 1) and refuses otherwise without a scale call. It
+arms the user timer `gpu-use-return` for 60 minutes (a still armed one is stopped first, and an arm that fails refuses
+before any scale), runs the small `speech-runtime` at two pods until both are Ready and stops `speech-runtime-gpu`,
+leaving `acestep-worker` at 0. When the timer fires it runs the script's `return`, which runs `speech` only while
+`acestep-worker` and `speech-runtime-gpu` both stand at 0, so it never takes the card from songmaker and never
+restarts a voice already restored; otherwise it says that nothing returned. `mise run gpu:use speech` ends the window
+at once. The timer fires within a minute after its time; its journal is `journalctl --user -u gpu-use-return`, a
+failed return shows in `systemctl --user --failed`, and a reboot or a killed user manager loses the timer, after which the voice
+stays small until `gpu:use speech`. The timer runs the script at the path it was armed from, so run `free` from the main checkout.
+
 ## The PC's disk and its bounds (`host/disk/` and the user units of `mise.toml`)
 
 `mise run disk` runs without sudo and prints what fills the disk of the home directory by size and name (named

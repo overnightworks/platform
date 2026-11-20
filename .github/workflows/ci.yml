@@ -88,7 +88,7 @@ jobs:
       - name: Check that backup:fetch ends non-zero naming a file that holds no custom-format dump and deletes it, and keeps a dump at mode 0600
         run: mise exec -- tests/backup/backup_fetch_deletes_a_file_that_holds_no_custom_format_dump.sh
 
-      - name: Check that gpu:use orders its steps so speech always has a Ready pod, waits for each Deployment's ready replica, names the step and the way back of a failed wait and refuses an unknown user
+      - name: Check that gpu:use orders its steps so speech always has a Ready pod, waits for each Deployment's ready replica, names the step and the way back of a failed wait, frees the card only from speech's state with the bound armed first, returns it only while nobody took it and refuses an unknown user
         run: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh
 
       - name: Check that admission:pause suspends app-attestations, scales Kyverno to 0 and deletes its webhooks by label in that order, that admission:resume restores without reading GitHub and removes only once the root applied main's head, and refuses otherwise, deleting nothing
