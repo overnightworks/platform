@@ -55,24 +55,38 @@ sync_files() {
   rsync -a --delete /source/ "$staging/files/" 2>/dev/null
 }
 
-# sync_bucket: the Namespace's bucket, read with the backup's own key, into bucket/. rclone's output names objects, so
-# stdout is dropped and stderr is held in memory, where only the lines that report a source entry rclone skipped are
-# counted: a key that is also a directory prefix, or two keys on one path, which rclone ignores with exit 0 and which the
-# copy would silently lack. Some keys it drops without any message: one with a `..` segment is not written, and one with
-# an empty segment lands on the path without it. So the objects counted before the sync are compared with the files the
-# copy holds after it, and a copy with fewer fails the step; a key written in between only raises the copy's count.
-# Any such line, a short copy or any exit status but 0 fails the step.
-sync_bucket() {
-  mkdir -p "$staging/bucket" || return 1
-  listed="$(rclone size --json ":s3:$BUCKET" 2>/dev/null | sed -n 's/.*"count": *\([0-9][0-9]*\).*/\1/p')"
-  [ -n "$listed" ] || return 1
+# copy_bucket <listing file>: the Namespace's bucket, read with the backup's own key, into bucket/. rclone's output names
+# objects, so stdout is dropped and stderr is held in memory, where only the lines that report a source entry rclone
+# skipped are counted: a key that is also a directory prefix, or two keys on one path, which rclone ignores with exit 0
+# and which the copy would silently lack. Some keys it drops without any message: one with a `..` segment is not
+# written, and one with an empty segment lands on the path without it. So the keys listed before the sync go to the
+# listing file, and each must be a file of the copy by that very name, which a key written in between cannot stand in
+# for; a key listed twice has collapsed already. Any such line, a missing key or any exit status but 0 fails the step.
+copy_bucket() {
+  listing="$1"
+  rclone lsf --recursive --files-only ":s3:$BUCKET" >"$listing" 2>/dev/null || return 1
   status=0
   messages="$(rclone sync ":s3:$BUCKET" "$staging/bucket/" --use-server-modtime 2>&1 >/dev/null)" || status=$?
   skipped="$(printf '%s\n' "$messages" | grep -c 'found in source - ignoring')"
   [ "$status" = 0 ] || return "$status"
   [ "$skipped" = 0 ] || return 1
-  staged="$(find "$staging/bucket" -type f -exec stat -c x {} + | grep -c x)"
-  [ "$staged" -ge "$listed" ]
+  [ -z "$(sort "$listing" | uniq -d)" ] || return 1
+  find "$staging/bucket" -type f >"$listing.staged" || return 1
+  sed "s|^$staging/bucket/||" "$listing.staged" >"$listing.names" || return 1
+  # grep ends 1 when every listed key is among the names, and 0 or 2 when one is not or it could not tell.
+  status=0
+  grep -qvxFf "$listing.names" "$listing" || status=$?
+  [ "$status" = 1 ]
+}
+
+# sync_bucket: copy_bucket with the listing in /scratch, which holds the keys only until the step ends.
+sync_bucket() {
+  mkdir -p "$staging/bucket" || return 1
+  listing="$scratch/bucket.listing"
+  copied=0
+  copy_bucket "$listing" || copied=$?
+  rm -f "$listing" "$listing.staged" "$listing.names"
+  return "$copied"
 }
 
 # dump: the database over the Service into a temporary file, renamed when pg_dump succeeded. A fresh pod can be refused
