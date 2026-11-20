@@ -41,10 +41,11 @@ volume="$(yq --input-format json '.spec.volumeName' <<<"$claim")"
 echo "the staging claim of $namespace is Bound on the Retain class with prune disabled, bound by its completed Job"
 
 # The dump the PreBackupPod's container makes over the Service holds the live database's table digests. A Pod made
-# from the PreBackupPod's own spec stands in for the one k8up runs only during a Backup, which would end before it is read.
+# from the PreBackupPod's own spec stands in for the one k8up runs only during a Backup, which would end before it is read;
+# it carries the label k8up gives that pod, which the object store's NetworkPolicy admits to the bucket.
 kubectl --namespace "$namespace" get prebackuppod files --output json |
   NAME="$check_pod" yq --input-format json --output-format json \
-    '{ "apiVersion": "v1", "kind": "Pod", "metadata": { "name": strenv(NAME) }, "spec": .spec.pod.spec }' |
+    '{ "apiVersion": "v1", "kind": "Pod", "metadata": { "name": strenv(NAME), "labels": { "k8up.io/preBackupPod": .metadata.name } }, "spec": .spec.pod.spec }' |
   kubectl --namespace "$namespace" create --filename - >/dev/null
 kubectl --namespace "$namespace" wait "pod/$check_pod" --for=condition=Ready --timeout=5m ||
   { kubectl --namespace "$namespace" describe "pod/$check_pod" >&2; fail "the PreBackupPod's container of $namespace did not turn Ready on a finished staging tree"; }
@@ -113,7 +114,7 @@ done
 echo "exactly one pod of $namespace carried a backup command during the Backup"
 
 # Two more snapshots: the dump streamed from the PreBackupPod's file, in custom format, and the staging claim, which
-# staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh reads.
+# staging_snapshot_holds_the_files_the_bucket_and_the_dump_of_one_run.sh reads.
 run_restic "$namespace" snapshots-after '
   restic --no-cache snapshots --json | jq length
   restic --no-cache snapshots --json | jq --raw-output ".[].paths[]" | sort -u

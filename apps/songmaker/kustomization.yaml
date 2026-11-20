@@ -12,6 +12,8 @@ resources:
 components:
   - ../../infrastructure/postgres/backup
   - ../../infrastructure/postgres/backup/files
+  # The Namespace's bucket, copied beside the claim and the dump with the read-only key of the Secret object-store-backup.
+  - ../../infrastructure/postgres/backup/files/bucket
   - release
 configMapGenerator:
   - name: postgres
@@ -33,8 +35,8 @@ replacements:
           name: postgres
         fieldPaths:
           - spec.backend.rest.url
-  # The reading uid: the backup copies the audio files and k8up's Job pods read the copy as the web's user; the copy
-  # container takes it as its group too, which is not the dump's.
+  # The reading uid: the backup copies the audio files and the bucket, and k8up's Job pods read the copies as the web's
+  # user; the copy and bucket containers take it as their group too, which is not the dump's.
   - source:
       kind: Deployment
       name: web
@@ -46,6 +48,7 @@ replacements:
         fieldPaths:
           - spec.pod.spec.securityContext.runAsUser
           - spec.pod.spec.containers.[name=copy].securityContext.runAsGroup
+          - spec.pod.spec.containers.[name=bucket].securityContext.runAsGroup
       - select:
           kind: PodConfig
           name: postgres-backup

@@ -26,8 +26,11 @@ load-3: {layers: [litellm], paths: [tests/postgres/*]}
 # litellm is, the Keycloak table check where keycloak is, songmaker's dump cell and personas' cells in the part that
 # applies their layer.
 backup-1: {layers: [backup, prometheus, keycloak, litellm, personas], paths: [tests/backup/*, tests/personas/*, tests/prometheus/*]}
-backup-2: {layers: [backup, songmaker], paths: [tests/backup/*, tests/disk/*]}
+# backup-2 and backup-4 fill songmaker's bucket from a client Pod that the objectstore cell's helper builds from litellm's image.
+backup-2: {layers: [backup, songmaker], paths: [tests/backup/*, tests/disk/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
 backup-3: {layers: [backup, prometheus, presentator, skat, songmaker], paths: [tests/backup/*, tests/prometheus/*]}
+# The Backups of songmaker's bucket that need one run each; the namespace songmaker is held by backup-2 and backup-3 too.
+backup-4: {layers: [backup, songmaker], paths: [tests/backup/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
 # The test agents' cells drive Keycloak.
 presentator: {layers: [presentator, keycloak], paths: [tests/keycloak/*, tests/no_network/*, tests/presentator/*, tests/redis/*]}
 presentator-2: {layers: [presentator], paths: [tests/presentator/*, tests/workloads/*]}

@@ -8,18 +8,52 @@ client.py put <bucket variable> <object key> and client.py delete <bucket variab
 makes and removes the object that read-only reads.
 client.py read-only <bucket variable> <object key> <other bucket>: list and get of the object succeed; put, delete, a
 multipart create and a copy onto the bucket get 403, and so do list and get of the other bucket.
+client.py plant <bucket variable> <set> and client.py clear <bucket variable>: the bucket holds the objects of one set of
+the backup's cells (the sets below) and, after clear, no object. The odd keys of a set are made here, since a name with a
+space or a newline cannot pass as an argument, and sent as they are, since botocore resolves a `..` segment.
+client.py digests <bucket variable>: prints key, size and sha256 of every object the app key reads, as the backup's copy is
+compared, without the zero-byte keys that end in a slash, which the copy leaves out.
 """
 
+import hashlib
+import http.client
 import os
 import sys
 import uuid
+from urllib.parse import quote, urlsplit
 
 import boto3
+from botocore.auth import S3SigV4Auth
+from botocore.awsrequest import AWSRequest
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
 MEBIBYTE = 1024 * 1024
 SEED_BODY = b"read by the backup"
+LARGE_KEY = "multipart.bin"
+# The objects of each set, key to body. `base` is what a Backup copies byte for byte; `change` rewrites one of them to
+# the same size, deletes one and adds one; the others are the keys a copy cannot hold whole.
+SETS = {
+    "base": {
+        "plain.bin": b"plain",
+        "nested/deeper/spaced name.bin": b"nested",
+        "rewritten.bin": b"0123456789",
+        "deleted.bin": b"deleted",
+    },
+    "change": {"rewritten.bin": b"9876543210", "added.bin": b"added"},
+    "clash": {"refused-clash": b"file", "refused-clash/b": b"under"},
+    "marker": {"refused-marker/": b"", "refused-marker/x": b"under the marker"},
+    "marker-with-bytes": {"refused-bytes/": b"bytes"},
+    "newline": {"refused-line\nbreak": b"newline"},
+    "long-segment": {"refused-long" + "s" * 244 + "/x": b"long"},
+    "dots": {
+        "../refused-up": b"up",
+        "refused-in/../b": b"inside",
+        "/refused-lead": b"lead",
+        "refused-x//y": b"empty segment",
+        "refused-x/y": b"plain",
+    },
+}
 
 
 def status_of(error: ClientError) -> int:
@@ -49,6 +83,57 @@ def multipart_put(client, bucket: str, key: str) -> None:
         etag = client.upload_part(Bucket=bucket, Key=key, UploadId=upload, PartNumber=number, Body=body)["ETag"]
         parts.append({"PartNumber": number, "ETag": etag})
     client.complete_multipart_upload(Bucket=bucket, Key=key, UploadId=upload, MultipartUpload={"Parts": parts})
+
+
+def exact_request(method: str, bucket: str, key: str, body: bytes = b"") -> None:
+    """One signed request on the key as given, since botocore resolves `..` and `//` in a key's path."""
+    endpoint = urlsplit(os.environ["AWS_ENDPOINT_URL_S3"])
+    path = f"/{bucket}/{quote(key, safe='/')}"
+    request = AWSRequest(
+        method=method,
+        url=f"{endpoint.scheme}://{endpoint.netloc}{path}",
+        data=body,
+        headers={"x-amz-content-sha256": hashlib.sha256(body).hexdigest()},
+    )
+    S3SigV4Auth(boto3.session.Session().get_credentials().get_frozen_credentials(), "s3", os.environ["AWS_DEFAULT_REGION"]).add_auth(request)
+    connection = http.client.HTTPConnection(endpoint.hostname, endpoint.port)
+    connection.request(method, path, body, dict(request.headers))
+    status = connection.getresponse().status
+    connection.close()
+    require(status < 300, f"{method} of an object answered {status}")
+
+
+def keys_of(client, bucket: str) -> list[str]:
+    keys = []
+    for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket):
+        keys += [item["Key"] for item in page.get("Contents", [])]
+    return keys
+
+
+def plant(client, bucket: str, name: str) -> None:
+    require(name in SETS, f"the set {name} is unknown")
+    for key, body in SETS[name].items():
+        exact_request("PUT", bucket, key, body)
+    if name == "base":
+        multipart_put(client, bucket, LARGE_KEY)
+    if name == "change":
+        exact_request("DELETE", bucket, "deleted.bin")
+    print(f"ok: planted the set {name}: {len(SETS[name]) + (name == 'base')} objects")
+
+
+def clear(client, bucket: str) -> None:
+    for key in keys_of(client, bucket):
+        exact_request("DELETE", bucket, key)
+    require(keys_of(client, bucket) == [], "the bucket still holds objects")
+    print("ok: the bucket holds no object")
+
+
+def digests(client, bucket: str) -> None:
+    for key in sorted(keys_of(client, bucket)):
+        body = client.get_object(Bucket=bucket, Key=key)["Body"].read()
+        if key.endswith("/") and not body:
+            continue
+        print(f"{len(body)}\t{hashlib.sha256(body).hexdigest()}\t{key}")
 
 
 def allowed(client, bucket: str, other_bucket: str) -> None:
@@ -122,6 +207,12 @@ def main(arguments: list[str]) -> None:
         print("ok: delete of the object")
     elif mode == "read-only":
         read_only(client, bucket, arguments[2], arguments[3])
+    elif mode == "plant":
+        plant(client, bucket, arguments[2])
+    elif mode == "clear":
+        clear(client, bucket)
+    elif mode == "digests":
+        digests(client, bucket)
     else:
         raise SystemExit(f"FAIL: the mode {mode} is unknown")
 

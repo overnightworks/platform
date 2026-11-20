@@ -138,7 +138,7 @@ for namespace in $BACKUP_NAMESPACES; do
   echo "the logs and objects of $namespace hold none of its backup credentials"
 
   # One snapshot per run's shape; the dump's holds the dump alone, in custom format. A layer with a staging claim also
-  # has a snapshot of it, which tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh reads.
+  # has a snapshot of it, which tests/backup/staging_snapshot_holds_the_files_the_bucket_and_the_dump_of_one_run.sh reads.
   per_run="$(snapshots_per_run "$namespace")"
   run_restic "$namespace" snapshot-listing '
     restic --no-cache snapshots --json | jq length

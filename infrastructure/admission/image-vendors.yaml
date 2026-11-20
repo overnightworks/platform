@@ -49,6 +49,9 @@ data:
   k8up: ghcr.io/k8up-io/k8up
   # infrastructure/postgres/backup/files/files.yaml, the PreBackupPod's copy; https://hub.docker.com/r/eeacms/rsync
   rsync: docker.io/eeacms/rsync
+  # infrastructure/postgres/backup/files/bucket/kustomization.yaml, the patch that adds the PreBackupPod's bucket
+  # container; https://hub.docker.com/r/rclone/rclone
+  rclone: docker.io/rclone/rclone
   # infrastructure/backup/rest-server.yaml; https://github.com/restic/rest-server#docker
   rest-server: docker.io/restic/rest-server
   # infrastructure/objectstore/garage.yaml; https://hub.docker.com/r/dxflrs/garage
