@@ -64,6 +64,8 @@ cleanup() {
       admin /budget/delete "$(ID="$budget_made" yq --null-input --output-format json --indent 0 '{"id": strenv(ID)}')"
     } > /dev/null 2>&1 || true
   fi
+  kubectl --namespace "$APP_NAMESPACE" delete pod "${idle_pod:-}" --ignore-not-found --wait=false \
+    > /dev/null 2>&1 || true
   kill "$forward" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -95,22 +97,32 @@ client_pod_template="${CLIENT_POD//@IMAGE@/${CLIENT_IMAGE}}"
 # kube-router refuses a new Pod's connection until its address joins the sets a policy admits, so every request retries
 # a refused connection, as CLIENT_POD's own arguments do; a denial then holds past that delay too.
 retry=(--retry 5 --retry-connrefused --retry-delay 2 --retry-max-time 30)
-# run_client <namespace> <name> <labels as JSON> <argument>...: a client Pod with the labels runs the image with the
-# arguments (curl's, or a command) to its end and is deleted; sets output to what it printed and exit_code to its exit.
-run_client() {
+# start_client <namespace> <name> <labels as JSON> <argument>...: creates a client Pod with the labels that runs the
+# image with the arguments (curl's, or a command); run_client waits for its end, deletes it and sets output to what it
+# printed and exit_code to its exit.
+start_client() {
   local namespace="$1" name="$2" labels="$3" client_pod
   shift 3
   client_pod="$(NAME="$name" LABELS="$labels" ARGUMENTS="$(printf '%s\n' "$@")" yq '
     .metadata.name = strenv(NAME) | .metadata.labels = (strenv(LABELS) | from_yaml) |
     .spec.containers[0].args = (strenv(ARGUMENTS) | split("\n"))' <<<"${client_pod_template//@NAME@/${name}}")"
   printf '%s\n' "$client_pod" | kubectl --namespace "$namespace" create -f - > /dev/null
-  kubectl --namespace "$namespace" wait "pod/$name" --timeout=3m \
+}
+# finish_client <namespace> <name> [<wait>]: waits for the Pod to end, 3m unless a wait such as 5m is given, and deletes
+# it; sets output and exit_code as run_client.
+finish_client() {
+  local namespace="$1" name="$2" wait="${3:-3m}"
+  kubectl --namespace "$namespace" wait "pod/$name" --timeout="$wait" \
     --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' > /dev/null ||
     fail "the client Pod $name in $namespace did not run to its end"
   exit_code="$(kubectl --namespace "$namespace" get "pod/$name" \
     -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}')"
   output="$(kubectl --namespace "$namespace" logs "pod/$name")"
   kubectl --namespace "$namespace" delete pod "$name" --wait --timeout=2m > /dev/null
+}
+run_client() {
+  start_client "$@"
+  finish_client "$1" "$2"
 }
 # call <namespace> <url> [<curl argument>...]: one request from a client Pod without labels; sets answer to the body
 # and status to the HTTP status, 000 when no answer came.
@@ -130,6 +142,38 @@ completion() {
     {"model": strenv(MODEL), "messages": [{"role": "user", "content": "probe"}], "user": strenv(USER_ID)} +
     ((strenv(MOCK) | select(. != "") | {"mock_response": .}) // {})'
 }
+
+# C0: the front closes an idle kept-alive connection at the idleTimeout of its static configuration. The probe Pod
+# starts here and is read at the end of the cell, whose other cells take longer than the timeout, so the wait costs no
+# time of its own. Two connections to the front's own 404 (which no LiteLLM answer resembles) idle in parallel: one is
+# used again 15 s below the timeout, the other 10 s past it.
+idle_timeout="$(yq '.entryPoints.api.transport.respondingTimeouts.idleTimeout' \
+  infrastructure/litellm/front-traefik.yml)"
+[[ $idle_timeout =~ ^[1-9][0-9]*s$ ]] || fail "front-traefik.yml's idleTimeout is $idle_timeout, not whole seconds"
+idle_seconds="${idle_timeout%s}"
+idle_probe="$(cat <<'EOF'
+host="$1" port="$2" idle="$3"
+request() { printf 'GET /v1/chat/completions HTTP/1.1\r\nHost: %s\r\n\r\n' "$host"; }
+# The first request retries until the front admits this Pod's address.
+for _ in $(seq 15); do
+  request | timeout 5 nc "$host" "$port" | grep -q '^HTTP/1.1 404' && break
+  sleep 2
+done
+# Each connection asks again after its sleep and the Pod counts answers; the subshell feeding nc sleeps instead of
+# ending, so nc's stdin stays open, and nc's own messages ("punt!" when the front closes) go to a file, not the log.
+{ request; sleep $((idle - 15)); request; sleep 3; } |
+  timeout $((idle - 15 + 10)) nc "$host" "$port" > reused.out 2> reused.err &
+{ request; sleep $((idle + 10)); request; sleep 3; } |
+  timeout $((idle + 10 + 10)) nc "$host" "$port" > held.out 2> held.err
+wait
+echo "reused $(grep -c '^HTTP/1.1 404' reused.out) held $(grep -c '^HTTP/1.1 404' held.out)"
+EOF
+)"
+idle_pod=front-idle-probe
+start_client "$APP_NAMESPACE" "$idle_pod" '{}' sh -c \
+  'cd "$(mktemp -d)"; driver="$(printf %s "$1" | base64 -d)"; shift; eval "$driver"' sh \
+  "$(base64 --wrap=0 <<<"$idle_probe")" "litellm-front.$namespace.svc.cluster.local" \
+  "$(service_port litellm-front "$namespace")" "$idle_seconds"
 
 # C1: the front passes its three routes to LiteLLM, whose key check answers a call without a key, and nothing else.
 post "$front_url/v1/chat/completions" '{}'
@@ -299,3 +343,14 @@ expected+="good reached the exec with core limit 0"
 $output"
 echo "LiteLLM's start refuses each bad key and password naming only its variable, and a good set reaches the exec" \
   "with core limit 0"
+
+# C0's result: the connection used again 15 s below the timeout still answered, and the one used 10 s past it did not.
+finish_client "$APP_NAMESPACE" "$idle_pod" "$((idle_seconds + 60))s"
+[ "$exit_code" = 0 ] || fail "the idle probe Pod ended with $exit_code: $output"
+counts="$(grep -E '^reused [0-9]+ held [0-9]+$' <<<"$output" | tail -n 1)"
+[ -n "$counts" ] || fail "the idle probe printed no counts of answers: $output"
+read -r _ reused _ held <<<"$counts"
+[ "$reused $held" = "2 1" ] ||
+  fail "two connections idle $((idle_seconds - 15)) s and $((idle_seconds + 10)) s against the idleTimeout $idle_timeout were answered $reused and $held times in all, not 2 and 1"
+echo "an idle connection to the front answers again $((idle_seconds - 15)) s into its idleTimeout $idle_timeout and is" \
+  "closed by the front $((idle_seconds + 10)) s in"
