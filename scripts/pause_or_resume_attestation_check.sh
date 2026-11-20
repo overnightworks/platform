@@ -28,6 +28,7 @@ controller_selector="app.kubernetes.io/component=admission-controller,app.kubern
 webhook_selector="webhook.kyverno.io/managed-by=kyverno"
 certificate_selector="cert.kyverno.io/managed-by=kyverno"
 lease_selector="app.kubernetes.io/name=kyverno"
+unlabelled_leases="kyverno kyvernopre"
 # Flux's ownership labels of every object a Kustomization applied.
 applied_selector="kustomize.toolkit.fluxcd.io/name=$layer,kustomize.toolkit.fluxcd.io/namespace=$flux_namespace"
 wait_seconds="${ADMISSION_WAIT_SECONDS:-300}"
@@ -144,8 +145,8 @@ remove() {
   kubectl delete lease --namespace "$kyverno_namespace" --selector "$lease_selector" --ignore-not-found >/dev/null
   wait_until "the objects Flux applied for $layer being gone" nothing_left objects_left
   wait_until "Kyverno's webhook configurations being gone" nothing_left webhooks_left
-  # Kyverno's leader election Lease carries no label, so no stable owner names it.
-  echo "admission:$verb: left in $kyverno_namespace: the Lease kyverno; remove it with: kubectl --namespace $kyverno_namespace delete lease kyverno --ignore-not-found"
+  # The leader election Leases of Kyverno's controller and of its init container carry no label, so no stable owner names them.
+  echo "admission:$verb: left in $kyverno_namespace: the Leases $unlabelled_leases; remove them with: kubectl --namespace $kyverno_namespace delete lease $unlabelled_leases --ignore-not-found"
 }
 
 case "$verb" in

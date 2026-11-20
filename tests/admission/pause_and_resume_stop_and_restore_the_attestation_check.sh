@@ -138,7 +138,8 @@ if grep -E '^delete ' "$calls" | grep -E '(^|[ ,])(namespaces|namespace|events)(
 grep -q '^delete .*webhook.kyverno.io/managed-by=kyverno' "$calls" || fail "the removal did not delete the webhook configurations by label"
 grep -q '^delete secret .*cert.kyverno.io/managed-by=kyverno' "$calls" || fail "the removal did not delete Kyverno's TLS Secrets by its owner label"
 grep -q '^delete lease .*app.kubernetes.io/name=kyverno' "$calls" || fail "the removal did not delete Kyverno's Leases by its owner label"
-[[ "$output" == *"delete lease"* ]] || fail "the removal did not name the Lease it leaves, with the command that removes it: $output"
+[[ "$output" == *"delete lease kyverno kyvernopre"* ]] ||
+  fail "the removal did not name both unlabelled Leases it leaves, with the command that removes them: $output"
 echo "the removal deletes by ownership labels, never a Namespace"
 
 # Refusals delete nothing.
