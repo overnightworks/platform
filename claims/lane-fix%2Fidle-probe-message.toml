@@ -1,0 +1,7 @@
+claim_id = "3e7e01750d014657ba5311dbca829060"
+agent = "Claude 967f7dcc-2486-4b1f-bb70-0df1b0843ebe"
+role = "builder"
+base = "10c95d07e0f861e4f65bd95cd4f888b07cdc60d9"
+branch = "fix/idle-probe-message"
+scope = ["tests/litellm/front_key_check_routing_and_provider_egress.sh"]
+opened_commit = "09c833dc8699cadb737912420b846757cbff2001"
