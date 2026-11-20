@@ -65,3 +65,9 @@ data:
   # apps/presentator/worker.yaml, the init container nft-rules, which ships the nft program;
   # https://github.com/kubernetes/release/tree/master/images/build/distroless-iptables
   distroless-iptables: registry.k8s.io/build-image/distroless-iptables
+  # infrastructure/app-attestations/rendered.yaml, the admission controller's init container;
+  # https://github.com/kyverno/kyverno/pkgs/container/kyvernopre
+  kyvernopre: ghcr.io/kyverno/kyvernopre
+  # infrastructure/app-attestations/rendered.yaml, the admission controller;
+  # https://github.com/kyverno/kyverno/pkgs/container/kyverno
+  kyverno: ghcr.io/kyverno/kyverno

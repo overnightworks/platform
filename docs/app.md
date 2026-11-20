@@ -34,8 +34,16 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
   `apps/<app>/release` owns the ref, and the app and its pull layer include it. A failed or slow pull leaves the pull
   layer not Ready: the old release serves, and the app's other manifest changes wait with it. The finished Job's pod
   stays until the next release replaces the Job, so the node keeps the image.
-- Provenance: platform's `images` job checks a bumped ref's tag, attestation and signer. Admission on the PC checks the
-  ref's form only.
+- Provenance: platform's `images` job checks a bumped ref's tag, attestation and signer. On the PC, the admission policy
+  `app-and-vendor-images` checks the ref's form and Kyverno's policy `app-attestations` (`infrastructure/app-attestations`)
+  verifies the SLSA provenance attestation of every app ref of a Pod on its create and on a change of its images, for the
+  apps whose repository it names, with Kyverno's own pull credential, so a Pod without `imagePullSecrets` is judged too.
+  A new app's repository joins its attestors in the same pull request as its layer; an app ref of a repository without an
+  attestor is refused. Kyverno is a single replica: while it is down with its Deployment at one replica (a crash, a
+  restart, a drain, a lost node) its webhook configurations stay and every Pod create or image change of an app is
+  refused. A Deployment scaled to 0 or deleted while Kyverno runs is its own shutdown, in which it deletes its
+  webhook configurations, so the check is then open. The head's `mise run admission:pause` ends there on purpose, and
+  `mise run admission:resume` restores the check.
 - An S3-compatible object store, for a file that more than one pod needs: the Service `s3` in Namespace `objectstore`,
   Garage behind it, one bucket and one key per app (`infrastructure/objectstore`). The bucket is named like the app's
   Namespace and holds read and write rights for its key alone; the key neither owns the bucket nor makes another. Where
@@ -94,6 +102,7 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 |---|---|
 | Image ref is a full app ref at a release, verified by tag, attestation and signer; the image comes from quality's path | platform's `images` job (tag, attestation, signer commit on quality's main); [quality's release path](https://github.com/overnightworks/quality/blob/main/docs/release.md) in the app's own release |
 | Image form (listed vendor at a digest, or a full app ref) on every Pod create or change | admission policy `app-and-vendor-images` |
+| An app ref carries a provenance attestation signed by quality's release workflow for its own repository, on every Pod create or image change | Kyverno's policy `app-attestations`; platform's `cluster` job proves a refusal by server-side dry-run and every live app ref admitted |
 | Namespace enforces `restricted`; Deployment is `Recreate` or a `RollingUpdate` that never takes a pod away before its replacement is Ready, Available with all its replicas Ready, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
 | A Deployment's pods, with those still stopping in a rolling update, its surge and the backup, stay within its Postgres' `max_connections` | the `checks` job, by rendering `apps/songmaker` and `apps/personas` |
 | Two pods are Ready and a rollout restart keeps both available | the `cluster` job, for personas |

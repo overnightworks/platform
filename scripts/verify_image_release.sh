@@ -34,6 +34,8 @@ SIGNER_BRANCH="main"
 RELEASE_SOURCE_REF="refs/heads/main"
 # Passed although it is gh's default, so a changed default cannot loosen the check.
 RELEASE_PREDICATE_TYPE="https://slsa.dev/provenance/v1"
+# The issuer of the signing certificate; the attestation policy in infrastructure/app-attestations holds the same one.
+RELEASE_OIDC_ISSUER="https://token.actions.githubusercontent.com"
 
 # The reference grammar of distribution/reference; names and digests are matched against the lowercased string.
 DOMAIN_COMPONENT='[a-z0-9]([a-z0-9-]*[a-z0-9])?'
@@ -461,7 +463,8 @@ check_app_release() {
   fi
   if ! gh attestation verify "oci://${repository}@${image#*@}" --repo "${owner}/${repository_name}" \
     --signer-workflow "${signer_repository}/${SIGNER_WORKFLOW}" --source-digest "${tag_commit}" \
-    --source-ref "${RELEASE_SOURCE_REF}" --predicate-type "${RELEASE_PREDICATE_TYPE}" --deny-self-hosted-runners \
+    --source-ref "${RELEASE_SOURCE_REF}" --predicate-type "${RELEASE_PREDICATE_TYPE}" \
+    --cert-oidc-issuer "${RELEASE_OIDC_ISSUER}" --deny-self-hosted-runners \
     --format json >"${work_directory}/attestations.json" 2>"${work_directory}/attestation-errors"; then
     report_red "${locations}" "${image}" "no attestation verifies with the tag v${version}'s commit ${tag_commit} as source digest: $(one_line "${work_directory}/attestation-errors")"
     return

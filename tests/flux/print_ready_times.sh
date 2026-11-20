@@ -114,4 +114,13 @@ failed_pod_logs() {
   done <<<"$rows"
 }
 failed_pod_logs
+
+# Kyverno's admission controller names the expression and the image of a refused call, which the API server's reply and
+# the Event leave out.
+attestation_controller_logs() {
+  echo "== Kyverno's admission controller, its error lines"
+  kubectl logs --namespace admission --selector app.kubernetes.io/component=admission-controller --timestamps --tail=-1 2>&1 |
+    grep -i -E 'error|overload|ivpol' | tail -n 60 || echo "no error line, or the read failed"
+}
+attestation_controller_logs
 exit 0

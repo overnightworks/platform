@@ -1,6 +1,7 @@
 ---
 # One Kustomization per directory under infrastructure/, so each component waits only for what it needs. Every layer
-# that runs a workload depends on admission, so its Pods meet the image policy from its first apply.
+# that runs a workload depends on admission, so its Pods meet the image policy from its first apply, and a layer that
+# renders an app ref also on app-attestations, which depends on admission.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -32,6 +33,29 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+---
+# Kyverno and the attestation check on every app image. Ready only when the policy is, so an app layer applies after its
+# Pods can be judged.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: app-attestations
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+  interval: 10m0s
+  path: ./infrastructure/app-attestations
+  prune: true
+  wait: true
+  timeout: 5m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthCheckExprs:
+    - apiVersion: policies.kyverno.io/v1
+      kind: ImageValidatingPolicy
+      current: has(status.conditionStatus) && has(status.conditionStatus.ready) && status.conditionStatus.ready
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

@@ -91,6 +91,15 @@ jobs:
       - name: Check that gpu:use orders its steps so speech always has a Ready pod, waits for each Deployment's ready replica, names the step and the way back of a failed wait and refuses an unknown user
         run: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh
 
+      - name: Check that admission:pause suspends app-attestations, scales Kyverno to 0 and deletes its webhooks by label in that order, that admission:resume restores without reading GitHub and removes only once the root applied main's head, and refuses otherwise, deleting nothing
+        run: mise exec -- tests/admission/pause_and_resume_stop_and_restore_the_attestation_check.sh
+
+      - name: Check that the anonymous-reader probe passes on a refused token and on a refused manifest, requests the manifest by its full digest and fails when the manifest is read
+        run: mise exec -- tests/admission/anonymous_reader_is_refused_or_reads_nothing.sh
+
+      - name: Check that the inventory ids of Flux parse with a name of no, one or several colons, in a namespaced and a cluster-scoped object
+        run: tests/workloads/inventory_ids_decode_colons_and_scopes.sh
+
       - name: Check that both speech pods mount /tmp, where an upload is spooled, as a memory-backed emptyDir
         run: mise exec -- tests/speech_runtime/upload_spool_is_memory_backed_in_both_speech_pods.sh
 
@@ -393,6 +402,8 @@ jobs:
           PULL_TOKEN: ${{ github.token }}
           # The layers whose containers read Secrets by key, each of which gets a dummy per key.
           SECRET_KEY_LAYERS: infrastructure/keycloak infrastructure/litellm infrastructure/prometheus
+          # Kyverno's layer, whose policy names the pull Secret of its own copy.
+          ATTESTATION_LAYER: infrastructure/app-attestations
         run: tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh
 
       - name: Push the encrypted Secrets and serve them as the job's platform-secrets source
@@ -466,10 +477,6 @@ jobs:
         if: matrix.part == 'core'
         run: tests/workloads/pull_layers_finish_before_their_app_rolls.sh
 
-      - name: Assert that speech's CPU image runs two Ready pods behind its Service, each answering its readiness check, and that a rollout restart keeps a Ready endpoint
-        if: matrix.part == 'observability'
-        run: tests/speech_runtime/two_cpu_pods_serve_behind_the_service.sh
-
       - name: Assert that Traefik refuses the back-channel logout path and its spellings on every routed host while a neighbouring path reaches the app, that the Service still answers it in-namespace, and that the refusal holds in a restarted pod
         if: matrix.part == 'core'
         env:
@@ -487,6 +494,7 @@ jobs:
         env:
           ROOT_LAYER: flux-system/flux-system
           ADMISSION_LAYER: flux-system/admission
+          ATTESTATION_LAYER: flux-system/app-attestations
           NAMESPACES_LAYER: flux-system/namespaces
         run: tests/workloads/layers_depend_on_admission.sh
 
@@ -497,9 +505,20 @@ jobs:
           PROBE_NAMESPACE: admission-probe
           POLICY_FILE: infrastructure/admission/image-policy.yaml
           VENDOR_LIST: infrastructure/admission/image-vendors.yaml
+          ATTESTATION_POLICY_FILE: infrastructure/app-attestations/app-attestations.yaml
           FLUX_COMPONENTS_FILE: clusters/pc/flux-system/gotk-components.yaml
           FLUX_CONTROLLER: system:serviceaccount:flux-system:kustomize-controller
         run: tests/admission/image_policies_by_dry_run.sh
+
+      - name: Assert that the attestation check binds the release script's issuer, signer and predicate, its webhooks exclude the system namespaces and its attestors are the live app refs' repositories
+        if: matrix.part == 'core'
+        env:
+          ATTESTATION_LAYER: infrastructure/app-attestations
+          VENDOR_LIST: infrastructure/admission/image-vendors.yaml
+          POLICY_FILE: infrastructure/admission/image-policy.yaml
+          RELEASE_SCRIPT: scripts/verify_image_release.sh
+          ADMISSION_SCRIPT: scripts/pause_or_resume_attestation_check.sh
+        run: tests/admission/app_attestations_bind_the_release_checks.sh
 
       - name: Assert that namespaces and tunnel applied the candidate and cloudflared runs at 0 replicas
         if: matrix.part == 'core'
@@ -814,6 +833,27 @@ jobs:
           kubectl kustomize apps/presentator >"$RUNNER_TEMP/presentator.yaml"
           kubectl kustomize apps/presentator/pull >"$RUNNER_TEMP/presentator-pull.yaml"
           tests/presentator/pods_stay_within_their_levels.sh "$RUNNER_TEMP/presentator.yaml" "$RUNNER_TEMP/presentator-pull.yaml"
+
+      - name: Probe the attestation check by server-side dry-run, in place, beside a second policy, and Kyverno's Service from a vendor-image Pod
+        if: matrix.part == 'presentator-2'
+        env:
+          PROBE_NAMESPACE: attestation-probe
+          ATTESTATION_LAYER: infrastructure/app-attestations
+          HOPIN_MANIFEST: apps/hopin/hopin.yaml
+          LIVE_APP_NAMESPACE: presentator
+        run: tests/admission/app_attestations_refuse_by_dry_run.sh
+
+      - name: Assert that a reconcile of the root Kustomization leaves a paused attestation check paused, with app-attestations suspended, Kyverno at 0 replicas and none of its webhook configurations back
+        if: matrix.part == 'presentator-2'
+        env:
+          ROOT_LAYER: flux-system/flux-system
+          ATTESTATION_LAYER: flux-system/app-attestations
+          ADMISSION_SCRIPT: scripts/pause_or_resume_attestation_check.sh
+        run: tests/admission/pause_survives_the_root_reconcile.sh
+
+      - name: Assert that speech's CPU image runs two Ready pods behind its Service, each answering its readiness check, and that a rollout restart keeps a Ready endpoint
+        if: matrix.part == 'presentator-2'
+        run: tests/speech_runtime/two_cpu_pods_serve_behind_the_service.sh
 
       # Last of its part: the cell leaves presentator on a release that may not start, so no step after it reads presentator.
       - name: Assert that a release with a changed reference replaces the pull layer's Job, that the app's layer creates its new pods only after the new Job completed and that they find the image already present
