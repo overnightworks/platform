@@ -18,15 +18,17 @@ status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code
 [ "$status" = 200 ] || fail "discovery answered $status"
 
 # Access lines are written when the response ends, so the line may follow the answer by a moment.
-logged() { kubectl -n "$namespace" logs deployment/keycloak --since=10m; }
+# The log is read into a variable first: a pipe into `grep --quiet` ends the reader early, and under pipefail
+# that SIGPIPE would read as no match.
 access_line_logged() {
-  logged | jq --raw-input --exit-status --arg trace_id "$trace_id" --arg line "GET $path 200" \
-    'fromjson? | select(.mdc.traceId? == $trace_id and .message == $line)' >/dev/null
+  log="$(kubectl -n "$namespace" logs deployment/keycloak --since=10m)"
+  jq --raw-input --exit-status --arg trace_id "$trace_id" --arg line "GET $path 200" \
+    'fromjson? | select(.mdc.traceId? == $trace_id and .message == $line)' <<<"$log" >/dev/null
 }
 until_true 30 "Keycloak logs the access line of the request with its trace id" access_line_logged
 echo "the access line holds the method, the path and the status 200 beside mdc.traceId, which is the caller's"
 
-if logged | grep --quiet --fixed-strings -- "$query_marker"; then
+if grep --quiet --fixed-strings -- "$query_marker" <<<"$log"; then
   fail "Keycloak's log holds the request's query string"
 fi
 echo "no line of Keycloak's log holds the query string"
