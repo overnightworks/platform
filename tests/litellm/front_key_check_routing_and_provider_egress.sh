@@ -347,7 +347,7 @@ echo "LiteLLM's start refuses each bad key and password naming only its variable
 # C0's result: the connection used again 15 s below the timeout still answered, and the one used 10 s past it did not.
 finish_client "$APP_NAMESPACE" "$idle_pod" "$((idle_seconds + 60))s"
 [ "$exit_code" = 0 ] || fail "the idle probe Pod ended with $exit_code: $output"
-counts="$(grep -E '^reused [0-9]+ held [0-9]+$' <<<"$output" | tail -n 1)"
+counts="$(grep -E '^reused [0-9]+ held [0-9]+$' <<<"$output" | tail -n 1 || true)"
 [ -n "$counts" ] || fail "the idle probe printed no counts of answers: $output"
 read -r _ reused _ held <<<"$counts"
 [ "$reused $held" = "2 1" ] ||
