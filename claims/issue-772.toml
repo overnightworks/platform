@@ -1,7 +1,0 @@
-claim_id = "7460629e9268449bab18d3e7a0ed167f"
-agent = "Claude 6cdd6a8b-a2a2-48f5-8108-9e563417fd59"
-role = "builder"
-base = "a11a186479e1dce546b0fc18d603090d2bd80591"
-branch = "claude/issue-772-presentator-2026-11-20-1"
-scope = ["apps/presentator/release/kustomization.yaml"]
-opened_commit = "ec74c3a2702f48c3255557e61fdf95efb328bbf7"
