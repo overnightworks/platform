@@ -97,5 +97,6 @@ kubectl --namespace "$PROBE_NAMESPACE" apply -f - <<<"{apiVersion: v1, kind: Pod
   command: [sh, -c, 'nc -w 5 ${service%%.*}.${service#*.}.svc $service_port </dev/null; echo \"exit=\$?\"']}]}}"
 kubectl --namespace "$PROBE_NAMESPACE" wait pod/reach --for=jsonpath='{.status.phase}'=Succeeded --timeout=2m
 reach_log="$(kubectl --namespace "$PROBE_NAMESPACE" logs reach)"
+[[ $reach_log == *"bad address"* ]] && fail "the name of $service did not resolve, so no NetworkPolicy was tried: $reach_log"
 [[ $reach_log == *"exit=0"* ]] && fail "a Pod of namespace $PROBE_NAMESPACE connected to $service:$service_port: $reach_log"
 echo "a Pod of namespace $PROBE_NAMESPACE gets no answer from $service:$service_port: ${reach_log//$'\n'/ }"

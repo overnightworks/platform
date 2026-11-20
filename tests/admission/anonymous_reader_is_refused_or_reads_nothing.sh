@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Drive anonymous_reader_is_refused against a fake curl: the registry refuses the token request, issues a token and
-# refuses the manifest, issues a token and answers the manifest, and cannot be reached. The manifest is requested by the
+# refuses the manifest, issues a token and answers the manifest, answers a status that is neither a refusal nor the
+# manifest (a rate limit, an outage) and cannot be reached. The manifest is requested by the
 # full digest, sha256: prefix included.
 # Usage: tests/admission/anonymous_reader_is_refused_or_reads_nothing.sh
 set -euo pipefail
@@ -34,7 +35,11 @@ run_case() {
   echo "token $1 and manifest $2: exit $status, $output"
 }
 run_case 403 200 0 'refuses an anonymous token for ghcr.io/owner/app with status 403'
-run_case 200 404 0 'manifest request is refused with status 404'
+run_case 200 401 0 'manifest request is refused with status 401'
 grep -qx "https://ghcr.io/v2/owner/app/manifests/$digest" "$requests" || fail "the manifest was not requested by the full digest: $(cat "$requests")"
 run_case 200 200 1 "an anonymous token reads ghcr.io/owner/app's manifest"
+run_case 429 200 1 'with status 429, neither a token nor a refusal'
+run_case 503 200 1 'with status 503, neither a token nor a refusal'
+run_case 200 429 1 'got status 429, neither the manifest nor a refusal'
+run_case 200 500 1 'got status 500, neither the manifest nor a refusal'
 run_case unreachable 200 1 'did not reach the registry'
