@@ -636,6 +636,13 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/keycloak/realm_route_and_policies.sh
 
+      - name: Assert that a request to Keycloak with a traceparent and a query leaves an access line with its method, path and status and the caller's trace id, and that no log line holds the query
+        if: matrix.part == 'access'
+        env:
+          KEYCLOAK_NAMESPACE: keycloak
+          REALM_FILE: infrastructure/keycloak/realm.yaml
+        run: tests/keycloak/access_line_carries_the_callers_trace_id_and_no_query.sh
+
       - name: P2 cells
         if: matrix.part == 'access'
         env:

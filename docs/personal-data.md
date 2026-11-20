@@ -81,3 +81,11 @@ weekly backup of the component above copies the table into the repository `perso
 runner removed stays in a backup until the prune drops that snapshot: 4 weekly and 3 monthly copies, up to about three
 months. (PD-9)
 The promise: none yet; the privacy text for the runner is written at the pre-launch check.
+
+## Keycloak's access line (`infrastructure/keycloak/`)
+
+Keycloak writes its log as JSON to the pod log, so Pod logs and Loki above bound it. Each request leaves an access line
+whose message holds the method, the path without the query and the status (`%m %R %s`), and every log line of the
+request carries the caller's trace id at `mdc.traceId`, adopted from its `traceparent` header or made by Keycloak. No
+line holds a query string, since `%R` omits it, and the line holds no duration. (PD-10)
+The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung).
