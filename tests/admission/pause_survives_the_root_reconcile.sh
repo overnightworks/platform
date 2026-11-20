@@ -24,7 +24,8 @@ trap resume_on_exit EXIT
 "$ADMISSION_SCRIPT" pause
 
 token="$(date +%s%N)"
-kubectl --namespace "$root_namespace" annotate kustomization "$root_name" "reconcile.fluxcd.io/requestedAt=$token" --overwrite
+kubectl --namespace "$root_namespace" annotate kustomization "$root_name" "reconcile.fluxcd.io/requestedAt=$token" \
+  --field-manager=flux-client-side-apply --overwrite
 root_handled() {
   [ "$(kubectl --namespace "$root_namespace" get kustomization "$root_name" --output jsonpath='{.status.lastHandledReconcileAt}')" = "$token" ]
 }

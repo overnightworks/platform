@@ -6,7 +6,7 @@
 # Kustomization exists, takes the restore branch without any read of GitHub, also while GitHub fails; with the
 # Kustomization gone it takes the removal branch only when the root has applied main's head, then deletes what Flux
 # labelled as applied by app-attestations except a Namespace, the webhook configurations, and the TLS Secrets and Leases
-# that carry Kyverno's owner label; with another applied revision or an unreadable head it refuses, names which, and
+# that carry Kyverno's owner label and Kyverno's four Leases by name; with another applied revision or an unreadable head it refuses, names which, and
 # deletes nothing.
 # Usage: mise exec -- tests/admission/pause_and_resume_stop_and_restore_the_attestation_check.sh
 set -euo pipefail
@@ -83,9 +83,9 @@ made_call '"suspend":true' || fail "pause did not set suspend to true"
 made_call "scale deployment" || fail "pause did not scale the admission controller"
 made_call "replicas 0" || made_call "replicas=0" || fail "pause did not scale to 0"
 [ "$(call_line patch)" -lt "$(call_line scale)" ] || fail "pause scaled before it suspended"
-# The root Kustomization takes over what kubectl's own field managers set, so the patch names another one.
-field_manager="$(grep -o -e '--field-manager=[^ ]*' "$calls" | head -1)" || fail "pause patched without naming a field manager"
-[[ "$field_manager" != --field-manager=kubectl* ]] || fail "pause patched as $field_manager, which the root's apply takes over"
+# The root Kustomization takes over what the managers named kubectl* set and keeps flux-client-side-apply's fields.
+field_manager=--field-manager=flux-client-side-apply
+made_call "patch kustomization app-attestations $field_manager " || fail "pause did not patch as $field_manager: $(cat "$calls")"
 [ "$(call_line scale)" -lt "$(call_line '^delete')" ] || fail "pause deleted the webhooks before it scaled to 0"
 webhook_deletions="$(grep -c '^delete' "$calls")"
 [ "$webhook_deletions" -eq 1 ] || fail "pause made $webhook_deletions deletions, not the one of the webhook configurations"
@@ -109,10 +109,10 @@ echo "pause suspends, scales to 0 and deletes by label, in that order, and repea
 touch "$state/github-down"
 run_task resume
 [ "$status" -eq 0 ] || fail "resume ended $status while GitHub was down: $output"
-made_call '"suspend":false' || fail "resume did not resume app-attestations"
-grep -q -e "patch kustomization app-attestations $field_manager .*\"suspend\":false" "$calls" ||
-  fail "resume did not set suspend as the manager that paused: $(cat "$calls")"
-made_call "annotate kustomization app-attestations reconcile.fluxcd.io/requestedAt=" || fail "resume did not force a reconcile"
+grep -q -e "patch kustomization app-attestations $field_manager .*\"suspend\":null" "$calls" ||
+  fail "resume did not clear suspend as the manager that paused: $(cat "$calls")"
+grep -q -e "annotate kustomization app-attestations reconcile.fluxcd.io/requestedAt=[0-9]* .*$field_manager" "$calls" ||
+  fail "resume did not force a reconcile as $field_manager: $(cat "$calls")"
 if made_call '^gh '; then fail "the restore branch read GitHub"; fi
 if made_call '^delete'; then fail "the restore branch deleted something: $(deletions)"; fi
 run_task resume
@@ -143,8 +143,9 @@ if grep -E '^delete ' "$calls" | grep -E '(^|[ ,])(namespaces|namespace|events)(
 grep -q '^delete .*webhook.kyverno.io/managed-by=kyverno' "$calls" || fail "the removal did not delete the webhook configurations by label"
 grep -q '^delete secret .*cert.kyverno.io/managed-by=kyverno' "$calls" || fail "the removal did not delete Kyverno's TLS Secrets by its owner label"
 grep -q '^delete lease .*app.kubernetes.io/name=kyverno' "$calls" || fail "the removal did not delete Kyverno's Leases by its owner label"
-[[ "$output" == *"delete lease kyverno kyvernopre"* ]] ||
-  fail "the removal did not name both unlabelled Leases it leaves, with the command that removes them: $output"
+lease_deletion="$(grep -n -e '^delete lease --namespace admission kyverno kyvernopre kyvernopre-lock kyverno-health --ignore-not-found$' "$calls" | head -1 | cut -d: -f1)"
+[ -n "$lease_deletion" ] || fail "the removal did not delete Kyverno's four Leases by name: $(deletions)"
+[ "$lease_deletion" -lt "$(call_line 'get pods,')" ] || fail "the removal deleted the Leases after it began to wait for the objects to be gone"
 echo "the removal deletes by ownership labels, never a Namespace"
 
 # Refusals delete nothing.

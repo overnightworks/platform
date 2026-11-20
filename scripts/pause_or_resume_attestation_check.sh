@@ -28,12 +28,15 @@ controller_selector="app.kubernetes.io/component=admission-controller,app.kubern
 webhook_selector="webhook.kyverno.io/managed-by=kyverno"
 certificate_selector="cert.kyverno.io/managed-by=kyverno"
 lease_selector="app.kubernetes.io/name=kyverno"
-unlabelled_leases="kyverno kyvernopre"
+# The Leases of Kyverno 1.20 by exact name, labelled or not: the admission controller's leader election and its
+# health Lease (cmd/kyverno/main.go), the init container's election and its lock (cmd/kyverno-init/main.go) and the
+# webhook controller's (pkg/controllers/webhook/controller.go).
+kyverno_leases=(kyverno kyvernopre kyvernopre-lock kyverno-health)
 # Flux's ownership labels of every object a Kustomization applied.
 applied_selector="kustomize.toolkit.fluxcd.io/name=$layer,kustomize.toolkit.fluxcd.io/namespace=$flux_namespace"
 wait_seconds="${ADMISSION_WAIT_SECONDS:-300}"
 poll_seconds="${ADMISSION_POLL_SECONDS:-3}"
-field_manager=admission-pause-and-resume
+field_manager=flux-client-side-apply
 way_back="read the objects with kubectl and run it again"
 
 # wait_until <what> <command>...: the command passes within the wait.
@@ -53,9 +56,9 @@ layer_exists() {
     fail "the Kustomization $layer cannot be read, so its presence is unknown; nothing changed" "$way_back"
   [ -n "$names" ]
 }
-# The root Kustomization applies app-attestations on every reconcile and takes over the fields that kubectl's own field
-# managers set, so a plain patch of spec.suspend would be gone within the root's interval; a field of another manager
-# stays, which keeps the pause until a resume.
+# The root Kustomization applies app-attestations on every reconcile and takes over the fields that managers whose name
+# starts with kubectl set; flux-client-side-apply is the manager its apply keeps, so a field it owns holds until a
+# resume. suspend <json value>: the value of spec.suspend, null for absent as Git declares it.
 suspend() {
   kubectl --namespace "$flux_namespace" patch kustomization "$layer" --field-manager="$field_manager" --type merge \
     --patch "{\"spec\":{\"suspend\":$1}}" >/dev/null
@@ -105,8 +108,9 @@ webhooks_judge_app_pods() {
 restore() {
   local token
   token="$(date +%s%N)"
-  suspend false
-  kubectl --namespace "$flux_namespace" annotate kustomization "$layer" "reconcile.fluxcd.io/requestedAt=$token" --overwrite >/dev/null
+  suspend null
+  kubectl --namespace "$flux_namespace" annotate kustomization "$layer" "reconcile.fluxcd.io/requestedAt=$token" \
+    --field-manager="$field_manager" --overwrite >/dev/null
   wait_until "Flux handling the reconcile of $layer" reconciled "$token"
   wait_until "Kyverno's admission controller running" controller_ready
   wait_until "Kyverno's webhooks excluding the system namespaces and carrying both match conditions of the policy" webhooks_judge_app_pods
@@ -148,10 +152,9 @@ remove() {
   delete_webhooks
   kubectl delete secret --namespace "$kyverno_namespace" --selector "$certificate_selector" --ignore-not-found >/dev/null
   kubectl delete lease --namespace "$kyverno_namespace" --selector "$lease_selector" --ignore-not-found >/dev/null
+  kubectl delete lease --namespace "$kyverno_namespace" "${kyverno_leases[@]}" --ignore-not-found >/dev/null
   wait_until "the objects Flux applied for $layer being gone" nothing_left objects_left
   wait_until "Kyverno's webhook configurations being gone" nothing_left webhooks_left
-  # The leader election Leases of Kyverno's controller and of its init container carry no label, so no stable owner names them.
-  echo "admission:$verb: left in $kyverno_namespace: the Leases $unlabelled_leases; remove them with: kubectl --namespace $kyverno_namespace delete lease $unlabelled_leases --ignore-not-found"
 }
 
 case "$verb" in

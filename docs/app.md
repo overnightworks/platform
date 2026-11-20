@@ -41,9 +41,9 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
   A new app's repository joins its attestors in the same pull request as its layer; an app ref of a repository without an
   attestor is refused. Kyverno is a single replica: while it is down with its Deployment at one replica (a crash, a
   restart, a drain, a lost node) its webhook configurations stay and every Pod create or image change of an app is
-  refused. A Deployment at 0 replicas is Kyverno's own shutdown: it deletes its webhook configurations as it stops, so
-  the check is then open. The head's `mise run admission:pause` ends there on purpose, and `mise run admission:resume`
-  restores the check.
+  refused. A Deployment scaled to 0 or deleted while Kyverno runs is its own shutdown, in which it deletes its
+  webhook configurations, so the check is then open. The head's `mise run admission:pause` ends there on purpose, and
+  `mise run admission:resume` restores the check.
 - An S3-compatible object store, for a file that more than one pod needs: the Service `s3` in Namespace `objectstore`,
   Garage behind it, one bucket and one key per app (`infrastructure/objectstore`). The bucket is named like the app's
   Namespace and holds read and write rights for its key alone; the key neither owns the bucket nor makes another. Where
