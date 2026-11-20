@@ -155,7 +155,8 @@ run_task resume
 if made_call '^delete'; then fail "a removal with an unreadable head deleted something"; fi
 echo "the removal refuses a stale applied revision and an unreadable head, naming which, and deletes nothing"
 
-# A read that fails is no absence: nothing is deleted or scaled on an unreadable Kustomization.
+# A read that fails is no absence and no emptiness: nothing is deleted on an unreadable Kustomization, and a failed
+# listing of what is left never ends the removal.
 rm "$state/github-down"
 touch "$state/layer"
 FAKE_FAILING_CALL="get kustomization app-attestations --ignore-not-found" run_task resume
@@ -165,4 +166,8 @@ FAKE_FAILING_CALL="get kustomization app-attestations --ignore-not-found" run_ta
 [ "$status" -ne 0 ] || fail "pause ended 0 although the Kustomization could not be read"
 if made_call 'scale deployment'; then fail "pause scaled Kyverno after the Kustomization could not be read"; fi
 rm "$state/layer"
-echo "an unreadable Kustomization deletes and scales nothing"
+FAKE_FAILING_CALL="get pods," run_task resume
+[ "$status" -ne 0 ] || fail "the removal ended 0 although the listing of the applied objects failed"
+FAKE_FAILING_CALL="get validatingwebhookconfiguration,mutatingwebhookconfiguration --selector" run_task resume
+[ "$status" -ne 0 ] || fail "the removal ended 0 although the listing of the webhook configurations failed"
+echo "an unreadable Kustomization deletes and scales nothing, and a failed listing never ends the removal"

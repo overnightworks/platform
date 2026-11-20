@@ -118,7 +118,13 @@ objects_left() {
 webhooks_left() {
   kubectl get validatingwebhookconfiguration,mutatingwebhookconfiguration --selector "$webhook_selector" --output name --ignore-not-found
 }
-nothing_left() { [ -z "$("$1")" ]; }
+# nothing_left <listing>: the listing succeeded and printed nothing; a failed listing counts as objects left, so the wait
+# goes on and ends in its own failure.
+nothing_left() {
+  local left
+  left="$("$1")" || return 1
+  [ -z "$left" ]
+}
 
 remove() {
   local url repository branch applied head
