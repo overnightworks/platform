@@ -108,10 +108,11 @@ start_client() {
     .spec.containers[0].args = (strenv(ARGUMENTS) | split("\n"))' <<<"${client_pod_template//@NAME@/${name}}")"
   printf '%s\n' "$client_pod" | kubectl --namespace "$namespace" create -f - > /dev/null
 }
-# finish_client <namespace> <name>: waits for the Pod to end and deletes it; sets output and exit_code as run_client.
+# finish_client <namespace> <name> [<wait>]: waits for the Pod to end, 3m unless a wait such as 5m is given, and deletes
+# it; sets output and exit_code as run_client.
 finish_client() {
-  local namespace="$1" name="$2"
-  kubectl --namespace "$namespace" wait "pod/$name" --timeout=3m \
+  local namespace="$1" name="$2" wait="${3:-3m}"
+  kubectl --namespace "$namespace" wait "pod/$name" --timeout="$wait" \
     --for=jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' > /dev/null ||
     fail "the client Pod $name in $namespace did not run to its end"
   exit_code="$(kubectl --namespace "$namespace" get "pod/$name" \
@@ -341,11 +342,10 @@ echo "LiteLLM's start refuses each bad key and password naming only its variable
   "with core limit 0"
 
 # C0's result: the connection used again 15 s below the timeout still answered, and the one used 10 s past it did not.
-finish_client "$APP_NAMESPACE" "$idle_pod"
+finish_client "$APP_NAMESPACE" "$idle_pod" "$((idle_seconds + 60))s"
 [ "$exit_code" = 0 ] || fail "the idle probe Pod ended with $exit_code: $output"
 read -r _ reused _ held <<<"$output"
 [ "$reused $held" = "2 1" ] ||
-  fail "two connections idle $((idle_seconds - 15)) s and $((idle_seconds + 10)) s against the idleTimeout $idle_timeout" \
-    "were answered $reused and $held times in all, not 2 and 1"
+  fail "two connections idle $((idle_seconds - 15)) s and $((idle_seconds + 10)) s against the idleTimeout $idle_timeout were answered $reused and $held times in all, not 2 and 1; the probe printed: $output"
 echo "an idle connection to the front answers again $((idle_seconds - 15)) s into its idleTimeout $idle_timeout and is" \
   "closed by the front $((idle_seconds + 10)) s in"
