@@ -68,10 +68,11 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
   `bucket` (default the repository's name), imports a key it generates, and exports the three variables above, with the
   bucket as its output `bucket`. An app pins it as `uses: overnightworks/platform/.github/actions/garage@<commit sha>`.
   The store has no object
-  versioning and no `If-None-Match` on a write. Plain HTTP stays inside the cluster. A bucket has no backup: it holds
-  what the app can rebuild, and a file that is the app's only copy stays out of it until the platform backs buckets up.
+  versioning and no `If-None-Match` on a write. Plain HTTP stays inside the cluster. A bucket is backed up only where
+  its app's layer declares it (below); a file that is the app's only copy stays out of a bucket until the platform's
+  restore test and restore command cover buckets.
 
-Provided for an app's database: a weekly k8up backup into its own repository on the platform, kept 4 weekly and 3 monthly, with a monthly `restic check` and a monthly restore test (`infrastructure/postgres/backup`, which keycloak, litellm, skat and songmaker include). Where an app's layer also includes `infrastructure/postgres/backup/files` and names a claim, the backup copies that claim beside the dump. Not provided: a backup of a claim that no layer names, a database's backup without its layer including that component, a backup of an object store bucket, and a copy of anything off the PC. A dead disk loses every app's data.
+Provided for an app's database: a weekly k8up backup into its own repository on the platform, kept 4 weekly and 3 monthly, with a monthly `restic check` and a monthly restore test (`infrastructure/postgres/backup`, which keycloak, litellm, skat and songmaker include). Where an app's layer also includes `infrastructure/postgres/backup/files` and names a claim, the backup copies that claim beside the dump. Where it also includes `infrastructure/postgres/backup/files/bucket`, the backup copies the Namespace's bucket beside them, read with its read-only backup key, in the same snapshot. Not provided: a backup of a claim that no layer names, a database's backup without its layer including that component, a backup of a bucket that no layer declares, and a copy of anything off the PC. A dead disk loses every app's data.
 
 ## What every app offers
 

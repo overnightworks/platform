@@ -303,6 +303,14 @@ jobs:
         if: matrix.part == 'backup-2'
         run: tests/disk/docuum_deletes_the_least_recently_used_unprotected_image.sh
 
+      - name: Check that the bucket Component's rclone fails whole on a full disk and leaves no file at its final name and no partial
+        if: matrix.part == 'backup-2'
+        run: tests/backup/bucket_sync_fails_whole_on_a_full_disk.sh
+
+      - name: Check that the bucket step fails when a key written during its sync stands in for a key the copy dropped
+        if: matrix.part == 'backup-2'
+        run: tests/backup/bucket_count_cannot_hide_a_key_the_copy_dropped.sh
+
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
       - name: Compare the generated files with a fresh regeneration
         if: matrix.part == 'core'
@@ -785,7 +793,14 @@ jobs:
         if: matrix.part == 'backup-2'
         env:
           SONGMAKER_NAMESPACE: songmaker
-        run: tests/backup/staging_snapshot_holds_the_files_and_the_dump_of_one_run.sh
+          APP_MANIFEST: apps/songmaker/web.yaml
+        run: tests/backup/staging_snapshot_holds_the_files_the_bucket_and_the_dump_of_one_run.sh
+      - name: P7d bucket cells
+        if: matrix.part == 'backup-4'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          APP_MANIFEST: apps/songmaker/web.yaml
+        run: tests/backup/bucket_refuses_what_it_cannot_stage_whole.sh
       - name: P9f cells
         if: matrix.part == 'backup-1' || matrix.part == 'backup-3'
         env:

@@ -1,20 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# shellcheck source=../failure.sh
-source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
-# shellcheck source=restic_pod.sh
-source "$(dirname "${BASH_SOURCE[0]}")/restic_pod.sh"
-# songmaker's staging snapshot holds the copy of its declared claim and the dump of one run; prints names, counts,
-# digests and verdicts, never a file name, a file's content, a row or a secret. It needs nothing from the other scripts
-# under tests/backup/: its own Backups fill songmaker's repository. Each cell plants synthetic audio files at the
-# reading uid into the declared claim and reads them back through the snapshots.
+# shellcheck source=staging_cell.sh
+source "$(dirname "${BASH_SOURCE[0]}")/staging_cell.sh"
+# shellcheck source=../layer_includes.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../layer_includes.sh"
+# songmaker's staging snapshot holds the copy of its declared claim, the copy of its bucket and the dump of one run; prints
+# names, counts, digests and verdicts, never a file name, a file's content, a row or a secret. It needs APP_MANIFEST (the
+# web's manifest, which the client Pod that fills the bucket is furnished from) and nothing from the other scripts under
+# tests/backup/: its own Backups fill songmaker's repository. Each cell plants synthetic audio files at the reading uid into
+# the declared claim and synthetic objects into the bucket, and reads them back through the snapshots.
 export KUBECONFIG="$HOME/.kube/config"
 namespace="$SONGMAKER_NAMESPACE"
+export APP_NAMESPACE="$namespace"
+# shellcheck source=../objectstore/client_pod.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../objectstore/client_pod.sh"
 staging=/data/backup-staging
 reading_uid="$(kubectl --namespace "$namespace" get deployment web --output jsonpath='{.spec.template.spec.securityContext.runAsUser}')"
 declared_claim="$(kubectl --namespace "$namespace" get configmap postgres --output jsonpath='{.data.backup-claim}')"
 [ -n "$reading_uid" ] || fail "the Deployment web of $namespace sets no runAsUser, the reading uid"
 [ -n "$declared_claim" ] || fail "the ConfigMap postgres of $namespace declares no backup-claim"
+# What the layer declares: the Components that put files/ and bucket/ into the snapshot, and the Secret the bucket Component
+# mounts, which holds the backup's key.
+layer_file="apps/$namespace/kustomization.yaml"
+files_component=infrastructure/postgres/backup/files
+bucket_component="$files_component/bucket"
+bucket_patch="$(yq '.patches[] | select(.target.kind == "PreBackupPod") | .patch' "$bucket_component/kustomization.yaml")"
+bucket_secret="$(yq '.[] | select(.op == "add" and .path == "/spec/pod/spec/volumes/-") | .value.secret.secretName' <<<"$bucket_patch")"
+staging_claim="$(yq 'select(.kind == "PersistentVolumeClaim") | .metadata.name' "$files_component/files.yaml")"
+# The top level of the snapshot: MANIFEST and the dump beside the directory each Component the layer lists adds.
+expected_top="$(declared_top "$layer_file")"
 # The synthetic audio, under one directory of the declared claim: a nested file, names with a space.
 cell_directory="staging-cell"
 first_file="$cell_directory/nested/deeper/first take.ogg"
@@ -24,21 +38,18 @@ added_file="$cell_directory/nested/fourth take.ogg"
 unreadable_file="$cell_directory/unreadable take.ogg"
 newline_file="$cell_directory/line@NEWLINE@break.ogg"
 
-backups=()
-deployments=()
 holder="staging-holder"
 cleanup() {
-  local cell_status=$? name
+  local cell_status=$?
   delete_object --namespace "$namespace" delete pod "$holder" --ignore-not-found --wait --timeout=2m
-  for name in "${backups[@]}"; do
-    delete_object --namespace "$namespace" delete backup "$name" --ignore-not-found --wait --timeout=2m
-  done
-  for name in "${deployments[@]}"; do
-    delete_object --namespace "$namespace" delete deployment "$name" --ignore-not-found --wait --timeout=2m
-  done
-  # The planted audio leaves the declared claim on every exit; its own Pod is deleted by run_files or here.
+  delete_backups
+  # The planted audio and objects leave on every exit; their own Pods are deleted by run_files and run_client or here.
   (run_files remove-planted-audio "$declared_claim" false "rm -rf '/files/$cell_directory'") ||
     { delete_object --namespace "$namespace" delete pod remove-planted-audio --ignore-not-found --wait --timeout=2m; deletion_failures=$((deletion_failures + 1)); }
+  (run_client clear-planted-objects "$credentials_secret" clear "$bucket_variable") ||
+    { delete_object --namespace "$namespace" delete pod clear-planted-objects --ignore-not-found --wait --timeout=2m; deletion_failures=$((deletion_failures + 1)); }
+  delete_object --namespace "$namespace" delete pod --selector cell=object-store --ignore-not-found --wait --timeout=2m
+  delete_object --namespace "$namespace" delete configmap object-store-client --ignore-not-found
   for name in prune-as-reading-uid check-as-reading-uid; do
     delete_object --namespace "$namespace" delete "${name%%-*}" "$name" --ignore-not-found --wait --timeout=2m
   done
@@ -80,122 +91,6 @@ claim_digests='
   echo "listing $(printf "%s\n" "$listing" | sha256sum | cut -c1-64) $(printf "%s\n" "$listing" | grep -c .)"
   echo "content $(cd / && find files -type f -exec sha256sum {} + | LC_ALL=C sort | sha256sum | cut -c1-64)"'
 
-# backup_pods: how many Pods of the namespace carry a backup command; backup_pod: the first one's name.
-backup_pods() {
-  kubectl --namespace "$namespace" get pods --output json |
-    jq '[.items[] | select(.metadata.annotations["k8up.io/backupcommand"] != null)] | length'
-}
-backup_pod() {
-  kubectl --namespace "$namespace" get pods --output json |
-    jq --raw-output '[.items[] | select(.metadata.annotations["k8up.io/backupcommand"] != null) | .metadata.name] | .[0] // ""'
-}
-
-# value <key>: the rest of the line of the last restic Pod's output that starts with the key.
-value() { sed -n "s/^$1 //p" <<<"$restic_output"; }
-
-# create_backup <name>: one Backup, as the Schedule would start it.
-create_backup() {
-  backups+=("$1")
-  kubectl --namespace "$namespace" get schedule postgres --output json |
-    NAME="$1" yq --input-format json --output-format json \
-      '{ "apiVersion": "k8up.io/v1", "kind": "Backup", "metadata": { "name": strenv(NAME) },
-         "spec": { "backend": .spec.backend, "podConfigRef": .spec.podConfigRef } }' |
-    kubectl --namespace "$namespace" create --filename - >/dev/null
-}
-
-# The verdict of the pod's copy container on the staged dump, whose bytes it never prints: the dump is 70's and 0640, and
-# copy, a vendor image, is outside group 70.
-copy_dump_verdict='if [ ! -s /staging/postgres.dump ]; then echo missing; elif cat /staging/postgres.dump >/dev/null 2>&1; then echo readable; else echo unreadable; fi'
-
-# run_backup <name>: a Backup that must succeed; at every look at most one Pod carries a backup command. Once the
-# PreBackupPod's pod is Ready, its spec goes to staged_pod and its containers' logs to run_logs, and its copy container
-# must not read the dump.
-staged_pod=
-run_logs=
-run_backup() {
-  local name="$1" deadline=$((SECONDS + 300)) pods pod pod_logs reason captured=false copy_dump
-  create_backup "$name"
-  while :; do
-    pods="$(backup_pods)"
-    [ "$pods" -le 1 ] || fail "$pods Pods of $namespace carry a backup command during the Backup $name"
-    pod="$(backup_pod)"
-    if [ "$captured" = false ] && [ -n "$pod" ] &&
-      [ "$(kubectl --namespace "$namespace" get pod "$pod" --output jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" = True ]; then
-      # k8up may remove the pod between two reads; the next look tries again.
-      if staged_pod="$(kubectl --namespace "$namespace" get pod "$pod" --output json 2>/dev/null)" &&
-        pod_logs="$(kubectl --namespace "$namespace" logs "pod/$pod" --all-containers 2>/dev/null)" &&
-        copy_dump="$(kubectl --namespace "$namespace" exec "$pod" --container copy -- sh -c "$copy_dump_verdict" 2>/dev/null)"; then
-        run_logs+="$pod_logs"$'\n'
-        captured=true
-        [ "$copy_dump" = unreadable ] || fail "the copy container of the Backup $name's pod finds the staged dump $copy_dump, not unreadable"
-      fi
-    fi
-    reason="$(kubectl --namespace "$namespace" get backup "$name" \
-      --output jsonpath='{.status.conditions[?(@.type=="Completed")].reason}')"
-    [ -z "$reason" ] || break
-    if [ "$SECONDS" -ge "$deadline" ]; then
-      kubectl --namespace "$namespace" describe backup "$name" >&2
-      fail "the Backup $name of $namespace did not complete within 5 minutes"
-    fi
-    sleep 1
-  done
-  [ "$reason" = Succeeded ] || fail "the Backup $name of $namespace ended with reason $reason"
-  [ "$captured" = true ] || fail "the PreBackupPod's pod of the Backup $name was never seen Ready"
-}
-
-# refused_backup <name> <refusal>: a Backup whose stager logs the refusal (an extended regular expression); sets
-# refused_pod, and fails when the pod turns Ready.
-refused_pod=
-refused_backup() {
-  local name="$1" refusal="$2" deadline=$((SECONDS + 300)) logs
-  create_backup "$name"
-  while :; do
-    refused_pod="$(backup_pod)"
-    if [ -n "$refused_pod" ]; then
-      logs="$(kubectl --namespace "$namespace" logs "pod/$refused_pod" --container stager 2>/dev/null || true)"
-      ! grep -Eq "$refusal" <<<"$logs" || break
-    fi
-    [ "$SECONDS" -lt "$deadline" ] || fail "the stager of the Backup $name did not refuse within 5 minutes"
-    sleep 1
-  done
-  [ "$(kubectl --namespace "$namespace" get pod "$refused_pod" --output jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" != True ] ||
-    fail "the PreBackupPod's pod of the Backup $name turned Ready after its stager refused"
-  run_logs+="$(kubectl --namespace "$namespace" logs "pod/$refused_pod" --all-containers)"$'\n'
-}
-
-# report_backup_pods: what holds the Pods that carry a backup command and the pre-backup ReplicaSets and Deployments,
-# by name, phase, container states, deletionTimestamp and owners; no log, Secret or environment value.
-report_backup_pods() {
-  kubectl --namespace "$namespace" get pods --output json | jq --raw-output '
-    .items[] | select(.metadata.annotations["k8up.io/backupcommand"] != null) |
-    "pod \(.metadata.name) phase=\(.status.phase) containers=\([.status.containerStatuses[]? | .name + ":" + (.state | keys[0])] | join(",")) " +
-    "deletionTimestamp=\(.metadata.deletionTimestamp // "none") owners=\([.metadata.ownerReferences[]? | .kind + "/" + .name] | join(","))"' >&2 || true
-  kubectl --namespace "$namespace" get replicasets,deployments --selector k8up.io/preBackupPod --output json | jq --raw-output '
-    .items[] | "\(.kind) \(.metadata.name) deletionTimestamp=\(.metadata.deletionTimestamp // "none") " +
-    "finalizers=\(.metadata.finalizers // [] | join(",")) owners=\([.metadata.ownerReferences[]? | .kind + "/" + .name] | join(","))"' >&2 || true
-}
-
-# end_backup <name>: deletes a refused Backup and the Deployment k8up made for its PreBackupPod, before k8up's deadline,
-# then waits for the Pod to go; at the deadline it reports what still carries a backup command.
-end_backup() {
-  local name="$1" replica_set deployment deadline=$((SECONDS + 120))
-  replica_set="$(kubectl --namespace "$namespace" get pod "$refused_pod" --output jsonpath='{.metadata.ownerReferences[0].name}')"
-  deployment="$(kubectl --namespace "$namespace" get replicaset "$replica_set" --output jsonpath='{.metadata.ownerReferences[0].name}')"
-  deployments+=("$deployment")
-  kubectl --namespace "$namespace" delete backup "$name" --wait --timeout=2m >/dev/null
-  kubectl --namespace "$namespace" delete deployment "$deployment" --ignore-not-found --wait --timeout=2m >/dev/null
-  until [ "$(backup_pods)" = 0 ]; do
-    if [ "$SECONDS" -ge "$deadline" ]; then
-      report_backup_pods
-      fail "within the time: no Pod of $namespace carries a backup command after the Backup $name"
-    fi
-    sleep 5
-  done
-}
-
-# staged_file_exists <path>: whether the refused pod's stager sees the path under /staging or /scratch.
-staged_file_exists() { kubectl --namespace "$namespace" exec "$refused_pod" --container stager -- test -e "$1"; }
-
 # Planted: three files with fixed times, one nested, two names with a space.
 run_files plant-audio "$declared_claim" false "
   set -e
@@ -208,6 +103,13 @@ run_files plant-audio "$declared_claim" false "
 claim_before="$files_output"
 echo "planted 3 files in $declared_claim of $namespace at uid $reading_uid: $(grep '^listing' <<<"$claim_before" | cut -d' ' -f3) files in the claim"
 
+install_client
+run_client plant-clear "$credentials_secret" clear "$bucket_variable"
+run_client plant-base "$credentials_secret" plant "$bucket_variable" base
+client_output digests-first digests "$bucket_variable"
+bucket_before="$client_log"
+echo "planted the bucket $bucket of $namespace through a client Pod furnished as its web: $(bucket_listing "$bucket_before" | cut -d' ' -f2) objects"
+
 # Cell 3: one Backup leaves a dump snapshot and a staging snapshot of the same dump; files/ equals the declared claim.
 annotated="$(kubectl get pvc --all-namespaces --output json | jq --raw-output \
   '[.items[] | select(.metadata.annotations["k8up.io/backup"] == "true") | .metadata.namespace + "/" + .metadata.name] | join(" ")')"
@@ -219,8 +121,11 @@ run_restic "$namespace" staging-first-listing '
   tab="$(printf "\t")"
   staging='"$staging"'
   manifest="$(restic --no-cache dump --path "$staging" latest "$staging/MANIFEST")"
-  files="$(printf "%s\n" "$manifest" | grep "^file$tab" | cut -f2- | LC_ALL=C sort)"
+  files="$(printf "%s\n" "$manifest" | grep "^file$tab[0-9]*$tab[0-9]*${tab}files/" | cut -f2- | LC_ALL=C sort)"
   echo "listing $(printf "%s\n" "$files" | sha256sum | cut -c1-64) $(printf "%s\n" "$files" | grep -c .)"
+  manifest_bucket="$(printf "%s\n" "$manifest" | grep "^file$tab[0-9]*$tab[0-9]*${tab}bucket/" | cut -f2,4 | LC_ALL=C sort)"
+  echo "manifest-bucket $(printf "%s\n" "$manifest_bucket" | sha256sum | cut -c1-64) $(printf "%s\n" "$manifest_bucket" | grep -c .)"
+  '"$snapshot_bucket_digests"'
   echo "manifest-dump $(printf "%s\n" "$manifest" | grep "^dump$tab" | cut -f2)"
   echo "staged-dump $(restic --no-cache dump --path "$staging" latest "$staging/postgres.dump" | sha256sum | cut -c1-64)"
   echo "streamed-dump $(restic --no-cache dump --path "/$NAMESPACE-postgres.dump" latest "/$NAMESPACE-postgres.dump" | sha256sum | cut -c1-64)"
@@ -233,7 +138,7 @@ run_restic "$namespace" staging-first-listing '
   manifest_names="$(printf "%s\n" "$files" | cut -f3- | LC_ALL=C sort)"
   if [ "$snapshot_names" = "$manifest_names" ]; then echo "names equal"; else echo "names differ"; fi'
 [ "$restic_exit" = 0 ] || fail "the snapshots of the Backup staging-first cannot be read (exit $restic_exit)"
-[ "$(value top)" = "MANIFEST files postgres.dump " ] || fail "the staging snapshot of $namespace holds '$(value top)', not files/, postgres.dump and MANIFEST"
+[ "$(value top)" = "$expected_top" ] || fail "the staging snapshot of $namespace holds '$(value top)', not '$expected_top'"
 [ "$(value streamed-head)" = PGDMP ] || fail "the dump snapshot of $namespace holds no custom-format dump"
 manifest_dump="$(value manifest-dump)"
 [ "${#manifest_dump}" = 64 ] || fail "the MANIFEST of $namespace's staging snapshot names no dump sha256"
@@ -242,8 +147,18 @@ manifest_dump="$(value manifest-dump)"
 [ "$(value listing)" = "$(sed -n 's/^listing //p' <<<"$claim_before")" ] ||
   fail "the staging MANIFEST lists $(value listing | cut -d' ' -f2) files that differ by name, size or mtime from the claim's $(grep '^listing' <<<"$claim_before" | cut -d' ' -f3)"
 [ "$(value names)" = equal ] || fail "the staging snapshot's files/ differ by name from its MANIFEST"
-echo "one Backup left /$namespace-postgres.dump and $staging with files/, postgres.dump and MANIFEST; both dumps equal the MANIFEST's sha256"
+[ "$(value bucket)" = "$(bucket_listing "$bucket_before")" ] ||
+  fail "the staging snapshot's bucket/ differs by key, size or bytes from the bucket's $(bucket_listing "$bucket_before" | cut -d' ' -f2) objects"
+[ "$(value manifest-bucket)" = "$(bucket_listing "$(bucket_manifest_lines "$bucket_before")")" ] ||
+  fail "the staging MANIFEST lists the bucket's objects by other names or sizes than the bucket holds"
+echo "one Backup left /$namespace-postgres.dump and $staging with $expected_top; both dumps equal the MANIFEST's sha256"
+echo "bucket/ equals the bucket $bucket by key, size and bytes: $(value bucket | cut -d' ' -f2) objects, listed in MANIFEST"
 echo "files/ equals $declared_claim by name, size and mtime: $(value listing | cut -d' ' -f2) files"
+# The timed lines of the bucket's pre-sync and the count line, which name no object: the gate before landing reads the sync's
+# throughput from them.
+timed_lines="$(grep -E '^stage: (bucket-pre-sync (started|done) at |bucket [0-9]+ objects [0-9]+ bytes$)' <<<"$run_logs" || true)"
+[ "$(wc -l <<<"$timed_lines")" = 3 ] || fail "the first Backup's log does not hold the bucket pre-sync's start and end lines and one count line"
+echo "$timed_lines"
 run_files staged-dump-owner "backup-staging" true "stat -c 'dump %u:%g %a' /files/postgres.dump"
 [ "$(sed -n 's/^dump //p' <<<"$files_output")" = "70:70 640" ] ||
   fail "the staged dump of $namespace is owned and moded $(sed -n 's/^dump //p' <<<"$files_output"), not 70:70 640"
@@ -289,6 +204,19 @@ run_files change-audio "$declared_claim" false "
   $claim_digests"
 claim_second="$files_output"
 claim_count="$(grep '^listing' <<<"$claim_second" | cut -d' ' -f3)"
+# The bucket changes between the runs: one object rewritten to the same size, one deleted, one added.
+run_client change-bucket "$credentials_secret" plant "$bucket_variable" change
+client_output digests-second digests "$bucket_variable"
+bucket_after="$client_log"
+bucket_keys() { printf '%s\n' "$1" | cut -f3 | grep . | LC_ALL=C sort; }
+deleted_key="$(comm -23 <(bucket_keys "$bucket_before") <(bucket_keys "$bucket_after"))"
+added_key="$(comm -13 <(bucket_keys "$bucket_before") <(bucket_keys "$bucket_after"))"
+changed_count="$(comm -13 <(printf '%s\n' "$bucket_before" | LC_ALL=C sort) <(printf '%s\n' "$bucket_after" | LC_ALL=C sort) | cut -f3 |
+  grep -vxF -f <(printf '%s\n' "$added_key") | grep -c . || true)"
+bucket_count="$(bucket_listing "$bucket_after" | cut -d' ' -f2)"
+[ "$(grep -c . <<<"$deleted_key")" = 1 ] && [ "$(grep -c . <<<"$added_key")" = 1 ] && [ "$changed_count" = 1 ] ||
+  fail "the planted change is not one deleted, one added and one rewritten object"
+[[ $deleted_key != *"'"* && $added_key != *"'"* ]] || fail "a changed key holds a quote, which the snapshot reader cannot take"
 run_backup staging-second
 run_restic "$namespace" staging-second-listing '
   set -e
@@ -299,18 +227,34 @@ run_restic "$namespace" staging-second-listing '
   echo "parent $(printf "%s" "$snapshots" | jq --raw-output "if .[-1].parent == .[-2].id then \"equal\" else \"differs\" end")"
   echo "summary $(printf "%s" "$snapshots" | jq --raw-output ".[-1].summary | \"\(.files_new) \(.files_changed) \(.files_unmodified)\"")"
   deleted="$staging/files/'"$deleted_file"'"
+  deleted_object="$staging/bucket/'"$deleted_key"'"
+  added_object="$staging/bucket/'"$added_key"'"
   for snapshot in "$previous" "$latest"; do
     echo "deleted $(restic --no-cache ls --json --recursive "$snapshot" "$staging/files" | jq --raw-output "select(.type == \"file\") | .path" |
       grep -Fxc "$deleted" || true)"
-  done'
+    echo "deleted-object $(restic --no-cache ls --json --recursive "$snapshot" "$staging/bucket" | jq --raw-output "select(.type == \"file\") | .path" |
+      grep -Fxc "$deleted_object" || true)"
+    echo "added-object $(restic --no-cache ls --json --recursive "$snapshot" "$staging/bucket" | jq --raw-output "select(.type == \"file\") | .path" |
+      grep -Fxc "$added_object" || true)"
+  done
+  tab="$(printf "\t")"
+  '"$snapshot_bucket_digests"''
 [ "$restic_exit" = 0 ] || fail "the snapshots of the Backup staging-second cannot be read (exit $restic_exit)"
 [ "$(value parent)" = equal ] || fail "the second staging snapshot of $namespace was not made from the first as its parent"
-# Among the audio files one is new and one changed; the run's own postgres.dump and MANIFEST are rewritten every run.
-[ "$(value summary)" = "1 3 $((claim_count - 2))" ] ||
-  fail "the second staging snapshot counts new, changed and unmodified files as $(value summary), not 1 3 $((claim_count - 2))"
+# Among the audio files and the objects one of each is new and one changed; the run's own postgres.dump and MANIFEST are
+# rewritten every run.
+expected_summary="2 4 $((claim_count - 2 + bucket_count - 2))"
+[ "$(value summary)" = "$expected_summary" ] ||
+  fail "the second staging snapshot counts new, changed and unmodified files as $(value summary), not $expected_summary"
 [ "$(sed -n 's/^deleted //p' <<<"$restic_output" | tr '\n' ' ')" = "1 0 " ] ||
   fail "the deleted file is not in the first staging snapshot alone"
-echo "the second Backup read from its parent: 1 new, 1 changed audio file and $((claim_count - 2)) unmodified; the deleted file is in the first snapshot alone"
+[ "$(sed -n 's/^deleted-object //p' <<<"$restic_output" | tr '\n' ' ')" = "1 0 " ] ||
+  fail "the deleted object is not in the first staging snapshot alone"
+[ "$(sed -n 's/^added-object //p' <<<"$restic_output" | tr '\n' ' ')" = "0 1 " ] ||
+  fail "the added object is not in the second staging snapshot alone"
+[ "$(value bucket)" = "$(bucket_listing "$bucket_after")" ] ||
+  fail "the second staging snapshot's bucket/ differs by key, size or bytes from the bucket's $bucket_count objects"
+echo "the second Backup read from its parent: 2 new, 4 changed and $((claim_count - 2 + bucket_count - 2)) unmodified files; the deleted file and object are in the first snapshot alone, the added object in the second, and bucket/ equals the bucket again, the rewritten object's new bytes included"
 
 # Cell 8: the stager refuses to stage while another pod mounts the staging claim; the tree and MANIFEST stay.
 staging_digests='cd /staging && echo "tree $(find . -exec stat -c "%n %s %Y" {} + | LC_ALL=C sort | sha256sum | cut -c1-64)" &&
@@ -398,13 +342,20 @@ for question in "list pods yes" "watch pods yes" "get pods no" "create pods no" 
   [ "$answer" = "$expected" ] || fail "the stager's account answers '$answer' to $verb $resource, not $expected"
 done
 echo "only stager holds a token, and its account may list and watch pods and nothing else"
+bucket_mounts="$(jq --raw-output '
+  . as $pod | [.spec.containers[] | select(.name == "bucket") | .volumeMounts[].name] as $names |
+  [$pod.spec.volumes[] | select(.name | IN($names[])) |
+   if .persistentVolumeClaim then "claim:" + .persistentVolumeClaim.claimName elif .secret then "secret:" + .secret.secretName
+   else empty end] | sort | join(" ")' <<<"$first_pod")"
+[ "$bucket_mounts" = "claim:$staging_claim secret:$bucket_secret" ] ||
+  fail "the bucket container mounts the claims and Secrets '$bucket_mounts', not the staging claim and the Secret $bucket_secret alone"
+echo "the bucket container mounts the staging claim and the Secret $bucket_secret and no other claim or Secret, and holds no token"
 
 # Cell 11: no log names a planted file, a row or a credential. The logs are the PreBackupPod's containers', read above,
 # and those of k8up's Jobs; each needle is named by its kind, never by its value.
 job_logs="$(kubectl --namespace "$namespace" logs --selector k8upjob=true --all-pods --tail=-1)" || fail "cannot read k8up's Job logs in $namespace"
 [ -n "$job_logs" ] || fail "k8up's Job logs in $namespace are empty"
 [ -n "$run_logs" ] || fail "no log of the PreBackupPod's pods was read"
-secret_value() { kubectl --namespace "$namespace" get secret "$1" --output json | jq --raw-output --arg key "$2" '.data[$key]' | base64 --decode; }
 row="$(kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only --no-align \
   --command='SELECT version_num FROM alembic_version')"
 [ -n "$row" ] || fail "the table alembic_version of $namespace holds no row to look for"
@@ -412,7 +363,12 @@ needles=(
   "planted file:$cell_directory" "planted file:first take" "planted file:second take" "planted file:third take"
   "planted file:fourth take" "planted file:unreadable take" "planted file:break.ogg" "row:$row"
   "credential:$(secret_value postgres password)" "credential:$(secret_value restic password)"
-  "credential:$(secret_value restic repository-password)")
+  "credential:$(secret_value restic repository-password)"
+  "credential:$(ini_value "$(secret_value "$credentials_secret" "$credentials_key")" aws_secret_access_key)"
+  "credential:$(ini_value "$(secret_value "$bucket_secret" credentials)" aws_access_key_id)"
+  "credential:$(ini_value "$(secret_value "$bucket_secret" credentials)" aws_secret_access_key)"
+)
+while IFS= read -r key; do needles+=("planted object:$key"); done < <(cut -f3 <<<"$bucket_before"; printf '%s\n' "$added_key")
 for needle in "${needles[@]}"; do
   [ -n "${needle#*:}" ] || fail "a ${needle%%:*} to look for is empty"
   if grep -qF -- "${needle#*:}" <<<"$run_logs$job_logs"; then fail "a log of $namespace's backup names a ${needle%%:*}"; fi

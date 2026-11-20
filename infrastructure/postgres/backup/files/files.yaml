@@ -1,8 +1,8 @@
-# The staging claim holds one restore point: files/, the copy of the claim the layer declares, the dump k8up also
-# streams, and MANIFEST. It is the one claim k8up backs up (k8up.io/backup), into the snapshot path
-# /data/backup-staging. local-path binds a claim only for its first consumer, so the Job below mounts it once; a claim
-# that stays Pending keeps the including Kustomization from turning Ready. The class retains the volume and the
-# annotation keeps a prune from taking the claim.
+# The staging claim holds one restore point: files/, the copy of the claim the layer declares, bucket/, the copy of the
+# Namespace's bucket where the layer includes ./bucket, the dump k8up also streams, and MANIFEST. It is the one claim
+# k8up backs up (k8up.io/backup), into the snapshot path /data/backup-staging. local-path binds a claim only for its
+# first consumer, so the Job below mounts it once; a claim that stays Pending keeps the including Kustomization from
+# turning Ready. The class retains the volume and the annotation keeps a prune from taking the claim.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -84,9 +84,10 @@ subjects:
     name: backup-stager
 ---
 # k8up starts this pod at the start of a Backup, waits for it to turn Ready, streams the backup command's output from
-# its first container and backs up the staging claim, then removes it. Its three containers run scripts/stage_files.sh: the
-# stager guards, removes the old MANIFEST, has copy sync the declared claim and postgres dump the database, and writes
-# MANIFEST and ready; the readiness probe reads ready. The pod runs as the reading uid, which the including layer sets
+# its first container and backs up the staging claim, then removes it. Its three containers, a fourth (bucket) where the
+# layer includes ./bucket, run scripts/stage_files.sh: the stager guards, removes the old MANIFEST, has copy sync the
+# declared claim, bucket sync the bucket and postgres dump the database, and writes MANIFEST and ready; the readiness
+# probe reads ready. The pod runs as the reading uid, which the including layer sets
 # by a replacement from the app's own pod, so copy reads the app's files and k8up's Job pods read the copy.
 apiVersion: k8up.io/v1
 kind: PreBackupPod
@@ -184,7 +185,8 @@ spec:
           command: [sh, /etc/stage/stage_files.sh, stager]
           env:
             # k8up fails the Backup when this pod is not Ready 600 seconds after its start, so the pod's start and both
-            # budgets stay inside that: the pre-sync of the declared claim, then the dump, the final sync and the manifest.
+            # budgets stay inside that: the pre-sync of the declared claim and of the bucket together, then the dump,
+            # then the final syncs together and the manifest.
             - name: PRE_SYNC_BUDGET
               value: "300"
             - name: CAPTURE_BUDGET

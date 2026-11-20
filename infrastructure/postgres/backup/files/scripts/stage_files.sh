@@ -1,14 +1,16 @@
 #!/bin/sh
 # The staging protocol of the PreBackupPod files (files.yaml), one role per container: `stager` runs the steps in
-# order and asks `copy` for each sync and `postgres` for the dump through files in /scratch, the pod's emptyDir; a
-# served step answers with <step>.exit, its exit status. The staging claim then holds files/ (the copy of the declared
-# claim), postgres.dump and MANIFEST, which is written only after the final sync and lists
+# order and asks `copy` for each sync of the claim, `bucket` for each sync of the Namespace's bucket (where the Component
+# files/bucket adds it and sets STAGE_BUCKET) and `postgres` for the dump through files in /scratch, the pod's emptyDir;
+# a served step answers with <step>.exit, its exit status. The staging claim then holds files/ (the copy of the declared
+# claim), bucket/ (the copy of the bucket, only with STAGE_BUCKET), postgres.dump and MANIFEST, which is written only
+# after the final syncs and lists
 #   dump<TAB><sha256><TAB><size>                  the dump's
-#   file<TAB><size><TAB><mtime><TAB><path>        each file under files/, sorted, mtime in seconds since the epoch
+#   file<TAB><size><TAB><mtime><TAB><path>        each file under files/ and bucket/, sorted, mtime in seconds since the epoch
 # /scratch/ready marks the finished tree, and the pod is Ready only on it. A failed step leaves no MANIFEST and no ready.
-# Nothing here prints a file name, a row or a credential: rsync's and find's messages name files, so they are dropped
-# and a failed step names itself and its exit status.
-# Usage: sh stage_files.sh stager|copy|dump, run by busybox sh in each container's image.
+# Nothing here prints a file name, a row or a credential: rsync's, rclone's and find's messages name files, so they are
+# dropped and a failed step names itself and its exit status.
+# Usage: sh stage_files.sh stager|copy|bucket|dump, run by busybox sh in each container's image.
 set -u
 scratch=/scratch
 staging=/staging
@@ -53,6 +55,51 @@ sync_files() {
   rsync -a --delete /source/ "$staging/files/" 2>/dev/null
 }
 
+# copy_bucket <listing file>: the Namespace's bucket, read with the backup's own key, into bucket/. rclone's output names
+# objects, so stdout is dropped and stderr is held in memory, where only the lines that report a source entry rclone
+# skipped are counted: a key that is also a directory prefix, or two keys on one path, which rclone ignores with exit 0
+# and which the copy would silently lack. Some keys it drops without any message: one with a `..` segment is not
+# written, and one with an empty segment lands on the path without it. So the keys listed before the sync go to the
+# listing file, and each must be a file of the copy by that very name, which a key written in between cannot stand in
+# for; a key listed twice has collapsed already. A listed key the copy lacks fails the step only when the bucket still
+# lists it after the sync: an object deleted meanwhile is gone from the second listing, and one rclone dropped is not.
+# A copy with a name that holds a newline ends the step at once: rclone lists that key with a symbol for the newline, so
+# no listed line equals the name, and the manifest refuses the name with its own message. Any such line, a key the
+# copy lacks and the bucket still lists, a failed listing or any exit status but 0 fails the step.
+copy_bucket() {
+  listing="$1"
+  rclone lsf --recursive --files-only ":s3:$BUCKET" >"$listing" 2>/dev/null || return 1
+  status=0
+  messages="$(rclone sync ":s3:$BUCKET" "$staging/bucket/" --use-server-modtime 2>&1 >/dev/null)" || status=$?
+  skipped="$(printf '%s\n' "$messages" | grep -c 'found in source - ignoring')"
+  [ "$status" = 0 ] || return "$status"
+  [ "$skipped" = 0 ] || return 1
+  names_with_newline="$(find "$staging/bucket" -name "*$newline*")" || return 1
+  [ -z "$names_with_newline" ] || return 0
+  [ -z "$(sort "$listing" | uniq -d)" ] || return 1
+  find "$staging/bucket" -type f >"$listing.staged" || return 1
+  sed "s|^$staging/bucket/||" "$listing.staged" >"$listing.names" || return 1
+  # grep ends 1 when no line is selected, and 0 when one is, or 2 when it could not tell.
+  status=0
+  grep -vxFf "$listing.names" "$listing" >"$listing.missing" || status=$?
+  [ "$status" != 1 ] || return 0
+  [ "$status" = 0 ] || return 1
+  rclone lsf --recursive --files-only ":s3:$BUCKET" >"$listing.after" 2>/dev/null || return 1
+  status=0
+  grep -qxFf "$listing.after" "$listing.missing" || status=$?
+  [ "$status" = 1 ]
+}
+
+# sync_bucket: copy_bucket with the listings in /scratch, which holds the keys only until the step ends.
+sync_bucket() {
+  mkdir -p "$staging/bucket" || return 1
+  listing="$scratch/bucket.listing"
+  copied=0
+  copy_bucket "$listing" || copied=$?
+  rm -f "$listing" "$listing.staged" "$listing.names" "$listing.missing" "$listing.after"
+  return "$copied"
+}
+
 # dump: the database over the Service into a temporary file, renamed when pg_dump succeeded. A fresh pod can be refused
 # until the NetworkPolicy controller admits its address, so the server is awaited first, at most 30 times.
 dump() {
@@ -70,14 +117,18 @@ dump() {
 # manifest: writes MANIFEST.tmp from the finished tree; refuses a name with a newline, which would split its line.
 manifest() {
   cd "$staging" || exit 1
-  names_with_newline="$(find files -name "*$newline*" 2>/dev/null)" || exit 1
-  if [ -n "$names_with_newline" ]; then
-    echo "stage: refused: a name under files/ holds a newline" >&2
-    exit 3
-  fi
+  set -- files
+  [ -z "${STAGE_BUCKET:-}" ] || set -- files bucket
+  for tree in "$@"; do
+    names_with_newline="$(find "$tree" -name "*$newline*" 2>/dev/null)" || exit 1
+    if [ -n "$names_with_newline" ]; then
+      echo "stage: refused: a name under $tree/ holds a newline" >&2
+      exit 3
+    fi
+  done
   dump_sha256="$(sha256sum postgres.dump)" || exit 1
   dump_size="$(stat -c %s postgres.dump)" || exit 1
-  files="$(find files -type f -exec stat -c "file$tab%s$tab%Y$tab%n" {} + 2>/dev/null)" || exit 1
+  files="$(find "$@" -type f -exec stat -c "file$tab%s$tab%Y$tab%n" {} + 2>/dev/null)" || exit 1
   {
     printf 'dump\t%s\t%s\n' "${dump_sha256%% *}" "$dump_size"
     [ -z "$files" ] || printf '%s\n' "$files" | LC_ALL=C sort
@@ -90,18 +141,38 @@ fail() {
   idle
 }
 
-# run_step <step> <deadline>: requests the step and waits for its exit status until the deadline, in seconds since the epoch.
-run_step() {
-  step="$1"
-  deadline="$2"
-  : >"$scratch/$step.request"
-  while [ ! -e "$scratch/$step.exit" ]; do
-    [ "$(date +%s)" -lt "$deadline" ] || fail "$step ran out of its budget"
+# run_steps <deadline> <steps>: requests every step of the space-separated list together and waits for all of them until
+# the deadline, in seconds since the epoch. A step that failed ends the stage naming itself, the first in list order, and
+# so does a step still running at the deadline. A step's start and end carry the UTC time, from which its duration reads.
+run_steps() {
+  deadline="$1"
+  steps="$2"
+  finished=
+  for step in $steps; do
+    : >"$scratch/$step.request"
+    echo "stage: $step started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  done
+  while :; do
+    running=
+    for step in $steps; do
+      if [ ! -e "$scratch/$step.exit" ]; then
+        running="${running:-$step}"
+        continue
+      fi
+      status="$(cat "$scratch/$step.exit")"
+      [ "$status" = 0 ] || fail "$step failed with exit $status"
+      case " $finished " in
+        *" $step "*) ;;
+        *)
+          finished="$finished $step"
+          echo "stage: $step done at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ;;
+      esac
+    done
+    [ -n "$running" ] || return 0
+    [ "$(date +%s)" -lt "$deadline" ] || fail "$running ran out of its budget"
     nap
   done
-  status="$(cat "$scratch/$step.exit")"
-  [ "$status" = 0 ] || fail "$step failed with exit $status"
-  echo "stage: $step done"
 }
 
 # guard: refuses while any pod but this one mounts the staging claim, such as a file Job of a failed Backup that still
@@ -119,6 +190,18 @@ guard() {
   echo "stage: guard passed"
 }
 
+# report_bucket: prints the count and the summed size of the staged bucket's files, no name.
+report_bucket() {
+  sizes="$(find "$staging/bucket" -type f -exec stat -c %s {} + 2>/dev/null)" || fail "the staged bucket cannot be counted"
+  objects=0
+  bytes=0
+  for size in $sizes; do
+    objects=$((objects + 1))
+    bytes=$((bytes + size))
+  done
+  echo "stage: bucket $objects objects $bytes bytes"
+}
+
 stager() {
   : "${PRE_SYNC_BUDGET:?}" "${CAPTURE_BUDGET:?}" "${POD_NAME:?}"
   # A restarted container finds its earlier attempt's files in /scratch and does not stage again.
@@ -126,10 +209,20 @@ stager() {
   : >"$scratch/attempted"
   guard
   rm -f "$staging/MANIFEST" "$staging/MANIFEST.tmp" || fail "the old MANIFEST cannot be removed"
-  run_step pre-sync "$(($(date +%s) + PRE_SYNC_BUDGET))"
+  pre_sync_steps=pre-sync
+  final_sync_steps=final-sync
+  if [ -n "${STAGE_BUCKET:-}" ]; then
+    pre_sync_steps="$pre_sync_steps bucket-pre-sync"
+    final_sync_steps="$final_sync_steps bucket-final-sync"
+  else
+    # A layer that dropped the bucket leaves no earlier copy for this run's snapshot or MANIFEST.
+    rm -rf "$staging/bucket" || fail "the old bucket copy cannot be removed"
+  fi
+  run_steps "$(($(date +%s) + PRE_SYNC_BUDGET))" "$pre_sync_steps"
   capture_deadline="$(($(date +%s) + CAPTURE_BUDGET))"
-  run_step dump "$capture_deadline"
-  run_step final-sync "$capture_deadline"
+  run_steps "$capture_deadline" dump
+  run_steps "$capture_deadline" "$final_sync_steps"
+  [ -z "${STAGE_BUCKET:-}" ] || report_bucket
   remaining="$((capture_deadline - $(date +%s)))"
   [ "$remaining" -gt 0 ] || fail "manifest ran out of its budget"
   status=0
@@ -149,6 +242,11 @@ case "${1:-}" in
     serve final-sync sync_files
     idle
     ;;
+  bucket)
+    serve bucket-pre-sync sync_bucket
+    serve bucket-final-sync sync_bucket
+    idle
+    ;;
   dump)
     # 0640 at the pod's group 70, which k8up's Job pods read through their supplemental group.
     umask 027
@@ -161,7 +259,7 @@ case "${1:-}" in
     manifest
     ;;
   *)
-    echo "usage: sh stage_files.sh stager|copy|dump" >&2
+    echo "usage: sh stage_files.sh stager|copy|bucket|dump" >&2
     exit 2
     ;;
 esac

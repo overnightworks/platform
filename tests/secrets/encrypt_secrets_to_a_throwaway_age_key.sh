@@ -124,6 +124,32 @@ while IFS= read -r bucket_namespace; do
   plain_secret "$store_secret" "$bucket_namespace" Opaque
 done < "$OBJECTSTORE_LAYER/namespaces.txt"
 
+# A layer that includes the Component that backs its bucket up reads the backup's own key from the Secret that Component
+# mounts, under the key the app's Secret holds, as another key than the app's (the Job apply grants it read alone). Its
+# namespace needs a bucket, and the Component must mount the file the key is made for.
+bucket_component=infrastructure/postgres/backup/files/bucket
+bucket_volume="$(yq '.patches[] | select(.target.kind == "PreBackupPod") | .patch' "$bucket_component/kustomization.yaml" |
+  yq '.[] | select(.op == "add" and .path == "/spec/pod/spec/volumes/-") | .value')"
+read -r backup_secret backup_key < <(yq '.secret.secretName + " " + .secret.items[0].key' <<<"$bucket_volume")
+[ -n "$backup_secret" ] && [ "$backup_key" = "$store_key" ] ||
+  fail "$bucket_component mounts the key '$backup_key' of the Secret '$backup_secret', not the key $store_key the app's Secret $store_secret holds"
+bucket_layers=0
+for layer in infrastructure/*/kustomization.yaml apps/*/kustomization.yaml; do
+  layer_includes "$layer" components "$bucket_component" || continue
+  bucket_namespace="$(yq '.namespace' "$layer")"
+  grep -qxF "$bucket_namespace" "$OBJECTSTORE_LAYER/namespaces.txt" ||
+    fail "$layer includes $bucket_component, but $bucket_namespace is no namespace $OBJECTSTORE_LAYER/namespaces.txt makes a bucket for"
+  access_key_id="GK$(openssl rand -hex 12)"
+  secret_access_key="$(openssl rand -hex 32)"
+  echo "::add-mask::$access_key_id"
+  echo "::add-mask::$secret_access_key"
+  printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$access_key_id" "$secret_access_key" \
+    > "$(secret_files "$backup_secret" "$bucket_namespace")/$backup_key"
+  plain_secret "$backup_secret" "$bucket_namespace" Opaque
+  bucket_layers=$((bucket_layers + 1))
+done
+[ "$bucket_layers" -gt 0 ] || fail "no layer under infrastructure/ or apps/ includes $bucket_component"
+
 # Prometheus mounts songmaker's monitoring token as a file, which the secretKeyRef scan below does not find, so its Secret
 # takes the value of the key songmaker reads it from.
 monitoring_files="$(secret_files songmaker-monitoring prometheus)"

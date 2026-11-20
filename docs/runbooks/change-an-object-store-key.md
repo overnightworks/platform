@@ -23,12 +23,15 @@ Impact: the app's pods get 403 from the store until they hold the key that the J
    Job, which imports the new keys, grants the app's read and write on the bucket and the backup's read alone, and revokes
    every other key's rights on it, a removed Secret's key included. Rights granted by hand through the admin API are revoked
    too, by design. The Job does not rerun by itself: when its change landed before the Secret `object-store-backup` reached the
-   cluster, or when that Secret left, this step runs once the Secret exists or is gone.
+   cluster, or when that Secret left, this step runs once the Secret exists or is gone. Where the app's layer includes
+   `infrastructure/postgres/backup/files/bucket`, the backup's pod reads the Secret `object-store-backup` at every Backup,
+   so a rotated backup key is imported by this Job before the next Backup, or that Backup fails with its step
+   `bucket-pre-sync` named.
 3. An agent: `kubectl -n <namespace> rollout restart deployment <web>`. The pods that kept the old key get 403 until they
    restart, since the key file is read at start.
 4. A first bucket for a namespace, a pull request: its name in `infrastructure/objectstore/namespaces.txt`, the
-   namespace's pods in the NetworkPolicy `garage` of `infrastructure/objectstore/garage.yaml`, and the Secret in
-   `platform-secrets`. The change of the list recreates the Job.
+   namespace's pods, and its PreBackupPod's pods where the layer includes `files/bucket`, in the NetworkPolicy `garage`
+   of `infrastructure/objectstore/garage.yaml`, and the Secret in `platform-secrets`. The change of the list recreates the Job.
 
 Rollback: the old value back in `platform-secrets`, then steps 2 and 3. The key that was revoked is granted again, and
 the new one loses its rights. The Job's change reverted, the next run denies the backup key's read, since the old script
