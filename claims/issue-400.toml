@@ -1,0 +1,8 @@
+claim_id = "0d4beea8bf764620a7ca4be5597c16a0"
+agent = "Claude 967f7dcc-2486-4b1f-bb70-0df1b0843ebe"
+role = "builder"
+base = "a570c0244d8d2cf2359bc647526305176943da98"
+branch = "claude/issue-400-schedules-named-backup"
+scope = ["apps/personas/kustomization.yaml", "apps/presentator/kustomization.yaml", "apps/skat/kustomization.yaml", "apps/songmaker/kustomization.yaml", "docs/runbooks/restore-a-database.md", "infrastructure/keycloak/kustomization.yaml", "infrastructure/litellm/kustomization.yaml", "infrastructure/postgres/backup/files/kustomization.yaml", "infrastructure/postgres/backup/kustomization.yaml", "scripts/backup_now.sh", "tests/backup"]
+opened_commit = "815b883ec3eabd18b06020ea13e21428bfd0e61c"
+whole_reason = "A rename of shared objects lands in every including layer and every reader at once, or a layer renders a dangling name."
