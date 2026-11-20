@@ -27,10 +27,8 @@ bucket_component="$files_component/bucket"
 bucket_patch="$(yq '.patches[] | select(.target.kind == "PreBackupPod") | .patch' "$bucket_component/kustomization.yaml")"
 bucket_secret="$(yq '.[] | select(.op == "add" and .path == "/spec/pod/spec/volumes/-") | .value.secret.secretName' <<<"$bucket_patch")"
 staging_claim="$(yq 'select(.kind == "PersistentVolumeClaim") | .metadata.name' "$files_component/files.yaml")"
-layer_includes "$layer_file" components "$files_component" || fail "$layer_file does not include $files_component"
-layer_includes "$layer_file" components "$bucket_component" || fail "$layer_file does not include $bucket_component"
-# The top level of the snapshot: MANIFEST and the dump beside the directory each declared Component adds.
-expected_top="$(printf '%s\n' MANIFEST postgres.dump files bucket | LC_ALL=C sort | tr '\n' ' ')"
+# The top level of the snapshot: MANIFEST and the dump beside the directory each Component the layer lists adds.
+expected_top="$(declared_top "$layer_file")"
 # The synthetic audio, under one directory of the declared claim: a nested file, names with a space.
 cell_directory="staging-cell"
 first_file="$cell_directory/nested/deeper/first take.ogg"

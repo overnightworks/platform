@@ -20,7 +20,7 @@ bucket_component="$files_component/bucket"
 bucket_patch="$(yq '.patches[] | select(.target.kind == "PreBackupPod") | .patch' "$bucket_component/kustomization.yaml")"
 bucket_secret="$(yq '.[] | select(.op == "add" and .path == "/spec/pod/spec/volumes/-") | .value.secret.secretName' <<<"$bucket_patch")"
 layer_includes "apps/$namespace/kustomization.yaml" components "$bucket_component" || fail "apps/$namespace does not include $bucket_component"
-expected_top="$(printf '%s\n' MANIFEST postgres.dump files bucket | LC_ALL=C sort | tr '\n' ' ')"
+expected_top="$(declared_top "apps/$namespace/kustomization.yaml")"
 mask_secret() { [ -z "${GITHUB_ACTIONS:-}" ] || echo "::add-mask::$1"; }
 ini_value() { sed -n "s/^$2 = //p" <<<"$1"; }
 secret_value() { kubectl --namespace "$namespace" get secret "$1" --output json | jq --raw-output --arg key "$2" '.data[$key]' | base64 --decode; }
@@ -181,7 +181,7 @@ withdrawal="$(jq --compact-output '
 kubectl --namespace "$namespace" patch prebackuppod files --type json --patch "$withdrawal" >/dev/null
 run_backup bucket-row-21
 snapshot_facts bucket-row-21-facts
-without_bucket="$(printf '%s\n' MANIFEST postgres.dump files | LC_ALL=C sort | tr '\n' ' ')"
+without_bucket="${expected_top/bucket /}"
 [ "$(value top)" = "$without_bucket" ] || fail "the snapshot without the bucket patch holds '$(value top)', not '$without_bucket'"
 [ "$(value manifest-bucket)" = 0 ] || fail "the MANIFEST of the snapshot without the bucket patch lists bucket/ lines"
 restore

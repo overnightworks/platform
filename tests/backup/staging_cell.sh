@@ -173,5 +173,15 @@ snapshot_bucket_digests='
   echo "bucket $(printf "%s\n" "$bucket_digests" | sha256sum | cut -c1-64) $(printf "%s\n" "$bucket_digests" | grep -c .)"
 '
 
+# declared_top <layer file>: the top level of a staging snapshot as value reads it, sorted: MANIFEST and the dump, and
+# the directory of each of files_component and bucket_component, which the sourcing cell names and layer_includes.sh
+# provides, that the layer lists.
+declared_top() {
+  local names=(MANIFEST postgres.dump)
+  ! layer_includes "$1" components "$files_component" || names+=(files)
+  ! layer_includes "$1" components "$bucket_component" || names+=(bucket)
+  printf '%s\n' "${names[@]}" | LC_ALL=C sort | tr '\n' ' '
+}
+
 # value <key>: the rest of the line of the last restic Pod's output that starts with the key.
 value() { sed -n "s/^$1 //p" <<<"$restic_output"; }
