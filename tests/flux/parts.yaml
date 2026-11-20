@@ -31,7 +31,7 @@ backup-3: {layers: [backup, prometheus, presentator, skat, songmaker], paths: [t
 # The test agents' cells drive Keycloak.
 presentator: {layers: [presentator, keycloak], paths: [tests/keycloak/*, tests/no_network/*, tests/presentator/*, tests/redis/*]}
 # The attestation probe patches a live presentator Pod, and speech's cell needs the speech layer.
-presentator-2: {layers: [presentator, speech-runtime], paths: [tests/admission/app_attestations_refuse_by_dry_run.sh, tests/presentator/*, tests/speech_runtime/*, tests/workloads/*]}
+presentator-2: {layers: [presentator, speech-runtime], paths: [tests/admission/app_attestations_refuse_by_dry_run.sh, tests/admission/pause_survives_the_root_reconcile.sh, tests/presentator/*, tests/speech_runtime/*, tests/workloads/*]}
 # The object store's cell drives Garage and its Job from client Pods in each app's Namespace, which holds no layer here;
 # it reads each app's directory for the web's env contract and credentials projection and for the other workloads, and
 # litellm's manifest for the client image.

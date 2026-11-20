@@ -33,6 +33,7 @@ unlabelled_leases="kyverno kyvernopre"
 applied_selector="kustomize.toolkit.fluxcd.io/name=$layer,kustomize.toolkit.fluxcd.io/namespace=$flux_namespace"
 wait_seconds="${ADMISSION_WAIT_SECONDS:-300}"
 poll_seconds="${ADMISSION_POLL_SECONDS:-3}"
+field_manager=admission-pause-and-resume
 way_back="read the objects with kubectl and run it again"
 
 # wait_until <what> <command>...: the command passes within the wait.
@@ -52,8 +53,12 @@ layer_exists() {
     fail "the Kustomization $layer cannot be read, so its presence is unknown; nothing changed" "$way_back"
   [ -n "$names" ]
 }
+# The root Kustomization applies app-attestations on every reconcile and takes over the fields that kubectl's own field
+# managers set, so a plain patch of spec.suspend would be gone within the root's interval; a field of another manager
+# stays, which keeps the pause until a resume.
 suspend() {
-  kubectl --namespace "$flux_namespace" patch kustomization "$layer" --type merge --patch "{\"spec\":{\"suspend\":$1}}" >/dev/null
+  kubectl --namespace "$flux_namespace" patch kustomization "$layer" --field-manager="$field_manager" --type merge \
+    --patch "{\"spec\":{\"suspend\":$1}}" >/dev/null
 }
 controller_pods_gone() {
   kubectl wait --namespace "$kyverno_namespace" --for=delete pod --selector "$controller_selector" --timeout=2m >/dev/null

@@ -83,6 +83,9 @@ made_call '"suspend":true' || fail "pause did not set suspend to true"
 made_call "scale deployment" || fail "pause did not scale the admission controller"
 made_call "replicas 0" || made_call "replicas=0" || fail "pause did not scale to 0"
 [ "$(call_line patch)" -lt "$(call_line scale)" ] || fail "pause scaled before it suspended"
+# The root Kustomization takes over what kubectl's own field managers set, so the patch names another one.
+field_manager="$(grep -o -e '--field-manager=[^ ]*' "$calls" | head -1)" || fail "pause patched without naming a field manager"
+[[ "$field_manager" != --field-manager=kubectl* ]] || fail "pause patched as $field_manager, which the root's apply takes over"
 [ "$(call_line scale)" -lt "$(call_line '^delete')" ] || fail "pause deleted the webhooks before it scaled to 0"
 webhook_deletions="$(grep -c '^delete' "$calls")"
 [ "$webhook_deletions" -eq 1 ] || fail "pause made $webhook_deletions deletions, not the one of the webhook configurations"
@@ -107,6 +110,8 @@ touch "$state/github-down"
 run_task resume
 [ "$status" -eq 0 ] || fail "resume ended $status while GitHub was down: $output"
 made_call '"suspend":false' || fail "resume did not resume app-attestations"
+grep -q -e "patch kustomization app-attestations $field_manager .*\"suspend\":false" "$calls" ||
+  fail "resume did not set suspend as the manager that paused: $(cat "$calls")"
 made_call "annotate kustomization app-attestations reconcile.fluxcd.io/requestedAt=" || fail "resume did not force a reconcile"
 if made_call '^gh '; then fail "the restore branch read GitHub"; fi
 if made_call '^delete'; then fail "the restore branch deleted something: $(deletions)"; fi

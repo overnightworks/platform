@@ -828,6 +828,14 @@ jobs:
           LIVE_APP_NAMESPACE: presentator
         run: tests/admission/app_attestations_refuse_by_dry_run.sh
 
+      - name: Assert that a reconcile of the root Kustomization leaves a paused attestation check paused, with app-attestations suspended, Kyverno at 0 replicas and none of its webhook configurations back
+        if: matrix.part == 'presentator-2'
+        env:
+          ROOT_LAYER: flux-system/flux-system
+          ATTESTATION_LAYER: flux-system/app-attestations
+          ADMISSION_SCRIPT: scripts/pause_or_resume_attestation_check.sh
+        run: tests/admission/pause_survives_the_root_reconcile.sh
+
       - name: Assert that speech's CPU image runs two Ready pods behind its Service, each answering its readiness check, and that a rollout restart keeps a Ready endpoint
         if: matrix.part == 'presentator-2'
         run: tests/speech_runtime/two_cpu_pods_serve_behind_the_service.sh
