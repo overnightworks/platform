@@ -61,9 +61,11 @@ sync_files() {
 # and which the copy would silently lack. Some keys it drops without any message: one with a `..` segment is not
 # written, and one with an empty segment lands on the path without it. So the keys listed before the sync go to the
 # listing file, and each must be a file of the copy by that very name, which a key written in between cannot stand in
-# for; a key listed twice has collapsed already. A copy with a name that holds a newline ends the step at once: rclone
-# lists that key with a symbol for the newline, so no listed line equals the name, and the manifest refuses the name with
-# its own message. Any such line, a missing key or any exit status but 0 fails the step.
+# for; a key listed twice has collapsed already. A listed key the copy lacks fails the step only when the bucket still
+# lists it after the sync: an object deleted meanwhile is gone from the second listing, and one rclone dropped is not.
+# A copy with a name that holds a newline ends the step at once: rclone lists that key with a symbol for the newline, so
+# no listed line equals the name, and the manifest refuses the name with its own message. Any such line, a key the
+# copy lacks and the bucket still lists, a failed listing or any exit status but 0 fails the step.
 copy_bucket() {
   listing="$1"
   rclone lsf --recursive --files-only ":s3:$BUCKET" >"$listing" 2>/dev/null || return 1
@@ -77,19 +79,24 @@ copy_bucket() {
   [ -z "$(sort "$listing" | uniq -d)" ] || return 1
   find "$staging/bucket" -type f >"$listing.staged" || return 1
   sed "s|^$staging/bucket/||" "$listing.staged" >"$listing.names" || return 1
-  # grep ends 1 when every listed key is among the names, and 0 or 2 when one is not or it could not tell.
+  # grep ends 1 when no line is selected, and 0 when one is, or 2 when it could not tell.
   status=0
-  grep -qvxFf "$listing.names" "$listing" || status=$?
+  grep -vxFf "$listing.names" "$listing" >"$listing.missing" || status=$?
+  [ "$status" != 1 ] || return 0
+  [ "$status" = 0 ] || return 1
+  rclone lsf --recursive --files-only ":s3:$BUCKET" >"$listing.after" 2>/dev/null || return 1
+  status=0
+  grep -qxFf "$listing.after" "$listing.missing" || status=$?
   [ "$status" = 1 ]
 }
 
-# sync_bucket: copy_bucket with the listing in /scratch, which holds the keys only until the step ends.
+# sync_bucket: copy_bucket with the listings in /scratch, which holds the keys only until the step ends.
 sync_bucket() {
   mkdir -p "$staging/bucket" || return 1
   listing="$scratch/bucket.listing"
   copied=0
   copy_bucket "$listing" || copied=$?
-  rm -f "$listing" "$listing.staged" "$listing.names"
+  rm -f "$listing" "$listing.staged" "$listing.names" "$listing.missing" "$listing.after"
   return "$copied"
 }
 
