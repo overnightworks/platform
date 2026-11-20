@@ -83,7 +83,7 @@ webhooks_judge_app_pods() {
   expressions="$(kubectl get imagevalidatingpolicy "$policy" --output json | jq --compact-output '[.spec.matchConditions[].expression]')"
   kubectl get validatingwebhookconfiguration --selector "$webhook_selector" --output json | jq --exit-status --argjson expressions "$expressions" \
     --arg namespaces "$flux_namespace kube-system $kyverno_namespace" '
-      [.items[].webhooks[] | select(any(.rules[].resources[]; . == "pods"))] as $webhooks
+      [.items[].webhooks[] | select(any((.rules // [])[].resources[]; . == "pods"))] as $webhooks
       | ($webhooks | length) > 0 and all($webhooks[];
           .failurePolicy == "Fail"
           and ([.namespaceSelector.matchExpressions[]? | select(.operator == "NotIn" and .key == "kubernetes.io/metadata.name") | .values[]] as $excluded
