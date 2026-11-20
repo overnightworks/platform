@@ -6,10 +6,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # sync with the files of the copy by name: a key written to the bucket during the sync, which the copy holds beside the
 # others, cannot make up for a listed key the copy lacks. rclone is a stand-in in a throwaway container without network
 # whose sync drops one listed key without a message (as rclone does for a key with a `..` segment) and copies one key
-# the listing did not hold; the control copies every listed key and the late one. A key with a newline, which the listing
-# prints as two equal lines, is no key listed twice: the step ends 0 so the manifest refuses it with its own message,
-# while two equal lines of a key that is no file with a newline end the step with an error. The image is the Component's own, read
-# from its patch. It prints exit statuses, never a name.
+# the listing did not hold; the control copies every listed key and the late one. A key with a newline, which rclone
+# lists with the newline shown as the symbol U+240A and writes as a file whose name holds the newline, matches no listed
+# line: the step ends 0 so the manifest refuses it with its own message, while two equal lines of a key that is no file
+# with a newline end the step with an error. The image is the Component's own, read from its patch. It prints exit
+# statuses, never a name.
 component=infrastructure/postgres/backup/files/bucket/kustomization.yaml
 script="$PWD/infrastructure/postgres/backup/files/scripts/stage_files.sh"
 export PATH="$HOME/.local/bin:$PATH"
@@ -25,7 +26,8 @@ case "$1" in
   size) echo '{"count":3,"bytes":3}' ;;
   lsf)
     case "${SCENARIO:-}" in
-      newline | twice) printf 'same\nsame\n' ;;
+      newline) printf 'same\342\220\212same\n' ;;
+      twice) printf 'same\nsame\n' ;;
       *) printf 'first\nsecond\nthird\n' ;;
     esac
     ;;
@@ -64,8 +66,8 @@ echo "the control copy of every listed key and one written during the sync ended
 dropped="$(step_exit yes)"
 [ -n "$dropped" ] && [ "$dropped" != 0 ] || fail "a copy that dropped a listed key ended with exit '${dropped:-none}' because a late key made the file count equal"
 echo "a copy that dropped a listed key and held a late key beside the others ended with exit $dropped"
-[ "$(step_exit no newline)" = 0 ] || fail "a key with a newline, listed as two equal lines, did not end the step with exit 0 for the manifest to refuse"
-echo "a key with a newline, listed as two equal lines, ended with exit 0 and is left to the manifest's refusal"
+[ "$(step_exit no newline)" = 0 ] || fail "a key with a newline, listed with the symbol for it, did not end the step with exit 0 for the manifest to refuse"
+echo "a key with a newline, listed with the symbol for it, ended with exit 0 and is left to the manifest's refusal"
 twice="$(step_exit no twice)"
 [ -n "$twice" ] && [ "$twice" != 0 ] || fail "a key listed twice ended with exit '${twice:-none}'"
 echo "a key listed twice and no name with a newline ended with exit $twice"

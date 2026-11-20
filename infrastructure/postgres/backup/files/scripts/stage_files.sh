@@ -61,9 +61,9 @@ sync_files() {
 # and which the copy would silently lack. Some keys it drops without any message: one with a `..` segment is not
 # written, and one with an empty segment lands on the path without it. So the keys listed before the sync go to the
 # listing file, and each must be a file of the copy by that very name, which a key written in between cannot stand in
-# for; a key listed twice has collapsed already, unless a name of the copy holds a newline: its fragments are lines of
-# the listing, repeated or not, and the manifest refuses that name with its own message. Any such line, a missing key or
-# any exit status but 0 fails the step.
+# for; a key listed twice has collapsed already. A copy with a name that holds a newline ends the step at once: rclone
+# lists that key with a symbol for the newline, so no listed line equals the name, and the manifest refuses the name with
+# its own message. Any such line, a missing key or any exit status but 0 fails the step.
 copy_bucket() {
   listing="$1"
   rclone lsf --recursive --files-only ":s3:$BUCKET" >"$listing" 2>/dev/null || return 1
@@ -73,7 +73,8 @@ copy_bucket() {
   [ "$status" = 0 ] || return "$status"
   [ "$skipped" = 0 ] || return 1
   names_with_newline="$(find "$staging/bucket" -name "*$newline*")" || return 1
-  [ -n "$names_with_newline" ] || [ -z "$(sort "$listing" | uniq -d)" ] || return 1
+  [ -z "$names_with_newline" ] || return 0
+  [ -z "$(sort "$listing" | uniq -d)" ] || return 1
   find "$staging/bucket" -type f >"$listing.staged" || return 1
   sed "s|^$staging/bucket/||" "$listing.staged" >"$listing.names" || return 1
   # grep ends 1 when every listed key is among the names, and 0 or 2 when one is not or it could not tell.
