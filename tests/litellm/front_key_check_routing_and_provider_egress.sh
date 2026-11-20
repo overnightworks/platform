@@ -159,9 +159,12 @@ for _ in $(seq 15); do
   request | timeout 5 nc "$host" "$port" | grep -q '^HTTP/1.1 404' && break
   sleep 2
 done
-# nc does not end when the front closes, so each connection asks again after its sleep and the Pod counts answers.
-{ request; sleep $((idle - 15)); request; sleep 3; } | timeout $((idle - 15 + 10)) nc "$host" "$port" > reused.out &
-{ request; sleep $((idle + 10)); request; sleep 3; } | timeout $((idle + 10 + 10)) nc "$host" "$port" > held.out
+# Each connection asks again after its sleep and the Pod counts answers; the subshell feeding nc sleeps instead of
+# ending, so nc's stdin stays open, and nc's own messages ("punt!" when the front closes) go to a file, not the log.
+{ request; sleep $((idle - 15)); request; sleep 3; } |
+  timeout $((idle - 15 + 10)) nc "$host" "$port" > reused.out 2> reused.err &
+{ request; sleep $((idle + 10)); request; sleep 3; } |
+  timeout $((idle + 10 + 10)) nc "$host" "$port" > held.out 2> held.err
 wait
 echo "reused $(grep -c '^HTTP/1.1 404' reused.out) held $(grep -c '^HTTP/1.1 404' held.out)"
 EOF
@@ -344,8 +347,10 @@ echo "LiteLLM's start refuses each bad key and password naming only its variable
 # C0's result: the connection used again 15 s below the timeout still answered, and the one used 10 s past it did not.
 finish_client "$APP_NAMESPACE" "$idle_pod" "$((idle_seconds + 60))s"
 [ "$exit_code" = 0 ] || fail "the idle probe Pod ended with $exit_code: $output"
-read -r _ reused _ held <<<"$output"
+counts="$(grep -E '^reused [0-9]+ held [0-9]+$' <<<"$output" | tail -n 1)"
+[ -n "$counts" ] || fail "the idle probe printed no counts of answers: $output"
+read -r _ reused _ held <<<"$counts"
 [ "$reused $held" = "2 1" ] ||
-  fail "two connections idle $((idle_seconds - 15)) s and $((idle_seconds + 10)) s against the idleTimeout $idle_timeout were answered $reused and $held times in all, not 2 and 1; the probe printed: $output"
+  fail "two connections idle $((idle_seconds - 15)) s and $((idle_seconds + 10)) s against the idleTimeout $idle_timeout were answered $reused and $held times in all, not 2 and 1"
 echo "an idle connection to the front answers again $((idle_seconds - 15)) s into its idleTimeout $idle_timeout and is" \
   "closed by the front $((idle_seconds + 10)) s in"
