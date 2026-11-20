@@ -1,0 +1,7 @@
+claim_id = "5a801c3455b34e59bd591b7a3e02bf6d"
+agent = "Claude 6cdd6a8b-a2a2-48f5-8108-9e563417fd59"
+role = "builder"
+base = "85a71f3341fb36136a38df67f784ed7175d04a81"
+branch = "claude/issue-778-skat-2026-11-20-1"
+scope = ["apps/skat/release/kustomization.yaml"]
+opened_commit = "b012487d8eb7bce5b27cabc7a9d9f6551f112009"
