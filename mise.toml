@@ -1124,10 +1124,10 @@ exec scripts/pause_or_resume_attestation_check.sh resume
 '''
 
 [tasks."gpu:use"]
-description = "Give the PC's card to songmaker's music or to speech"
+description = "Give the PC's card to songmaker's music or to speech, or free it for an hour (free returns it to speech by itself)"
 usage = '''
-arg "<user>" help="songs or speech" {
-  choices "songs" "speech"
+arg "<user>" help="songs, speech or free" {
+  choices "songs" "speech" "free"
 }
 '''
 quiet = true
