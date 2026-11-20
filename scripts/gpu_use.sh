@@ -60,13 +60,13 @@ replicas_of() {
   echo "$replicas"
 }
 
-# small_voice_serves <way back if the small image is not Ready>: speech's small image runs at two pods and is Ready, then the
+# small_voice_serves <way back if the small image is not Ready> <way back if the GPU image's pod stays>: speech's small image runs at two pods and is Ready, then the
 # GPU image stops and its pod is gone, which frees the card.
 small_voice_serves() {
   scale "$speech_namespace" "$speech_small" "$speech_small_replicas"
   wait_ready "$speech_namespace" "$speech_small" "$speech_small_replicas" 5 "$1"
   scale "$speech_namespace" "$speech_gpu" 0
-  wait_gone "$speech_namespace" "$speech_gpu" "run it again"
+  wait_gone "$speech_namespace" "$speech_gpu" "$2"
 }
 
 # arm_return: stops a stale timer and arms the bound, which runs this script's `return` after the minutes.
@@ -82,7 +82,7 @@ arm_return() {
 
 case "$user" in
   songs)
-    small_voice_serves "speech has no Ready pods, so look at $speech_small's pods in namespace $speech_namespace, then run it again; the GPU image still holds the card and runs"
+    small_voice_serves "speech has no Ready pods, so look at $speech_small's pods in namespace $speech_namespace, then run it again; the GPU image still holds the card and runs" "run it again"
     scale "$songs_namespace" "$songs_worker" 1
     wait_ready "$songs_namespace" "$songs_worker" 1 10 "another user may still hold the card, so run 'mise run gpu:use speech' or free it, then run it again"
     say "the card is songmaker's: $songs_worker is Ready, and speech runs its small image on the CPU at $speech_small_replicas pods"
@@ -103,11 +103,14 @@ case "$user" in
       fail "the card is not speech's: $songs_worker stands at $worker_replicas and $speech_gpu at $gpu_replicas; run 'mise run gpu:use speech' to give it to speech, or 'mise run gpu:use songs' to give it to songmaker, then run it again"
     fi
     arm_return
-    small_voice_serves "the $return_unit timer stays armed and gives the card back to speech in $return_minutes minutes, or run 'mise run gpu:use speech' now; look at $speech_small's pods in namespace $speech_namespace"
+    small_voice_serves "the $return_unit timer stays armed and gives the card back to speech in $return_minutes minutes, or run 'mise run gpu:use speech' now; look at $speech_small's pods in namespace $speech_namespace" \
+      "the $return_unit timer stays armed and gives the card back to speech in $return_minutes minutes, or run 'mise run gpu:use speech' now; look at $speech_gpu's pod in namespace $speech_namespace"
     say "the card is free: $speech_small runs its small image at $speech_small_replicas pods on the CPU, $speech_gpu and $songs_worker stand at 0; it goes back to speech by itself in $return_minutes minutes (journalctl --user -u $return_unit), or now with 'mise run gpu:use speech'"
     ;;
   return)
-    if [ "$(replicas_of "$songs_namespace" "$songs_worker")" = 0 ] && [ "$(replicas_of "$speech_namespace" "$speech_gpu")" = 0 ]; then
+    worker_replicas="$(replicas_of "$songs_namespace" "$songs_worker")"
+    gpu_replicas="$(replicas_of "$speech_namespace" "$speech_gpu")"
+    if [ "$worker_replicas" = 0 ] && [ "$gpu_replicas" = 0 ]; then
       exec "${BASH_SOURCE[0]}" speech
     fi
     say "the card has another user since free; nothing returned"

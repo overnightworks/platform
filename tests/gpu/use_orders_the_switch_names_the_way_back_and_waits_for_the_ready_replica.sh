@@ -213,6 +213,22 @@ if grep -q 'speech-runtime-gpu --replicas' "$calls" || grep -q 'systemctl --user
 fi
 [[ "$output" == *"gpu:use speech"* ]] || fail "a failed wait in free named no way back: $output"
 
+# A failed wait for the GPU voice's pod to go in free names a way back that works while the voice stands at 0.
+set_replicas 0 1
+rm -f "$state/armed"
+FAKE_FAILING_CALL="wait --namespace speech-runtime --for=delete" switch_to free
+[ "$status" -ne 0 ] || fail "a failed wait for the GPU voice's pod ended 0 in free"
+[[ "$output" == *"gpu:use speech"* && "$output" != *"run it again"* ]] ||
+  fail "a failed wait for the GPU voice's pod named a way back that free refuses: $output"
+
+# return with an unreadable state fails and does not claim another user has the card.
+set_replicas 0 0
+rm "$state/acestep-worker"
+switch_to return
+[ "$status" -ne 0 ] || fail "return ended 0 with an unreadable state"
+[[ "$output" != *"nothing returned"* ]] || fail "return reported another user for an unreadable state: $output"
+if grep -qE 'scale|systemd-run|systemctl' "$calls"; then fail "return acted on an unreadable state"; fi
+
 # return acts only while nobody took the card: it makes no scale call and ends 0 when the worker or the GPU voice runs.
 for state_case in "1 0" "0 1" "1 1"; do
   # shellcheck disable=SC2086
