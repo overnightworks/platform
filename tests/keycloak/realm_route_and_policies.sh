@@ -28,9 +28,9 @@ echo "Keycloak and Traefik's web trust the forwarded headers of the same senders
 issuer="$(curl --silent --show-error --fail "$local_url/realms/$realm/.well-known/openid-configuration" | jq --raw-output .issuer)"
 [ "$issuer" = "$public_issuer" ] || fail "discovery names the issuer '$issuer', not $public_issuer"
 echo "discovery names the issuer $issuer"
-declared_groups="$(yq --output-format json '.groups' "$REALM_FILE" | jq --raw-output '
-  def group_paths($parent): .[] | ($parent + "/" + .name) as $path | $path, ((.subGroups // []) | group_paths($path));
-  group_paths("")')"
+# shellcheck source=realm_groups.sh
+source "$(dirname "${BASH_SOURCE[0]}")/realm_groups.sh"
+declared_groups="$(realm_group_paths "$REALM_FILE")"
 [ -n "$declared_groups" ] || fail "$REALM_FILE declares no group"
 while IFS= read -r group; do
   live_path="$(admin GET "$realm/group-by-path$group" | jq --raw-output .path)" || live_path=""

@@ -252,9 +252,7 @@ fi
 # named_by <expected text> <description>: the mutant in $work/mutant.yaml must make the check
 # print a problem that contains the text.
 named_by() {
-  problems="$(judge "$work/mutant.yaml")"
-  [[ $problems == *"$1"* ]] || fail "the mutant '$2' did not make the check name '$1'; it named: ${problems:-nothing}"
-  echo "the check names '$1' for the mutant: ${2:0:90}"
+  expect_problem "$1" "${2:0:90}" judge "$work/mutant.yaml"
 }
 # mutant <expected text> <yq expression>: the render changed by the expression.
 mutant() {
