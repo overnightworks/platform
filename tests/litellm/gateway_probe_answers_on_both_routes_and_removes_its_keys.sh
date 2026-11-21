@@ -21,13 +21,16 @@ mkdir "$fake_bin" "$guard_bin"
 master_key=sk-fake-master-key-0001
 real_timeout="$(command -v timeout)"
 real_curl="$(command -v curl)"
+# stop_all: ends every run that still goes, which ends its probe and waits for it, and only then the gateways and
+# forwards the runs leave and the directory of them all.
 stop_all() {
   local pid_file
+  # shellcheck disable=SC2046 # the job ids are numbers
+  kill $(jobs -p) 2>/dev/null || true
+  wait 2>/dev/null || true
   for pid_file in "$work_directory"/*/server-pid "$work_directory"/*/forward-pids; do
     [ ! -f "$pid_file" ] || xargs -r kill <"$pid_file" 2>/dev/null || true
   done
-  # shellcheck disable=SC2046 # the job ids are numbers
-  kill $(jobs -p) 2>/dev/null || true
   rm -rf "$work_directory"
 }
 trap stop_all EXIT
@@ -37,7 +40,7 @@ trap 'exit 143' TERM
 # The fake tools read their directories and the fake master key from the environment, and find the real tool behind them on
 # the path without the directory of the fakes.
 export FAKE_BIN="$fake_bin" FAKE_MASTER_KEY="$master_key"
-# A guarded run puts these in front of the tools of the probe, which refuse a key's value or a sha256 in their arguments,
+# Every run puts these in front of the tools of the probe, which refuse a key's value or a sha256 in their arguments,
 # which a process list shows. Each starts one process of its own and then the tool, whose path it holds.
 for tool in curl grep awk yq sed tr cut sha256sum head seq od; do
   printf '#!/bin/bash\nif [[ "$*" == *sk-* || "$*" =~ [0-9a-f]{64} ]]; then\n  echo "%s had a key or a hash in its arguments" >>"$FAKE_WORK/violations"\n  exit 1\nfi\nexec %q "$@"\n' \
@@ -73,28 +76,30 @@ esac
 FAKE
 chmod +x "$fake_bin/sleep" "$fake_bin/timeout" "$fake_bin/kubectl"
 
-# drive_probe <name> <guarded or plain> <faults> <seeded keys> <argument>...: runs the probe against a new fake gateway with
+# drive_probe <name> <faults> <seeded keys> <argument>...: runs the probe against a new fake gateway with
 # the faults, in the directory $work_directory/<name>, which holds its status, output, the aliases the gateway holds
 # afterwards and the files the fake tools write. Runs are independent, so the cell starts them all and then judges each.
 drive_probe() {
-  local name="$1" tools="$2" faults="$3" seeded="$4" directory port status=0 tool_path="$fake_bin:$PATH"
-  shift 4
+  local name="$1" faults="$2" seeded="$3" directory port probe_pid status=0
+  shift 3
   directory="$work_directory/$name"
   mkdir -p "$directory/tmp"
   mkfifo "$directory/port"
   python3 -I "$repository_root/tests/litellm/fake_gateway.py" "$master_key" "$faults" "$seeded" >"$directory/port" &
   echo $! >"$directory/server-pid"
   read -r port <"$directory/port" || fail "$name: the fake gateway did not listen"
-  [ "$tools" != guarded ] || tool_path="$fake_bin:$guard_bin:$PATH"
-  FAKE_WORK="$directory" FAKE_PORT="$port" PATH="$tool_path" KUBECONFIG=/nonexistent MISE_DISABLE_TOOLS=kubectl TMPDIR="$directory/tmp" \
-    "$real_timeout" 900 "$repository_root/scripts/litellm_gateway_probe.sh" "$@" >"$directory/output" 2>&1 || status=$?
+  FAKE_WORK="$directory" FAKE_PORT="$port" PATH="$fake_bin:$guard_bin:$PATH" KUBECONFIG=/nonexistent MISE_DISABLE_TOOLS=kubectl \
+    TMPDIR="$directory/tmp" "$real_timeout" 900 "$repository_root/scripts/litellm_gateway_probe.sh" "$@" >"$directory/output" 2>&1 &
+  probe_pid=$!
+  # A TERM to this run ends the probe, which runs its own cleanup, and the run waits for it.
+  trap 'kill "$probe_pid" 2>/dev/null || true' TERM
+  while kill -0 "$probe_pid" 2>/dev/null; do wait "$probe_pid" || status=$?; done
   echo "$status" >"$directory/status"
   "$real_curl" --silent "http://127.0.0.1:$port/__keys" | yq '.[]' >"$directory/held"
   kill "$(<"$directory/server-pid")"
 }
 declare -A drives=()
-# start_probe <name> <guarded or plain> <faults> <seeded keys> <argument>...: starts drive_probe in the background. The runs
-# of the faults need no guard, since each sends the commands of the healthy run, which is guarded.
+# start_probe <name> <faults> <seeded keys> <argument>...: starts drive_probe in the background.
 start_probe() {
   drive_probe "$@" &
   drives[$1]=$!
@@ -128,15 +133,15 @@ ended_cleanly() {
   [ -z "$held" ] || fail "$1: the gateway holds the keys: $held"
 }
 
-start_probe healthy guarded "" 0
-for case in dear_writes spendy_calls heavy_first_call; do start_probe "$case" plain "$case" 0; done
-start_probe small_limit plain "small_model_limit,heavy_first_call,spendy_calls" 0
-start_probe dear_chat_write plain "dear_misses" 0
-start_probe no_cache_reads plain "no_cache,dear_misses" 0
-start_probe undeletable guarded "delete_fails,messages_ignores_budget" 0
-start_probe doubtful plain "unnamed_budget_refusal,short_read,refuse_zero,drop_row" 0
-start_probe failed guarded "chat_fails" 0
-start_probe remove guarded "" 120 --remove
+start_probe healthy "" 0
+for case in dear_writes spendy_calls heavy_first_call; do start_probe "$case" "$case" 0; done
+start_probe small_limit "small_model_limit,heavy_first_call,spendy_calls" 0
+start_probe dear_chat_write "dear_misses" 0
+start_probe no_cache_reads "no_cache,dear_misses" 0
+start_probe undeletable "delete_fails,messages_ignores_budget" 0
+start_probe doubtful "unnamed_budget_refusal,short_read,refuse_zero,drop_row" 0
+start_probe failed "chat_fails" 0
+start_probe remove "" 120 --remove
 
 # A run with a healthy gateway.
 run_probe healthy
