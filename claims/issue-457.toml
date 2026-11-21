@@ -3,5 +3,5 @@ agent = "Claude a8131622-e90f-4803-bf0e-e8f72b4d2a31"
 role = "builder"
 base = "e3f2341ca163c5ad89aab34e6cc1e0ea64a8a9fb"
 branch = "claude/issue-457-quality-pins-at-v0-23-0"
-scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml"]
+scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", "quality/baseline.toml"]
 opened_commit = "7a02387cfcb83980efd3223b9e642ca143a144b0"
