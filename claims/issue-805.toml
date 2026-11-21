@@ -1,0 +1,8 @@
+claim_id = "ad91856b2a3a4f788269b01787e4094e"
+agent = "Claude 9d351344-6eaa-412b-b0f9-cc7ee2db0ede"
+role = "builder"
+base = "3ea4c312b820ee16880d173d9ad7c1ecc9d38219"
+branch = "claude/issue-805-the-ai-gateway-outage-cell-runs-against"
+scope = [".github/workflows/ci.yml", "tests/prometheus"]
+opened_commit = "396cc930b34eeea6960e829d61cabf5e6577c46b"
+whole_reason = "The limit and the outage cell change together: a plain 17 without the shortened cell would cut the nightly outage part."
