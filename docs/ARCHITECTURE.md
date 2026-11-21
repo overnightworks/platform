@@ -44,7 +44,8 @@ flowchart TB
     subgraph edge[Edge]
       tunnel[cloudflared] --> traefik[Traefik web]
     end
-    traefik --> apps[apps: hopin, skat, songmaker, presentator, speech-runtime; personas has no port]
+    traefik --> apps[apps: hopin, skat, songmaker, presentator; personas has no port]
+    apps --> speech[speech-runtime]
     traefik --> keycloak[Keycloak]
     traefik --> legal[legal pages]
     apps --> front[litellm-front] --> litellm[LiteLLM] --> egress[agent-egress]
@@ -62,7 +63,7 @@ Container: the layers and who sends to whom. Sources: the Kustomizations in `clu
 NetworkPolicies.
 
 - Edge: `infrastructure/cloudflared` (the tunnel's lines, one host each) and `infrastructure/traefik`, whose file
-  provider holds Keycloak's routers; each app and the legal pages route by Ingress.
+  provider holds Keycloak's routers; hopin, skat, songmaker, presentator and the legal pages route by Ingress.
 - Identity: `infrastructure/keycloak`, the realm `hallucinai` and master, applied by the Job `config-cli`.
 - AI: `infrastructure/litellm`, three parts: the gateway with keys and budgets in its Postgres, its front, and
   `agent-egress`, the one path to the providers. `apps/speech-runtime` runs a CPU Deployment and a GPU one behind one
