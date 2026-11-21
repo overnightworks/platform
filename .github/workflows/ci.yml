@@ -111,6 +111,9 @@ jobs:
           mise exec -- tests/keycloak/realm_secrets_are_env_references.sh
           infrastructure/keycloak/realm.yaml infrastructure/keycloak/master.yaml
 
+      - name: Check that every name a manifest under apps/ hands under a REALM_ key is a plain value that the realm file declares and that is its app's own or the fleet's, and that the check names each breach
+        run: mise exec -- tests/keycloak/handed_realm_names_are_declared.sh infrastructure/keycloak/realm.yaml
+
       - name: Check that check:secrets-expiry passes no annotated Secret and a date 31 days out and names each Secret within 30 days, past, unparseable or unlisted
         run: tests/secrets/expiry_check_names_each_breach.sh
 

@@ -62,6 +62,19 @@ spec:
             - name: http
               containerPort: 8080
           env:
+            # The realm names under docs/app.md's scheme, which tests/keycloak/handed_realm_names_are_declared.sh holds to realm.yaml.
+            - name: REALM_CLIENT_ID
+              value: skat
+            - name: REALM_LOGIN_GROUP
+              value: /apps/skat
+            - name: REALM_MCP_GROUP
+              value: /apps/skat/mcp
+            - name: REALM_MCP_SCOPE
+              value: mcp-skat
+            - name: REALM_AGENT_GROUP
+              value: /agents
+            - name: REALM_MCP_CLIENT_ID
+              value: agents
             - name: SKAT_OIDC_ISSUER
               value: https://auth.hallucinai.de/realms/hallucinai
             - name: SKAT_OIDC_CLIENT_SECRET_FILE
