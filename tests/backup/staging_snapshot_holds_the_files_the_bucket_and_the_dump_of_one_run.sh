@@ -193,6 +193,60 @@ echo "the newest snapshot of $namespace is the staging one$(grep -q '^arranged$'
 run_restore_test "$namespace" staging-newest-restore-test
 [ "$status" = passed ] || fail "the restore test of $namespace failed while its newest snapshot is the staging one"
 echo "the restore test of $namespace passes"
+run_logs+="$restore_pod_log"$'\n'
+grep -q '\] restore object: compare: one object equals its copy in the snapshot' <<<"$restore_pod_log" ||
+  fail "the restore test of $namespace did not compare one unchanged object of its bucket with the live bucket"
+echo "the restore test of $namespace compared one unchanged object of its bucket with the live object and found them equal"
+
+# The bucket steps fail on what the staging snapshot gets wrong. Each forged snapshot is newer than the others, written by
+# restic from MANIFEST of the latest one, and the restore test then fails at the step that finds it, before it restores the dump.
+forged_ids=()
+# forged_restore_test <name> <arrangement> <verdict>: <arrangement> is a shell script that leaves the forged tree in $staging,
+# with tab, staging, latest (the newest snapshot not tagged forged, the real one) and its MANIFEST in /restore/manifest
+# at hand; <verdict> is a basic regular expression the failed step's line must match.
+forged_restore_test() {
+  local name="$1" arrangement="$2" verdict="$3" forged
+  run_restic "$namespace" "forge-$name" '
+    set -e
+    staging='"$staging"'
+    tab="$(printf "\t")"
+    latest="$(restic --no-cache snapshots --json --path "$staging" | jq --raw-output "map(select((.tags // []) | index(\"forged\") | not)) | max_by(.time) | .id")"
+    restic --no-cache dump "$latest" "$staging/MANIFEST" >/restore/manifest
+    '"$arrangement"'
+    restic --no-cache backup --json --tag forged --time "$(date -u -d "@$(($(date +%s) + 600))" "+%Y-%m-%d %H:%M:%S")" "$staging" |
+      jq --raw-output "select(.message_type == \"summary\") | \"forged \" + .snapshot_id"' "$staging"
+  [ "$restic_exit" = 0 ] || fail "the forged snapshot $name of $namespace cannot be written (exit $restic_exit)"
+  forged="$(value forged)"
+  [ -n "$forged" ] || fail "the forged snapshot $name of $namespace has no id"
+  forged_ids+=("$forged")
+  run_restore_test "$namespace" "forged-$name-restore-test"
+  run_logs+="$restore_pod_log"$'\n'
+  [ "$status" = failed ] || fail "the restore test of $namespace passed on the forged snapshot $name"
+  [ "$restore_exits" = "dump 0 check none" ] ||
+    fail "the restore test of $namespace ended '$restore_exits' on the forged snapshot $name, not with its dump restore unrun after its bucket steps"
+  grep -q -- "$verdict" <<<"$restore_pod_log" || fail "no bucket step of the restore test of $namespace gave its verdict on the forged snapshot $name"
+  echo "the restore test of $namespace fails at its bucket steps on the forged snapshot $name, before it restores the dump"
+}
+# One object that differs from the live one by its first byte, at the same size and server time, the only one MANIFEST lists.
+forged_restore_test one-byte-differs '
+  line="$(grep "^file$tab[1-9][0-9]*$tab[0-9]*${tab}bucket/" /restore/manifest | head -n 1)"
+  key="${line#*${tab}bucket/}"
+  printf "%s\n" "$line" >"$staging/MANIFEST"
+  mkdir -p "$staging/bucket/$(dirname "$key")"
+  restic --no-cache dump "$latest" "$staging/bucket/$key" >"$staging/bucket/$key"
+  printf X | dd of="$staging/bucket/$key" bs=1 count=1 conv=notrunc 2>/dev/null' \
+  'bucket-compare\] restore object: compare: the object of [0-9]* bytes, server time .*, differs from its copy in the snapshot'
+# Every object rewritten since: the server time of each differs by a second.
+forged_restore_test every-object-rewritten '
+  awk -F "$tab" -v OFS="$tab" "\$1 == \"file\" && index(\$4, \"bucket/\") == 1 { \$3 += 1; print }" /restore/manifest >"$staging/MANIFEST"' \
+  'restic-object\] restore object: pick: none of the [0-9]* objects of the latest snapshot is unchanged in the bucket'
+# A snapshot that holds no object while the bucket lists objects older than it.
+forged_restore_test no-object '
+  grep "^dump$tab" /restore/manifest >"$staging/MANIFEST"' \
+  'restic-object\] restore object: pick: the latest snapshot holds no object of the bucket, which lists [0-9]* older than it'
+run_restic "$namespace" forged-forget "restic --no-cache forget ${forged_ids[*]} >/dev/null"
+[ "$restic_exit" = 0 ] || fail "the forged snapshots of $namespace cannot be forgotten (exit $restic_exit)"
+echo "the forged snapshots of $namespace are forgotten"
 
 # Cell 6: a second Backup reads only the changed files, from its parent, and --delete drops the deleted file.
 run_files change-audio "$declared_claim" false "

@@ -135,3 +135,7 @@ echo "the Backup left two more snapshots in $namespace, $dump_path in custom for
 run_restore_test "$namespace" pre-backup-pod-restore-test
 [ "$status" = passed ] || fail "the restore test of $namespace failed"
 echo "the restore test of $namespace reads its dump by path and passes"
+# The bucket is empty here, so its steps compare nothing and say so.
+grep -q '\] restore object: pick: none compared, the latest snapshot holds no object of the bucket' <<<"$restore_pod_log" ||
+  fail "the restore test of $namespace did not say that its snapshot and its empty bucket hold no object to compare"
+echo "the restore test of $namespace compared no object, since its bucket and its snapshot hold none"
