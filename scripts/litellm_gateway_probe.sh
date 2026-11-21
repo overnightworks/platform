@@ -252,8 +252,8 @@ matching_hashes() {
   local page=1 pages=1
   while [ "$page" -le "$pages" ]; do
     request "listing the probe keys" "$1&page=$page" || return 1
-    pages="$(json '.total_pages // 1')"
-    ALIAS="$2" json '.keys[] | select((.key_alias // "") | test(strenv(ALIAS))) | .token'
+    pages="$(json '.total_pages // 1')" || return 1
+    ALIAS="$2" json '.keys[] | select((.key_alias // "") | test(strenv(ALIAS))) | .token' || return 1
     page=$((page + 1))
   done
 }
@@ -543,6 +543,7 @@ count_probe_rows() {
   local row_key row_status spend spends=""
   row_count=0
   while read -r _ row_key _ row_status spend _; do
+    [ -n "$row_key" ] || continue
     [ -n "${probe_key_hashes[$row_key]-}" ] && [ "$row_status" = success ] || continue
     row_count=$((row_count + 1))
     spends+=" $spend"
