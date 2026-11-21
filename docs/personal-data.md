@@ -86,6 +86,6 @@ The promise: none yet; the privacy text for the runner is written at the pre-lau
 
 Keycloak writes its log as JSON to the pod log, so Pod logs and Loki above bound it. Each request leaves an access line
 whose message holds the method, the path without the query and the status (`%m %R %s`), and every log line of the
-request carries the caller's trace id at `mdc.traceId`, adopted from its `traceparent` header or made by Keycloak. No
-line holds a query string, since `%R` omits it, and the line holds no duration. (PD-10)
+request carries the caller's trace id at `mdc.traceId`, adopted from its `traceparent` header or made by Keycloak. The
+access line holds no query string, since `%R` omits it, and no duration. (PD-10)
 The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung).
