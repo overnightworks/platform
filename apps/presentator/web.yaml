@@ -61,6 +61,21 @@ spec:
             - name: http
               containerPort: 8000
           env:
+            # The realm names under docs/app.md's scheme, which tests/keycloak/handed_realm_names_are_declared.sh holds to realm.yaml.
+            - name: REALM_CLIENT_ID
+              value: presentator
+            - name: REALM_LOGIN_GROUP
+              value: /apps/presentator
+            - name: REALM_ADMIN_GROUP
+              value: /apps/presentator/admin
+            - name: REALM_MCP_GROUP
+              value: /apps/presentator/mcp
+            - name: REALM_MCP_SCOPE
+              value: mcp-presentator
+            - name: REALM_AGENT_GROUP
+              value: /agents
+            - name: REALM_MCP_CLIENT_ID
+              value: agents
             - name: PRESENTATOR_PUBLIC_ORIGIN
               value: https://presentator.hallucinai.de
             - name: PRESENTATOR_TALK_ORIGIN

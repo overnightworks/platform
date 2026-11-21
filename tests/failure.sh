@@ -2,6 +2,18 @@
 # Sourced by the scripts under tests/.
 fail() { echo "::error::$1"; exit 1; }
 
+# expect_problem <expected text> <description of the change> <judgement command>...: the judgement, run on an input
+# changed to break one rule, prints a `problem:` line that holds the text; else the script fails. The command's other
+# output is not read.
+expect_problem() {
+  local expected="$1" description="$2" problems
+  shift 2
+  problems="$("$@" | grep '^problem: ' || true)"
+  grep -qF -- "$expected" <<<"$problems" ||
+    fail "the mutant '$description' made the judgement report '${problems:-nothing}', not '$expected'"
+  echo "the mutant '$description' is red: ${problems%%$'\n'*}"
+}
+
 # until_true <seconds> <description> <command>...: the command passes within the time, tried every 5 seconds.
 until_true() {
   local deadline=$((SECONDS + $1)) description="$2"
