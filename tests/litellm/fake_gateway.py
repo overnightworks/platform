@@ -155,42 +155,63 @@ class Gateway(BaseHTTPRequestHandler):
 
     def answer(self, chat, body, key, token, call_id, header):
         system = json.dumps(body.get("system", body.get("messages", [{}])[0]))
-        cache_key = hashlib.sha256((body["model"] + system[:400]).encode()).hexdigest()
         total = max(len(json.dumps([body.get("system"), body.get("messages"), body.get("tools")])) // 4, 20)
         completion = 0 if body.get("max_tokens") == 0 else min(body.get("max_tokens", 1), 3)
         with lock:
-            uncached = "no_cache" in FAULTS
-            held = None if uncached else state["cache"].get(cache_key)
-            read = 0 if held is None else max(min(held, total) - (20 if "short_read" in FAULTS else 0), 0)
-            write = 0 if uncached else total if held is None else total - read
-            if not uncached:
-                state["cache"][cache_key] = total
-            spend = MISS_SPEND if "dear_misses" in FAULTS and total >= MISS_TOKENS and total - read >= MISS_TOKENS else CALL_SPEND
-            if "heavy_first_call" in FAULTS and state["answered"] == 0:
-                spend = HEAVY_SPEND
+            read, write = self.cache_usage(body["model"], system, total)
+            spend = self.spend_for(total, read)
             key["spend"] += spend
             state["answered"] += 1
             if not ("drop_row" in FAULTS and state["answered"] == 7):
                 self.log_call(call_id, token, body, "success", spend, total, completion, write, read)
+        usage = self.usage(chat, system, total, completion, read, write)
+        compaction = "compaction" in body
+        if not body.get("stream"):
+            return self.send_json(200, self.reply(chat, usage, completion, compaction), header)
+        self.send_stream(self.stream_lines(chat, usage, compaction), header)
+
+    def cache_usage(self, model, system, total):
+        cache_key = hashlib.sha256((model + system[:400]).encode()).hexdigest()
+        if "no_cache" in FAULTS:
+            return 0, 0
+        held = state["cache"].get(cache_key)
+        read = 0 if held is None else max(min(held, total) - (20 if "short_read" in FAULTS else 0), 0)
+        state["cache"][cache_key] = total
+        return read, total if held is None else total - read
+
+    def spend_for(self, total, read):
+        if "heavy_first_call" in FAULTS and state["answered"] == 0:
+            return HEAVY_SPEND
+        if "dear_misses" in FAULTS and total >= MISS_TOKENS and total - read >= MISS_TOKENS:
+            return MISS_SPEND
+        return CALL_SPEND
+
+    def usage(self, chat, system, total, completion, read, write):
         hour = '"ttl": "1h"' in system or '"ttl":"1h"' in system
         usage = {"cache_creation_input_tokens": write, "cache_read_input_tokens": read, "cache_creation": {
             "ephemeral_5m_input_tokens": 0 if hour else write, "ephemeral_1h_input_tokens": write if hour else 0}}
-        usage.update(prompt_tokens=total, completion_tokens=completion) if chat else usage.update(input_tokens=total if uncached else 5, output_tokens=completion)
-        compaction = "compaction" in body
-        if not body.get("stream"):
-            if chat:
-                answer = {"choices": [{"message": {"role": "assistant", "content": "ok",
-                                                   **({"content_blocks": [{"type": "compaction"}]} if compaction else {})}}],
-                          "usage": usage}
-            else:
-                content = [{"type": "compaction", "content": "summary"}] if compaction else [{"type": "text", "text": "ok"}]
-                answer = {"content": [] if completion == 0 else content, "usage": usage}
-            return self.send_json(200, answer, header)
-        lines = ["data: " + json.dumps({"choices": [{"delta": {"content": "ok"}}]}),
-                 "data: " + json.dumps({"choices": [], "usage": usage})] if chat else [
-            "data: " + json.dumps({"type": "message_start", "message": {"usage": usage}}),
-            *(["data: " + json.dumps({"type": "content_block_start", "content_block": {"type": "compaction"}})] if compaction else []),
-            "data: " + json.dumps({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "ok"}})]
+        if chat:
+            usage.update(prompt_tokens=total, completion_tokens=completion)
+        else:
+            usage.update(input_tokens=total if "no_cache" in FAULTS else 5, output_tokens=completion)
+        return usage
+
+    def reply(self, chat, usage, completion, compaction):
+        if chat:
+            extra = {"content_blocks": [{"type": "compaction"}]} if compaction else {}
+            return {"choices": [{"message": {"role": "assistant", "content": "ok", **extra}}], "usage": usage}
+        content = [{"type": "compaction", "content": "summary"}] if compaction else [{"type": "text", "text": "ok"}]
+        return {"content": [] if completion == 0 else content, "usage": usage}
+
+    def stream_lines(self, chat, usage, compaction):
+        if chat:
+            return ["data: " + json.dumps({"choices": [{"delta": {"content": "ok"}}]}),
+                    "data: " + json.dumps({"choices": [], "usage": usage})]
+        return ["data: " + json.dumps({"type": "message_start", "message": {"usage": usage}}),
+                *(["data: " + json.dumps({"type": "content_block_start", "content_block": {"type": "compaction"}})] if compaction else []),
+                "data: " + json.dumps({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "ok"}})]
+
+    def send_stream(self, lines, header):
         data = ("\n\n".join(lines) + "\n\ndata: [DONE]\n\n").encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
