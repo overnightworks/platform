@@ -1,8 +1,0 @@
-claim_id = "b568e46a1c854c0783545834a53d4ee7"
-agent = "Claude a8131622-e90f-4803-bf0e-e8f72b4d2a31"
-role = "builder"
-base = "86701dc753c8ac84c642ee8e38ea0bcf72d34c6b"
-branch = "claude/issue-799-gateway-probe"
-scope = [".github/workflows/ci.yml", "docs/operations.md", "mise.toml", "scripts/litellm_cache_probe.sh", "scripts/litellm_effort_measure.sh", "scripts/litellm_gateway_probe.sh", "scripts/litellm_keys.sh", "scripts/litellm_probe_budget.sh", "tests/litellm"]
-opened_commit = "e1f7b47f0cc90b6d71ea7e3f08c4ea7639716b8d"
-whole_reason = "The probe, the one owner of the spend-log reader and forward limit it shares with the two older probes, and the fake-gateway cell that proves its cleanup must change together, or the probes would read one LiteLLM shape in two copies."
