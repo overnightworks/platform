@@ -6,6 +6,8 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+# shellcheck source=../flux/render_layer.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../flux/render_layer.sh"
 markers="$(yq --no-doc 'select(.kind == "Namespace" and .metadata.name == "presentator")
   | (.metadata.labels | keys | map(select(test("^pod-security[.]kubernetes[.]io/enforce"))) | join(",")) + "|"
   + .metadata.labels["pod-security.kubernetes.io/warn"] + "|" + .metadata.labels["pod-security.kubernetes.io/audit"] + "|"
@@ -28,11 +30,7 @@ kubectl kustomize apps/presentator >"$layers/presentator.yaml"
 layer_paths="$(yq --no-doc 'select(.kind == "Kustomization" and (.apiVersion | test("^kustomize[.]toolkit[.]fluxcd[.]io/"))) | .spec.path' clusters/pc/apps.yaml clusters/pc/infrastructure.yaml | grep -E '^[.]/(apps|infrastructure)/')" ||
   fail "clusters/pc/apps.yaml and infrastructure.yaml name no layer path"
 for path in $layer_paths; do
-  if [ -f "$path/kustomization.yaml" ]; then
-    kubectl kustomize "$path" >"$layers/$(tr '/' '_' <<<"${path#./}").yaml"
-  else
-    for file in "$path"/*.yaml; do cp "$file" "$layers/$(tr '/' '_' <<<"${path#./}")_${file##*/}"; done
-  fi
+  render_layer "$path" "$layers/$(tr '/' '_' <<<"${path#./}").yaml" >/dev/null || fail "layer $path does not render, or holds a kustomization below its own"
 done
 [ -z "$(census "$layers"/*.yaml)" ] || fail "a Pod template names 61001 or 61002: $(census "$layers"/*.yaml)"
 echo "no Pod template of a layer names 61001 or 61002"

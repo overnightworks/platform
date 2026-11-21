@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # handed_realm_names_are_declared.sh <realm file>: holds every name that a manifest under apps/ hands to an app under a
 # REALM_ key to docs/app.md's scheme. The layers are the Kustomizations of clusters/pc/apps.yaml whose path lies under
-# ./apps, each rendered as Flux renders it: with `kubectl kustomize` where it holds a kustomization.yaml, else as the
-# generated kustomization of every *.yaml and *.yml file in its tree. Every container of every Pod template, in both
+# ./apps, each rendered by tests/flux/render_layer.sh as Flux renders it. Every container of every Pod template, in both
 # lists, must take no envFrom and hand each REALM_ key as a plain, non-empty value that the realm file declares as an
 # object of the key's kind and that is its layer's own app's, or one of the fleet's two. A Kustomization that patches,
 # substitutes, rewrites images, adds components or sets a namespace or name prefix is refused, since its render would
@@ -14,6 +13,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # shellcheck source=realm_groups.sh
 source "$(dirname "${BASH_SOURCE[0]}")/realm_groups.sh"
+# shellcheck source=../flux/render_layer.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../flux/render_layer.sh"
 
 [ $# -eq 1 ] && [ -f "$1" ] || fail "usage: $0 <realm file>"
 realm_file="$1"
@@ -61,37 +62,22 @@ judge_render() {
     jq --slurp --raw-output --arg app "$1" --arg layer "$2" --argjson facts "$4" "$judgement"
 }
 
-# has_kustomization <directory>: Flux's own test for a directory that carries a kustomization.
-has_kustomization() {
-  [ -f "$1/kustomization.yaml" ] || [ -f "$1/kustomization.yml" ] || [ -f "$1/Kustomization" ]
-}
-
-# render_generated <directory> <output file>: the resources Flux's generated kustomization lists for a directory without one.
-render_generated() {
-  local files
-  files="$(find "$1" \( -name '*.yaml' -o -name '*.yml' \) -type f | sort)"
-  [ -n "$files" ] || { : >"$2"; return; }
-  # shellcheck disable=SC2086 # one path per line, none with a space
-  yq eval-all '.' $files >"$2"
-}
-
 # judge_layers <repository root> <realm file>: the problem lines of every layer of <root>/clusters/pc/apps.yaml under ./apps.
 judge_layers() {
-  local root="$1" facts layer path forbidden directory nested rendered="$work/layer.yaml"
+  local root="$1" facts layer path forbidden directory nested status rendered="$work/layer.yaml"
   facts="$(realm_facts "$2")"
   while read -r layer path forbidden; do
     [ -z "$forbidden" ] || echo "problem: $layer carries $forbidden, which makes Flux's render differ from the layer's directory"
     directory="$root/${path#./}"
-    if has_kustomization "$directory"; then
-      kubectl kustomize "$directory" >"$rendered" || fail "$layer ($path) does not render"
-    else
-      nested="$(find "$directory" -mindepth 2 \( -name kustomization.yaml -o -name kustomization.yml -o -name Kustomization \) -type f -printf '%h\n' | sort -u)"
-      if [ -n "$nested" ]; then
-        echo "problem: $layer has no kustomization, and Flux renders its subdirectory ${nested//$'\n'/, } as a resource of its own"
-        continue
-      fi
-      render_generated "$directory" "$rendered"
-    fi
+    status=0
+    nested="$(render_layer "$directory" "$rendered")" || status=$?
+    case "$status" in
+      0) ;;
+      2)
+        echo "problem: $layer has no kustomization, and Flux renders its subdirectory $nested as a resource of its own"
+        continue ;;
+      *) fail "$layer ($path) does not render" ;;
+    esac
     judge_render "$(cut -d/ -f3 <<<"$path")" "$layer" "$rendered" "$facts"
   done < <(yq --no-doc 'select(.kind == "Kustomization") | select(.spec.path | test("^[.]/apps/"))
     | .metadata.name + " " + .spec.path + " " + ([.spec | keys | .[] | select(. == "patches" or . == "postBuild" or . == "images"
