@@ -215,8 +215,7 @@ jobs:
         part: ${{ fromJSON(needs.scope.outputs.parts) }}
     runs-on: ubuntu-latest
     # A part carries cells for about 14 minutes at most, so the reconcile's wait, which varies by more than a minute, leaves the limit three minutes away on a slow runner.
-    # The part ai-gateway-outage waits out the rule's ten minutes after the reconcile and its healthy read, about 25 minutes in all.
-    timeout-minutes: ${{ matrix.part == 'ai-gateway-outage' && 35 || 17 }}
+    timeout-minutes: 17
     permissions:
       contents: read
       # The Secret ghcr-pull holds this job's token, which pulls the apps' private packages.
@@ -988,7 +987,7 @@ jobs:
           FAILING_CRONJOB: prometheus-probe
         run: tests/prometheus/prometheus_sees_every_layer_and_answers_only_its_readers.sh
 
-      # The part holds only this cell, which waits out the rule's ten minutes beside no other cell.
+      # The part holds only this cell, which waits out the rule's `for`, shortened to two minutes in this cluster, beside no other cell.
       - name: Assert that Prometheus reads Gatus' probe of the AI gateway and that a failing probe fires its alert to the mail receiver and clears with the probe
         if: matrix.part == 'ai-gateway-outage'
         env:
@@ -999,6 +998,8 @@ jobs:
           GATEWAY_DEPLOYMENT: litellm-front
           GATEWAY_ENDPOINT: litellm
           GATEWAY_KUSTOMIZATION: litellm
+          # The Kustomization of the layer that holds the rule, which the cell suspends while it shortens the rule.
+          PROMETHEUS_KUSTOMIZATION: prometheus
         run: tests/prometheus/ai_gateway_probe_failure_fires_the_alert_to_the_mail_receiver_and_clears.sh
 
       - name: Print Flux's state and the controllers' errors

@@ -2,7 +2,8 @@
 
 This reference holds ruled sentences.
 
-Reader: the operator, and a lane that touches an alert, a check, a page or the PC's disk.
+Reader: the operator, and a lane that touches a Secret's expiry, an alert, a check, a page, Grafana, a scrape job, the
+PC's disk or the AI budgets.
 
 ## Expiring Secrets
 
