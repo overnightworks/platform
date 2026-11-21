@@ -33,8 +33,6 @@ default_requests=10
 # The lines of the system text, as many as a short call prompt holds.
 system_lines=20
 
-# microseconds <EPOCHREALTIME value>: the instant as whole microseconds.
-microseconds() { echo "${1/./}"; }
 # median <number>...: the middle of the numbers in ascending order, the mean of the two middle ones for an even count.
 median() {
   printf '%s\n' "$@" | sort -g | awk '{ value[NR] = $1 } END { print (NR % 2) ? value[(NR + 1) / 2] : (value[NR / 2] + value[NR / 2 + 1]) / 2 }'
