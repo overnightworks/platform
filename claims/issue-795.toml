@@ -1,8 +1,0 @@
-claim_id = "303c40b25525462989ca7bff17a3d686"
-agent = "Claude 6cdd6a8b-a2a2-48f5-8108-9e563417fd59"
-role = "builder"
-base = "fc33db09dd5abba5ceb6557b2afce24b11b3dee5"
-branch = "claude/issue-795-leonardo-songmaker"
-scope = [".github/workflows/ci.yml", "apps/personas/personas.toml", "apps/personas/personas.yaml", "infrastructure/keycloak/realm.yaml"]
-opened_commit = "d8bf471e59d6237274defa8699fd2e6450a206b8"
-whole_reason = "One grant: the realm, the CI cells that pin it and the two personas comments that name Leonardo's apps must change together."
