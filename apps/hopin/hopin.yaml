@@ -35,6 +35,21 @@ spec:
             - name: http
               containerPort: 8080
           env:
+            # The realm names under docs/app.md's scheme, which tests/keycloak/handed_realm_names_are_declared.sh holds to realm.yaml.
+            - name: REALM_CLIENT_ID
+              value: hopin
+            - name: REALM_LOGIN_GROUP
+              value: /apps/hopin
+            - name: REALM_ADMIN_GROUP
+              value: /apps/hopin/admin
+            - name: REALM_MCP_GROUP
+              value: /apps/hopin/mcp
+            - name: REALM_MCP_SCOPE
+              value: mcp-hopin
+            - name: REALM_AGENT_GROUP
+              value: /agents
+            - name: REALM_MCP_CLIENT_ID
+              value: agents
             - name: HOPIN_OIDC_ISSUER
               value: https://auth.hallucinai.de/realms/hallucinai
             - name: HOPIN_OIDC_CLIENT_SECRET_FILE

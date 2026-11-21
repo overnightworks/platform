@@ -112,12 +112,9 @@ done
 # mutant <layer directory> <expected problem text> <yq expression>: a copy of the render changed by the expression
 # must make the judgement name the rule.
 mutant() {
-  local directory="$1" expected="$2" mutated="$work/mutant.yaml" problems
+  local directory="$1" mutated="$work/mutant.yaml"
   kubectl kustomize "$repository_root/$directory" | yq "$3" >"$mutated"
-  problems="$(judge "$mutated" | grep '^problem: ' || true)"
-  grep -qF -- "$expected" <<<"$problems" ||
-    fail "the mutant '$3' of $directory made the judgement report '${problems:-nothing}', not '$expected'"
-  echo "the mutant '$3' of $directory is red: ${problems%%$'\n'*}"
+  expect_problem "$2" "$3 of $directory" judge "$mutated"
 }
 personas='select(.kind == "Deployment" and .metadata.name == "personas")'
 web='select(.kind == "Deployment" and .metadata.name == "web")'
