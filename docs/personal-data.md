@@ -2,7 +2,8 @@
 
 This reference holds ruled sentences.
 
-Reader: the head who writes or checks a privacy text, and a lane that touches a log, a store, a backup or a token.
+Reader: the head who writes or checks a privacy text, and a lane that touches a log, a store, a backup, LiteLLM's pod,
+its front or its egress, or the speech service.
 
 ## Pod logs
 
