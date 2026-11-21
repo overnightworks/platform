@@ -672,7 +672,7 @@ jobs:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
           AGENT_CLIENT: agent-leonardo
-          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /agent-owners /services/speech-service /services/video-service
+          AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /apps/songmaker/mcp /agent-owners /services/speech-service /services/video-service
           EXCHANGING_CLIENT: hopin
           EXCHANGE_SCOPES: speech-service-audience video-service-audience
           REFUSED_CLIENT: presentator
