@@ -73,6 +73,19 @@ spec:
                 secretKeyRef:
                   name: keycloak
                   key: config-cli-secret
+            # Every log line of a request carries the caller's trace id at mdc.traceId, which webauth's token exchange
+            # sends; ratio 0 samples nothing, so no span leaves. The access line's message is its pattern: %m %R %s
+            # is method, path and status, and only %R keeps the query out (%U and %r carry it).
+            - name: KC_TRACING_ENABLED
+              value: "true"
+            - name: KC_TRACING_SAMPLER_RATIO
+              value: "0.0"
+            - name: KC_LOG_CONSOLE_OUTPUT
+              value: json
+            - name: KC_HTTP_ACCESS_LOG_ENABLED
+              value: "true"
+            - name: KC_HTTP_ACCESS_LOG_PATTERN
+              value: "%m %R %s"
             # /health/ready on the management port, which the Service does not expose.
             - name: KC_HEALTH_ENABLED
               value: "true"
