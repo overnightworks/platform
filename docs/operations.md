@@ -120,6 +120,18 @@ operator's measurement, since it spends money: it sends synthetic streamed reque
 in turn and prints each name's median time to the first content chunk and its median and total cost, from the stream's
 usage and the prices of `/model/info`; `mise run litellm:measure --remove` deletes its test person's row.
 
+`mise run litellm:gateway-probe` is the operator's probe of what LiteLLM passes through to Anthropic, which a LiteLLM
+bump lane runs again on the new version, since a bump changes it. It makes a key of its own with the master key (every
+text name, a budget of 5 USD, prompt caching on, an alias new to each run) and sends synthetic requests under one test
+person on the chat route and on `/v1/messages`, on `text/sonnet-medium` and `text/haiku-fast`: mid-conversation tool
+changes, deferred tools and tool references, compaction and its replay, the `max_tokens: 0` keep-alive, the write split
+by cache lifetime and a 1-hour mark, the time to the first token at 50k, 200k and 800k cached tokens, and the prices of
+`/model/info`. It prints one line per question, route and model with the answer and the usage fields and statuses that
+show it, never a reply body, and ends with the run's cost from the spend log. A second key with a budget of a millionth
+of a dollar shows the budget on both routes. Both keys are deleted on every exit, a failure included. The run takes about
+half an hour and spends 3 to 4 USD, and writes the keys until they are deleted, the test person's row and one spend log row
+per call; `mise run litellm:gateway-probe --remove` deletes the row and any key a killed run left.
+
 `mise run litellm:keys [--plan]` makes the person budget (the id of `max_end_user_budget_id`) and each row's key equal
 to it, sending only the fields that differ, so a pure budget change keeps the period's reset; it prints the revision
 Flux applied to the table it read, which it refuses when absent or changed during the read, one line per field with old

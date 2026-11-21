@@ -1203,6 +1203,11 @@ description = "Compare the sonnet and haiku text names at each effort: send N sy
 quiet = true
 run = "scripts/litellm_effort_measure.sh"
 
+[tasks."litellm:gateway-probe"]
+description = "Live probe of what LiteLLM passes through (inline and deferred tools, compaction, max_tokens 0, cache lifetimes, prices): send synthetic requests on the chat route and /v1/messages with a key of its own (budget 5 USD, deleted on every exit) under one test person, print one line per question and route and the run's cost (spends money, writes a test person's row and one spend log row per call); --remove deletes the test person's row"
+quiet = true
+run = "scripts/litellm_gateway_probe.sh"
+
 # The one owner of the loopback forward to a Service's page, which a page the operator opens only at the PC shares.
 [tasks."page:forward"]
 description = "Forward a Service to this PC's loopback at a free port and print the address once kubectl listens"
