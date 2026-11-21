@@ -114,7 +114,7 @@ class Gateway(BaseHTTPRequestHandler):
         return self.send_json(404, {})
 
     def log_call(self, call_id, token, body, status, spend, prompt, completion, write, read):
-        person = body.get("user") or body.get("metadata", {}).get("user_id")
+        person = body["user"]
         state["logs"].append({
             "request_id": call_id, "api_key": token, "end_user": person, "status": status, "spend": spend,
             "prompt_tokens": prompt, "completion_tokens": completion, "startTime": "2026-01-01T00:00:00",
@@ -126,6 +126,8 @@ class Gateway(BaseHTTPRequestHandler):
         token = key_hash(self.bearer())
         key = state["keys"].get(token)
         if key is None:
+            return self.send_json(401, {})
+        if not body.get("user"):
             return self.send_json(401, {})
         max_tokens = body.get("max_tokens", 0)
         with lock:
