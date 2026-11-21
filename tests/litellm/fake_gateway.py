@@ -155,11 +155,8 @@ class Gateway(BaseHTTPRequestHandler):
             with lock:
                 state["inflight"][token] -= 1
 
-    def answer(self, chat, body, key, token, call_id, header):
-        system = json.dumps(body.get("system", body.get("messages", [{}])[0]))
+    def bill(self, body, key, token, call_id, system, total, completion):
         cache_key = hashlib.sha256((body["model"] + system[:400]).encode()).hexdigest()
-        total = max(len(json.dumps([body.get("system"), body.get("messages"), body.get("tools")])) // 4, 20)
-        completion = 0 if body.get("max_tokens") == 0 else min(body.get("max_tokens", 1), 3)
         with lock:
             uncached = "no_cache" in FAULTS
             held = None if uncached else state["cache"].get(cache_key)
@@ -174,25 +171,25 @@ class Gateway(BaseHTTPRequestHandler):
             state["answered"] += 1
             if not ("drop_row" in FAULTS and state["answered"] == 7):
                 self.log_call(call_id, token, body, "success", spend, total, completion, write, read)
-        hour = '"ttl": "1h"' in system or '"ttl":"1h"' in system
-        usage = {"cache_creation_input_tokens": write, "cache_read_input_tokens": read, "cache_creation": {
-            "ephemeral_5m_input_tokens": 0 if hour else write, "ephemeral_1h_input_tokens": write if hour else 0}}
-        usage.update(prompt_tokens=total, completion_tokens=completion) if chat else usage.update(input_tokens=total if uncached else 5, output_tokens=completion)
-        compaction = "compaction" in body
-        if not body.get("stream"):
-            if chat:
-                answer = {"choices": [{"message": {"role": "assistant", "content": "ok",
-                                                   **({"content_blocks": [{"type": "compaction"}]} if compaction else {})}}],
-                          "usage": usage}
-            else:
-                content = [{"type": "compaction", "content": "summary"}] if compaction else [{"type": "text", "text": "ok"}]
-                answer = {"content": [] if completion == 0 else content, "usage": usage}
-            return self.send_json(200, answer, header)
-        lines = ["data: " + json.dumps({"choices": [{"delta": {"content": "ok"}}]}),
-                 "data: " + json.dumps({"choices": [], "usage": usage})] if chat else [
-            "data: " + json.dumps({"type": "message_start", "message": {"usage": usage}}),
-            *(["data: " + json.dumps({"type": "content_block_start", "content_block": {"type": "compaction"}})] if compaction else []),
-            "data: " + json.dumps({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "ok"}})]
+        return uncached, write, read
+
+    def answer_body(self, chat, compaction, completion, usage):
+        if chat:
+            return {"choices": [{"message": {"role": "assistant", "content": "ok",
+                                             **({"content_blocks": [{"type": "compaction"}]} if compaction else {})}}],
+                    "usage": usage}
+        content = [{"type": "compaction", "content": "summary"}] if compaction else [{"type": "text", "text": "ok"}]
+        return {"content": [] if completion == 0 else content, "usage": usage}
+
+    def stream_events(self, chat, compaction, usage):
+        if chat:
+            return ["data: " + json.dumps({"choices": [{"delta": {"content": "ok"}}]}),
+                    "data: " + json.dumps({"choices": [], "usage": usage})]
+        return ["data: " + json.dumps({"type": "message_start", "message": {"usage": usage}}),
+                *(["data: " + json.dumps({"type": "content_block_start", "content_block": {"type": "compaction"}})] if compaction else []),
+                "data: " + json.dumps({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "ok"}})]
+
+    def send_stream(self, lines, header):
         data = ("\n\n".join(lines) + "\n\ndata: [DONE]\n\n").encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -201,6 +198,20 @@ class Gateway(BaseHTTPRequestHandler):
             self.send_header(name, value)
         self.end_headers()
         self.wfile.write(data)
+
+    def answer(self, chat, body, key, token, call_id, header):
+        system = json.dumps(body.get("system", body.get("messages", [{}])[0]))
+        total = max(len(json.dumps([body.get("system"), body.get("messages"), body.get("tools")])) // 4, 20)
+        completion = 0 if body.get("max_tokens") == 0 else min(body.get("max_tokens", 1), 3)
+        uncached, write, read = self.bill(body, key, token, call_id, system, total, completion)
+        hour = '"ttl": "1h"' in system or '"ttl":"1h"' in system
+        usage = {"cache_creation_input_tokens": write, "cache_read_input_tokens": read, "cache_creation": {
+            "ephemeral_5m_input_tokens": 0 if hour else write, "ephemeral_1h_input_tokens": write if hour else 0}}
+        usage.update(prompt_tokens=total, completion_tokens=completion) if chat else usage.update(input_tokens=total if uncached else 5, output_tokens=completion)
+        compaction = "compaction" in body
+        if body.get("stream"):
+            return self.send_stream(self.stream_events(chat, compaction, usage), header)
+        return self.send_json(200, self.answer_body(chat, compaction, completion, usage), header)
 
 
 server = ThreadingHTTPServer(("127.0.0.1", 0), Gateway)
