@@ -17,6 +17,8 @@ spec:
     - name: platform-secrets
     - name: admission
     - name: app-attestations
+    - name: storage
+    - name: k8up
   interval: 10m0s
   path: ./apps/hopin
   prune: true

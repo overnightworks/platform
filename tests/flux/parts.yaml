@@ -16,7 +16,7 @@ observability: {layers: [prometheus, grafana, loki, alloy, gatus, speech-runtime
 observability-2: {layers: [gatus, traefik, hopin, skat, keycloak, speech-runtime, loki, prometheus, grafana, litellm, songmaker, backup], paths: [tests/backup/*, tests/gatus/*]}
 apps: {layers: [presentator, songmaker, keycloak, hopin, legal, traefik, tunnel, loki, alloy], paths: [tests/alloy/*, tests/keycloak/*, tests/legal/*, tests/loki/*, tests/no_network/*, tests/presentator/*, tests/songmaker/*]}
 # The Postgres cells loop over every namespace whose layer includes the Postgres base.
-load-1: {layers: [keycloak, litellm, personas, presentator, skat, songmaker, nvidia, traefik], paths: [tests/nvidia/*, tests/postgres/*, tests/songmaker/*]}
+load-1: {layers: [hopin, keycloak, litellm, personas, presentator, skat, songmaker, nvidia, traefik], paths: [tests/nvidia/*, tests/postgres/*, tests/songmaker/*]}
 load-2: {layers: [songmaker, hopin, skat], paths: [tests/redis/*]}
 # The loader's interrupt cells run on litellm's Postgres alone, which takes most of a part's time.
 load-3: {layers: [litellm], paths: [tests/postgres/*]}
@@ -28,7 +28,7 @@ load-3: {layers: [litellm], paths: [tests/postgres/*]}
 backup-1: {layers: [backup, prometheus, keycloak, litellm, personas], paths: [tests/backup/*, tests/personas/*, tests/prometheus/*]}
 # backup-2 and backup-4 fill songmaker's bucket from a client Pod that the objectstore cell's helper builds from litellm's image.
 backup-2: {layers: [backup, songmaker], paths: [tests/backup/*, tests/disk/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
-backup-3: {layers: [backup, prometheus, presentator, skat, songmaker], paths: [tests/backup/*, tests/prometheus/*]}
+backup-3: {layers: [backup, prometheus, hopin, presentator, skat, songmaker], paths: [tests/backup/*, tests/prometheus/*]}
 # The Backups of songmaker's bucket that need one run each; the namespace songmaker is held by backup-2 and backup-3 too.
 backup-4: {layers: [backup, songmaker], paths: [tests/backup/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
 # The test agents' cells drive Keycloak.
