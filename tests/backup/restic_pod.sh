@@ -82,6 +82,19 @@ job_ended() {
   done
   fail "the Job $namespace/$job did not end within 10 minutes"
 }
+# pod_logs <namespace> <pod>: what each container that started printed, each line led by `[pod/<pod>/<container>]`;
+# a container that never started is skipped, and one whose log cannot be read fails the call.
+pod_logs() {
+  local namespace="$1" pod="$2" containers container log line
+  containers="$(kubectl --namespace "$namespace" get pod "$pod" --output json | yq --input-format json \
+    '((.status.initContainerStatuses // []) + (.status.containerStatuses // [])) | .[] | select(.state.waiting == null) | .name')" || return 1
+  while IFS= read -r container; do
+    [ -n "$container" ] || continue
+    log="$(kubectl --namespace "$namespace" logs "pod/$pod" --container "$container")" || return 1
+    [ -z "$log" ] || while IFS= read -r line; do printf '[pod/%s/%s] %s\n' "$pod" "$container" "$line"; done <<<"$log"
+  done <<<"$containers"
+}
+
 # run_restore_test <namespace> <job> [<configmap> [<cronjob>]]: runs the CronJob restore-test, or the one named, as it is,
 # or with another ConfigMap as its checks;
 # sets status to passed or failed, restore_exits to "dump <exit> check <exit>" (an exit the container never reached reads
@@ -104,7 +117,7 @@ run_restore_test() {
     '[.status.initContainerStatuses[0], .status.containerStatuses[0]] | map(.state.terminated.exitCode // "none") | join(" ")')"
   restore_exits="dump ${exits% *} check ${exits#* }"
   restore_log="$(kubectl --namespace "$namespace" logs "pod/$pod" --container restore-test 2>/dev/null || true)"
-  restore_pod_log="$(kubectl --namespace "$namespace" logs "pod/$pod" --all-containers --prefix 2>/dev/null || true)"
+  restore_pod_log="$(pod_logs "$namespace" "$pod")" || fail "a container of the pod $pod of the Job $job started and its log cannot be read"
   kubectl --namespace "$namespace" delete job "$job" --cascade=foreground --wait --timeout=2m >/dev/null
 }
 
