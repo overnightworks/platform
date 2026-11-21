@@ -12,7 +12,8 @@
 - `mise run secrets:new-key` is the operator's: it creates the age key once and prints only its recipient.
 - `mise run check:pod-logs` is the operator's, since it runs through sudo: it checks the pod-log bound and its daily clean.
 - `mise run bootstrap:secrets` is the operator's, since it reads the age key file: it gives Flux its age and deploy keys.
-- `mise run keycloak:admin` is the operator's.
+- `mise run keycloak:admin`, `mise run litellm:admin <username>` and `mise run gpu:use <songs|speech|free>` are the
+  operator's; an agent runs `gpu:use` only inside a window he named.
 - `mise run admission:pause` and `admission:resume` are the head's: they suspend and restore the attestation check.
 
 ## Rules
