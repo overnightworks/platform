@@ -140,8 +140,8 @@ compare_role() {
   IFS="$tab" read -r size stamp _ <"$object/picked"
   [ "$live_digest" = "$(cat "$object/digest")" ] ||
     fail "the object of $size bytes, server time $stamp, differs from its copy in the snapshot $id"
-  read -r _ _ unchanged _ <"$object/counts"
-  echo "restore object: compare: one object equals its copy in the snapshot $id, of $unchanged unchanged"
+  read -r _ _ unchanged empty _ <"$object/counts"
+  echo "restore object: compare: one object equals its copy in the snapshot $id, of $((unchanged + empty)) unchanged"
 }
 
 case "$role" in
