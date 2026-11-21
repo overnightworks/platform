@@ -1,0 +1,8 @@
+claim_id = "1bf25ea0df28462e9fb90b2e56f2b4e7"
+agent = "Claude 9d351344-6eaa-412b-b0f9-cc7ee2db0ede"
+role = "builder"
+base = "3ea4c312b820ee16880d173d9ad7c1ecc9d38219"
+branch = "claude/issue-808-hopin-runs-release-2026-11-21-6"
+scope = ["apps/hopin/hopin.yaml", "infrastructure/legal"]
+opened_commit = "920aa318076c94456a6d08ecc92508e586b47077"
+whole_reason = "An app's image and the copy of its legal text that the release carries move together."
