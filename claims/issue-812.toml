@@ -3,6 +3,6 @@ agent = "Claude 9d351344-6eaa-412b-b0f9-cc7ee2db0ede"
 role = "builder"
 base = "38d1e1b703eac196160f5a20478da018387ab101"
 branch = "claude/issue-812-apps-get-their-realm-names-under-one-key"
-scope = [".github/workflows/ci.yml", "apps/hopin/hopin.yaml", "apps/presentator/web.yaml", "apps/skat/skat.yaml", "apps/songmaker/web.yaml", "docs/app.md", "tests/failure.sh", "tests/keycloak/handed_realm_names_are_declared.sh", "tests/keycloak/realm_groups.sh", "tests/keycloak/realm_route_and_policies.sh", "tests/postgres/connections_stay_within_max_connections.sh", "tests/presentator/pods_stay_within_their_levels.sh"]
+scope = [".github/workflows/ci.yml", "apps/hopin/hopin.yaml", "apps/presentator/web.yaml", "apps/skat/skat.yaml", "apps/songmaker/web.yaml", "docs/app.md", "tests/failure.sh", "tests/flux/render_layer.sh", "tests/keycloak/handed_realm_names_are_declared.sh", "tests/keycloak/realm_groups.sh", "tests/keycloak/realm_route_and_policies.sh", "tests/postgres/connections_stay_within_max_connections.sh", "tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh", "tests/presentator/pods_stay_within_their_levels.sh"]
 opened_commit = "a7c0c7a6b83f4c875cd7727c2b5274fd7264f7df"
 whole_reason = "The key set, its values in the four manifests and the check that judges them are one contract no part proves alone, and the check is where its two helpers get their one owner."
