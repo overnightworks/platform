@@ -13,11 +13,13 @@
 # Both probe keys are deleted on every exit, a failure included; only SIGKILL leaves one, which --remove clears. The second
 # key has a budget of one millionth of a dollar and shows the budget on both routes. The run deletes the test person's row
 # first, so the person's own budget never carries an earlier run's spend. The 800k-token points of question 10 come last,
-# after the cache reads of question 17, since the main key's budget can end them. The run takes about half an hour, as the
-# 1-hour cache write of question 17 is read only after ten minutes, and spends up to the key's 5 USD, mostly on the 800k
-# points. It writes the key rows until they are deleted, the test person's row and one spend log row per call. The run's
-# cost is the sum of the successful spend log rows of both keys; it exits 1 when the log never holds as many as calls
-# answered 200.
+# after the cache reads of question 17, since the main key's budget can end them: LiteLLM checks the budget before a call and
+# lets the call that crosses it run in full, so each 800k call is sent only when the spend log's cost of the run so far plus
+# the call's worst case (its tokens at the dearest cache price of its kind in /model/info) stays within the 5 USD, and else
+# answers "not run: the key's budget". The run takes about half an hour, as the 1-hour cache write of question 17 is read
+# only after ten minutes, and spends at most the key's 5 USD, mostly on the 800k points. It writes the key rows until they
+# are deleted, the test person's row and one spend log row per call. The run's cost is the sum of the successful spend log
+# rows of both keys; it exits 1 when the log never holds as many as calls answered 200.
 # Where a question has no request shape LiteLLM can carry on a route, the line gives the status the nearest shape got.
 # Values travel as litellm_keys.sh says, from kubectl's stdout or a shell variable to curl's stdin, never into an argument,
 # a URL or an output; a failure names the step and the HTTP status, never a body. A request body holds only synthetic
@@ -37,6 +39,8 @@ sonnet_model=text/sonnet-medium
 haiku_model=text/haiku-fast
 probe_models=("$sonnet_model" "$haiku_model")
 probe_budget=5
+# The prefix size from which a call asks the key's budget first, since a call that crosses the budget still runs in full.
+guarded_tokens=800000
 # The key's parallel limit, which the rate limit check exceeds by one request; a budget of one millionth of a dollar, which
 # the first call of the budget key passes and the next is over; a prefix past every model's minimum cacheable prefix; the
 # rules of the calibration prefix, from which each model's tokens per rule follow; the seconds from a 1-hour write to its
@@ -58,7 +62,7 @@ call_status="" call_id="" first_token_ms="" usage="{}"
 u_input="" u_prompt="" u_output="" u_completion="" u_write="" u_read="" u_5m="" u_1h=""
 n_prompt=0 n_write=0 n_read=0 n_output=0
 ok_calls=0
-declare -A rule_tokens=() ttl_written=() ttl_system=() probe_key_hashes=()
+declare -A rule_tokens=() ttl_written=() ttl_system=() probe_key_hashes=() write_price=() read_price=()
 main_key="" budget_key=""
 
 # hash_of <text>: the sha256 LiteLLM stores for a key, through a pipe.
@@ -563,14 +567,46 @@ total_cost() {
   [ "$row_count" -ge "$ok_calls" ] || fail "the spend log holds only $row_count successful rows of the probe keys for $ok_calls calls answered 200 after two minutes, so the total cost is incomplete"
 }
 
+# spent_so_far: sets spent_total to the cost of the successful spend log rows of the probe keys once the log holds as many
+# as calls answered 200; returns 1 when it never did, so the cost is not known.
+spent_so_far() {
+  local row_count row_sum
+  await_spend_log "$probe_person" count_probe_rows || return 1
+  spent_total=$row_sum
+}
+budget_note=""
+# within_budget <tokens> <write|read>: whether a call of that many tokens, at the model's dearest cache price of that kind,
+# stays within probe_budget on top of the cost so far; sets budget_note. Only the calls from guarded_tokens ask: LiteLLM lets
+# the call that crosses the budget run in full. An unknown price or an incomplete spend log is no room.
+within_budget() {
+  local price="${write_price[$model]-0}" worst
+  [ "$1" -ge "$guarded_tokens" ] || return 0
+  [ "$2" = write ] || price="${read_price[$model]-0}"
+  if [ "$price" = 0 ]; then
+    budget_note="/model/info names no cache $2 price for $model"
+    return 1
+  fi
+  if ! spent_so_far; then
+    budget_note="the spend log never held the rows of the calls answered 200"
+    return 1
+  fi
+  worst="$(awk -v tokens="$1" -v price="$price" 'BEGIN { printf "%.4f", tokens * price }')"
+  budget_note="the probe keys spent $spent_total USD, this call costs at worst $worst USD, the key's budget is $probe_budget USD"
+  awk -v spent="$spent_total" -v worst="$worst" -v budget="$probe_budget" 'BEGIN { exit !(spent + worst <= budget) }'
+}
 # One prefix of the given size on the model: written by /v1/messages, then read twice on each route, streamed. A route
-# that does not read the other's cache writes its own at its first read and reads that at its second.
+# that does not read the other's cache writes its own at its first read and reads that at its second. A call the key's
+# budget has no room for is not sent and ends the point.
 large_point() {
-  local tokens="$1" written first_status attempt times_messages="" times_chat="" reads_messages="" reads_chat=""
+  local tokens="$1" written first_status attempt chat_price stopped="" times_messages="" times_chat="" reads_messages="" reads_chat=""
   begin_flow
   route=messages
   fresh_system "large-$tokens-$model" "$tokens"
   messages_json="$(user_turn 'Reply with the single word ok.' last)"
+  if ! within_budget "$tokens" write; then
+    answer 10 "O5 F6" "$model" "not run: the key's budget" "the write of a $tokens-token prefix: $budget_note"
+    return 0
+  fi
   exchange 16
   first_status=$call_status written=$((n_write + n_read))
   if [ "$first_status" != 200 ]; then
@@ -579,15 +615,19 @@ large_point() {
   fi
   streamed=true
   for attempt in 1 2; do
+    chat_price=read
+    [ "$attempt" = 2 ] || chat_price=write
     route=messages
+    within_budget "$tokens" read || { stopped="; the next call was not run, the key's budget: $budget_note"; break; }
     exchange 16
     times_messages+=" ${first_token_ms:-none}" reads_messages+=" $n_read(status $call_status)"
     route=chat
+    within_budget "$tokens" "$chat_price" || { stopped="; the next call was not run, the key's budget: $budget_note"; break; }
     exchange 16
     times_chat+=" ${first_token_ms:-none}" reads_chat+=" $n_read(status $call_status, write $n_write)"
   done
   answer 10 "O5 F6" "$model" "messages$times_messages ms, chat$times_chat ms" \
-    "first token of each streamed read of a prefix of $written cached tokens; reads: messages$reads_messages, chat$reads_chat"
+    "first token of each streamed read of a prefix of $written cached tokens; reads: messages$reads_messages, chat$reads_chat$stopped"
 }
 # replay_block: sends the compaction block, stored in a file as a restarted sender would hold it, as the first message, on
 # the conversation's model and on the other one; sets restart_status and change_status.
@@ -701,13 +741,22 @@ flow_budget() {
     "a key with a budget of $exhausted_budget USD: first call status $first_status; /v1/messages ended with status $messages_status after $refused_after more calls (reply names the budget: $messages_refused); chat ended with status $chat_status (reply names the budget: $chat_refused)"
 }
 
-# Question 11: what /model/info gives under the probe key.
+# model_price <model> <price name>: the dearest price in the last /model/info reply under the name, with or without the
+# step above a size ("<name>_above_<n>k_tokens"); 0 when there is none.
+model_price() {
+  NAME="$1" STEM="$2" json '[.data[] | select(.model_name == strenv(NAME)) | .model_info | to_entries | .[] |
+    select(.key | test("^" + strenv(STEM) + "(_above_[0-9]+k_tokens)?$")) | .value] | sort | .[-1] // 0'
+}
+# Question 11: what /model/info gives under the probe key; its cache write and read prices bound what a call may cost.
 flow_model_info() {
   local entries
   key_get /model/info
   for model in "${probe_models[@]}"; do
     entries=""
+    write_price[$model]=0 read_price[$model]=0
     if [ "$call_status" = 200 ]; then
+      write_price[$model]="$(model_price "$model" cache_creation_input_token_cost)"
+      read_price[$model]="$(model_price "$model" cache_read_input_token_cost)"
       entries="$(NAME="$model" json '[.data[] | select(.model_name == strenv(NAME)) | .model_info | to_entries | .[] |
         select(.value != null) | select(.key | test("max_input_tokens|cost"))] | map(.key + "=" + (.value | tostring)) | join(" ")')"
     fi

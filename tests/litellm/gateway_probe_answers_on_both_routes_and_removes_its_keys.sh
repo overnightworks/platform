@@ -140,6 +140,19 @@ slept_seconds="$(awk '{ sum += $1 } END { print sum }' "$work_directory/sleeps")
 [ "$limit_seconds" -gt "$slept_seconds" ] || fail "healthy: the port-forward ends after $limit_seconds s, within the $slept_seconds s the run waits"
 echo "the port-forward lives longer than everything the run waits for"
 
+# An 800k call is sent only when the cost so far plus its worst case fits the key's budget: a write dearer than the whole
+# budget is never sent, and a spend that leaves no room for it is read from the spend log.
+for case in dear_writes spendy_calls; do
+  run_probe "$case" "$case" 0
+  [ "$status" = 0 ] || fail "$case: the probe ended $status: $(tail -n 20 <<<"$output")"
+  ended_cleanly "$case"
+  for model in text/sonnet-medium text/haiku-fast; do
+    has "$case" "Q10 \[O5 F6\] $model: not run: the key's budget; the write of a 800000-token prefix: the probe keys spent [0-9.]+ USD"
+    count_of "$case" "Q10 \[O5 F6\] $model: " 3
+  done
+done
+echo "an 800k call whose worst case passes the key's budget is not run"
+
 # A key that cannot be deleted ends the run 1; a budget that /v1/messages does not enforce is no yes.
 run_probe undeletable "delete_fails,messages_ignores_budget" 0
 [ "$status" = 1 ] || fail "undeletable: the probe ended $status, not 1: $(tail -n 5 <<<"$output")"

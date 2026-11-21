@@ -8,7 +8,8 @@ aliases it holds, without authorization.
 Faults: delete_fails (a key deletion answers 500), messages_ignores_budget (/v1/messages passes a key past its budget),
 unnamed_budget_refusal (a refusal for the budget says nothing of a budget), short_read (a cache hit reads twenty tokens
 less than it held), refuse_zero (max_tokens 0 is refused with 400), drop_row (one answered call has no spend log row),
-chat_fails (the chat route answers 500).
+chat_fails (the chat route answers 500), dear_writes (a cache write costs five times the price /model/info names),
+spendy_calls (each answered call costs 0.025 USD).
 """
 
 import hashlib
@@ -20,8 +21,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MASTER_KEY, FAULTS, SEEDED = sys.argv[1], set(filter(None, sys.argv[2].split(","))), int(sys.argv[3])
 MODELS = ["text/sonnet", "text/haiku", "text/sonnet-medium", "text/haiku-fast", "image/flare"]
+WRITE_PRICE = 1e-5 if "dear_writes" in FAULTS else 2e-6
+CALL_SPEND = 0.025 if "spendy_calls" in FAULTS else 0.001
 MODEL_INFO = {"max_input_tokens": 1000000, "input_cost_per_token": 2e-6, "cache_read_input_token_cost": 1e-7,
-              "cache_creation_input_token_cost_above_1hr": 4e-6, "unset": None}
+              "cache_creation_input_token_cost": WRITE_PRICE, "cache_creation_input_token_cost_above_1hr": 4e-6, "unset": None}
 PAGE_LIMIT = 100
 state = {"keys": {}, "cache": {}, "inflight": {}, "logs": [], "calls": 0, "answered": 0}
 lock = threading.Lock()
@@ -153,10 +156,10 @@ class Gateway(BaseHTTPRequestHandler):
             read = 0 if held is None else max(min(held, total) - (20 if "short_read" in FAULTS else 0), 0)
             write = total if held is None else total - read
             state["cache"][cache_key] = total
-            key["spend"] += 0.001
+            key["spend"] += CALL_SPEND
             state["answered"] += 1
             if not ("drop_row" in FAULTS and state["answered"] == 7):
-                self.log_call(call_id, token, body, "success", 0.001, total, completion, write, read)
+                self.log_call(call_id, token, body, "success", CALL_SPEND, total, completion, write, read)
         hour = '"ttl": "1h"' in system or '"ttl":"1h"' in system
         usage = {"cache_creation_input_tokens": write, "cache_read_input_tokens": read, "cache_creation": {
             "ephemeral_5m_input_tokens": 0 if hour else write, "ephemeral_1h_input_tokens": write if hour else 0}}
