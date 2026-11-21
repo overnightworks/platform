@@ -111,6 +111,9 @@ jobs:
           mise exec -- tests/keycloak/realm_secrets_are_env_references.sh
           infrastructure/keycloak/realm.yaml infrastructure/keycloak/master.yaml
 
+      - name: Check that every Service an Ingress routes to carries the same five sticky cookie annotations in every layer, and that the check names each breach
+        run: mise exec -- tests/ingress/every_routed_service_carries_the_same_sticky_cookie.sh
+
       - name: Check that every name a manifest under apps/ hands under a REALM_ key is a plain value that the realm file declares and that is its app's own or the fleet's, and that the check names each breach
         run: mise exec -- tests/keycloak/handed_realm_names_are_declared.sh infrastructure/keycloak/realm.yaml
 
@@ -441,6 +444,14 @@ jobs:
       - name: Assert that no HelmRelease or Traefik CRD exists, that Traefik is ClusterIP only, that no Service or Pod of the cluster is exposed on the node and that web trusts the nodes' pod CIDRs
         if: matrix.part == 'core'
         run: tests/ingress/the_cluster_exposes_only_traefik_and_trusts_the_pod_network.sh
+
+      # It runs two nginx pods of legal's image in a throwaway namespace, so it needs only Traefik's layer, which core applies.
+      - name: Assert that a second request with the cookie reaches the same one of two pods through Traefik, that the other pod's cookie reaches the other, and that the cookie carries the annotations' name and SameSite, Secure, HttpOnly and Path=/ and no Domain, Max-Age or Expires
+        if: matrix.part == 'core'
+        env:
+          # The throwaway namespace of the two pods.
+          STICKY_NAMESPACE: sticky-cookie-proof
+        run: tests/ingress/a_second_request_with_the_cookie_reaches_the_same_pod.sh
 
       - name: Assert that Traefik answers only cloudflared's and Gatus's pods and routes hopin and skat, and that speech-runtime answers only its callers' pods
         if: matrix.part == 'access'
