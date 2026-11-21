@@ -2,7 +2,7 @@
 
 Reference for the head who moves an app onto the platform or changes how it runs there. It says what an app may rely on,
 what every app offers, what its move proves, and where each rule is checked. It restates no mechanics of its owners:
-`AGENTS.md` (the manifests and their checks) and quality's release path and gate.
+`docs/ARCHITECTURE.md` (the platform's parts) and quality's release path and gate.
 
 ## Scope and trigger
 
