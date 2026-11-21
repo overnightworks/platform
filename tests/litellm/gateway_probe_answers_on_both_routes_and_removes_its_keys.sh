@@ -16,14 +16,18 @@ repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$repository_root/tests/failure.sh"
 work_directory="$(mktemp -d)"
 fake_bin="$work_directory/bin"
-mkdir "$fake_bin"
+guard_bin="$work_directory/guard-bin"
+mkdir "$fake_bin" "$guard_bin"
 master_key=sk-fake-master-key-0001
 real_timeout="$(command -v timeout)"
 real_curl="$(command -v curl)"
-server_pid=""
 stop_all() {
-  [ -z "$server_pid" ] || kill "$server_pid" 2>/dev/null || true
-  [ ! -f "$work_directory/forward-pids" ] || xargs -r kill <"$work_directory/forward-pids" 2>/dev/null || true
+  local pid_file
+  for pid_file in "$work_directory"/*/server-pid "$work_directory"/*/forward-pids; do
+    [ ! -f "$pid_file" ] || xargs -r kill <"$pid_file" 2>/dev/null || true
+  done
+  # shellcheck disable=SC2046 # the job ids are numbers
+  kill $(jobs -p) 2>/dev/null || true
   rm -rf "$work_directory"
 }
 trap stop_all EXIT
@@ -32,24 +36,16 @@ trap 'exit 143' TERM
 
 # The fake tools read their directories and the fake master key from the environment, and find the real tool behind them on
 # the path without the directory of the fakes.
-export FAKE_BIN="$fake_bin" FAKE_WORK="$work_directory" FAKE_MASTER_KEY="$master_key"
-# A tool of the probe refuses a key's value or a sha256 in its arguments, which a process list shows.
-cat >"$work_directory/guard" <<'GUARD'
-#!/usr/bin/env bash
-tool="${0##*/}"
-for argument in "$@"; do
-  if [[ $argument == *sk-* || $argument =~ [0-9a-f]{64} ]]; then
-    echo "$tool had a key or a hash in its arguments" >>"$FAKE_WORK/violations"
-    exit 1
-  fi
-done
-exec "$(PATH="${PATH#"$FAKE_BIN:"}" command -v "$tool")" "$@"
-GUARD
-chmod +x "$work_directory/guard"
+export FAKE_BIN="$fake_bin" FAKE_MASTER_KEY="$master_key"
+# A guarded run puts these in front of the tools of the probe, which refuse a key's value or a sha256 in their arguments,
+# which a process list shows. Each starts one process of its own and then the tool, whose path it holds.
 for tool in curl grep awk yq sed tr cut sha256sum head seq od; do
-  ln -s "$work_directory/guard" "$fake_bin/$tool"
+  printf '#!/bin/bash\nif [[ "$*" == *sk-* || "$*" =~ [0-9a-f]{64} ]]; then\n  echo "%s had a key or a hash in its arguments" >>"$FAKE_WORK/violations"\n  exit 1\nfi\nexec %q "$@"\n' \
+    "$tool" "$(command -v "$tool")" >"$guard_bin/$tool"
+  chmod +x "$guard_bin/$tool"
 done
-# The waits end at once, so that the run does not last half an hour; each is recorded.
+# The waits of the probe end at once, so that the run does not last half an hour, and each is recorded. A wait of a second
+# or less is for a process that starts, which the wait runs for real.
 cat >"$fake_bin/sleep" <<'FAKE'
 #!/usr/bin/env bash
 [ "$1" -gt 1 ] 2>/dev/null || exec "$(PATH="${PATH#"$FAKE_BIN:"}" command -v sleep)" "$1"
@@ -77,27 +73,40 @@ esac
 FAKE
 chmod +x "$fake_bin/sleep" "$fake_bin/timeout" "$fake_bin/kubectl"
 
-# run_probe <name> <faults> <seeded keys> <argument>...: runs the probe against a new fake gateway with the faults; sets
-# status, output and the aliases the gateway holds afterwards.
+# drive_probe <name> <guarded or plain> <faults> <seeded keys> <argument>...: runs the probe against a new fake gateway with
+# the faults, in the directory $work_directory/<name>, which holds its status, output, the aliases the gateway holds
+# afterwards and the files the fake tools write. Runs are independent, so the cell starts them all and then judges each.
+drive_probe() {
+  local name="$1" tools="$2" faults="$3" seeded="$4" directory port status=0 tool_path="$fake_bin:$PATH"
+  shift 4
+  directory="$work_directory/$name"
+  mkdir -p "$directory/tmp"
+  mkfifo "$directory/port"
+  python3 -I "$repository_root/tests/litellm/fake_gateway.py" "$master_key" "$faults" "$seeded" >"$directory/port" &
+  echo $! >"$directory/server-pid"
+  read -r port <"$directory/port" || fail "$name: the fake gateway did not listen"
+  [ "$tools" != guarded ] || tool_path="$fake_bin:$guard_bin:$PATH"
+  FAKE_WORK="$directory" FAKE_PORT="$port" PATH="$tool_path" KUBECONFIG=/nonexistent MISE_DISABLE_TOOLS=kubectl TMPDIR="$directory/tmp" \
+    "$real_timeout" 900 "$repository_root/scripts/litellm_gateway_probe.sh" "$@" >"$directory/output" 2>&1 || status=$?
+  echo "$status" >"$directory/status"
+  "$real_curl" --silent "http://127.0.0.1:$port/__keys" | yq '.[]' >"$directory/held"
+  kill "$(<"$directory/server-pid")"
+}
+declare -A drives=()
+# start_probe <name> <guarded or plain> <faults> <seeded keys> <argument>...: starts drive_probe in the background. The runs
+# of the faults need no guard, since each sends the commands of the healthy run, which is guarded.
+start_probe() {
+  drive_probe "$@" &
+  drives[$1]=$!
+}
+# run_probe <name>: waits for the run; sets status, output and the aliases the gateway holds afterwards.
 run_probe() {
-  local name="$1" faults="$2" seeded="$3" port
-  shift 3
-  rm -f "$work_directory/sleeps" "$work_directory/forward-limits" "$work_directory/forward-pids" "$work_directory/violations"
-  mkdir "$work_directory/tmp-$name"
-  python3 -I "$repository_root/tests/litellm/fake_gateway.py" "$master_key" "$faults" "$seeded" >"$work_directory/port-$name" &
-  server_pid=$!
-  until_port() { [ -s "$work_directory/port-$name" ]; }
-  until_true 30 "the fake gateway listens" until_port
-  port="$(<"$work_directory/port-$name")"
-  status=0
-  FAKE_PORT="$port" PATH="$fake_bin:$PATH" KUBECONFIG=/nonexistent MISE_DISABLE_TOOLS=kubectl TMPDIR="$work_directory/tmp-$name" \
-    "$real_timeout" 900 "$repository_root/scripts/litellm_gateway_probe.sh" "$@" >"$work_directory/output-$name" 2>&1 || status=$?
-  output="$(<"$work_directory/output-$name")"
-  held="$("$real_curl" --silent "http://127.0.0.1:$port/__keys" | yq '.[]')"
-  kill "$server_pid"
-  wait "$server_pid" 2>/dev/null || true
-  server_pid=""
-  [ ! -f "$work_directory/violations" ] || fail "$name: $(<"$work_directory/violations")"
+  local directory="$work_directory/$1"
+  wait "${drives[$1]}" || fail "$1: the run did not finish"
+  status="$(<"$directory/status")"
+  output="$(<"$directory/output")"
+  held="$(<"$directory/held")"
+  [ ! -f "$directory/violations" ] || fail "$1: $(<"$directory/violations")"
 }
 # has <name> <pattern>: the output of the run holds a line matching the pattern.
 has() { grep -Eq "$2" <<<"$output" || fail "$1: no line matches $2: $(tail -n 40 <<<"$output")"; }
@@ -111,16 +120,26 @@ count_of() {
 }
 # ended_cleanly <name>: no scratch directory and no port-forward is left, and the gateway holds no probe key.
 ended_cleanly() {
-  local pid
-  [ -z "$(ls -A "$work_directory/tmp-$1")" ] || fail "$1: the scratch directory stays: $(ls "$work_directory/tmp-$1")"
-  if [ -f "$work_directory/forward-pids" ]; then
-    while read -r pid; do ! kill -0 "$pid" 2>/dev/null || fail "$1: the port-forward $pid still runs"; done <"$work_directory/forward-pids"
+  local pid directory="$work_directory/$1"
+  [ -z "$(ls -A "$directory/tmp")" ] || fail "$1: the scratch directory stays: $(ls "$directory/tmp")"
+  if [ -f "$directory/forward-pids" ]; then
+    while read -r pid; do ! kill -0 "$pid" 2>/dev/null || fail "$1: the port-forward $pid still runs"; done <"$directory/forward-pids"
   fi
-  [ -z "$held" ] || fail "$1: the gateway still holds the keys: $held"
+  [ -z "$held" ] || fail "$1: the gateway holds the keys: $held"
 }
 
+start_probe healthy guarded "" 0
+for case in dear_writes spendy_calls heavy_first_call; do start_probe "$case" plain "$case" 0; done
+start_probe small_limit plain "small_model_limit,heavy_first_call,spendy_calls" 0
+start_probe dear_chat_write plain "dear_misses" 0
+start_probe no_cache_reads plain "no_cache,dear_misses" 0
+start_probe undeletable guarded "delete_fails,messages_ignores_budget" 0
+start_probe doubtful plain "unnamed_budget_refusal,short_read,refuse_zero,drop_row" 0
+start_probe failed guarded "chat_fails" 0
+start_probe remove guarded "" 120 --remove
+
 # A run with a healthy gateway.
-run_probe healthy "" 0
+run_probe healthy
 [ "$status" = 0 ] || fail "healthy: the probe ended $status: $(tail -n 20 <<<"$output")"
 ended_cleanly healthy
 count_of healthy '^litellm:gateway-probe: the probe key gateway-probe-[0-9]+-[0-9]+-(main|budget) is gone$' 2
@@ -135,8 +154,8 @@ has healthy 'Q15 \[O12 F12\] messages text/sonnet-medium: yes;'
 has healthy '^litellm:gateway-probe: total cost [0-9.]+ USD from [0-9]+ spend log rows'
 echo "a healthy run answers on both routes and models, deletes both keys and prints the cost"
 # The forward outlives every wait of the run; the limit is read in minutes.
-limit_seconds="$(awk '{ sub(/m$/, ""); print $1 * 60 }' "$work_directory/forward-limits")"
-slept_seconds="$(awk '{ sum += $1 } END { print sum }' "$work_directory/sleeps")"
+limit_seconds="$(awk '{ sub(/m$/, ""); print $1 * 60 }' "$work_directory/healthy/forward-limits")"
+slept_seconds="$(awk '{ sum += $1 } END { print sum }' "$work_directory/healthy/sleeps")"
 [ "$limit_seconds" -gt "$slept_seconds" ] || fail "healthy: the port-forward ends after $limit_seconds s, within the $slept_seconds s the run waits"
 echo "the port-forward lives longer than everything the run waits for"
 
@@ -144,7 +163,7 @@ echo "the port-forward lives longer than everything the run waits for"
 # budget is never sent, and a spend that leaves room for the prefix of the nominal 800k tokens but not for the most input
 # tokens the model takes, which the write has no measured size to lower, is read from the spend log.
 for case in dear_writes spendy_calls heavy_first_call; do
-  run_probe "$case" "$case" 0
+  run_probe "$case"
   [ "$status" = 0 ] || fail "$case: the probe ended $status: $(tail -n 20 <<<"$output")"
   ended_cleanly "$case"
   for model in text/sonnet-medium text/haiku-fast; do
@@ -155,7 +174,7 @@ done
 echo "an 800k call whose worst case passes the key's budget is not run"
 
 # A model whose map names fewer input tokens than the prefix is priced at the prefix, not at the map.
-run_probe small_limit "small_model_limit,heavy_first_call,spendy_calls" 0
+run_probe small_limit
 [ "$status" = 0 ] || fail "small_limit: the probe ended $status: $(tail -n 20 <<<"$output")"
 ended_cleanly small_limit
 has small_limit "Q10 \[O5 F6\] text/sonnet-medium: not run: the key's budget; the write of a 800000-token prefix: .*costs at worst [0-9.]+ USD \(([89][0-9]{5}|[0-9]{7,}) tokens"
@@ -164,18 +183,18 @@ echo "an 800k call is priced at its own size when the model names fewer input to
 # A read the budget has no room for is not sent: the chat write after a dear messages write, and a read of a cache that the
 # write did not make, which costs the full price of its prefix.
 stop_line="the next call was not run, the key's budget: the probe keys spent [0-9.]+ USD, this call costs at worst"
-run_probe dear_chat_write "dear_misses" 0
+run_probe dear_chat_write
 [ "$status" = 0 ] || fail "dear_chat_write: the probe ended $status: $(tail -n 20 <<<"$output")"
 ended_cleanly dear_chat_write
 has dear_chat_write "Q10 \[O5 F6\] text/sonnet-medium: messages [0-9]+ ms, chat ms; .*reads: messages [0-9]+\(status 200\), chat; $stop_line"
-run_probe no_cache_reads "no_cache,dear_misses" 0
+run_probe no_cache_reads
 [ "$status" = 0 ] || fail "no_cache_reads: the probe ended $status: $(tail -n 20 <<<"$output")"
 ended_cleanly no_cache_reads
 has no_cache_reads "Q10 \[O5 F6\] text/sonnet-medium: messages ms, chat ms; .*reads: messages, chat; $stop_line"
 echo "an 800k read is not sent when the budget has no room for what it costs without the cache"
 
 # A key that cannot be deleted ends the run 1; a budget that /v1/messages does not enforce is no yes.
-run_probe undeletable "delete_fails,messages_ignores_budget" 0
+run_probe undeletable
 [ "$status" = 1 ] || fail "undeletable: the probe ended $status, not 1: $(tail -n 5 <<<"$output")"
 has undeletable 'the probe key gateway-probe-[0-9]+-[0-9]+-main may remain'
 has undeletable 'Q9 \[O4\] messages text/haiku-fast: no;'
@@ -183,7 +202,7 @@ echo "a key that stays ends the run 1, and a budget only chat enforces is answer
 
 # A refusal that names no budget, a read short by the tail of the conversation, a keep-alive refused with max_tokens 0 and
 # a spend log without a successful row.
-run_probe doubtful "unnamed_budget_refusal,short_read,refuse_zero,drop_row" 0
+run_probe doubtful
 [ "$status" = 1 ] || fail "doubtful: the probe ended $status, not 1: $(tail -n 5 <<<"$output")"
 has doubtful 'Q9 \[O4\] messages text/haiku-fast: no;'
 has doubtful 'Q2 \[O3\] messages text/sonnet-medium: no read'
@@ -193,14 +212,14 @@ ended_cleanly doubtful
 echo "an unnamed refusal, a short read, a refused keep-alive and a missing row are each answered as what they are"
 
 # A run that fails at its first plain request leaves nothing behind.
-run_probe failed "chat_fails" 0
+run_probe failed
 [ "$status" = 1 ] || fail "failed: the probe ended $status, not 1"
 has failed 'the plain request on chat answered with status 500'
 ended_cleanly failed
 echo "a failed run ends its port-forward, its scratch directory and its keys"
 
 # --remove reaches a probe key on the second page of the list and leaves the other keys.
-run_probe remove "" 120 --remove
+run_probe remove
 [ "$status" = 0 ] || fail "remove: the probe ended $status: $(tail -n 5 <<<"$output")"
 [ "$(grep -c '^an-app-key-' <<<"$held")" = 120 ] || fail "remove: the gateway holds not its 120 other keys: $held"
 ! grep -q '^gateway-probe-' <<<"$held" || fail "remove: a probe key stays: $(grep '^gateway-probe-' <<<"$held")"
