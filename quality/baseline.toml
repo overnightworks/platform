@@ -1,0 +1,6 @@
+# Measured by `quality check --fix`. Entries only ever go down.
+
+[clones]
+
+[job_minutes.".github/workflows/ci.yml"]
+cluster = 17

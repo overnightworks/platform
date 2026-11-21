@@ -1021,6 +1021,7 @@ jobs:
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
+      # runtime-install: the job proves the first run on a fresh system, so it installs what that system lacks
       - name: Install the first-run prerequisites
         run: |
           # One setting for every apt call of the job, the tests' installs included: archive.ubuntu.com
@@ -1213,7 +1214,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: overnightworks/quality/.github/workflows/gate.yml@2d2b68bf3916b34f6f2c72a540c1e3d8a947b750 # v0.10.0
+    uses: overnightworks/quality/.github/workflows/gate.yml@34c82adba7820c036634b18ed01486da78e00c73 # v0.23.0
     with:
       coverage-artifact: coverage
     secrets:
