@@ -3,7 +3,7 @@
 # cannot arrange: a Backup that ends in a reason other than Succeeded, or does not complete within the wait, ends the task
 # non-zero, names the Backup and its reason, and makes no restore test Job; and a Backup that succeeded followed by a Job
 # that cannot be made names both; a Job that ends Failed after a Backup that Succeeded names both; and a namespace without
-# exactly one Schedule named backup or postgres, or without the CronJob restore-test, is refused with no object made.
+# the Schedule backup, or without the CronJob restore-test, is refused with no object made.
 # Usage: mise exec -- tests/backup/backup_now_ends_non_zero_naming_a_failed_backup_or_the_job_it_could_not_make.sh
 set -euo pipefail
 
@@ -89,10 +89,8 @@ refuses_with() {
 }
 
 FAKE_SCHEDULES= drive 0 Succeeded 0
-refuses_with "somewhere holds 0 k8up Schedules named backup or postgres" "a namespace without a Schedule"
-FAKE_SCHEDULES="backup postgres" drive 0 Succeeded 0
-refuses_with "somewhere holds 2 k8up Schedules named backup or postgres" "a namespace with a Schedule backup and a Schedule postgres"
-FAKE_SCHEDULES="other" drive 0 Succeeded 0
-refuses_with "somewhere holds 0 k8up Schedules named backup or postgres" "a namespace whose only Schedule has another name"
+refuses_with "somewhere holds no k8up Schedule backup" "a namespace without a Schedule"
+FAKE_SCHEDULES="postgres" drive 0 Succeeded 0
+refuses_with "somewhere holds no k8up Schedule backup" "a namespace whose only Schedule has another name"
 FAKE_CRONJOB= drive 0 Succeeded 0
 refuses_with "somewhere holds no CronJob restore-test" "a namespace without the CronJob restore-test"

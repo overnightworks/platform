@@ -43,7 +43,7 @@ replacements:
     targets:
       - select:
           kind: Schedule
-          name: postgres
+          name: backup
         fieldPaths:
           - spec.backend.rest.url
   # Keycloak and config-cli share the admin front end; keycloak.yaml owns it.
