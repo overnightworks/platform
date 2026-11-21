@@ -3,9 +3,10 @@
 # that layer, and runs workloads, so it waits for admission, and for app-attestations, whose Kyverno judges every app
 # image its Pods name, so no Pod of an app is created before the check can run. An app with a database of its own
 # also waits for storage, as the database claims a volume, and for k8up, whose CRDs its backup objects need.
-# presentator and songmaker also wait for objectstore, whose Job makes their buckets and keys before their webs start. An app that has a pull layer, apps/<app>/pull, has a second Kustomization <app>-pull, which the app's layer
-# waits for: its Job pulls the release's images onto the node before the app's layer rolls them. A timeout of the layer
-# does not cancel the pull, so the roll follows at the next retry.
+# presentator and songmaker also wait for objectstore, whose Job makes their buckets and keys before their webs start.
+# An app that has a pull layer, apps/<app>/pull, has a second Kustomization <app>-pull, which the app's layer waits for:
+# its Job pulls the release's images onto the node before the app's layer rolls them. A timeout of the layer does not
+# cancel the pull, so the roll follows at the next retry.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
