@@ -12,10 +12,12 @@
 #   scripts/litellm_gateway_probe.sh --remove  deletes the test person's customer row and any probe key a killed run left
 # Both probe keys are deleted on every exit, a failure included; only SIGKILL leaves one, which --remove clears. The second
 # key has a budget of one millionth of a dollar and shows the budget on both routes. The run deletes the test person's row
-# first, so the person's own budget never carries an earlier run's spend. The 800k-token point of question 10 runs on
-# text/sonnet-medium alone, since both models would pass the key's budget, and comes last. The run takes about half an
-# hour, as the 1-hour cache write of question 17 is read only after ten minutes, and spends 3 to 4 USD, mostly on the
-# 800k point. It writes the key rows until they are deleted, the test person's row and one spend log row per call.
+# first, so the person's own budget never carries an earlier run's spend. The 800k-token points of question 10 come last,
+# after the cache reads of question 17, since the main key's budget can end them. The run takes about half an hour, as the
+# 1-hour cache write of question 17 is read only after ten minutes, and spends up to the key's 5 USD, mostly on the 800k
+# points. It writes the key rows until they are deleted, the test person's row and one spend log row per call. The run's
+# cost is the sum of the successful spend log rows of both keys; it exits 1 when the log never holds as many as calls
+# answered 200.
 # Where a question has no request shape LiteLLM can carry on a route, the line gives the status the nearest shape got.
 # Values travel as litellm_keys.sh says, from kubectl's stdout or a shell variable to curl's stdin, never into an argument,
 # a URL or an output; a failure names the step and the HTTP status, never a body. A request body holds only synthetic
@@ -25,6 +27,8 @@ set -euo pipefail
 # shellcheck source=litellm_keys.sh
 source "$(dirname "${BASH_SOURCE[0]}")/litellm_keys.sh"
 command_name=gateway-probe
+# The port-forward lives through the whole run, the wait of question 17 and the removal of the keys at its end included.
+forward_limit=90m
 
 # The only person this command sends for; its customer row is what --remove deletes.
 probe_person=fp-litellm-gateway-probe
@@ -54,18 +58,18 @@ call_status="" call_id="" first_token_ms="" usage="{}"
 u_input="" u_prompt="" u_output="" u_completion="" u_write="" u_read="" u_5m="" u_1h=""
 n_prompt=0 n_write=0 n_read=0 n_output=0
 ok_calls=0
-declare -A rule_tokens=() chat_shares=() ttl_written=() ttl_system=()
-main_key="" budget_key="" key_hashes=()
+declare -A rule_tokens=() ttl_written=() ttl_system=() probe_key_hashes=()
+main_key="" budget_key=""
 
-microseconds() { echo "${1/./}"; }
 # hash_of <text>: the sha256 LiteLLM stores for a key, through a pipe.
 hash_of() { printf '%s' "$1" | sha256sum | cut -d ' ' -f 1; }
 # answer <question> <tags> <where> <answer> <evidence>: the line of one question on one route and model.
 answer() { printf 'litellm:gateway-probe: Q%s [%s] %s: %s; %s\n' "$1" "$2" "$3" "$4" "$5"; }
 # yes_no <command>...: yes when the command succeeds, else no.
 yes_no() { if "$@"; then echo yes; else echo no; fi; }
-# covers <cached before> <read>: whether the read is at least 95 percent of a cache that held something.
-covers() { [ "$1" -gt 0 ] && [ $(($2 * 100)) -ge $(($1 * 95)) ]; }
+# covers <cached before> <read>: whether the read is all of a cache that held something, as a prefix that is read again is read
+# to its end; a read short by a tail, the conversation after a large system text included, is not covered.
+covers() { [ "$1" -gt 0 ] && [ "$2" -ge "$1" ]; }
 # gated <status> <verdict>: the verdict when the request was answered 200, else no with the status.
 gated() { if [ "$1" = 200 ]; then echo "$2"; else echo "no, status $1"; fi; }
 where() { echo "$route $model"; }
@@ -240,21 +244,32 @@ make_key() {
   probe_aliases+=("$alias")
   body="{\"key\":\"$made_key\",\"key_alias\":\"$alias\",\"max_budget\":$2,\"models\":$3,\"max_parallel_requests\":$4,\"enable_prompt_caching\":true}"
   ask "making the probe key $1" /key/generate "$body" discard
-  key_hashes+=("$(hash_of "$made_key")")
+  probe_key_hashes["$(hash_of "$made_key")"]=1
+}
+# matching_hashes <list path> <alias regex>: prints the hash of each key under a matching alias on every page of the list;
+# returns 1 when a page cannot be read.
+matching_hashes() {
+  local page=1 pages=1
+  while [ "$page" -le "$pages" ]; do
+    request "listing the probe keys" "$1&page=$page" || return 1
+    pages="$(json '.total_pages // 1')"
+    ALIAS="$2" json '.keys[] | select((.key_alias // "") | test(strenv(ALIAS))) | .token'
+    page=$((page + 1))
+  done
 }
 # remove_keys <list path> <alias regex>: deletes the keys the list holds under a matching alias and reads the list again.
 # Returns 1 when a key remains or a step failed; it never ends the command, since it runs in the exit handler.
 remove_keys() {
   local hashes hash
-  request "listing the probe keys" "$1" || return 1
-  hashes="$(ALIAS="$2" json '.keys[] | select((.key_alias // "") | test(strenv(ALIAS))) | .token')"
+  hashes="$(matching_hashes "$1" "$2")" || return 1
   while read -r hash; do
     [ -z "$hash" ] || request "deleting a probe key" /key/delete "{\"keys\":[\"$hash\"]}" discard || return 1
-  done <<<"$hashes"
-  request "listing the probe keys" "$1" || return 1
-  [ -z "$(ALIAS="$2" json '.keys[] | select((.key_alias // "") | test(strenv(ALIAS))) | .token')" ]
+  done < <(printf '%s\n' "$hashes")
+  hashes="$(matching_hashes "$1" "$2")" || return 1
+  [ -z "$hashes" ]
 }
-# probe_exit: deletes this run's keys and then ends as litellm_keys.sh's handler does, with the exit status the run had.
+# probe_exit: deletes this run's keys, ends the forwards and the scratch directory as litellm_keys.sh's handler does and exits
+# with the status the run had, or 1 when a key remains.
 probe_exit() {
   local exit_status=$? alias
   if [ -n "${local_port-}" ]; then
@@ -267,8 +282,8 @@ probe_exit() {
       fi
     done
   fi
-  (exit "$exit_status")
-  on_exit
+  on_exit "$exit_status"
+  exit "$exit_status"
 }
 
 # calibrate <model>: sets the tokens of calibration_rules rules in the model from a request that reports them.
@@ -449,7 +464,7 @@ flow_marks() {
 
 # Question 15: the keep-alive request and the turn after it.
 flow_keep_alive() {
-  local first_status cached keep_text keep_id keep_verdict next_read spend_text
+  local first_status cached keep_text keep_id keep_verdict=no next_read spend_text spend_free=no
   fresh_system "keepalive-$route-$model" "$small_prefix_tokens"
   streamed=true
   messages_json="$(user_turn 'Reply with the single word ok.' last)"
@@ -457,10 +472,11 @@ flow_keep_alive() {
   first_status=$call_status cached=$((n_write + n_read))
   streamed=false
   exchange 0
-  keep_id=$call_id keep_verdict="no"
+  keep_id=$call_id
   keep_text="status $call_status, read $n_read of $cached cached, write $n_write, output $n_output"
   if [ "$call_status" != 200 ]; then
     exchange 1
+    keep_id=$call_id
     keep_text+="; max_tokens 1: status $call_status, read $n_read, write $n_write, output $n_output"
   elif free_keep_alive; then
     keep_verdict="$(read_verdict "$cached")"
@@ -469,8 +485,13 @@ flow_keep_alive() {
   messages_json="$(conversation "$(user_turn 'Reply with the single word ok.')" "$(assistant_turn ok)" "$(user_turn 'Reply ok again.' last)")"
   exchange 64
   next_read=$n_read
-  spend_text="spend log row: not found"
-  if spend_row_of "$keep_id"; then spend_text="spend log row: spend $row_spend, completion $row_completion, write $row_write, read $row_read"; fi
+  spend_text="spend log row of the last keep-alive request: not found"
+  if spend_row_of "$keep_id"; then
+    spend_text="spend log row of the last keep-alive request, which the budget counts: spend $row_spend, completion $row_completion, write $row_write, read $row_read"
+    if [ "$row_write" = 0 ] && [ "$row_completion" = 0 ] && covers "$cached" "$row_read"; then spend_free=yes; fi
+  fi
+  [ "$keep_verdict" != yes ] || [ "$spend_free" = yes ] || keep_verdict="no, the spend log row is no free read of the whole prompt"
+  [ "$keep_verdict" != yes ] || covers "$cached" "$next_read" || keep_verdict="no, the next streamed turn did not read the cache"
   answer 15 "O12 F12" "$(where)" "$keep_verdict" \
     "first turn status $first_status; max_tokens 0 copy: $keep_text; $spend_text; the next streamed turn read $next_read"
 }
@@ -502,53 +523,49 @@ flow_ttl_read() {
   answer 17 "O13 F13" "$(where)" "1-hour write in usage and hit after ten minutes: $one_hour_hit" "$result"
 }
 
-# spend_rows: a line per spend log row of the test person: request id, key hash, spend, prompt, completion, write, read.
-spend_rows=""
 spend_probe_id=""
-read_spend() {
-  ask "reading the spend log" /spend/logs
-  spend_rows="$(PERSON="$probe_person" json '
-    .[] | select(.end_user == strenv(PERSON)) | .request_id + " " + .api_key + " " + (.spend | tostring) + " " +
-    (.prompt_tokens | tostring) + " " + (.completion_tokens | tostring) + " " + (.metadata |
-    ((select(tag == "!!str") | from_json) // .) | .additional_usage_values |
-    ((.cache_creation_input_tokens // 0) | tostring) + " " + ((.cache_read_input_tokens // 0) | tostring))')"
+# find_row <call id>: sets row_spend, row_prompt, row_completion, row_write and row_read from the call's row of spend_rows;
+# returns 1 when there is none.
+find_row() {
+  local line
+  line="$(printf '%s\n' "$spend_rows" | grep "^$1 " || true)"
+  [ -n "$line" ] || return 1
+  read -r _ _ _ _ row_spend row_prompt row_completion row_write row_read < <(printf '%s\n' "$line")
 }
-# spend_row_of <call id>: sets row_spend, row_prompt, row_completion, row_write and row_read from the call's spend log
-# row, which LiteLLM writes in batches, so the log is read again for two minutes; returns 1 when the row never came.
+# spend_row_of <call id>: find_row once LiteLLM has written the row; returns 1 when it never did.
 spend_row_of() {
-  local line=""
   [ -n "$1" ] || return 1
-  for _ in $(seq 12); do
-    read_spend
-    line="$(grep "^$1 " <<<"$spend_rows" || true)"
-    if [ -n "$line" ]; then
-      read -r _ _ row_spend row_prompt row_completion row_write row_read <<<"$line"
-      return 0
-    fi
-    sleep 10
-  done
-  return 1
+  await_spend_log "$probe_person" find_row "$1"
 }
-# total_cost: prints the run's cost from the spend log rows of both probe keys, waiting for as many rows as calls answered 200.
+# count_probe_rows: sets row_count and row_sum to the number and the cost of the successful spend log rows of the probe
+# keys, which the hashes of the keys select in the shell; returns 0 once there are as many as calls answered 200.
+count_probe_rows() {
+  local row_key row_status spend spends=""
+  row_count=0
+  while read -r _ row_key _ row_status spend _; do
+    [ -n "${probe_key_hashes[$row_key]-}" ] && [ "$row_status" = success ] || continue
+    row_count=$((row_count + 1))
+    spends+=" $spend"
+  done < <(printf '%s\n' "$spend_rows")
+  # shellcheck disable=SC2086 # the costs are numbers
+  row_sum="$(printf '%s\n' 0 $spends | awk '{ sum += $1 } END { printf "%.6f", sum }')"
+  [ "$row_count" -ge "$ok_calls" ]
+}
+# total_cost: prints the run's cost from the successful spend log rows of both probe keys, waiting for as many rows as
+# calls answered 200; fails when they never came, since the total would be incomplete.
 total_cost() {
-  local rows pattern count=0 sum key_spend
-  pattern="^[^ ]+ ($(IFS='|' && echo "${key_hashes[*]}")) "
-  for _ in $(seq 12); do
-    read_spend
-    rows="$(grep -E "$pattern" <<<"$spend_rows" || true)"
-    count="$(grep -c . <<<"$rows" || true)"
-    [ "$count" -lt "$ok_calls" ] || break
-    sleep 10
-  done
-  sum="$(awk '{ sum += $3 } END { printf "%.6f", sum }' <<<"$rows")"
+  local row_count row_sum key_spend
+  await_spend_log "$probe_person" count_probe_rows || true
   ask "reading the probe key" "/key/list?key_alias=$main_alias&return_full_object=true&size=100"
   key_spend="$(json '.keys[0].spend')"
-  echo "litellm:gateway-probe: total cost $sum USD from $count spend log rows of the probe keys ($ok_calls calls answered 200); the main key's own spend counter reads $key_spend USD"
+  echo "litellm:gateway-probe: total cost $row_sum USD from $row_count spend log rows of the probe keys ($ok_calls calls answered 200); the main key's own spend counter reads $key_spend USD"
+  [ "$row_count" -ge "$ok_calls" ] || fail "the spend log holds only $row_count successful rows of the probe keys for $ok_calls calls answered 200 after two minutes, so the total cost is incomplete"
 }
 
-# One prefix of the given size on the model: written by /v1/messages, then read twice on each route, streamed.
+# One prefix of the given size on the model: written by /v1/messages, then read twice on each route, streamed. A route
+# that does not read the other's cache writes its own at its first read and reads that at its second.
 large_point() {
-  local tokens="$1" written first_status attempt times_messages="" times_chat="" reads_messages="" reads_chat="" chat_text
+  local tokens="$1" written first_status attempt times_messages="" times_chat="" reads_messages="" reads_chat=""
   begin_flow
   route=messages
   fresh_system "large-$tokens-$model" "$tokens"
@@ -556,7 +573,7 @@ large_point() {
   exchange 16
   first_status=$call_status written=$((n_write + n_read))
   if [ "$first_status" != 200 ]; then
-    answer 10 "O5 F6" "$model" "no, status $first_status" "the write of a $tokens-token prefix on messages was refused"
+    answer 10 "O5 F6" "$model" "no, status $first_status" "the write of a $tokens-token prefix on messages was refused$(budget_refused && echo " for the key's budget")"
     return 0
   fi
   streamed=true
@@ -564,16 +581,12 @@ large_point() {
     route=messages
     exchange 16
     times_messages+=" ${first_token_ms:-none}" reads_messages+=" $n_read(status $call_status)"
-    [ "${chat_shares[$model]-yes}" = yes ] || continue
     route=chat
     exchange 16
-    times_chat+=" ${first_token_ms:-none}" reads_chat+=" $n_read(status $call_status)"
-    if [ "$attempt" = 1 ]; then chat_shares[$model]="$(yes_no covers "$written" "$n_read")"; fi
+    times_chat+=" ${first_token_ms:-none}" reads_chat+=" $n_read(status $call_status, write $n_write)"
   done
-  chat_text="chat$times_chat ms"
-  [ -n "$times_chat" ] || chat_text="chat not run, since it does not read the cache /v1/messages wrote"
-  answer 10 "O5 F6" "$model" "messages$times_messages ms, $chat_text" \
-    "first token of each streamed read of a prefix of $written cached tokens; reads: messages$reads_messages, chat${reads_chat:- none}"
+  answer 10 "O5 F6" "$model" "messages$times_messages ms, chat$times_chat ms" \
+    "first token of each streamed read of a prefix of $written cached tokens; reads: messages$reads_messages, chat$reads_chat"
 }
 # replay_block: sends the compaction block, stored in a file as a restarted sender would hold it, as the first message, on
 # the conversation's model and on the other one; sets restart_status and change_status.
@@ -588,13 +601,11 @@ replay_block() {
   exchange 16 "$beta_compaction"
   change_status="status $call_status on $model"
 }
-# Questions 12, 13, 14 on /v1/messages: compaction over the messages of two earlier requests, our own summary call over
-# the same messages, and the stored block replayed after a restart of the sender and on the other model.
+# Questions 12, 13, 14: compaction over the messages of two earlier requests, our own summary call over the same messages,
+# and the stored block replayed after a restart of the sender and on the other model.
 flow_compaction() {
   local t1 t2 t2_marked t3 t3_marked turn summary cached_older cached_full own_full own_older compaction_full
   local compaction_older param_status in_stream verdict=no original_model="$model" block="" restart_status="" change_status=""
-  route=messages
-  begin_flow
   fresh_system "compaction-$model" "$small_prefix_tokens"
   t1="$(user_turn 'Remember the word alpha. Reply ok.')"
   t2="$(user_turn 'Remember the word beta. Reply ok.')" t2_marked="$(user_turn 'Remember the word beta. Reply ok.' last)"
@@ -617,7 +628,9 @@ flow_compaction() {
   messages_json="$(conversation "$t1" "$turn" "$t2" "$turn" "$t3_marked")"
   exchange 4000 "$beta_compaction" ',"compaction":{"type":"summarize"}'
   param_status=$call_status compaction_full="$(read_verdict "$cached_full")"
-  block="$(yq --input-format json --output-format json --indent 0 '.content[]? | select(.type == "compaction")' "$scratch/reply" 2>/dev/null | head -n 1)" || block=""
+  # The block is found wherever the route nests it.
+  block="$(yq --input-format json --output-format json --indent 0 '[.. | select(tag == "!!map") | select(.type == "compaction")] | .[0] | select(. != null)' \
+    "$scratch/reply" 2>/dev/null | head -n 1)" || block=""
   messages_json="$(conversation "$t1" "$turn" "$t2_marked")"
   exchange 4000 "$beta_compaction" ',"compaction":{"type":"summarize"}'
   compaction_older="$(read_verdict "$cached_older")"
@@ -636,17 +649,6 @@ flow_compaction() {
   answer 14 O9 "$(where)" "$(yes_no contains "$restart_status/$change_status" "200/status 200")" \
     "the stored block replayed by a new request: $restart_status; on the other model: $change_status"
 }
-# Question 12 on the chat route: the compaction parameter has no chat shape, so the nearest, a top-level field, is sent.
-flow_compaction_chat() {
-  route=chat
-  begin_flow
-  fresh_system "compaction-chat-$model" "$small_prefix_tokens"
-  messages_json="$(conversation "$(user_turn 'Remember the word alpha. Reply ok.')" "$(assistant_turn ok)" "$(user_turn 'Reply ok again.' last)")"
-  exchange 4000 "$beta_compaction" ',"compaction":{"type":"summarize"}'
-  answer 12 "O7 F8" "$(where)" "$(gated "$call_status" "$(yes_no grep -Eq '"type": ?"compaction"' "$scratch/reply")")" \
-    "the compaction parameter as a top-level field of the chat body: status $call_status; no chat shape carries a block back"
-}
-
 # Question 9: the rate limit, with one request more than the key's parallel limit at once.
 flow_rate_limit() {
   local number pid statuses=""
@@ -668,9 +670,11 @@ flow_rate_limit() {
   answer 9 O4 "$(where)" "$(yes_no contains "$statuses" 429)" \
     "$((probe_parallel + 1)) requests at once on a key with a parallel limit of $probe_parallel answered:$statuses"
 }
+# budget_refused: whether the last request was refused for the key's budget: a client error whose reply names a budget.
+budget_refused() { [[ $call_status == 4* ]] && grep -qi budget "$scratch/reply"; }
 # Question 9: the budget, with a key whose budget its first call passes.
 flow_budget() {
-  local first_status refused_after=none messages_status chat_status attempt
+  local first_status refused_after=none messages_status messages_refused chat_status chat_refused attempt
   make_key budget "$exhausted_budget" "[\"$haiku_model\"]" 5
   budget_key="$made_key"
   value="$budget_key" route=messages model=$haiku_model
@@ -687,13 +691,13 @@ flow_budget() {
     fi
     sleep 5
   done
-  messages_status=$call_status
+  messages_status=$call_status messages_refused="$(yes_no budget_refused)"
   route=chat
   exchange 8
-  chat_status=$call_status
+  chat_status=$call_status chat_refused="$(yes_no budget_refused)"
   value="$main_key"
-  answer 9 O4 "messages $haiku_model" "$(yes_no contains "$messages_status/$chat_status" "/4")" \
-    "a key with a budget of $exhausted_budget USD: first call status $first_status, refused on /v1/messages with status $messages_status after $refused_after more calls, then on chat with status $chat_status"
+  answer 9 O4 "messages $haiku_model" "$(yes_no test "$messages_refused/$chat_refused" = yes/yes)" \
+    "a key with a budget of $exhausted_budget USD: first call status $first_status; /v1/messages ended with status $messages_status after $refused_after more calls (reply names the budget: $messages_refused); chat ended with status $chat_status (reply names the budget: $chat_refused)"
 }
 
 # Question 11: what /model/info gives under the probe key.
@@ -748,20 +752,17 @@ probe_command() {
   each_target flow_write_split
   each_target flow_marks
   each_target flow_keep_alive
-  for model in "${probe_models[@]}"; do
-    flow_compaction
-    flow_compaction_chat
-  done
+  each_target flow_compaction
   model=$haiku_model
   for route in messages chat; do flow_rate_limit; done
   flow_budget
-  for size in 50000 200000 800000; do
-    for model in "${probe_models[@]}"; do
-      if [ "$size" != 800000 ] || [ "$model" = "$sonnet_model" ]; then large_point "$size"; fi
-    done
+  for size in 50000 200000; do
+    for model in "${probe_models[@]}"; do large_point "$size"; done
   done
   [ $((SECONDS - ttl_started)) -ge "$ttl_wait" ] || sleep $((ttl_wait + ttl_started - SECONDS))
   each_target flow_ttl_read
+  # The key's budget ends the run at the largest points, which come last so that nothing else needs it after them.
+  for model in "${probe_models[@]}"; do large_point 800000; done
   if spend_row_of "$spend_probe_id"; then
     answer 9 O4 "messages $haiku_model" yes "the spend log holds the /v1/messages call under the key and the person: spend $row_spend, prompt $row_prompt, completion $row_completion"
   else
