@@ -1,7 +1,0 @@
-claim_id = "d393e0ee5a1e4d6b98dd546b70b03947"
-agent = "Claude 9d351344-6eaa-412b-b0f9-cc7ee2db0ede"
-role = "builder"
-base = "9df0fd09e240c3ef6b67d853e474b38676eaca79"
-branch = "claude/issue-801-hopin-2026-11-21-5"
-scope = ["apps/hopin/hopin.yaml"]
-opened_commit = "7fbbc45faf7a275c89a36f71f903dfe6113a26f6"
