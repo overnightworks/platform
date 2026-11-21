@@ -1,0 +1,7 @@
+claim_id = "5f8241b6528d4646959c9bdeaae6bc7f"
+agent = "Claude 6cdd6a8b-a2a2-48f5-8108-9e563417fd59"
+role = "builder"
+base = "4c09a020da196d51d48fe299e2bd53eaf453a2a1"
+branch = "claude/issue-780-hopin-drop-skat-origin"
+scope = ["apps/hopin/hopin.yaml"]
+opened_commit = "a5b21ad5d4b21ea150127280b9a2bca6d723da89"
