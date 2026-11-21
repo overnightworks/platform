@@ -7,7 +7,7 @@ import tomllib
 from datetime import date
 from pathlib import Path
 
-from legal.pages import (
+from platform_legal.pages import (
     TEMPLATES,
     Block,
     BlockKind,
@@ -16,7 +16,7 @@ from legal.pages import (
     frame_page_path,
     frame_template_path,
 )
-from legal.section import PAGES, LegalError, parse_fragment, parse_general, refusal
+from platform_legal.section import PAGES, LegalError, parse_fragment, parse_general, refusal
 
 LEGAL_DIRECTORY = "infrastructure/legal"
 BUILT_DIRECTORY = f"{LEGAL_DIRECTORY}/built"
@@ -181,7 +181,7 @@ def _read_app_text(path: Path, key: str, entries: Stand, zone: str) -> Block:
 
 def main(arguments: list[str]) -> int:
     if len(arguments) != 1:
-        print("usage: legal.build <zone>", file=sys.stderr)
+        print("usage: platform_legal.build <zone>", file=sys.stderr)
         return 2
     try:
         pages = build_pages(read_frame(), read_sections(arguments[0]) + read_app_texts(arguments[0]))

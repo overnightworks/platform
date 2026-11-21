@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from legal.build import (
+from platform_legal.build import (
     APP_TEXTS_DIRECTORY,
     APP_TEXTS_FILE,
     BUILT_DIRECTORY,
@@ -18,8 +18,8 @@ from legal.build import (
     read_frame,
     read_sections,
 )
-from legal.pages import TEMPLATES, build_pages, frame_page_path, frame_template_path
-from legal.section import PAGES
+from platform_legal.pages import TEMPLATES, build_pages, frame_page_path, frame_template_path
+from platform_legal.section import PAGES
 
 SHIPPED_FRAME = Path(__file__).parents[3] / "infrastructure" / "legal" / "frame"
 ZONE = "edge-fixture.invalid"
@@ -363,4 +363,4 @@ def test_a_call_without_exactly_a_zone_prints_the_usage(capsys):
     assert main([]) == 2
     assert main(["a", "b"]) == 2
 
-    assert capsys.readouterr().err == "usage: legal.build <zone>\n" * 2
+    assert capsys.readouterr().err == "usage: platform_legal.build <zone>\n" * 2
