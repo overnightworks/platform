@@ -1,4 +1,4 @@
-# The personas runner: six agents, Mozart and Leonardo as agents of hopin and skat, Mozart also of songmaker, and four
+# The personas runner: six agents, Mozart and Leonardo as agents of hopin, skat and songmaker, and four
 # test agents, pulled from its package through the Secret ghcr-pull and started from the Secret personas' files, both from
 # platform-secrets. The
 # runner opens no port, so there is no Service and no Ingress; it is Ready once a round of its contention for the agents

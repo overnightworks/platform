@@ -534,6 +534,7 @@ users:
       - /apps/hopin
       - /apps/hopin/mcp
       - /apps/skat/mcp
+      - /apps/songmaker/mcp
       - /agent-owners
       - /services/speech-service
       - /services/video-service
@@ -824,7 +825,7 @@ clients:
       - mcp-hopin
       - mcp-skat
       - mcp-songmaker
-  # The same declaration as agent-mozart without songmaker's scope and group, with its own agent_name: the client secret
+  # The same declaration as agent-mozart with its own agent_name: the client secret
   # comes from its own key of the Secret keycloak, and its service account has the same agent-identity scope.
   - clientId: agent-leonardo
     name: agent-leonardo
@@ -874,6 +875,7 @@ clients:
     optionalClientScopes:
       - mcp-hopin
       - mcp-skat
+      - mcp-songmaker
   # Four more agents declared exactly as agent-mozart, each with its own agent_name and its own key of the Secret keycloak.
   - clientId: agent-humboldt
     name: agent-humboldt

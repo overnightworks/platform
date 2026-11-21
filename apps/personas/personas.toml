@@ -3,9 +3,7 @@
 token_endpoint = "https://auth.hallucinai.de/realms/hallucinai/protocol/openid-connect/token"
 ready_file = "/tmp/ready"
 
-# A turn binds every tool an app lists when it starts; the app decides what an agent may do. Leonardo's client lacks
-# mcp-songmaker, so the runner's request for the scope is refused on each of his turns and logs tools_only_app_failed:
-# visible and harmless, and his turn runs on the other apps' tools.
+# A turn binds every tool an app lists when it starts; the app decides what an agent may do.
 [[apps]]
 mcp_url = "https://hopin.hallucinai.de/mcp"
 scope = "mcp-hopin"
