@@ -1,7 +1,0 @@
-claim_id = "f111f987e65d40238d7f4dee56dc1712"
-agent = "Claude a8131622-e90f-4803-bf0e-e8f72b4d2a31"
-role = "builder"
-base = "e7dd494b2d2f7f8aa59c3ede882219073c6398fb"
-branch = "claude/issue-305-every-k3s-uninstall-waits-for-the-word"
-scope = ["docs/runbooks/uninstall-k3s.md"]
-opened_commit = "7932321b0805170c48fa6b23f74fda668dcce1c2"
