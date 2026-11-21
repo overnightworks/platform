@@ -120,10 +120,10 @@ ask() {
 # cookie_header: the Set-Cookie line of the last reply, which may be none.
 cookie_header() { grep -i '^set-cookie:' <<<"$reply" || true; }
 
-# The pods are Ready, so a 404 only means Traefik has not read the Ingress yet.
+# The pods are Ready, so a reply without a Set-Cookie only means Traefik has not read the Ingress yet: its own 404 for an
+# unknown host sets none. The pods serve nginx's default page at /, and answer any other path with 404.
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  ask "/warm-$run-$attempt"
-  [ "$answer_status" != 404 ] || { sleep 3; continue; }
+  ask "/?warm=$run-$attempt"
   [ -n "$(cookie_header)" ] || { sleep 3; continue; }
   break
 done
