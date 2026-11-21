@@ -407,8 +407,8 @@ bucket_mounts="$(jq --raw-output '
   fail "the bucket container mounts the claims and Secrets '$bucket_mounts', not the staging claim and the Secret $bucket_secret alone"
 echo "the bucket container mounts the staging claim and the Secret $bucket_secret and no other claim or Secret, and holds no token"
 
-# Cell 11: no log names a planted file, a row or a credential. The logs are the PreBackupPod's containers', read above,
-# and those of k8up's Jobs; each needle is named by its kind, never by its value.
+# Cell 11: no log names a planted file, an object's bytes, a row or a credential. The logs are the PreBackupPod's
+# containers', read above, and those of k8up's Jobs; each needle is named by its kind, never by its value.
 job_logs="$(kubectl --namespace "$namespace" logs --selector k8upjob=true --all-pods --tail=-1)" || fail "cannot read k8up's Job logs in $namespace"
 [ -n "$job_logs" ] || fail "k8up's Job logs in $namespace are empty"
 [ -n "$run_logs" ] || fail "no log of the PreBackupPod's pods was read"
@@ -423,10 +423,11 @@ needles=(
   "credential:$(ini_value "$(secret_value "$credentials_secret" "$credentials_key")" aws_secret_access_key)"
   "credential:$(ini_value "$(secret_value "$bucket_secret" credentials)" aws_access_key_id)"
   "credential:$(ini_value "$(secret_value "$bucket_secret" credentials)" aws_secret_access_key)"
+  "object body:read by the backup" "object body:0123456789" "object body:9876543210"
 )
 while IFS= read -r key; do needles+=("planted object:$key"); done < <(cut -f3 <<<"$bucket_before"; printf '%s\n' "$added_key")
 for needle in "${needles[@]}"; do
   [ -n "${needle#*:}" ] || fail "a ${needle%%:*} to look for is empty"
   if grep -qF -- "${needle#*:}" <<<"$run_logs$job_logs"; then fail "a log of $namespace's backup names a ${needle%%:*}"; fi
 done
-echo "no log of the PreBackupPod's containers or k8up's Jobs names one of ${#needles[@]} planted names, rows or credentials"
+echo "no log of the PreBackupPod's containers or k8up's Jobs names one of ${#needles[@]} planted names, object bodies, rows or credentials"
