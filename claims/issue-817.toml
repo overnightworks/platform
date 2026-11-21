@@ -1,0 +1,8 @@
+claim_id = "4be66ecce5434847a71391ffef42e16f"
+agent = "Claude a8131622-e90f-4803-bf0e-e8f72b4d2a31"
+role = "builder"
+base = "14ea7b474b1ac8fbd082843cf57073274d1d74fa"
+branch = "claude/issue-817-routed-services-carry-the-sticky-cookie"
+scope = [".github/workflows/ci.yml", "apps/hopin/hopin.yaml", "apps/presentator/web.yaml", "apps/skat/skat.yaml", "apps/songmaker/web.yaml", "docs/app.md", "infrastructure/legal/legal.yaml", "tests/flux/parts.yaml", "tests/ingress/a_second_request_with_the_cookie_reaches_the_same_pod.sh", "tests/ingress/every_routed_service_carries_the_same_sticky_cookie.sh"]
+opened_commit = "dae9390b061f097d8964c0c87a32f71565169556"
+whole_reason = "One annotation block on the five routed Services, the one check that holds them equal and the one cell that proves the cookie belong in one pull request, since each alone is either unchecked or proves nothing."
