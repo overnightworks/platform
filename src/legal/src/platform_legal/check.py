@@ -5,7 +5,7 @@ import stat
 import sys
 from pathlib import Path
 
-from legal.section import LegalError, parse_fragment, refusal
+from platform_legal.section import LegalError, parse_fragment, refusal
 
 REQUIRED_PAGE = "datenschutz"
 OPTIONAL_PAGE = "nutzungsbedingungen"
@@ -43,7 +43,7 @@ def check_app(key: str, directory: Path, zone: str) -> list[str]:
 
 def main(arguments: list[str]) -> int:
     if len(arguments) != 3:
-        print("usage: legal.check <key> <dir> <zone>", file=sys.stderr)
+        print("usage: platform_legal.check <key> <dir> <zone>", file=sys.stderr)
         return 2
     key, directory, zone = arguments
     try:

@@ -14,7 +14,7 @@ from datetime import date
 from enum import StrEnum
 from string import Template
 
-from legal.section import PAGES, Heading, LegalError, Parsed, refusal
+from platform_legal.section import PAGES, Heading, LegalError, Parsed, refusal
 
 FRAME_DIRECTORY = "infrastructure/legal/frame"
 TEMPLATES = (

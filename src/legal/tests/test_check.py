@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from legal.check import check_app, main
-from legal.section import LegalError
+from platform_legal.check import check_app, main
+from platform_legal.section import LegalError
 
 ZONE = "edge-fixture.invalid"
 SECTION = '<h2 id="hopin">HopIn</h2>\n<p>Text</p>\n'
