@@ -2,7 +2,9 @@
 # Proves docs/app.md's sticky cookie through Traefik on two throwaway pods: the nginx image and command of legal's
 # Deployment, and the annotations of legal's Service, which the cell reads from legal.yaml. A Pod in the tunnel's
 # namespace sends the requests. Needs STICKY_NAMESPACE (the throwaway namespace) and TUNNEL_NAMESPACE.
-set -euo pipefail
+set -Eeuo pipefail
+# A command that fails without a proof's own message still names itself, so no exit ends the cell silently.
+trap 'echo "::error::the command \`$BASH_COMMAND\` ended with a failure at line $LINENO"' ERR
 # shellcheck source=../client_pod.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 
@@ -142,26 +144,25 @@ mapfile -t distinct < <(printf '%s\n' "${values[@]}" | sort -u)
 [ "${#distinct[@]}" -ge 2 ] || fail "six requests with no cookie got ${#distinct[@]} cookie value, not two"
 echo "requests with no cookie got ${#distinct[@]} distinct cookie values"
 
-# pod_hits <path>: the pods' names that logged a request for the path, each with its count.
-pod_hits() {
-  local pod hits
-  for pod in "${pods[@]}"; do
-    hits="$(kubectl --namespace "$STICKY_NAMESPACE" logs "$pod" | grep -cF "\"GET $1 " || true)"
-    [ "$hits" = 0 ] || echo "$pod $hits"
-  done
-}
-
-# run_with_cookie <label> <value>: five requests with the cookie reach one pod alone, which is named on stdout.
+# run_with_cookie <label> <value>: five requests with the cookie reach one pod alone, whose name it sets in cookie_pod.
+# It runs in the cell's own shell, so a failure's ::error:: line reaches the log. cookie_pod is what the cells read.
+# shellcheck disable=SC2034 # cookie_pod is the result the cells below read.
 run_with_cookie() {
-  local attempt hits
-  for attempt in 1 2 3 4 5; do ask "/$1-$run" "$2"; done
-  hits="$(pod_hits "/$1-$run")"
-  [ "$(wc -l <<<"$hits")" = 1 ] && [ "${hits##* }" = 5 ] ||
-    fail "five requests with the cookie $1 reached '${hits//$'\n'/, }', not one pod alone"
-  echo "${hits% *}"
+  local attempt pod log hits path="/$1-$run" reached=() reached_text="" total_hits=0
+  for attempt in 1 2 3 4 5; do ask "$path" "$2"; done
+  for pod in "${pods[@]}"; do
+    log="$(kubectl --namespace "$STICKY_NAMESPACE" logs "$pod")" || fail "the logs of $pod could not be read"
+    hits="$(grep -cF "\"GET $path " <<<"$log" || true)"
+    [ "$hits" = 0 ] || { reached+=("$pod"); reached_text+="$pod:$hits "; total_hits=$((total_hits + hits)); }
+  done
+  [ "${#reached[@]}" = 1 ] && [ "$total_hits" = 5 ] ||
+    fail "five requests with the cookie $1 reached '${reached_text:-no pod}', not one pod alone with five"
+  cookie_pod="${reached[0]}"
 }
-first_pod="$(run_with_cookie first "${distinct[0]}" | tail -n 1)"
-second_pod="$(run_with_cookie second "${distinct[1]}" | tail -n 1)"
+run_with_cookie first "${distinct[0]}"
+first_pod="$cookie_pod"
+run_with_cookie second "${distinct[1]}"
+second_pod="$cookie_pod"
 [ "$first_pod" != "$second_pod" ] || fail "the two cookie values both reached $first_pod"
 echo "five requests with each of two cookies reached one pod each, $first_pod and $second_pod"
 
