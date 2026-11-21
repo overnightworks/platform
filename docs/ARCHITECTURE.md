@@ -121,8 +121,9 @@ Facts of today's boundaries, each held by a manifest or a cell:
 - Namespaces enforce Pod Security `restricted`. `presentator` only warns, since its build worker's init container
   holds `NET_ADMIN` to load a packet filter that leaves the worker no connection but replies to its web.
   `nvidia` and `local-path-storage` carry no label, as both mount a hostPath.
-- Every store admits only its own namespace; Keycloak admits Traefik and its own namespace; backup repositories
-  admit only a namespace's own user. The build worker's NetworkPolicy lets it send nothing.
+- Postgres and Redis admit only their own namespace, and Garage admits only the web pods of presentator and songmaker
+  and songmaker's backup pod; Keycloak admits Traefik and its own namespace; backup repositories admit only a
+  namespace's own user. The build worker's NetworkPolicy lets it send nothing.
 - The API server admits an image only as a vendor repository at a sha256 digest or a full app ref
   (`infrastructure/admission/image-vendors.yaml`). Kyverno's `app-attestations` admits an app ref only with the
   attestation quality's release workflow signed for that repository's main branch. A Pod's create and image change
