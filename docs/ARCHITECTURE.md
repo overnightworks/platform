@@ -31,8 +31,8 @@ settings and the zone's lookups, and `src/legal`, which validates the legal page
 
 ## 2. Building Block View
 
-The host parts (`host/`) hold k3s's config, the pod-log bounds, journald's retention, the inotify limits and the disk
-units. Flux's three controllers (source, kustomize, notification; no Helm controller) apply one Kustomization per
+The host parts (`host/`) hold k3s's config, the pod-log bounds, journald's retention, the inotify limits, the tmpfiles rule that ages out Codex's session files
+and the global git hook that runs quality. Flux's three controllers (source, kustomize, notification; no Helm controller) apply one Kustomization per
 layer, listed in `clusters/pc/`. Each layer is a directory of manifests under `infrastructure/` or `apps/`. A base is
 a directory a layer includes and that is no layer: `infrastructure/postgres`, `infrastructure/redis`,
 `infrastructure/design` and `infrastructure/pull`.
