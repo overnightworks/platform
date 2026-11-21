@@ -649,7 +649,7 @@ jobs:
           KEYCLOAK_NAMESPACE: keycloak
           REALM_FILE: infrastructure/keycloak/realm.yaml
           # The agent client whose tokens the cells mint, and the allowlist of its service account's groups; the second
-          # agent's is its own in the step below, since songmaker's group is Mozart's alone.
+          # agent runs in the step below.
           AGENT_CLIENT: agent-mozart
           AGENT_GROUPS: /agents /apps/hopin /apps/hopin/mcp /apps/skat/mcp /apps/songmaker/mcp /agent-owners /services/speech-service /services/video-service
           # The client that exchanges an agent's token, the scopes it asks for, each adding one service's audience, and a client
