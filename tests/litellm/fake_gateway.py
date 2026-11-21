@@ -9,7 +9,8 @@ Faults: delete_fails (a key deletion answers 500), messages_ignores_budget (/v1/
 unnamed_budget_refusal (a refusal for the budget says nothing of a budget), short_read (a cache hit reads twenty tokens
 less than it held), refuse_zero (max_tokens 0 is refused with 400), drop_row (one answered call has no spend log row),
 chat_fails (the chat route answers 500), dear_writes (a cache write costs five times the price /model/info names),
-spendy_calls (each answered call costs 0.025 USD).
+spendy_calls (each answered call costs 0.025 USD), no_cache (no route caches: usage reports no write and no read and the whole
+prompt as input), dear_misses (a call that reads less than 500000 tokens of a prompt of 500000 or more costs 3.3 USD).
 """
 
 import hashlib
@@ -23,8 +24,10 @@ MASTER_KEY, FAULTS, SEEDED = sys.argv[1], set(filter(None, sys.argv[2].split(","
 MODELS = ["text/sonnet", "text/haiku", "text/sonnet-medium", "text/haiku-fast", "image/flare"]
 WRITE_PRICE = 1e-5 if "dear_writes" in FAULTS else 2e-6
 CALL_SPEND = 0.025 if "spendy_calls" in FAULTS else 0.001
-MODEL_INFO = {"max_input_tokens": 1000000, "input_cost_per_token": 2e-6, "cache_read_input_token_cost": 1e-7,
-              "cache_creation_input_token_cost": WRITE_PRICE, "cache_creation_input_token_cost_above_1hr": 4e-6, "unset": None}
+MISS_SPEND, MISS_TOKENS = 3.3, 500000
+MODEL_INFO = {"max_input_tokens": 1000000, "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5,
+              "cache_read_input_token_cost": 1e-7, "cache_creation_input_token_cost": WRITE_PRICE,
+              "cache_creation_input_token_cost_above_1hr": 4e-6, "unset": None}
 PAGE_LIMIT = 100
 state = {"keys": {}, "cache": {}, "inflight": {}, "logs": [], "calls": 0, "answered": 0}
 lock = threading.Lock()
@@ -152,18 +155,21 @@ class Gateway(BaseHTTPRequestHandler):
         total = max(len(json.dumps([body.get("system"), body.get("messages"), body.get("tools")])) // 4, 20)
         completion = 0 if body.get("max_tokens") == 0 else min(body.get("max_tokens", 1), 3)
         with lock:
-            held = state["cache"].get(cache_key)
+            uncached = "no_cache" in FAULTS
+            held = None if uncached else state["cache"].get(cache_key)
             read = 0 if held is None else max(min(held, total) - (20 if "short_read" in FAULTS else 0), 0)
-            write = total if held is None else total - read
-            state["cache"][cache_key] = total
-            key["spend"] += CALL_SPEND
+            write = 0 if uncached else total if held is None else total - read
+            if not uncached:
+                state["cache"][cache_key] = total
+            spend = MISS_SPEND if "dear_misses" in FAULTS and total >= MISS_TOKENS and total - read >= MISS_TOKENS else CALL_SPEND
+            key["spend"] += spend
             state["answered"] += 1
             if not ("drop_row" in FAULTS and state["answered"] == 7):
-                self.log_call(call_id, token, body, "success", CALL_SPEND, total, completion, write, read)
+                self.log_call(call_id, token, body, "success", spend, total, completion, write, read)
         hour = '"ttl": "1h"' in system or '"ttl":"1h"' in system
         usage = {"cache_creation_input_tokens": write, "cache_read_input_tokens": read, "cache_creation": {
             "ephemeral_5m_input_tokens": 0 if hour else write, "ephemeral_1h_input_tokens": write if hour else 0}}
-        usage.update(prompt_tokens=total, completion_tokens=completion) if chat else usage.update(input_tokens=5, output_tokens=completion)
+        usage.update(prompt_tokens=total, completion_tokens=completion) if chat else usage.update(input_tokens=total if uncached else 5, output_tokens=completion)
         compaction = "compaction" in body
         if not body.get("stream"):
             if chat:

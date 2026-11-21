@@ -153,6 +153,19 @@ for case in dear_writes spendy_calls; do
 done
 echo "an 800k call whose worst case passes the key's budget is not run"
 
+# A read the budget has no room for is not sent: the chat write after a dear messages write, and a read of a cache that the
+# write did not make, which costs the full price of its prefix.
+stop_line="the next call was not run, the key's budget: the probe keys spent [0-9.]+ USD, this call costs at worst"
+run_probe dear_chat_write "dear_misses" 0
+[ "$status" = 0 ] || fail "dear_chat_write: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly dear_chat_write
+has dear_chat_write "Q10 \[O5 F6\] text/sonnet-medium: messages [0-9]+ ms, chat ms; .*reads: messages [0-9]+\(status 200\), chat; $stop_line"
+run_probe no_cache_reads "no_cache,dear_misses" 0
+[ "$status" = 0 ] || fail "no_cache_reads: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly no_cache_reads
+has no_cache_reads "Q10 \[O5 F6\] text/sonnet-medium: messages ms, chat ms; .*reads: messages, chat; $stop_line"
+echo "an 800k read is not sent when the budget has no room for what it costs without the cache"
+
 # A key that cannot be deleted ends the run 1; a budget that /v1/messages does not enforce is no yes.
 run_probe undeletable "delete_fails,messages_ignores_budget" 0
 [ "$status" = 1 ] || fail "undeletable: the probe ended $status, not 1: $(tail -n 5 <<<"$output")"
