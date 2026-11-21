@@ -1,0 +1,8 @@
+claim_id = "5a7e21b63ca14c5f851f53afd31db0e1"
+agent = "Claude 6cdd6a8b-a2a2-48f5-8108-9e563417fd59"
+role = "builder"
+base = "86701dc753c8ac84c642ee8e38ea0bcf72d34c6b"
+branch = "claude/issue-797-platform-legal-name"
+scope = ["mise.toml", "src/legal"]
+opened_commit = "5b39d0abb58f1ada8e8b9f66a63471522a6edbfc"
+whole_reason = "One rename: the distribution, its import directory, every import, the lock and the two mise tasks that run the modules must change together or the tests and tasks break."
