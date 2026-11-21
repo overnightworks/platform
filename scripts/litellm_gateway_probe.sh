@@ -16,8 +16,9 @@
 # after the cache reads of question 17, since the main key's budget can end them: LiteLLM checks the budget before a call and
 # lets the call that crosses it run in full, so each 800k call is sent only when the spend log's cost of the run so far plus
 # the call's worst case stays within the 5 USD, and else answers "not run: the key's budget" (litellm_probe_budget.sh: the
-# worst case prices the tokens the route's last call showed cached at the cache read price, all others at the dearer of the
-# input and cache write price in /model/info, and adds the output). The run takes about half an hour, as the 1-hour cache
+# worst case takes the size the point's last call showed, else the model's max_input_tokens in /model/info; prices the tokens
+# a recent call of the route showed cached at the cache read price, all others at the dearer of the input and cache write
+# price in /model/info; and adds the output). The run takes about half an hour, as the 1-hour cache
 # write of question 17 is read only after ten minutes, and spends at most the key's 5 USD, mostly on the 800k points. It
 # writes the key rows until they are deleted, the test person's row and one spend log row per call. The run's cost is the sum of the successful spend log
 # rows of both keys; it exits 1 when the log never holds as many as calls answered 200.
@@ -62,7 +63,8 @@ call_status="" call_id="" first_token_ms="" usage="{}"
 u_input="" u_prompt="" u_output="" u_completion="" u_write="" u_read="" u_5m="" u_1h=""
 n_prompt=0 n_write=0 n_read=0 n_output=0
 ok_calls=0
-declare -A rule_tokens=() ttl_written=() ttl_system=() probe_key_hashes=() point_size=() point_cached=()
+declare -A rule_tokens=() ttl_written=() ttl_system=() probe_key_hashes=() point_cached=() point_cached_at=()
+point_size=0
 main_key="" budget_key=""
 
 # hash_of <text>: the sha256 LiteLLM stores for a key, through a pipe.
@@ -125,14 +127,15 @@ tool_def() {
       "$1" "$2" "${3-}"
   fi
 }
-# filler <rules> <tag>: a text of the given rules that holds no character JSON escapes.
+# filler <rules>: a text of the given rules that holds no character JSON escapes. Each rule is as long as any other, so that
+# the tokens per rule do not depend on the size of the text; what makes a prompt new to the run is its header.
 filler() {
-  awk -v n="$1" -v tag="$2" 'BEGIN { for (i = 1; i <= n; i++) printf "Rule %d of %s: answer with one word and keep rule %d. ", i, tag, i }'
+  awk -v n="$1" 'BEGIN { for (i = 1; i <= n; i++) printf "Rule %06d: answer with one word and keep rule %06d. ", i, i }'
 }
 # rules_for <model> <tokens>: the rules that make about that many tokens in the model.
 rules_for() { echo $(($2 * calibration_rules / ${rule_tokens[$1]})); }
 # fresh_system <label> <tokens>: a system text no earlier run sent, of about that many tokens in the model.
-fresh_system() { system_text="Probe run $run_stamp $1. $(filler "$(rules_for "$model" "$2")" "$run_stamp-${1//[^A-Za-z0-9]/-}")"; }
+fresh_system() { system_text="Probe run $run_stamp $1. $(filler "$(rules_for "$model" "$2")")"; }
 # begin_flow: the defaults of a conversation.
 begin_flow() {
   streamed=false cache_mark=$mark_5m tools_json="" messages_json=""
@@ -294,7 +297,7 @@ probe_exit() {
 calibrate() {
   begin_flow
   route=messages model="$1" cache_mark=$mark_none
-  system_text="Calibration $run_stamp. $(filler "$calibration_rules" "$run_stamp-calibration")"
+  system_text="Calibration $run_stamp. $(filler "$calibration_rules")"
   messages_json="$(user_turn 'Reply with the single word ok.')"
   exchange 8
   [ "$call_status" = 200 ] || fail "the calibration request on $1 answered with status $call_status, not 200"
@@ -354,7 +357,7 @@ skill_tools() {
   local number list="" name
   for number in $(seq "$1" "$2"); do
     name="$(printf 'skill_%02d' "$number")"
-    list+="${list:+,}$(tool_def "$name" "Skill $number of run $run_stamp: $(filler 15 "$run_stamp-s$number")" "$3")"
+    list+="${list:+,}$(tool_def "$name" "Skill $number of run $run_stamp: $(filler 15)" "$3")"
   done
   printf '%s' "$list"
 }
@@ -542,12 +545,18 @@ spend_row_of() {
   await_spend_log "$probe_person" find_row "$1"
 }
 # large_exchange <point tokens>: sends the next call of a large point as exchange does when the key's budget has room for its
-# worst case on the route, from the size and the cache the route's last answered call showed, else returns 1 with budget_note.
+# worst case on the route (litellm_probe_budget.sh), from the size the point's last answered call showed and the cache the
+# route's last answered call showed, else returns 1 with budget_note. The size is the largest the usage names, since a
+# route's prompt tokens may leave out the cache write.
 large_exchange() {
-  within_budget "$1" "${point_size[$route]:-$(($1 * size_estimate_percent / 100))}" "${point_cached[$route]:-0}" || return 1
+  local started parts seen
+  within_budget "$1" "$point_size" "${point_cached[$route]:-0}" "${point_cached_at[$route]:-0}" || return 1
+  started=$SECONDS
   exchange "$large_max_tokens"
   [ "$call_status" = 200 ] || return 0
-  point_size[$route]=$n_prompt point_cached[$route]=$((n_write + n_read))
+  parts=$((${u_input/absent/0} + n_write + n_read))
+  for seen in "$n_prompt" "$parts"; do [ "$seen" -le "$point_size" ] || point_size=$seen; done
+  point_cached[$route]=$((n_write + n_read)) point_cached_at[$route]=$started
 }
 # One prefix of the given size on the model: written by /v1/messages, then read twice on each route, streamed. A route
 # that does not read the other's cache writes its own at its first read and reads that at its second. A call the key's
@@ -556,7 +565,7 @@ large_point() {
   local tokens="$1" written first_status attempt stopped="" times_messages="" times_chat="" reads_messages="" reads_chat=""
   local stop="; the next call was not run, the key's budget:"
   begin_flow
-  point_size=() point_cached=()
+  point_size=0 point_cached=() point_cached_at=()
   route=messages
   fresh_system "large-$tokens-$model" "$tokens"
   messages_json="$(user_turn 'Reply with the single word ok.' last)"

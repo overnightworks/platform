@@ -141,8 +141,9 @@ slept_seconds="$(awk '{ sum += $1 } END { print sum }' "$work_directory/sleeps")
 echo "the port-forward lives longer than everything the run waits for"
 
 # An 800k call is sent only when the cost so far plus its worst case fits the key's budget: a write dearer than the whole
-# budget is never sent, and a spend that leaves no room for it is read from the spend log.
-for case in dear_writes spendy_calls; do
+# budget is never sent, and a spend that leaves room for the prefix of the nominal 800k tokens but not for the most input
+# tokens the model takes, which the write has no measured size to lower, is read from the spend log.
+for case in dear_writes spendy_calls heavy_first_call; do
   run_probe "$case" "$case" 0
   [ "$status" = 0 ] || fail "$case: the probe ended $status: $(tail -n 20 <<<"$output")"
   ended_cleanly "$case"

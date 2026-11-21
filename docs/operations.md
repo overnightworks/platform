@@ -131,8 +131,10 @@ show it, never a reply body, and ends with the run's cost from the spend log. A 
 of a dollar shows the budget on both routes. Both keys are deleted on every exit, a failure included. The run takes about
 half an hour and spends at most the key's 5 USD, mostly on the 800k-token points, which come last since the budget can end
 them: LiteLLM lets the call that crosses a budget run in full, so each 800k call is sent only when the spend log's cost so
-far plus the call's worst case (the tokens its route's last call showed cached at the cache read price, all others at the
-dearer of the input and cache write price in `/model/info`, and the output) fits, and else the
+far plus the call's worst case fits: the prefix counts as the size the point's last call showed plus 1000 tokens, and a
+call without one as the most input tokens `/model/info` names for the model; the tokens the route's last call showed
+cached count at the cache read price only when that call started less than 240 seconds before (the cache lives 5 minutes
+from its last use), all others at the dearer of the input and cache write price, and the output at its 16 tokens. Else the
 point answers "not run: the key's budget"; its cost is the sum of the spend log's successful rows, and the run ends 1 when the log lacks one. It writes the keys
 until they are deleted, the test person's row and one spend log row per call; `mise run litellm:gateway-probe --remove`
 deletes the row and any key a killed run left, on every page of the key list.

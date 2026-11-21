@@ -10,7 +10,8 @@ unnamed_budget_refusal (a refusal for the budget says nothing of a budget), shor
 less than it held), refuse_zero (max_tokens 0 is refused with 400), drop_row (one answered call has no spend log row),
 chat_fails (the chat route answers 500), dear_writes (a cache write costs five times the price /model/info names),
 spendy_calls (each answered call costs 0.025 USD), no_cache (no route caches: usage reports no write and no read and the whole
-prompt as input), dear_misses (a call that reads less than 500000 tokens of a prompt of 500000 or more costs 3.3 USD).
+prompt as input), dear_misses (a call that reads less than 500000 tokens of a prompt of 500000 or more costs 3.3 USD),
+heavy_first_call (the first answered call costs 2.95 USD).
 """
 
 import hashlib
@@ -24,7 +25,7 @@ MASTER_KEY, FAULTS, SEEDED = sys.argv[1], set(filter(None, sys.argv[2].split(","
 MODELS = ["text/sonnet", "text/haiku", "text/sonnet-medium", "text/haiku-fast", "image/flare"]
 WRITE_PRICE = 1e-5 if "dear_writes" in FAULTS else 2e-6
 CALL_SPEND = 0.025 if "spendy_calls" in FAULTS else 0.001
-MISS_SPEND, MISS_TOKENS = 3.3, 500000
+MISS_SPEND, MISS_TOKENS, HEAVY_SPEND = 3.3, 500000, 2.95
 MODEL_INFO = {"max_input_tokens": 1000000, "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5,
               "cache_read_input_token_cost": 1e-7, "cache_creation_input_token_cost": WRITE_PRICE,
               "cache_creation_input_token_cost_above_1hr": 4e-6, "unset": None}
@@ -162,6 +163,8 @@ class Gateway(BaseHTTPRequestHandler):
             if not uncached:
                 state["cache"][cache_key] = total
             spend = MISS_SPEND if "dear_misses" in FAULTS and total >= MISS_TOKENS and total - read >= MISS_TOKENS else CALL_SPEND
+            if "heavy_first_call" in FAULTS and state["answered"] == 0:
+                spend = HEAVY_SPEND
             key["spend"] += spend
             state["answered"] += 1
             if not ("drop_row" in FAULTS and state["answered"] == 7):
