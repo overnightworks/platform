@@ -1,8 +1,0 @@
-claim_id = "77225f1f80d94e81bd121c83ab7e8500"
-agent = "Claude 6cdd6a8b-a2a2-48f5-8108-9e563417fd59"
-role = "builder"
-base = "cffd890ea3c9bc14efaf232ae812586d0b47044c"
-branch = "claude/issue-617-keycloak-trace-id"
-scope = [".github/workflows/ci.yml", "docs/personal-data.md", "infrastructure/keycloak/keycloak.yaml", "tests/keycloak"]
-opened_commit = "3159a4a505433af8d399014fda921fc51e6d2011"
-whole_reason = "Keycloak's trace and access-log settings, the cell that proves them and the personal-data line for the new log fields change together, or the settings land unproven or undocumented."
