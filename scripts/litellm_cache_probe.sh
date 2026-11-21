@@ -57,33 +57,29 @@ growing_body() {
     "max_tokens": 16, "messages": [{"role": "system", "content": strenv(SYSTEM)}] +
     (strenv(MESSAGES) | split("\n") | map(select(. != "") | {"role": "user", "content": .}))}'
 }
-# spend_since <start>: sets recorded_calls, recorded_writes and recorded_reads to the calls and the cache writes and reads
-# that LiteLLM's spend log holds for the key under the test person since the start; the log is written in batches, so it is
-# read again for two minutes until it holds all three calls. The route's key filter would put the key's hash, which LiteLLM
-# takes as the key itself, into curl's arguments, so the unfiltered log (its most recent rows) is read and the rows are
-# selected here by the hash, which stays in a shell variable and reaches the loop through a pipe, since a here-string
-# longer than a pipe holds is written to a temporary file.
+# count_recorded <key hash> <start>: sets recorded_calls, recorded_writes and recorded_reads to the calls and the cache
+# writes and reads of spend_rows under the key since the start; returns 0 once they hold all three calls. The rows reach the
+# loop through a pipe.
+count_recorded() {
+  local row_key started writes reads
+  recorded_calls=0 recorded_writes=0 recorded_reads=0
+  while read -r _ row_key started _ _ _ _ writes reads; do
+    # UTC timestamps of one format compare as text.
+    [ "$row_key" = "$1" ] && [[ $started > $2 ]] || continue
+    recorded_calls=$((recorded_calls + 1))
+    recorded_writes=$((recorded_writes + writes))
+    recorded_reads=$((recorded_reads + reads))
+  done < <(printf '%s\n' "$spend_rows")
+  [ "$recorded_calls" -ge 3 ]
+}
+# spend_since <start>: sets recorded_calls, recorded_writes and recorded_reads to what LiteLLM's spend log holds for the key
+# under the test person since the start, read again for two minutes until it holds all three calls. The rows are selected by
+# the key's hash, which stays in a shell variable.
 spend_since() {
-  local key_hash rows row_key started writes reads
+  local key_hash
   key_hash="$(printf '%s' "$value" | sha256sum)"
   key_hash="${key_hash%% *}"
-  for _ in $(seq 12); do
-    ask "reading the spend log" /spend/logs
-    rows="$(PERSON="$probe_person" json '
-      .[] | select(.end_user == strenv(PERSON)) | .api_key + " " + (.startTime | tostring) + " " + (.metadata |
-      ((select(tag == "!!str") | from_json) // .) | .additional_usage_values |
-      ((.cache_creation_input_tokens // 0) | tostring) + " " + ((.cache_read_input_tokens // 0) | tostring))')"
-    recorded_calls=0 recorded_writes=0 recorded_reads=0
-    while read -r row_key started writes reads; do
-      # UTC timestamps of one format compare as text.
-      [ "$row_key" = "$key_hash" ] && [[ $started > $1 ]] || continue
-      recorded_calls=$((recorded_calls + 1))
-      recorded_writes=$((recorded_writes + writes))
-      recorded_reads=$((recorded_reads + reads))
-    done < <(printf '%s\n' "$rows")
-    [ "$recorded_calls" -lt 3 ] || return 0
-    sleep 10
-  done
+  await_spend_log "$probe_person" count_recorded "$key_hash" "$1" || true
 }
 
 probe_command() {

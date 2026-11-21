@@ -80,10 +80,10 @@ json() { printf '%s' "$reply" | yq --input-format json "$@"; }
 
 scratch="$(mktemp -d)"
 forwards=()
-# on_exit: ends the port-forwards and the Keycloak sign-in; an admin or key run that sent a write and ends without having
-# said so (a signal) names it.
+# on_exit [<exit status>]: ends the port-forwards and the Keycloak sign-in; an admin or key run that sent a write and ends
+# without having said so (a signal) names it. The status is the one the command ends with, by default the one it had.
 on_exit() {
-  local exit_status=$? pid
+  local exit_status=${1:-$?} pid
   if [ "$reported" = false ] && [ "$exit_status" != 0 ] && [ "${#attempted[@]}" != 0 ]; then
     case "$command_name" in
       admin) echo "litellm:admin: interrupted; $(written_text)" >&2 ;;
@@ -142,13 +142,47 @@ request() {
 }
 # ask <request argument>...: request, ending the command on a failure.
 ask() { request "$@" || fail "$failure"; }
+# microseconds <EPOCHREALTIME value>: the instant as whole microseconds.
+microseconds() { echo "${1/./}"; }
 
+# spend_rows: a line per spend log row of a person, as read_spend_log sets it: request id, key hash, start time, status,
+# spend, prompt tokens, completion tokens, cache write tokens and cache read tokens. A row's key hash is the credential
+# LiteLLM takes as the key itself: a caller selects rows by it in the shell, never in an argument, and passes the rows on
+# through a pipe, since a here-string longer than a pipe holds is written to a temporary file.
+spend_rows=""
+# read_spend_log <person>: sets spend_rows from the unfiltered spend log (its most recent rows), since the route's key
+# filter would put the key's hash into curl's arguments.
+read_spend_log() {
+  ask "reading the spend log" /spend/logs
+  # shellcheck disable=SC2034 # the probes that source this file read it
+  spend_rows="$(PERSON="$1" json '
+    .[] | select(.end_user == strenv(PERSON)) | ((.request_id // "none") | tostring) + " " + ((.api_key // "none") | tostring) + " " +
+    ((.startTime // "none") | tostring) + " " + (.status // "success") + " " + ((.spend // 0) | tostring) + " " +
+    ((.prompt_tokens // 0) | tostring) + " " + ((.completion_tokens // 0) | tostring) + " " + (.metadata |
+    ((select(tag == "!!str") | from_json) // .) | .additional_usage_values |
+    ((.cache_creation_input_tokens // 0) | tostring) + " " + ((.cache_read_input_tokens // 0) | tostring))')"
+}
+# await_spend_log <person> <command>...: LiteLLM writes the log in batches, so it is read again for two minutes until the
+# command, which reads spend_rows, succeeds; returns 1 when it never did.
+await_spend_log() {
+  local person="$1"
+  shift
+  for _ in $(seq 12); do
+    read_spend_log "$person"
+    if "$@"; then return 0; fi
+    sleep 10
+  done
+  return 1
+}
+
+# The longest a port-forward lives; a command that runs longer sets a limit past its run before it connects.
+forward_limit=10m
 # start_forward <namespace> <service> <port>: port-forwards the Service to a free local port, which it sets as
 # forwarded_port.
 start_forward() {
   local pid log="$scratch/forward-$2.log"
   : >"$log"
-  timeout 10m kubectl --namespace "$1" port-forward "service/$2" ":$3" >"$log" 2>&1 &
+  timeout "$forward_limit" kubectl --namespace "$1" port-forward "service/$2" ":$3" >"$log" 2>&1 &
   pid=$!
   forwards+=("$pid")
   forwarded_port=""
