@@ -1,8 +1,0 @@
-claim_id = "40124bf4751649e1bdd4b9abfd1ba579"
-agent = "Claude 9d351344-6eaa-412b-b0f9-cc7ee2db0ede"
-role = "builder"
-base = "3ea4c312b820ee16880d173d9ad7c1ecc9d38219"
-branch = "claude/issue-807-agents-md-takes-the-fleet-shape-and-docs"
-scope = ["AGENTS.md", "README.md", "docs/ARCHITECTURE.md", "docs/app.md", "docs/operations.md", "docs/personal-data.md"]
-opened_commit = "816e225b536c6c937631cf9dd8e6e82e7a26471b"
-whole_reason = "The shape and the architecture overview move the same sentences: each leaves AGENTS.md in the commit that places it, so the overview, the shaped file and the README land together."
