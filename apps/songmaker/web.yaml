@@ -58,6 +58,21 @@ spec:
             - name: http
               containerPort: 8080
           env:
+            # The realm names under docs/app.md's scheme, which tests/keycloak/handed_realm_names_are_declared.sh holds to realm.yaml.
+            - name: REALM_CLIENT_ID
+              value: songmaker
+            - name: REALM_LOGIN_GROUP
+              value: /apps/songmaker
+            - name: REALM_ADMIN_GROUP
+              value: /apps/songmaker/admin
+            - name: REALM_MCP_GROUP
+              value: /apps/songmaker/mcp
+            - name: REALM_MCP_SCOPE
+              value: mcp-songmaker
+            - name: REALM_AGENT_GROUP
+              value: /agents
+            - name: REALM_MCP_CLIENT_ID
+              value: agents
             - name: DATABASE_URL
               value: postgresql://songmaker@postgres:5432/songmaker
             # songmaker's documented defaults, stated so that the connections this process may hold, pool + overflow + 1,
