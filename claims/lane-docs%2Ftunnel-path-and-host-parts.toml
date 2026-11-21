@@ -1,0 +1,7 @@
+claim_id = "4163dfdcbef8470d998c59191f94b835"
+agent = "Claude 9d351344-6eaa-412b-b0f9-cc7ee2db0ede"
+role = "builder"
+base = "19b2d936be028ea380ce43af19c77e97271128b4"
+branch = "docs/tunnel-path-and-host-parts"
+scope = ["AGENTS.md", "docs/ARCHITECTURE.md"]
+opened_commit = "09aa827f07bafd922cdc8d33f0fd20f4f4da88e3"
