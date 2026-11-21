@@ -18,7 +18,6 @@ work_directory="$(mktemp -d)"
 fake_bin="$work_directory/bin"
 mkdir "$fake_bin"
 master_key=sk-fake-master-key-0001
-real_sleep="$(command -v sleep)"
 real_timeout="$(command -v timeout)"
 real_curl="$(command -v curl)"
 server_pid=""
@@ -31,44 +30,49 @@ trap stop_all EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# The fake tools read their directories and the fake master key from the environment, and find the real tool behind them on
+# the path without the directory of the fakes.
+export FAKE_BIN="$fake_bin" FAKE_WORK="$work_directory" FAKE_MASTER_KEY="$master_key"
 # A tool of the probe refuses a key's value or a sha256 in its arguments, which a process list shows.
-for tool in curl grep awk yq sed tr cut sha256sum head seq od; do
-  cat >"$fake_bin/$tool" <<GUARD
+cat >"$work_directory/guard" <<'GUARD'
 #!/usr/bin/env bash
-for argument in "\$@"; do
-  if [[ \$argument == *sk-* || \$argument =~ [0-9a-f]{64} ]]; then
-    echo "$tool had a key or a hash in its arguments" >>"$work_directory/violations"
+tool="${0##*/}"
+for argument in "$@"; do
+  if [[ $argument == *sk-* || $argument =~ [0-9a-f]{64} ]]; then
+    echo "$tool had a key or a hash in its arguments" >>"$FAKE_WORK/violations"
     exit 1
   fi
 done
-exec "$(command -v "$tool")" "\$@"
+exec "$(PATH="${PATH#"$FAKE_BIN:"}" command -v "$tool")" "$@"
 GUARD
-  chmod +x "$fake_bin/$tool"
+chmod +x "$work_directory/guard"
+for tool in curl grep awk yq sed tr cut sha256sum head seq od; do
+  ln -s "$work_directory/guard" "$fake_bin/$tool"
 done
 # The waits end at once, so that the run does not last half an hour; each is recorded.
-cat >"$fake_bin/sleep" <<FAKE
+cat >"$fake_bin/sleep" <<'FAKE'
 #!/usr/bin/env bash
-[ "\$1" -gt 1 ] 2>/dev/null || exec "$real_sleep" "\$1"
-echo "\$1" >>"$work_directory/sleeps"
+[ "$1" -gt 1 ] 2>/dev/null || exec "$(PATH="${PATH#"$FAKE_BIN:"}" command -v sleep)" "$1"
+echo "$1" >>"$FAKE_WORK/sleeps"
 FAKE
 # The deadline of each port-forward is recorded; the command runs as it would.
-cat >"$fake_bin/timeout" <<FAKE
+cat >"$fake_bin/timeout" <<'FAKE'
 #!/usr/bin/env bash
-case "\$*" in *port-forward*) echo "\$1" >>"$work_directory/forward-limits" ;; esac
+case "$*" in *port-forward*) echo "$1" >>"$FAKE_WORK/forward-limits" ;; esac
 shift
-exec "\$@"
+exec "$@"
 FAKE
-cat >"$fake_bin/kubectl" <<FAKE
+cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
-case "\$*" in
-  *"get secret litellm "*) printf '%s' '$master_key' | base64 --wrap=0 ;;
+case "$*" in
+  *"get secret litellm "*) printf '%s' "$FAKE_MASTER_KEY" | base64 --wrap=0 ;;
   *"get service litellm "*) printf 4000 ;;
   *port-forward*)
-    echo \$\$ >>"$work_directory/forward-pids"
-    echo "Forwarding from 127.0.0.1:\$FAKE_PORT -> 4000"
-    exec "$real_sleep" 3600 ;;
-  *) echo "fake kubectl: unexpected \$*" >&2; exit 1 ;;
+    echo $$ >>"$FAKE_WORK/forward-pids"
+    echo "Forwarding from 127.0.0.1:$FAKE_PORT -> 4000"
+    exec "$(PATH="${PATH#"$FAKE_BIN:"}" command -v sleep)" 3600 ;;
+  *) echo "fake kubectl: unexpected $*" >&2; exit 1 ;;
 esac
 FAKE
 chmod +x "$fake_bin/sleep" "$fake_bin/timeout" "$fake_bin/kubectl"
