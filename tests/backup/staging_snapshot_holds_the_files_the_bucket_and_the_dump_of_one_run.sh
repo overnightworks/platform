@@ -203,12 +203,14 @@ echo "the restore test of $namespace compared one unchanged object of its bucket
 forged_ids=()
 # forged_restore_test <name> <arrangement> <verdict>: <arrangement> is a shell script that leaves the forged tree in $staging,
 # with tab, staging, latest (the newest snapshot not tagged forged, the real one) and its MANIFEST in /restore/manifest
-# at hand; <verdict> is a basic regular expression the failed step's line must match.
+# at hand, and restic's temporary files in /restore, since the Pod's root is read-only; <verdict> is a basic regular
+# expression the failed step's line must match.
 forged_restore_test() {
   local name="$1" arrangement="$2" verdict="$3" forged
   run_restic "$namespace" "forge-$name" '
     set -e
     staging='"$staging"'
+    export TMPDIR=/restore
     tab="$(printf "\t")"
     latest="$(restic --no-cache snapshots --json --path "$staging" | jq --raw-output "map(select((.tags // []) | index(\"forged\") | not)) | max_by(.time) | .id")"
     restic --no-cache dump "$latest" "$staging/MANIFEST" >/restore/manifest
