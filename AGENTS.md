@@ -38,7 +38,7 @@
 - `infrastructure/admission/image-vendors.yaml` is the one vendor list, which `images` and the admission layer read;
   platform's head owns it. An entry changes only when a vendor is added or removed, with its first or last ref, in a
   pull request; its review checks the vendor's page and that the repository is no app of ours.
-- The tunnel's lines, the ConfigMap in `infrastructure/cloudflared/cloudflared.yaml`, change only in a pull request.
+- The tunnel's lines, the ConfigMap in `infrastructure/cloudflared/config.yaml`, change only in a pull request.
 - The sections under `infrastructure/legal/sections/` stand word for word: a changed sentence is the operator's.
 - quality owns the gate, its workflows and its docs; the jobs and pins here follow its README and `docs/`.
 
