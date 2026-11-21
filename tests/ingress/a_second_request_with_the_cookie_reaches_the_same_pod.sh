@@ -137,7 +137,7 @@ values=()
 for attempt in 1 2 3 4 5 6; do
   ask "/fresh-$run-$attempt"
   value="$(cookie_header | sed -n "s/^[Ss]et-[Cc]ookie: $cookie_name=\([^;]*\).*/\1/p")"
-  [ -n "$value" ] || fail "the answer to a request with no cookie set no cookie named $cookie_name"
+  [ -n "$value" ] || fail "the answer to a request with no cookie set no cookie named $cookie_name: '$(cookie_header)' (status $answer_status)"
   values+=("$value")
 done
 mapfile -t distinct < <(printf '%s\n' "${values[@]}" | sort -u)
@@ -152,7 +152,8 @@ run_with_cookie() {
   for attempt in 1 2 3 4 5; do ask "$path" "$2"; done
   for pod in "${pods[@]}"; do
     log="$(kubectl --namespace "$STICKY_NAMESPACE" logs "$pod")" || fail "the logs of $pod could not be read"
-    hits="$(grep -cF "\"GET $path " <<<"$log" || true)"
+    # An access line ends its request with a status; the error-log line of a 404 ends it with a comma and shares the stream.
+    hits="$(grep -cE "\"GET $path HTTP/[0-9.]+\" [0-9]{3} " <<<"$log" || true)"
     [ "$hits" = 0 ] || { reached+=("$pod"); reached_text+="$pod:$hits "; total_hits=$((total_hits + hits)); }
   done
   [ "${#reached[@]}" = 1 ] && [ "$total_hits" = 5 ] ||
