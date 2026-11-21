@@ -44,14 +44,12 @@ flowchart TB
     subgraph edge[Edge]
       tunnel[cloudflared] --> traefik[Traefik web]
     end
-    traefik --> apps[apps: hopin, skat, songmaker, presentator; personas has no port]
-    apps --> speech[speech-runtime]
+    traefik --> apps[apps: hopin, skat, songmaker, presentator; personas has no port]; apps --> speech[speech-runtime]
     traefik --> keycloak[Keycloak]
     traefik --> legal[legal pages]
     apps --> front[litellm-front] --> litellm[LiteLLM] --> egress[agent-egress]
     apps --> data[(Postgres per namespace, Redis, Garage)]
-    keycloak --> data
-    litellm --> data
+    keycloak --> data; litellm --> data
     data -->|k8up Backup| restserver[rest-server]
     gate[admission: form rule, app-attestations] -.->|judges every Pod| apps
     obs[Prometheus, Alertmanager, Loki, Alloy, Grafana, Gatus] -.->|scrape, read logs, probe| apps
