@@ -3,7 +3,8 @@
 # cost so far plus its worst case stays within the key's budget: the cache of an earlier call counts only while the call
 # that showed it started less than the cache lives ago, and a call whose size no call of the point measured counts as the
 # most input tokens the model takes, so that neither a stale cache nor an underestimated prefix lets a call pass that
-# the budget cannot pay for. The spend log is the one thing replaced here, by a fixed total.
+# the budget cannot pay for. The caller's ports are replaced here: await_spend_log by a log of one successful row of a
+# fixed cost, and json by the prices /model/info names.
 # Usage: tests/litellm/gateway_probe_guard_prices_what_it_cannot_know_at_its_worst.sh
 set -euo pipefail
 # litellm_keys.sh, which the probe sources before the guard, sets it.
@@ -16,10 +17,19 @@ source "$repository_root/tests/failure.sh"
 source "$repository_root/scripts/litellm_probe_budget.sh"
 
 model=text/sonnet-medium
-model_prices=(["$model|max_input_tokens"]=1000000 ["$model|input_cost_per_token"]=0.000002
-  ["$model|cache_creation_input_token_cost"]=0.0000025 ["$model|cache_read_input_token_cost"]=0.0000001
-  ["$model|output_cost_per_token"]=0.00001)
-spent_so_far() { spent_total=$spent; }
+declare -A listed_prices=([max_input_tokens]=1000000 [input_cost_per_token]=0.000002
+  [cache_creation_input_token_cost]=0.0000025 [cache_read_input_token_cost]=0.0000001 [output_cost_per_token]=0.00001)
+# json: the reply of /model/info for the price asked in model_price.
+json() { echo "${listed_prices[$STEM]}"; }
+# await_spend_log <person> <command>...: the log holds the one successful row of a probe key, which costs $spent.
+declare -A probe_key_hashes=([probe-key-hash]=1)
+ok_calls=1 probe_person=probe-person
+await_spend_log() {
+  shift
+  spend_rows="request probe-key-hash start success $spent"
+  "$@"
+}
+load_prices "$model"
 
 # admits <spent> <measured size> <cached> <seconds since the cached call started>: whether the guard admits the call.
 admits() {
