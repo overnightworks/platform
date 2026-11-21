@@ -1,5 +1,5 @@
 [project]
-name = "legal"
+name = "platform-legal"
 version = "0"
 description = "The validator of an app's legal files"
 requires-python = ">=3.14"
@@ -17,7 +17,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["src/legal/src/legal"]
+source = ["src/legal/src/platform_legal"]
 relative_files = true
 
 [tool.coverage.report]

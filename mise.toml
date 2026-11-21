@@ -596,7 +596,7 @@ set -euo pipefail
 [ "$#" = 2 ] || { echo "legal:check: usage: mise run legal:check <key> <dir>" >&2; exit 2; }
 # The zone is the host of the Ingress that serves hallucinai.de's legal pages.
 zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' infrastructure/legal/legal.yaml)"
-exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.check "$1" "$2" "$zone"
+exec uv run --project src/legal --locked --no-dev --no-sync python -P -m platform_legal.check "$1" "$2" "$zone"
 '''
 
 [tasks."legal:build"]
@@ -607,7 +607,7 @@ run = '''
 set -euo pipefail
 # The zone is the host of the Ingress that serves hallucinai.de's legal pages.
 zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' infrastructure/legal/legal.yaml)"
-exec uv run --project src/legal --locked --no-dev --no-sync python -P -m legal.build "$zone"
+exec uv run --project src/legal --locked --no-dev --no-sync python -P -m platform_legal.build "$zone"
 '''
 
 [tasks.bootstrap]

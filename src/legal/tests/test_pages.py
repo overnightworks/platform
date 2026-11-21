@@ -7,8 +7,8 @@ from datetime import date
 
 import pytest
 
-from legal.pages import TEMPLATES, Block, BlockKind, Frame, build_pages
-from legal.section import LegalError, parse_fragment, parse_general
+from platform_legal.pages import TEMPLATES, Block, BlockKind, Frame, build_pages
+from platform_legal.section import LegalError, parse_fragment, parse_general
 
 ZONE = "edge-fixture.invalid"
 TEXT_PAGE = (
