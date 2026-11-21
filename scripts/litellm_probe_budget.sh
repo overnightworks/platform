@@ -64,7 +64,8 @@ spent_so_far() {
 }
 # within_budget <point tokens> <measured size> <cached> <cached at>: whether a call stays within probe_budget on top of the cost
 # so far; sets budget_note. Its prefix counts as the measured size of the point's earlier call (0 when there is none) plus
-# route_framing_tokens, else as the most input tokens the model takes, which no request it answers exceeds. Of it, <cached>
+# route_framing_tokens, else as the most input tokens the model takes, which no request it answers exceeds, and at least the point's own size, since a
+# map that names less is no limit of what is sent. Of it, <cached>
 # tokens count at the model's cache read price when the call that showed them cached started less than cache_fresh_seconds
 # before now (SECONDS of <cached at>); all others at the dearer of its input and cache write price, as a call that finds no
 # cache pays. The output is counted at large_max_tokens. Only a point from guarded_tokens asks. An unknown price or limit or
@@ -83,6 +84,7 @@ within_budget() {
     return 1
   fi
   size="${model_prices["$model|max_input_tokens"]}"
+  [ "$size" -ge "$1" ] || size=$1
   [ "$measured" -le 0 ] || size=$((measured + route_framing_tokens))
   [ $((SECONDS - cached_at)) -lt "$cache_fresh_seconds" ] || cached=0
   [ "$cached" -le "$size" ] || cached=$size

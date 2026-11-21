@@ -154,6 +154,13 @@ for case in dear_writes spendy_calls heavy_first_call; do
 done
 echo "an 800k call whose worst case passes the key's budget is not run"
 
+# A model whose map names fewer input tokens than the prefix is priced at the prefix, not at the map.
+run_probe small_limit "small_model_limit,heavy_first_call,spendy_calls" 0
+[ "$status" = 0 ] || fail "small_limit: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly small_limit
+has small_limit "Q10 \[O5 F6\] text/sonnet-medium: not run: the key's budget; the write of a 800000-token prefix: .*costs at worst [0-9.]+ USD \(([89][0-9]{5}|[0-9]{7,}) tokens"
+echo "an 800k call is priced at its own size when the model names fewer input tokens"
+
 # A read the budget has no room for is not sent: the chat write after a dear messages write, and a read of a cache that the
 # write did not make, which costs the full price of its prefix.
 stop_line="the next call was not run, the key's budget: the probe keys spent [0-9.]+ USD, this call costs at worst"

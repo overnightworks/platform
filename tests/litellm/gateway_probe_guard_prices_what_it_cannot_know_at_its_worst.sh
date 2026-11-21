@@ -48,3 +48,11 @@ if admits 2.9 0 0 0; then
   fail "a call of no measured size was priced below the most input tokens of the model: $budget_note"
 fi
 echo "a call of no measured size is priced at the most input tokens of the model"
+
+# A map that names fewer input tokens than the point sends does not lower the price of a call of no measured size.
+listed_prices[max_input_tokens]=100000
+load_prices "$model"
+if admits 3.5 0 0 0; then
+  fail "a call of no measured size was priced at the fewer input tokens /model/info names than it sends: $budget_note"
+fi
+echo "a call of no measured size is priced at its own size when the model names fewer input tokens"

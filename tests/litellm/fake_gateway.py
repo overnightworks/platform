@@ -1,3 +1,4 @@
+# ruff: noqa: T201 - the program's one output owner
 """A stand-in for LiteLLM's gateway, for tests/litellm/gateway_probe_*.sh: it keeps keys, a prompt cache and a spend log in
 memory and answers the routes the gateway probe uses, as a healthy gateway should, except where the test names a fault.
 
@@ -11,7 +12,8 @@ less than it held), refuse_zero (max_tokens 0 is refused with 400), drop_row (on
 chat_fails (the chat route answers 500), dear_writes (a cache write costs five times the price /model/info names),
 spendy_calls (each answered call costs 0.025 USD), no_cache (no route caches: usage reports no write and no read and the whole
 prompt as input), dear_misses (a call that reads less than 500000 tokens of a prompt of 500000 or more costs 3.3 USD),
-heavy_first_call (the first answered call costs 2.95 USD).
+heavy_first_call (the first answered call costs 2.95 USD), small_model_limit (/model/info names 100000 as the most input
+tokens of a model).
 """
 
 import hashlib
@@ -26,7 +28,7 @@ MODELS = ["text/sonnet", "text/haiku", "text/sonnet-medium", "text/haiku-fast", 
 WRITE_PRICE = 1e-5 if "dear_writes" in FAULTS else 2e-6
 CALL_SPEND = 0.025 if "spendy_calls" in FAULTS else 0.001
 MISS_SPEND, MISS_TOKENS, HEAVY_SPEND = 3.3, 500000, 2.95
-MODEL_INFO = {"max_input_tokens": 1000000, "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5,
+MODEL_INFO = {"max_input_tokens": 100000 if "small_model_limit" in FAULTS else 1000000, "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5,
               "cache_read_input_token_cost": 1e-7, "cache_creation_input_token_cost": WRITE_PRICE,
               "cache_creation_input_token_cost_above_1hr": 4e-6, "unset": None}
 PAGE_LIMIT = 100
@@ -85,7 +87,8 @@ class Gateway(BaseHTTPRequestHandler):
         matching = [dict(key, token=token) for token, key in state["keys"].items()
                     if "key_alias" not in query or key["key_alias"] == query["key_alias"]]
         size, page = int(query.get("size", 10)), int(query.get("page", 1))
-        assert size <= PAGE_LIMIT
+        if size > PAGE_LIMIT:
+            return self.send_json(400, {"error": "size above the page limit"})
         self.send_json(200, {"keys": matching[(page - 1) * size:page * size], "total_count": len(matching),
                              "current_page": page, "total_pages": max(1, -(-len(matching) // size))})
 
@@ -152,7 +155,7 @@ class Gateway(BaseHTTPRequestHandler):
 
     def answer(self, chat, body, key, token, call_id, header):
         system = json.dumps(body.get("system", body.get("messages", [{}])[0]))
-        cache_key = hashlib.md5((body["model"] + system[:400]).encode()).hexdigest()
+        cache_key = hashlib.sha256((body["model"] + system[:400]).encode()).hexdigest()
         total = max(len(json.dumps([body.get("system"), body.get("messages"), body.get("tools")])) // 4, 20)
         completion = 0 if body.get("max_tokens") == 0 else min(body.get("max_tokens", 1), 3)
         with lock:
