@@ -68,8 +68,23 @@ spec:
           secret:
             secretName: tunnel-token
 ---
-# No pod reads cloudflared's metrics, /ready or diagnostics. The kubelet's probes come from the node, which a
-# NetworkPolicy never blocks.
+# Gatus asks /ready through this Service, so the status page shows the tunnel's state; the Service has no endpoint
+# while cloudflared is stopped (docs/runbooks/take-the-platform-offline.md).
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudflared
+  namespace: cloudflared
+spec:
+  selector:
+    app.kubernetes.io/name: cloudflared
+  ports:
+    - name: metrics
+      port: 2000
+      targetPort: metrics
+---
+# Only Gatus reads cloudflared's metrics port, which also serves /metrics, /config and /debug/pprof. The kubelet's
+# probes come from the node, which a NetworkPolicy never blocks.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -79,3 +94,27 @@ spec:
   podSelector: {}
   policyTypes:
     - Ingress
+---
+# The policy opens the metrics port to Gatus's pod alone, and a pod of any other namespace gets no answer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metrics-from-gatus
+  namespace: cloudflared
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudflared
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gatus
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gatus
+      ports:
+        - port: 2000
+          protocol: TCP

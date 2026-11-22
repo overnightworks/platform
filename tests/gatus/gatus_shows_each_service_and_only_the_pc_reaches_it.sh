@@ -53,10 +53,15 @@ wait_for() {
   fail "Gatus did not show $name $want within 200 seconds; its last result reads '$latest'"
 }
 
+# The tunnel endpoint asks cloudflared's /ready, which answers only while cloudflared holds an edge connection: it is
+# healthy exactly while the Deployment has a ready replica, and the job's part applies no tunnel layer or holds it at 0.
+tunnel_ready_replicas="$(kubectl -n "$TUNNEL_NAMESPACE" get deployment cloudflared --ignore-not-found -o jsonpath='{.status.readyReplicas}')"
+tunnel_state=unhealthy
+[ "${tunnel_ready_replicas:-0}" -eq 0 ] || tunnel_state=healthy
 while read -r name; do
-  wait_for healthy "$name"
+  if [ "$name" = "$TUNNEL_ENDPOINT" ]; then wait_for "$tunnel_state" "$name"; else wait_for healthy "$name"; fi
 done < <(yq '.endpoints[].name' infrastructure/gatus/gatus-config.yaml)
-echo "every endpoint of infrastructure/gatus/gatus-config.yaml is healthy"
+echo "every other endpoint of infrastructure/gatus/gatus-config.yaml is healthy, and $TUNNEL_ENDPOINT is $tunnel_state with $((tunnel_ready_replicas + 0)) ready cloudflared replicas"
 
 stopped_replicas="$(kubectl -n "$STOPPED_NAMESPACE" get deployment "$STOPPED_DEPLOYMENT" -o jsonpath='{.spec.replicas}')"
 kubectl -n "$STOPPED_NAMESPACE" scale "deployment/$STOPPED_DEPLOYMENT" --replicas=0

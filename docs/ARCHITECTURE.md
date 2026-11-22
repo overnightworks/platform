@@ -116,7 +116,10 @@ GitHub Actions runs a copy: the `cluster` job applies the layers a part declares
 Facts of today's boundaries, each held by a manifest or a cell:
 
 - The only way in from outside is the tunnel. Cloudflare terminates TLS; Traefik's `web` admits only pods of
-  `cloudflared` and `gatus` and trusts forwarded headers from the pod network.
+  `cloudflared` and `gatus` and trusts forwarded headers from the pod network. `mise run offline` suspends the
+  Kustomization `tunnel` and ends `cloudflared`, which takes every public name off at once while the apps keep running,
+  and `mise run online` brings them back (`docs/runbooks/take-the-platform-offline.md`). Gatus reaches `cloudflared`'s
+  metrics port, the one NetworkPolicy opening it, to show the tunnel's state.
 - Namespaces enforce Pod Security `restricted`. `presentator` only warns, since its build worker's init container
   holds `NET_ADMIN` to load a packet filter that leaves the worker no connection but replies to its web.
   `nvidia` and `local-path-storage` carry no label, as both mount a hostPath.

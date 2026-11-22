@@ -433,3 +433,21 @@ tests:
           - exp_labels: {name: litellm, key: _litellm, type: HTTP}
             exp_annotations: {summary: "Gatus' probe of the litellm endpoint, the AI gateway, has failed for 10 minutes"}
       - {eval_time: 19m, alertname: AiGatewayProbeFailing}
+  - interval: 1m
+    name: a platform taken offline, with cloudflared at 0 replicas, its tunnel Kustomization suspended and its Gatus endpoint red, mails nothing
+    input_series:
+      # States the scenario only: no listed rule reads it.
+      - series: kube_deployment_spec_replicas{namespace="cloudflared", deployment="cloudflared"}
+        values: "0x30"
+      - series: kube_deployment_status_replicas_unavailable{namespace="cloudflared", deployment="cloudflared"}
+        values: "0x30"
+      - series: gotk_resource_info{customresource_kind="Kustomization", exported_namespace="flux-system", name="tunnel", ready="True"}
+        values: "1x30"
+      - series: gatus_results_endpoint_success{name="tunnel", key="_tunnel", group="", type="HTTP"}
+        values: "0x30"
+    # promtool checks only the alerts it names, so a new rule must be listed here; the alerts below are the ones that read
+    # a series of this input. TargetDown is left out: a cloudflared at 0 replicas has no Pod and so no up series to judge.
+    alert_rule_test:
+      - {eval_time: 20m, alertname: DeploymentUnavailable}
+      - {eval_time: 20m, alertname: KustomizationNotReady}
+      - {eval_time: 20m, alertname: AiGatewayProbeFailing}

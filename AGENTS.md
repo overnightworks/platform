@@ -8,12 +8,14 @@
 - `quality check`: the repository's rules; needs quality at the pin in `ci.yml`, installed by `mise run bootstrap:hook`.
 - `mise run github:test` and `cloudflare:test`: check `src/opentofu`'s roots; need only the tools.
 - `mise run legal:test`: tests `src/legal`; `mise run legal:check <key> <dir>`: checks an app's legal files; needs its checkout.
-- `mise run check:secrets-expiry`: names each Secret expiring within 30 days; needs the PC's k3s.
-- `mise run secrets:new-key` is the operator's: it creates the age key once and prints only its recipient.
-- `mise run check:pod-logs` is the operator's, since it runs through sudo: it checks the pod-log bound and its daily clean.
-- `mise run bootstrap:secrets` is the operator's, since it reads the age key file: it gives Flux its age and deploy keys.
+- `mise run check:secrets-expiry`: names Secrets expiring within 30 days; needs the PC's k3s.
+- `mise run secrets:new-key` is the operator's: it creates the age key once.
+- `mise run check:pod-logs` is the operator's, since it runs through sudo.
+- `mise run bootstrap:secrets` is the operator's, since it reads the age key file.
 - `mise run keycloak:admin`, `mise run litellm:admin <username>` and `mise run gpu:use <songs|speech|free>` are the
   operator's; an agent runs `gpu:use` only inside a window he named.
+- `mise run offline` and `online` take the public names off the internet and back: see
+  `docs/runbooks/take-the-platform-offline.md`.
 - `mise run admission:pause` and `admission:resume` are the head's: they suspend and restore the attestation check.
 
 ## Rules
