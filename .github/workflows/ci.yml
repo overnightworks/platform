@@ -532,7 +532,7 @@ jobs:
         if: matrix.part == 'core'
         run: tests/cloudflared/tunnel_applied_at_zero_replicas.sh
 
-      - name: Assert that taking the platform offline suspends tunnel and holds against the reconciles of the root and of tunnel, with no cloudflared Pod and no endpoint, and that online brings tunnel back at the candidate and Flux corrects a hand-made scale again
+      - name: Assert that taking the platform offline suspends tunnel and holds against the reconcile of the root, with no cloudflared Pod and no endpoint, and that online brings tunnel back at the candidate and Flux corrects a hand-made scale again
         if: matrix.part == 'core'
         env:
           ROOT_LAYER: flux-system/flux-system

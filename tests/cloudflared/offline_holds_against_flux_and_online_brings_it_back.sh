@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Take the platform offline, make the root Kustomization and tunnel reconcile, and read the stop back: tunnel is still
-# suspended, no cloudflared Pod exists and the Service cloudflared has no endpoint, so Flux brings no connector back.
+# Take the platform offline, make the root Kustomization reconcile, and read the stop back: tunnel is still suspended
+# (a suspended Kustomization handles no reconcile of its own), no cloudflared Pod exists and the Service cloudflared has
+# no endpoint, so Flux brings no connector back.
 # Then bring it online: tunnel has applied the candidate and is Ready, and Flux corrects a hand-made scale again. The job
 # has no edge, so that the names answer 530 while offline is proven by the first run on the PC. The cell runs online on
 # every exit. The script defaults to the PC's kubeconfig, so the cell hands it the runner's own.
@@ -35,17 +36,16 @@ reconcile() {
 
 "$OFFLINE_SCRIPT" offline
 reconcile "$root_namespace" "$root_name"
-reconcile "$layer_namespace" "$layer_name"
 
 suspended="$(kubectl --namespace "$layer_namespace" get kustomization "$layer_name" --output jsonpath='{.spec.suspend}')"
-[ "$suspended" = true ] || fail "after the reconciles $layer_name is suspended '$suspended', not true"
+[ "$suspended" = true ] || fail "after the root reconcile $layer_name is suspended '$suspended', not true"
 replicas="$(kubectl --namespace "$TUNNEL_NAMESPACE" get deployment cloudflared --output jsonpath='{.spec.replicas}')"
-[ "$replicas" = 0 ] || fail "after the reconciles cloudflared runs at '$replicas' replicas, not 0"
+[ "$replicas" = 0 ] || fail "after the root reconcile cloudflared runs at '$replicas' replicas, not 0"
 pods="$(kubectl --namespace "$TUNNEL_NAMESPACE" get pod --selector app.kubernetes.io/name=cloudflared --output name)"
-[ -z "$pods" ] || fail "after the reconciles cloudflared Pods exist: $pods"
+[ -z "$pods" ] || fail "after the root reconcile cloudflared Pods exist: $pods"
 endpoints="$(kubectl --namespace "$TUNNEL_NAMESPACE" get endpoints cloudflared --output jsonpath='{.subsets[*].addresses[*].ip}')"
 [ -z "$endpoints" ] || fail "after the reconciles the Service cloudflared has endpoints: $endpoints"
-echo "the reconciles of the root and of $layer_name left $layer_name suspended, cloudflared at 0 with no Pod and its Service without an endpoint"
+echo "the reconcile of the root left $layer_name suspended, cloudflared at 0 with no Pod and its Service without an endpoint"
 
 "$OFFLINE_SCRIPT" online
 suspended="$(kubectl --namespace "$layer_namespace" get kustomization "$layer_name" --output jsonpath='{.spec.suspend}')"
