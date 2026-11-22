@@ -138,6 +138,14 @@ apiVersion: v1
 kind: Service
 metadata:
   name: skat
+  # Traefik reads its sticky cookie from the Service an Ingress routes to; every such Service carries the same five
+  # annotations, which tests/ingress/every_routed_service_carries_the_same_sticky_cookie.sh holds equal.
+  annotations:
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.name: __Host-route
+    traefik.ingress.kubernetes.io/service.sticky.cookie.secure: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.httponly: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.samesite: lax
   namespace: skat
 spec:
   type: ClusterIP
