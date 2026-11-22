@@ -20,7 +20,9 @@ This section holds ruled sentences.
 
 An app uses only the capabilities it needs; nothing obliges it to consume one.
 
-- A host on Traefik's `web`, reached only through the platform's tunnel. A tunnel line changes in a pull request.
+- A host on Traefik's `web`, reached only through the platform's tunnel. A tunnel line changes in a pull request. The Service an Ingress routes
+  to carries Traefik's sticky-cookie annotations, the same on every app's, so that the app can run several pods
+  without a change of its own: a visitor's requests then reach one pod, by a host-only cookie that lives for the session.
 - Its own Namespace with Pod Security `restricted`, never pruned, and a NetworkPolicy naming its senders. The Namespace
   is an entry in the platform's namespaces layer (`infrastructure/namespaces/namespaces.yaml`, prune disabled), added in
   a pull request.
@@ -107,6 +109,8 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 | Namespace enforces `restricted`; Deployment is `Recreate` or a `RollingUpdate` that never takes a pod away before its replacement is Ready, Available with all its replicas Ready, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
 | A Deployment's pods, with those still stopping in a rolling update, its surge and the backup, stay within its Postgres' `max_connections` | the `checks` job, by rendering `apps/songmaker` and `apps/personas` |
 | A name a manifest under `apps/` hands under a `REALM_` key is a plain value, declared in `realm.yaml` as an object of that key's kind, and the layer's own app's or one of the fleet's two; no container there takes `envFrom` | the `checks` job, by rendering every layer under `apps/` that `clusters/pc/apps.yaml` names |
+| Every Service an Ingress routes to carries the same five sticky-cookie annotations | the `checks` job, by rendering every layer of `clusters/pc` |
+| A second request with the cookie reaches the same one of two pods, and the cookie is `Secure`, `HttpOnly` and host-only | the `cluster` job's part `core`, on a throwaway namespace |
 | Two pods are Ready and a rollout restart keeps both available | the `cluster` job, for personas |
 | Manifests live under `apps/<app>/` and reconcile | the `cluster` job through the app's own Kustomization, named like its directory, which the `checks` job requires for every directory, and for a pull layer `<app>-pull` |
 | Every app ref an app renders is an image volume of its pull layer's Job, and a container mounts every volume | the `checks` job, by rendering both |
