@@ -1,8 +1,0 @@
-claim_id = "deda2b6785bd414e849a70023daaac15"
-agent = "Claude e1db23d2-d810-4034-aa8d-126cb059eb89"
-role = "builder"
-base = "e3f2341ca163c5ad89aab34e6cc1e0ea64a8a9fb"
-branch = "claude/issue-818-restore-test-compares-one-bucket-object"
-scope = [".github/workflows/ci.yml", "docs/ARCHITECTURE.md", "docs/app.md", "docs/personal-data.md", "docs/runbooks/change-an-object-store-key.md", "infrastructure/objectstore/garage.yaml", "infrastructure/postgres/backup/files/bucket", "tests/backup/restic_pod.sh", "tests/backup/restore_test_compares_one_unchanged_object_of_the_bucket.sh", "tests/backup/songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh", "tests/backup/staging_snapshot_holds_the_files_the_bucket_and_the_dump_of_one_run.sh", "tests/flux/parts.yaml", "tests/objectstore/bucket_key_reaches_only_its_bucket.sh"]
-opened_commit = "b9dd6eb5f7195c8a12e5a43719ef5f83e4495a6b"
-whole_reason = "The restore test's bucket steps, the Garage admission that lets them read and the docs that state them do nothing apart, and the cell proves them together."
