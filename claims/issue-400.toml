@@ -1,5 +1,5 @@
 claim_id = "0d4beea8bf764620a7ca4be5597c16a0"
-agent = "Claude a8131622-e90f-4803-bf0e-e8f72b4d2a31"
+agent = "Claude e1db23d2-d810-4034-aa8d-126cb059eb89"
 role = "builder"
 base = "a570c0244d8d2cf2359bc647526305176943da98"
 branch = "claude/issue-400-schedules-named-backup"
