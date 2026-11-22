@@ -3,6 +3,6 @@ agent = "Claude e1db23d2-d810-4034-aa8d-126cb059eb89"
 role = "builder"
 base = "1fd47e015d060f64f8c7fffa1fe0597753a3cdc3"
 branch = "claude/issue-376-one-command-takes-the-platform-s-public"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "docs/ARCHITECTURE.md", "docs/operations.md", "docs/runbooks/take-the-platform-offline.md", "infrastructure/cloudflared/cloudflared.yaml", "infrastructure/gatus/gatus-config.yaml", "mise.toml", "scripts/take_platform_offline_or_online.sh", "tests/cloudflared/offline_holds_against_flux_and_online_brings_it_back.sh", "tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh", "tests/prometheus/rules_test.yml"]
+scope = [".github/workflows/ci.yml", "AGENTS.md", "docs/ARCHITECTURE.md", "docs/operations.md", "docs/runbooks/take-the-platform-offline.md", "infrastructure/cloudflared/cloudflared.yaml", "infrastructure/gatus/gatus-config.yaml", "mise.toml", "scripts/take_platform_offline_or_online.sh", "tests/cloudflared/offline_and_online_repeat_to_the_same_state.sh", "tests/cloudflared/offline_holds_against_flux_and_online_brings_it_back.sh", "tests/gatus/gatus_shows_each_service_and_only_the_pc_reaches_it.sh", "tests/prometheus/rules_test.yml"]
 opened_commit = "3471017ea6c3e17732e22b1f4bddf7110a89dc83"
 whole_reason = "The stop, its visible state, its runbook and its cell are one ruled behaviour; a part alone leaves a stop that no one sees or proves."
