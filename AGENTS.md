@@ -14,6 +14,8 @@
 - `mise run bootstrap:secrets` is the operator's, since it reads the age key file: it gives Flux its age and deploy keys.
 - `mise run keycloak:admin`, `mise run litellm:admin <username>` and `mise run gpu:use <songs|speech|free>` are the
   operator's; an agent runs `gpu:use` only inside a window he named.
+- `mise run offline` and `online` take every public name off the internet and bring them back: the operator's, or an
+  agent's on his word; a head runs `offline` unasked only at a credible leak or attack and tells him at once.
 - `mise run admission:pause` and `admission:resume` are the head's: they suspend and restore the attestation check.
 
 ## Rules

@@ -28,6 +28,10 @@ without a key, so a front or LiteLLM that answers 5xx, times out or refuses the 
 one model reaches the caller as that call's answer and fails nothing here. A Gatus that stops answering is `TargetDown`'s.
 (OPS-17)
 
+The `tunnel` endpoint asks `cloudflared`'s `/ready` through its Service and is red while the platform is offline
+(`docs/runbooks/take-the-platform-offline.md`) and on a real loss of the edge. No alert rule reads it, so an offline the
+operator started mails nothing; the red endpoint is the reminder.
+
 ## Grafana
 
 `infrastructure/grafana/`: Grafana for Loki and Prometheus, in the Namespace `grafana` the layer owns, which enforces
