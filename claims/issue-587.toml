@@ -1,8 +1,0 @@
-claim_id = "fc8b60f454ca47f798e7e8ce367577a6"
-agent = "Claude e1db23d2-d810-4034-aa8d-126cb059eb89"
-role = "builder"
-base = "e3f2341ca163c5ad89aab34e6cc1e0ea64a8a9fb"
-branch = "claude/issue-587-hopin-gets-its-own-postgres"
-scope = [".github/workflows/ci.yml", "apps/hopin", "clusters/pc/apps.yaml", "docs/app.md", "infrastructure/backup", "infrastructure/postgres/backup/kustomization.yaml", "infrastructure/postgres/kustomization.yaml", "tests/flux/parts.yaml", "tests/postgres/connections_stay_within_max_connections.sh"]
-opened_commit = "0da1a55d06b6e9a43740b544a5b835b49c3480bf"
-whole_reason = "A database, its backup repository, the app's migration and access to it and the release that needs them change together."
