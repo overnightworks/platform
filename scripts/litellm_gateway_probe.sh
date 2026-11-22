@@ -146,8 +146,8 @@ build_body() {
   local tools_part="" stream_part=""
   [ -z "$tools_json" ] || tools_part=",\"tools\":$tools_json"
   if [ "$route" = messages ]; then
-    printf '{"model":"%s","max_tokens":%s,"stream":%s,"metadata":{"user_id":"%s"},"system":[{"type":"text","text":"%s"%s}],"messages":[%s]%s%s}' \
-      "$model" "$1" "$streamed" "$probe_person" "$system_text" "$cache_mark" "$messages_json" "$tools_part" "$2"
+    printf '{"model":"%s","max_tokens":%s,"stream":%s,"user":"%s","metadata":{"user_id":"%s"},"system":[{"type":"text","text":"%s"%s}],"messages":[%s]%s%s}' \
+      "$model" "$1" "$streamed" "$probe_person" "$probe_person" "$system_text" "$cache_mark" "$messages_json" "$tools_part" "$2"
   else
     [ "$streamed" = false ] || stream_part=',"stream_options":{"include_usage":true}'
     printf '{"model":"%s","max_tokens":%s,"stream":%s,"user":"%s","messages":[{"role":"system","content":[{"type":"text","text":"%s"%s}]},%s]%s%s%s}' \
