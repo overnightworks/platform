@@ -1,0 +1,8 @@
+claim_id = "c85e8b9da8ff4541b53872b9d75ad2f9"
+agent = "Claude e1db23d2-d810-4034-aa8d-126cb059eb89"
+role = "builder"
+base = "cb265133023484ff61877091a58c403bb13e1e25"
+branch = "claude/issue-704-skat-presentator-keycloak-and-litellm-de"
+scope = [".github/workflows/ci.yml", "apps/presentator", "apps/skat", "docs/app.md", "infrastructure/keycloak", "infrastructure/litellm"]
+opened_commit = "1eee3c10bcee93e7dc532377ab10f3fffa1af671"
+whole_reason = "One rule, the connection budget, extended to the four remaining layers that open their own Postgres, and the check's one call in ci.yml naming each; splitting per app would edit the same ci.yml line four times."
