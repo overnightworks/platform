@@ -1,12 +1,20 @@
-# What an app adds to files/ to have the backup copy its object store bucket beside the claim and the dump: the
-# container `bucket` of the PreBackupPod and the stager's STAGE_BUCKET. A layer that includes it lists it after ../
-# (files), and adds the target containers.[name=bucket].securityContext.runAsGroup to its replacement of the reading
-# uid, so that `bucket` runs at that uid as user and group and never in the dump's group 70. The bucket is the
-# Namespace's own and is read with the key of the Secret object-store-backup, which the Job apply of
-# infrastructure/objectstore grants read alone.
-# A custom resource's container lists do not merge by name, so one JSON 6902 patch adds both or none; its `test`
-# operation fails the render when files.yaml's containers are reordered, since STAGE_BUCKET would then reach another
-# container and the stager would run without the bucket. rclone: https://hub.docker.com/r/rclone/rclone
+# What an app adds to files/ to have the backup copy its object store bucket beside the claim and the dump, and the
+# monthly restore test read one object of that copy back. The backup's part: the container `bucket` of the PreBackupPod
+# and the stager's STAGE_BUCKET. A layer that includes it lists it after ../ (files), and adds the target
+# containers.[name=bucket].securityContext.runAsGroup to its replacement of the reading uid, so that `bucket` runs at
+# that uid as user and group and never in the dump's group 70. The bucket is the Namespace's own and is read with the key
+# of the Secret object-store-backup, which the Job apply of infrastructure/objectstore grants read alone; no key that may
+# write or delete an object enters either pod.
+# The restore test's part: after restic-dump, three init containers of its pod (scripts/restore_object.sh) list the live
+# bucket, read one unchanged object of the latest snapshot into sha256sum and compare it with the live object's hash.
+# They share the emptyDir `object`, which holds every key the test names; a key reaches a process only as the argument of
+# restic dump inside that pod and through rclone's --files-from-raw file, and no manifest, log or printed command line
+# holds one. That is the reading of "argument" for the bucket's steps, S3's and later ones included.
+# A custom resource's container lists do not merge by name, so one JSON 6902 patch of each kind adds its containers or
+# none; its `test` operation fails the render when the base's containers are reordered, since STAGE_BUCKET would then
+# reach another container and the stager would run without the bucket, and the bucket steps would then no longer follow
+# restic-dump. The pod label is the one garage's NetworkPolicy admits.
+# rclone: https://hub.docker.com/r/rclone/rclone
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 patches:
@@ -80,3 +88,143 @@ patches:
             items:
               - key: credentials
                 path: credentials
+  - target:
+      kind: CronJob
+      name: restore-test
+    patch: |
+      - op: test
+        path: /spec/jobTemplate/spec/template/spec/initContainers/0/name
+        value: restic-dump
+      # The Namespace's own pods reach Garage by this label, which the pod template carries nowhere else.
+      - op: add
+        path: /spec/jobTemplate/spec/template/metadata
+        value:
+          labels:
+            app.kubernetes.io/name: restore-test
+      # The images and environments of the three are the replacements' below: the PreBackupPod's `bucket` gives
+      # bucket-list and bucket-compare theirs, restic-dump gives restic-object its own. The two rclone steps run outside
+      # group 70 like `bucket`.
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/initContainers/-
+        value:
+          name: bucket-list
+          image: rclone
+          command: [sh, /etc/restore-object/restore_object.sh, list]
+          securityContext: &rclone-security
+            runAsGroup: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts: &rclone-mounts
+            - name: object
+              mountPath: /object
+            - name: restore-object
+              mountPath: /etc/restore-object
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: object-store-backup
+              mountPath: /run/secrets/object-store-backup
+              readOnly: true
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/initContainers/-
+        value:
+          name: restic-object
+          image: k8up
+          command: [sh, /etc/restore-object/restore_object.sh, pick]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: object
+              mountPath: /object
+            - name: restore-object
+              mountPath: /etc/restore-object
+              readOnly: true
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/initContainers/-
+        value:
+          name: bucket-compare
+          image: rclone
+          command: [sh, /etc/restore-object/restore_object.sh, compare]
+          securityContext: *rclone-security
+          volumeMounts: *rclone-mounts
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/volumes/-
+        value:
+          name: object
+          emptyDir: {}
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/volumes/-
+        value:
+          name: restore-object
+          configMap:
+            name: restore-object
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/volumes/-
+        value:
+          name: object-store-backup
+          secret:
+            secretName: object-store-backup
+            items:
+              - key: credentials
+                path: credentials
+configMapGenerator:
+  - name: restore-object
+    files:
+      - scripts/restore_object.sh
+    options:
+      disableNameSuffixHash: true
+replacements:
+  # One owner of the endpoint, region, bucket and key file: the PreBackupPod's container `bucket`, whose image and
+  # environment the two rclone steps copy.
+  - source:
+      kind: PreBackupPod
+      name: files
+      fieldPath: spec.pod.spec.containers.[name=bucket].image
+    targets:
+      - select:
+          kind: CronJob
+          name: restore-test
+        fieldPaths:
+          - spec.jobTemplate.spec.template.spec.initContainers.[name=bucket-list].image
+          - spec.jobTemplate.spec.template.spec.initContainers.[name=bucket-compare].image
+  - source:
+      kind: PreBackupPod
+      name: files
+      fieldPath: spec.pod.spec.containers.[name=bucket].env
+    targets:
+      - select:
+          kind: CronJob
+          name: restore-test
+        fieldPaths:
+          - spec.jobTemplate.spec.template.spec.initContainers.[name=bucket-list].env
+          - spec.jobTemplate.spec.template.spec.initContainers.[name=bucket-compare].env
+        options:
+          create: true
+  # restic-object reads with the restic that wrote the repository, at the repository's credentials.
+  - source:
+      kind: CronJob
+      name: restore-test
+      fieldPath: spec.jobTemplate.spec.template.spec.initContainers.[name=restic-dump].image
+    targets:
+      - select:
+          kind: CronJob
+          name: restore-test
+        fieldPaths:
+          - spec.jobTemplate.spec.template.spec.initContainers.[name=restic-object].image
+  - source:
+      kind: CronJob
+      name: restore-test
+      fieldPath: spec.jobTemplate.spec.template.spec.initContainers.[name=restic-dump].env
+    targets:
+      - select:
+          kind: CronJob
+          name: restore-test
+        fieldPaths:
+          - spec.jobTemplate.spec.template.spec.initContainers.[name=restic-object].env
+        options:
+          create: true

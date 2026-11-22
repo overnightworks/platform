@@ -35,7 +35,7 @@ Its Schedule runs a weekly backup (Sunday 03:00, prune keeping 4 weekly and 3 mo
 `pg_dump --format=custom` into `backup-repository`, the URL the including layer sets in the ConfigMap `postgres`; a
 PodConfig gives k8up's Job pods the fields `restricted` requires; and the CronJob `restore-test` restores the latest
 snapshot into a throwaway server each month, on the 1st at 05:00 UTC, bounded to an hour, and fails without a snapshot
-or on an empty first key table. (PD-3)
+or on an empty first key table. A declared bucket's objects are in the same snapshots as the dump, so a deleted object stays in them up to about three months. Where a layer declares its bucket, the restore test also reads at most one object of the latest snapshot and its live copy, the latter with the backup's read-only key, compares their sha256 inside its own pod and prints neither name nor content. (PD-3)
 The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung),
 [litellm](../infrastructure/legal/sections/litellm/datenschutz.html#agent-dienst).
 
