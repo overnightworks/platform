@@ -1,5 +1,5 @@
 claim_id = "fc8b60f454ca47f798e7e8ce367577a6"
-agent = "Claude a8131622-e90f-4803-bf0e-e8f72b4d2a31"
+agent = "Claude e1db23d2-d810-4034-aa8d-126cb059eb89"
 role = "builder"
 base = "e3f2341ca163c5ad89aab34e6cc1e0ea64a8a9fb"
 branch = "claude/issue-587-hopin-gets-its-own-postgres"
