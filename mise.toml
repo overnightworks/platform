@@ -1123,6 +1123,26 @@ export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 exec scripts/pause_or_resume_attestation_check.sh resume
 '''
 
+[tasks.offline]
+description = "Take every public name of the platform off the internet: suspend the tunnel's Kustomization and end cloudflared, while the apps keep running. Ends the same when repeated; the operator, or an agent on his word, runs it"
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+exec scripts/take_platform_offline_or_online.sh offline
+'''
+
+[tasks.online]
+description = "Bring the platform's public names back: resume the tunnel's Kustomization and wait until cloudflared is Ready. Safe to repeat; the operator, or an agent on his word, runs it"
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+exec scripts/take_platform_offline_or_online.sh online
+'''
+
 [tasks."gpu:use"]
 description = "Give the PC's card to songmaker's music or to speech, or free it for an hour (free returns it to speech by itself)"
 usage = '''

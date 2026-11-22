@@ -34,6 +34,12 @@ endpoints:
     interval: 60s
     conditions:
       - "[STATUS] == 200"
+  # Healthy while cloudflared holds an edge connection, so it is red while the platform is offline.
+  - name: tunnel
+    url: http://cloudflared.cloudflared.svc:2000/ready
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
   - name: loki
     url: http://loki.loki.svc:3100/ready
     interval: 60s
