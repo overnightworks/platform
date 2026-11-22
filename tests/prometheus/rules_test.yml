@@ -436,6 +436,7 @@ tests:
   - interval: 1m
     name: a platform taken offline, with cloudflared at 0 replicas, its tunnel Kustomization suspended and its Gatus endpoint red, mails nothing
     input_series:
+      # States the scenario only: no listed rule reads it.
       - series: kube_deployment_spec_replicas{namespace="cloudflared", deployment="cloudflared"}
         values: "0x30"
       - series: kube_deployment_status_replicas_unavailable{namespace="cloudflared", deployment="cloudflared"}
