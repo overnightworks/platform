@@ -444,8 +444,9 @@ tests:
         values: "1x30"
       - series: gatus_results_endpoint_success{name="tunnel", key="_tunnel", group="", type="HTTP"}
         values: "0x30"
+    # promtool checks only the alerts it names, so a new rule must be listed here; the alerts below are the ones that read
+    # a series of this input. TargetDown is left out: a cloudflared at 0 replicas has no Pod and so no up series to judge.
     alert_rule_test:
       - {eval_time: 20m, alertname: DeploymentUnavailable}
       - {eval_time: 20m, alertname: KustomizationNotReady}
-      - {eval_time: 20m, alertname: TargetDown}
       - {eval_time: 20m, alertname: AiGatewayProbeFailing}

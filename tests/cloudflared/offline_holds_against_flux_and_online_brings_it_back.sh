@@ -44,7 +44,7 @@ replicas="$(kubectl --namespace "$TUNNEL_NAMESPACE" get deployment cloudflared -
 pods="$(kubectl --namespace "$TUNNEL_NAMESPACE" get pod --selector app.kubernetes.io/name=cloudflared --output name)"
 [ -z "$pods" ] || fail "after the root reconcile cloudflared Pods exist: $pods"
 endpoints="$(kubectl --namespace "$TUNNEL_NAMESPACE" get endpoints cloudflared --output jsonpath='{.subsets[*].addresses[*].ip}')"
-[ -z "$endpoints" ] || fail "after the reconciles the Service cloudflared has endpoints: $endpoints"
+[ -z "$endpoints" ] || fail "after the root reconcile the Service cloudflared has endpoints: $endpoints"
 echo "the reconcile of the root left $layer_name suspended, cloudflared at 0 with no Pod and its Service without an endpoint"
 
 "$OFFLINE_SCRIPT" online
