@@ -1,0 +1,7 @@
+claim_id = "583646e957244db4a3160ae35b5b007f"
+agent = "Claude e1db23d2-d810-4034-aa8d-126cb059eb89"
+role = "builder"
+base = "cb265133023484ff61877091a58c403bb13e1e25"
+branch = "claude/issue-826-hopin-2026-11-22-3"
+scope = ["apps/hopin/hopin.yaml", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
+opened_commit = "e7f12b3bfcc95ca97d370b56b40fa4f489e80d83"
