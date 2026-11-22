@@ -1,5 +1,5 @@
 claim_id = "4be66ecce5434847a71391ffef42e16f"
-agent = "Claude a8131622-e90f-4803-bf0e-e8f72b4d2a31"
+agent = "Claude e1db23d2-d810-4034-aa8d-126cb059eb89"
 role = "builder"
 base = "14ea7b474b1ac8fbd082843cf57073274d1d74fa"
 branch = "claude/issue-817-routed-services-carry-the-sticky-cookie"
