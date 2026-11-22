@@ -415,6 +415,8 @@ job_logs="$(kubectl --namespace "$namespace" logs --selector k8upjob=true --all-
 row="$(kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only --no-align \
   --command='SELECT version_num FROM alembic_version')"
 [ -n "$row" ] || fail "the table alembic_version of $namespace holds no row to look for"
+# The two object bodies are the `rewritten.bin` bodies of the sets `base` and `change` in tests/objectstore/client.py;
+# the planted object keys come from the listing of the bucket before and after the change.
 needles=(
   "planted file:$cell_directory" "planted file:first take" "planted file:second take" "planted file:third take"
   "planted file:fourth take" "planted file:unreadable take" "planted file:break.ogg" "row:$row"
@@ -423,7 +425,7 @@ needles=(
   "credential:$(ini_value "$(secret_value "$credentials_secret" "$credentials_key")" aws_secret_access_key)"
   "credential:$(ini_value "$(secret_value "$bucket_secret" credentials)" aws_access_key_id)"
   "credential:$(ini_value "$(secret_value "$bucket_secret" credentials)" aws_secret_access_key)"
-  "object body:read by the backup" "object body:0123456789" "object body:9876543210"
+  "object body:0123456789" "object body:9876543210"
 )
 while IFS= read -r key; do needles+=("planted object:$key"); done < <(cut -f3 <<<"$bucket_before"; printf '%s\n' "$added_key")
 for needle in "${needles[@]}"; do
