@@ -26,11 +26,11 @@ Impact: the app's pods get 403 from the store until they hold the key that the J
    cluster, or when that Secret left, this step runs once the Secret exists or is gone. Where the app's layer includes
    `infrastructure/postgres/backup/files/bucket`, the backup's pod reads the Secret `object-store-backup` at every Backup,
    so a rotated backup key is imported by this Job before the next Backup, or that Backup fails with its step
-   `bucket-pre-sync` named.
+   `bucket-pre-sync` named; the restore test's bucket steps read it at every run, and fail with their step named.
 3. An agent: `kubectl -n <namespace> rollout restart deployment <web>`. The pods that kept the old key get 403 until they
    restart, since the key file is read at start.
 4. A first bucket for a namespace, a pull request: its name in `infrastructure/objectstore/namespaces.txt`, the
-   namespace's pods, and its PreBackupPod's pods where the layer includes `files/bucket`, in the NetworkPolicy `garage`
+   namespace's pods, and its PreBackupPod's and restore test's pods where the layer includes `files/bucket`, in the NetworkPolicy `garage`
    of `infrastructure/objectstore/garage.yaml`, and the Secret in `platform-secrets`. The change of the list recreates the Job.
 
 Rollback: the old value back in `platform-secrets`, then steps 2 and 3. The key that was revoked is granted again, and

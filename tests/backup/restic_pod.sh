@@ -15,20 +15,24 @@ delete_restic_objects() {
   done
 }
 
-# run_restic <namespace> <name> <shell script>: a Pod built from the restore test's own init container, so it holds the
-# namespace's repository credentials as the test does and nothing more; runs the script, sets its output (what it writes to
-# stdout) and exit code. Its stderr goes to the container's termination message, since `kubectl logs` merges the two
+# run_restic <namespace> <name> <shell script> [<directory>]: a Pod built from the restore test's own init container, so
+# it holds the namespace's repository credentials as the test does and nothing more, and an emptyDir at the directory
+# when one is named (a path the script backs up, which restic records in its snapshot); runs the script, sets its output
+# (what it writes to stdout) and exit code. Its stderr goes to the container's termination message, since `kubectl logs` merges the two
 # streams, and reaches this script's stderr when the script fails; a script that wants an error text in its output
 # redirects 2>&1 itself.
 # shellcheck disable=SC2034 # restic_output and restic_exit are this function's results for the cells below.
 run_restic() {
-  local namespace="$1" name="$2" script="$3" manifest
+  local namespace="$1" name="$2" script="$3" directory="${4:-}" manifest
   manifest="$(kubectl --namespace "$namespace" get cronjob restore-test --output json |
-    NAME="$name" SCRIPT="$script" yq --output-format json \
+    NAME="$name" SCRIPT="$script" DIRECTORY="$directory" yq --output-format json \
       '.spec.jobTemplate.spec.template.spec as $spec | $spec.initContainers[0] as $dump |
        { "apiVersion": "v1", "kind": "Pod", "metadata": { "name": strenv(NAME) }, "spec": ($spec | del(.initContainers) |
            .volumes |= map(select(.name == "restore")) |
-           .containers = [$dump | .name = "restic" | .command = ["sh", "-c", "exec 2>/dev/termination-log\n" + strenv(SCRIPT)]]) }')"
+           .containers = [$dump | .name = "restic" | .command = ["sh", "-c", "exec 2>/dev/termination-log\n" + strenv(SCRIPT)]]) } |
+       if strenv(DIRECTORY) == "" then . else
+         .spec.volumes += [{"name": "directory", "emptyDir": {}}] |
+         .spec.containers[0].volumeMounts += [{"name": "directory", "mountPath": strenv(DIRECTORY)}] end')"
   restic_objects+=("$namespace pod $name")
   kubectl --namespace "$namespace" create --filename - <<<"$manifest" >/dev/null
   kubectl --namespace "$namespace" wait "pod/$name" --timeout=5m \
@@ -78,11 +82,25 @@ job_ended() {
   done
   fail "the Job $namespace/$job did not end within 10 minutes"
 }
+# pod_logs <namespace> <pod>: what each container that started printed, each line led by `[pod/<pod>/<container>]`;
+# a container that never started is skipped, and one whose log cannot be read fails the call.
+pod_logs() {
+  local namespace="$1" pod="$2" containers container log line
+  containers="$(kubectl --namespace "$namespace" get pod "$pod" --output json | yq --input-format json \
+    '((.status.initContainerStatuses // []) + (.status.containerStatuses // [])) | .[] | select(.state.waiting == null) | .name')" || return 1
+  while IFS= read -r container; do
+    [ -n "$container" ] || continue
+    log="$(kubectl --namespace "$namespace" logs "pod/$pod" --container "$container")" || return 1
+    [ -z "$log" ] || while IFS= read -r line; do printf '[pod/%s/%s] %s\n' "$pod" "$container" "$line"; done <<<"$log"
+  done <<<"$containers"
+}
+
 # run_restore_test <namespace> <job> [<configmap> [<cronjob>]]: runs the CronJob restore-test, or the one named, as it is,
 # or with another ConfigMap as its checks;
 # sets status to passed or failed, restore_exits to "dump <exit> check <exit>" (an exit the container never reached reads
-# as none) and restore_log to what the check printed.
-# shellcheck disable=SC2034 # status, restore_exits and restore_log are this function's results for the cells that source this file.
+# as none), restore_log to what the check printed and restore_pod_log to what every container of the pod printed, each
+# line led by its container's name.
+# shellcheck disable=SC2034 # status, restore_exits, restore_log and restore_pod_log are this function's results for the cells that source this file.
 run_restore_test() {
   local namespace="$1" job="$2" checks="${3:-}" cronjob="${4:-restore-test}" job_manifest pod exits
   job_manifest="$(kubectl --namespace "$namespace" create job "$job" --from="cronjob/$cronjob" --dry-run=client --output json)"
@@ -99,6 +117,7 @@ run_restore_test() {
     '[.status.initContainerStatuses[0], .status.containerStatuses[0]] | map(.state.terminated.exitCode // "none") | join(" ")')"
   restore_exits="dump ${exits% *} check ${exits#* }"
   restore_log="$(kubectl --namespace "$namespace" logs "pod/$pod" --container restore-test 2>/dev/null || true)"
+  restore_pod_log="$(pod_logs "$namespace" "$pod")" || fail "a container of the pod $pod of the Job $job started and its log cannot be read"
   kubectl --namespace "$namespace" delete job "$job" --cascade=foreground --wait --timeout=2m >/dev/null
 }
 

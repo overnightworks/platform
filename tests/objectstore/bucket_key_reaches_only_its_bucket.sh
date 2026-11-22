@@ -194,6 +194,14 @@ expect_probe "$prebackup_verdict" "a Pod labelled as the PreBackupPod in $APP_NA
   "$APP_NAMESPACE" s3-prebackup "$prebackup_labels" "$s3_host" "$service_port"
 expect_probe closed "a Pod labelled as the PreBackupPod in $OTHER_NAMESPACE, to the S3 port" \
   "$OTHER_NAMESPACE" s3-prebackup-other-namespace "$prebackup_labels" "$s3_host" "$service_port"
+# The restore test's pod, which the Component labels where it adds the bucket steps: the same rule.
+restore_test_labels="$(yq '.patches[] | select(.target.kind == "CronJob") | .patch' "$bucket_component/kustomization.yaml" |
+  yq -o json -I0 '.[] | select(.op == "add" and .path == "/spec/jobTemplate/spec/template/metadata") | .value.labels')"
+[ -n "$restore_test_labels" ] || fail "the bucket Component gives the restore test's pod no label"
+expect_probe "$prebackup_verdict" "a Pod labelled as the restore test in $APP_NAMESPACE, to the S3 port" \
+  "$APP_NAMESPACE" s3-restore-test "$restore_test_labels" "$s3_host" "$service_port"
+expect_probe closed "a Pod labelled as the restore test in $OTHER_NAMESPACE, to the S3 port" \
+  "$OTHER_NAMESPACE" s3-restore-test-other-namespace "$restore_test_labels" "$s3_host" "$service_port"
 # The Component's endpoint, region, bucket and key, read from the owners the web's are read from.
 component_container="$(yq '.patches[] | select(.target.kind == "PreBackupPod") | .patch' "$bucket_component/kustomization.yaml" |
   yq '.[] | select(.op == "add" and .path == "/spec/pod/spec/containers/-") | .value')"
@@ -211,7 +219,7 @@ component_mount="$(VOLUME="$(yq '.name' <<<"$component_volume")" yq '.volumeMoun
   fail "the bucket Component's key file is not in the mount of its Secret"
 [ "$(yq '.secret.secretName' <<<"$component_volume")" = "$backup_secret" ] && [ "$(yq '.secret.items[0].key' <<<"$component_volume")" = "$credentials_key" ] ||
   fail "the bucket Component mounts another Secret or key than $backup_secret and the key $credentials_key the app's Secret holds"
-echo "the bucket Component's endpoint, region, bucket and key equal what the store's manifests and the app's Secret give; the PreBackupPod's pods reach the S3 port: $prebackup_verdict"
+echo "the bucket Component's endpoint, region, bucket and key equal what the store's manifests and the app's Secret give; the PreBackupPod's and the restore test's pods reach the S3 port: $prebackup_verdict"
 expect_probe closed "a Pod labelled as the web in $OTHER_NAMESPACE, to the S3 port" "$OTHER_NAMESPACE" s3-other-namespace "$web_labels" "$s3_host" "$service_port"
 expect_probe closed "a Pod labelled as the web in $APP_NAMESPACE, to the admin port" "$APP_NAMESPACE" admin-web "$web_labels" "$admin_host" 3903
 expect_probe closed "a Pod in $OTHER_NAMESPACE, to the admin port" "$OTHER_NAMESPACE" admin-other-namespace '{"cell": "object-store"}' "$admin_host" 3903
