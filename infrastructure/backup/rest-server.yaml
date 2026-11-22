@@ -134,7 +134,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [keycloak, litellm, skat, songmaker, presentator, personas]
+                values: [keycloak, litellm, skat, songmaker, presentator, personas, hopin]
       ports:
         - port: rest
           protocol: TCP

@@ -1,11 +1,16 @@
 # HopIn, pulled from its private package through the Secret ghcr-pull and started from the Secret hopin's files, both
-# from platform-secrets. A call's state lives in the one process's memory, so one pod runs and a deploy ends every
-# running call, as on hal.
+# from platform-secrets, on the Postgres of this namespace, which holds its accounts and sessions. A call's state lives
+# in the one process's memory, so one pod runs and a deploy ends every running call, as on hal. The init container
+# migrates the database to the image's head, which `hopin serve` demands at start; its first run may find Postgres not
+# ready yet, and the init container's backoff heals that.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: hopin
   namespace: hopin
+  annotations:
+    # A pool of 5 and an overflow of 5, which tests/postgres/connections_stay_within_max_connections.sh reads.
+    hallucinai.de/postgres-connections-per-pod: '10'
 spec:
   replicas: 1
   strategy:
@@ -28,9 +33,30 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: ghcr.io/overnightworks/hopin:2026.11.21.9@sha256:4e3978f0ca93134792cb9c71e64ab32da680aef204e6f346fcf2da285f7157c9
+          args: [hopin, migrate]
+          env:
+            # The URL names no password: the file below is the password's one owner, the namespace's Postgres.
+            - name: HOPIN_DATABASE_URL
+              value: postgresql://hopin@postgres:5432/hopin
+            - name: HOPIN_DATABASE_PASSWORD_FILE
+              value: /run/postgres/password
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: postgres-password
+              mountPath: /run/postgres
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: hopin
-          image: ghcr.io/overnightworks/hopin:2026.11.21.7@sha256:89763925cb8c7cc5ad06a8297a9938d0343f78f0f314e41f31a7351da64db519
+          image: ghcr.io/overnightworks/hopin:2026.11.21.9@sha256:4e3978f0ca93134792cb9c71e64ab32da680aef204e6f346fcf2da285f7157c9
           ports:
             - name: http
               containerPort: 8080
@@ -56,6 +82,10 @@ spec:
               value: /run/secrets/oidc_client_secret
             - name: HOPIN_PUBLIC_ORIGIN
               value: https://hopin.hallucinai.de
+            - name: HOPIN_DATABASE_URL
+              value: postgresql://hopin@postgres:5432/hopin
+            - name: HOPIN_DATABASE_PASSWORD_FILE
+              value: /run/postgres/password
             - name: HOPIN_REDIS_URL
               value: redis://redis:6379/0
             - name: HOPIN_SESSION_SECRET_FILE
@@ -114,6 +144,10 @@ spec:
             - name: secrets
               mountPath: /run/secrets
               readOnly: true
+            # Not under /run/secrets, which is the mount of the Secret hopin.
+            - name: postgres-password
+              mountPath: /run/postgres
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -121,6 +155,9 @@ spec:
         - name: secrets
           secret:
             secretName: hopin
+        - name: postgres-password
+          secret:
+            secretName: postgres
         - name: tmp
           emptyDir: {}
 ---
