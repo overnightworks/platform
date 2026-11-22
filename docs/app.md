@@ -88,7 +88,7 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
   cannot serve. Flux reports a layer Ready only once its pods are, so a check that passes too early hides a broken start.
 - **Connections.** A Deployment that opens its Postgres declares the connections one pod may hold: the pool and overflow
   variables its container sets (`DATABASE_POOL_SIZE` and `DATABASE_MAX_OVERFLOW`, counting one more for init-time
-  engines), or, where the app fixes them, the annotation `hallucinai.de/postgres-connections-per-pod`. The sum over the
+  engines), or, where the app or its vendor fixes them, the annotation `hallucinai.de/postgres-connections-per-pod`. The sum over the
   namespace's Deployments of their pods x that figure, plus the backup's dump, must stay within the base's
   `max_connections` less its reserved slots. A `Recreate` Deployment has its replicas. A `RollingUpdate` has 2 x
   replicas + surge pods, since a pod being stopped is no part of the surge and may hold its connections while the surge
@@ -107,7 +107,7 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 | Image form (listed vendor at a digest, or a full app ref) on every Pod create or change | admission policy `app-and-vendor-images` |
 | An app ref carries a provenance attestation signed by quality's release workflow for its own repository, on every Pod create or image change | Kyverno's policy `app-attestations`; platform's `cluster` job proves a refusal by server-side dry-run and every live app ref admitted |
 | Namespace enforces `restricted`; Deployment is `Recreate` or a `RollingUpdate` that never takes a pod away before its replacement is Ready, Available with all its replicas Ready, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
-| A Deployment's pods, with those still stopping in a rolling update, its surge and the backup, stay within its Postgres' `max_connections` | the `checks` job, by rendering the layers of hopin, songmaker and personas; skat and presentator, which also have a Postgres, are not in that check yet |
+| A Deployment's pods, with those still stopping in a rolling update, its surge and the backup, stay within its Postgres' `max_connections` | the `checks` job, by rendering the layers of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM |
 | A name a manifest under `apps/` hands under a `REALM_` key is a plain value, declared in `realm.yaml` as an object of that key's kind, and the layer's own app's or one of the fleet's two; no container there takes `envFrom` | the `checks` job, by rendering every layer under `apps/` that `clusters/pc/apps.yaml` names |
 | Every Service an Ingress routes to carries the same five sticky-cookie annotations | the `checks` job, by rendering every layer of `clusters/pc` |
 | A second request with the cookie reaches the same one of two pods, and the cookie is `Secure`, `HttpOnly` and host-only | the `cluster` job's part `core`, on a throwaway namespace |
