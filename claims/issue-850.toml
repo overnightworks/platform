@@ -1,8 +1,0 @@
-claim_id = "5921bb6fa5274775a8f2471ef158fd12"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "e1d7f90df74661ac2bc42143094c1d394dc5b8b5"
-branch = "claude/issue-850-gateway-probe-q18"
-scope = ["docs/operations.md", "mise.toml", "scripts/litellm_gateway_probe.sh", "tests/litellm"]
-opened_commit = "0effdf181f45b1738eb84f08a4112bbc1bf68e6d"
-whole_reason = "The probe's new question, its run-alone path, the fake gateway that proves both and the documents naming them change together, or the cell judges a probe that asks something else."
