@@ -1,8 +1,0 @@
-claim_id = "3ff561480d48416b8b73673160fe970b"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "2c1a77aa0d817d8ba078c5f57521920349c8da90"
-branch = "claude/issue-849-live-check-signs-in-to-hopin"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "docs/ARCHITECTURE.md", "docs/operations.md", "infrastructure/keycloak/realm.yaml", "mise.toml", "scripts", "tests/cutover/load_and_check_name_each_difference_and_print_no_value.sh", "tests/flux/parts.yaml", "tests/keycloak"]
-opened_commit = "1b858f4a75be4c8e3af18b4649d756857d947271"
-whole_reason = "One honest end-to-end proof of the sign-in tier: the realm entry, the shared form helpers, the command, its spec and its cells only prove together that a run leaves the person disabled."
