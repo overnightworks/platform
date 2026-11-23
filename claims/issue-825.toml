@@ -1,0 +1,8 @@
+claim_id = "8eb6c876071b4ac1814e2cacceef8912"
+agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
+role = "builder"
+base = "cddfca767df3e3b5a952fe3b2ae11cfea540d85f"
+branch = "claude/issue-825-realm-fleet-keys"
+scope = [".github/workflows/ci.yml", "apps/hopin/hopin.yaml", "apps/presentator/web.yaml", "apps/songmaker/web.yaml", "docs/app.md", "tests/flux/render_layer.sh", "tests/keycloak/handed_realm_names_are_declared.sh", "tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh"]
+opened_commit = "6b7165c4907e6adca3c6ecefa09112e093840fc5"
+whole_reason = "Two fleet keys land in three app manifests, the app standard and the one check that judges them together, or the check judges keys no manifest hands."
