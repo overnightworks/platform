@@ -1,8 +1,0 @@
-claim_id = "fd539ff75b7f4ef995fd22667de892e2"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "e1d7f90df74661ac2bc42143094c1d394dc5b8b5"
-branch = "claude/issue-876-release-bump-guard"
-scope = [".github/workflows/ci.yml", "docs/ARCHITECTURE.md", "quality/config.toml", "scripts/release_bump_compute.sh", "scripts/release_bump_patterns.sh", "scripts/release_bump_scope.sh", "tests/flux/parts.yaml", "tests/release_bump"]
-opened_commit = "11c9cc49e0ea2429c408d751dd3f85079db345ee"
-whole_reason = "The guard's job, its base-run script, its mandatory entry and its cells only work together: a job without the entry protects nothing, and an entry without the YAML's bump test turns every pull request red."
