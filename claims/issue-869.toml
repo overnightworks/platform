@@ -1,8 +1,0 @@
-claim_id = "8f09eafa54d64e94990b111dbdb46387"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "47ecf1e3e126040eb267c5ba1133840fe143096a"
-branch = "claude/issue-869-gatus-push-token"
-scope = [".github/workflows/ci.yml", "clusters/pc/infrastructure.yaml", "docs/ARCHITECTURE.md", "infrastructure/gatus", "infrastructure/namespaces/namespaces.yaml", "tests/gatus", "tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh"]
-opened_commit = "24445bd376d7c8507fc67df649ddd962763df6cb"
-whole_reason = "The Namespace move, the dependency on platform-secrets, the Deployment's Secret reference and CI's dummy only work together: any one alone leaves Gatus unscheduled or its Namespace pruned."
