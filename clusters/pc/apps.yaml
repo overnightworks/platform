@@ -38,6 +38,7 @@ spec:
   dependsOn:
     - name: platform-secrets
     - name: admission
+    - name: app-attestations
   interval: 10m0s
   retryInterval: 2m0s
   path: ./apps/hopin/pull
