@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # handed_realm_names_are_declared.sh <realm file>: holds every name that a manifest under apps/ hands to an app under a
-# REALM_ key to docs/app.md's scheme. The layers are the Kustomizations of clusters/pc/apps.yaml whose path lies under
-# ./apps, each rendered by tests/flux/render_layer.sh as Flux renders it. Every container of every Pod template, in both
-# lists, must take no envFrom and hand each REALM_ key as a plain, non-empty value that the realm file declares as an
-# object of the key's kind and that is its layer's own app's, or one of the fleet's two. A Kustomization that patches,
+# REALM_ key to docs/app.md's scheme. The layers are the Kustomizations of clusters/pc/*.yaml with source flux-system
+# whose path lies under apps, each rendered by tests/flux/render_layer.sh as Flux renders it; a path not of the form
+# ./apps/<dir>[/<dir>...] is a problem. Every container of every Pod template, in both lists, must take no envFrom and
+# hand each REALM_ key as a plain, non-empty value that the realm file declares as an object of the key's kind and that
+# is its layer's own app's, or one of the fleet's. A container that hands any REALM_ key hands every key the realm file
+# demands of its app (its client, its groups and its mcp scope), and an app with such objects whose layers hand none is
+# a problem; the fleet's keys are judged when handed and never demanded. A layer that does not render is a problem with
+# the render's reason, and the other layers are judged. A Kustomization that patches,
 # substitutes, rewrites images, adds components or sets a namespace or name prefix is refused, since its render would
 # differ from what Flux applies. The judgement, judge_layers, takes the repository root, which holds the layers and
 # clusters/pc/apps.yaml, so the mutants below can judge a throwaway root. It then judges changed inputs and fails unless
@@ -31,14 +35,26 @@ realm_facts() {
     '{group: $group, scope: $scope, client: $client}'
 }
 
-# The seven keys, the kind of realm object each names and the value it takes for app $app.
+# The keys, the kind of realm object each names and the value it takes for app $app, and the keys the realm file
+# demands of app $app: the seven of the app's own objects, never the fleet's AI group and speech scope.
 # shellcheck disable=SC2016 # jq's variables
-judgement='
+key_definitions='
   def kind: {REALM_CLIENT_ID: "client", REALM_LOGIN_GROUP: "group", REALM_ADMIN_GROUP: "group", REALM_MCP_GROUP: "group",
-             REALM_MCP_SCOPE: "scope", REALM_AGENT_GROUP: "group", REALM_MCP_CLIENT_ID: "client"};
+             REALM_MCP_SCOPE: "scope", REALM_AGENT_GROUP: "group", REALM_MCP_CLIENT_ID: "client",
+             REALM_AI_GROUP: "group", REALM_SPEECH_SCOPE: "scope"};
   def own: {REALM_CLIENT_ID: $app, REALM_LOGIN_GROUP: "/apps/\($app)", REALM_ADMIN_GROUP: "/apps/\($app)/admin",
             REALM_MCP_GROUP: "/apps/\($app)/mcp", REALM_MCP_SCOPE: "mcp-\($app)", REALM_AGENT_GROUP: "/agents",
-            REALM_MCP_CLIENT_ID: "agents"};
+            REALM_MCP_CLIENT_ID: "agents", REALM_AI_GROUP: "/services/litellm", REALM_SPEECH_SCOPE: "speech-service-audience"};
+  def declared($kind; $name): $facts[$kind] | any(. == $name);
+  def demanded: [
+    (select(declared("client"; $app)) | "REALM_CLIENT_ID"),
+    (select(declared("group"; "/apps/\($app)")) | "REALM_LOGIN_GROUP"),
+    (select(declared("group"; "/apps/\($app)/admin")) | "REALM_ADMIN_GROUP"),
+    (select(declared("group"; "/apps/\($app)/mcp")) | "REALM_MCP_GROUP"),
+    (select(declared("scope"; "mcp-\($app)")) | "REALM_MCP_SCOPE", "REALM_AGENT_GROUP", "REALM_MCP_CLIENT_ID")];
+'
+# shellcheck disable=SC2016 # jq's variables
+judgement="$key_definitions"'
   def entry_problems($container):
     .name as $key | .value as $value
     | "problem: \($layer): container \($container.name): \($key)=\($value // "")" as $where
@@ -51,23 +67,35 @@ judgement='
       end;
   [.[] | .. | objects | (.containers?, .initContainers?) | arrays | .[]] as $containers
   | ($containers[] | . as $container
+     | [($container.env // [])[] | select(.name | startswith("REALM_"))] as $handed
      | (if has("envFrom") then "problem: \($layer): container \($container.name) takes envFrom, whose keys the check cannot see" else empty end),
-       (($container.env // [])[] | select(.name | startswith("REALM_")) | entry_problems($container))),
-    "\($layer): \($containers | length) containers hand \([$containers[] | (.env // [])[] | select(.name | startswith("REALM_"))] | length) REALM_ values"
+       ($handed[] | entry_problems($container)),
+       (if $handed | length > 0 then (null | demanded[]) as $key
+          | select($handed | any(.name == $key) | not)
+          | "problem: \($layer): container \($container.name) does not hand \($key), which the realm file declares for \($app)" else empty end)),
+    ([$containers[] | (.env // [])[] | select(.name | startswith("REALM_"))] | length) as $count
+    | "\($count)\t\($layer): \($containers | length) containers hand \($count) REALM_ values"
 '
 
-# judge_render <app> <layer> <rendered YAML file> <facts>: the problem lines of one layer's render, and a line counting what it judged.
+# judge_render <app> <layer> <rendered YAML file> <facts>: the problem lines of one layer's render, and a last line that holds the count of REALM_ values it judged, a tab, and a summary.
 judge_render() {
   yq --output-format json --indent 0 '.' "$3" |
     jq --slurp --raw-output --arg app "$1" --arg layer "$2" --argjson facts "$4" "$judgement"
 }
 
-# judge_layers <repository root> <realm file>: the problem lines of every layer of <root>/clusters/pc/apps.yaml under ./apps.
+# judge_layers <repository root> <realm file>: the problem lines of every layer under apps/ of <root>/clusters/pc/*.yaml
+# whose source is flux-system, and of every app with realm objects whose layers hand no REALM_ key.
 judge_layers() {
-  local root="$1" facts layer path forbidden directory nested status rendered="$work/layer.yaml"
+  local root="$1" facts layer path forbidden directory nested status app judged rendered="$work/layer.yaml"
+  local -A handed=() unjudged=()
   facts="$(realm_facts "$2")"
   while read -r layer path forbidden; do
     [ -z "$forbidden" ] || echo "problem: $layer carries $forbidden, which makes Flux's render differ from the layer's directory"
+    [[ "$path" =~ ^\./apps/[^/]+(/[^/]+)*$ ]] || {
+      echo "problem: $layer has the path $path, which is not of the form ./apps/<dir>[/<dir>...]"
+      continue
+    }
+    app="$(cut -d/ -f3 <<<"$path")"
     directory="$root/${path#./}"
     status=0
     nested="$(render_layer "$directory" "$rendered")" || status=$?
@@ -75,13 +103,27 @@ judge_layers() {
       0) ;;
       2)
         echo "problem: $layer has no kustomization, and Flux renders its subdirectory $nested as a resource of its own"
+        unjudged[$app]=1
         continue ;;
-      *) fail "$layer ($path) does not render" ;;
+      *)
+        echo "problem: $layer does not render: $nested"
+        unjudged[$app]=1
+        continue ;;
     esac
-    judge_render "$(cut -d/ -f3 <<<"$path")" "$layer" "$rendered" "$facts"
-  done < <(yq --no-doc 'select(.kind == "Kustomization") | select(.spec.path | test("^[.]/apps/"))
+    judged="$(judge_render "$app" "$layer" "$rendered" "$facts")"
+    echo "$judged"
+    judged="${judged##*$'\n'}"
+    judged="${judged%%$'\t'*}"
+    handed[$app]=$(( ${handed[$app]:-0} + ${judged:?judge_render printed no count} ))
+  done < <(yq --no-doc 'select(.kind == "Kustomization") | select(.spec.sourceRef.name == "flux-system")
+    | select((.spec.path // "") | test("^([.]/)?apps(/|$)"))
     | .metadata.name + " " + .spec.path + " " + ([.spec | keys | .[] | select(. == "patches" or . == "postBuild" or . == "images"
-      or . == "components" or . == "targetNamespace" or . == "namePrefix")] | join(","))' "$root/clusters/pc/apps.yaml")
+      or . == "components" or . == "targetNamespace" or . == "namePrefix")] | join(","))' "$root"/clusters/pc/*.yaml)
+  for app in "${!handed[@]}"; do
+    [ "${handed[$app]}" -eq 0 ] && [ -z "${unjudged[$app]:-}" ] || continue
+    jq --null-input --raw-output --arg app "$app" --argjson facts "$facts" "$key_definitions"'
+      if demanded | length > 0 then "problem: \($app) has realm objects (\(demanded | join(", "))), and its layers hand no REALM_ key" else empty end'
+  done
 }
 
 problems="$(judge_layers "$repository_root" "$realm_file")"
@@ -114,6 +156,11 @@ mutant "$(by_no REALM_MCP_CLIENT_ID nothing client)" "$(value_of REALM_MCP_CLIEN
 for group in /hopin/mcp mcp /apps/hopin/mc /apps/hopin/mcp/x; do
   mutant "$(by_no REALM_MCP_GROUP "$group" group)" "$(value_of REALM_MCP_GROUP "$group")"
 done
+mutant "$(by_no REALM_AI_GROUP /services/nothing group)" "$(value_of REALM_AI_GROUP /services/nothing)"
+mutant "REALM_AI_GROUP=/apps/hopin/mcp is not the app's own" "$(value_of REALM_AI_GROUP /apps/hopin/mcp)"
+mutant "REALM_SPEECH_SCOPE=mcp-hopin is not the app's own" "$(value_of REALM_SPEECH_SCOPE mcp-hopin)"
+mutant "container hopin does not hand REALM_MCP_GROUP, which the realm file declares for hopin" \
+  "del($(env_of REALM_MCP_GROUP))"
 mutant "REALM_AGENT_GRUP=/agents is no key of the set" "($(env_of REALM_AGENT_GROUP) | .name) = \"REALM_AGENT_GRUP\""
 mutant "REALM_MCP_SCOPE= comes from valueFrom" \
   "($(env_of REALM_MCP_SCOPE)) = {\"name\": \"REALM_MCP_SCOPE\", \"valueFrom\": {\"secretKeyRef\": {\"name\": \"hopin\", \"key\": \"scope\"}}}"
@@ -130,6 +177,11 @@ yq 'del(.groups[] | select(.name == "apps") | .subGroups[] | select(.name == "ho
 expect_problem "$(by_no REALM_MCP_GROUP /apps/hopin/mcp group)" "the realm file without /apps/hopin/mcp" \
   judge_render hopin ./apps/hopin "$hopin" "$(realm_facts "$work/realm.yaml")"
 
+yq '(.groups[] | select(.name == "apps") | .subGroups[] | select(.name == "skat") | .subGroups) += [{"name": "admin"}]' \
+  "$realm_file" >"$work/realm.yaml"
+expect_problem "container skat does not hand REALM_ADMIN_GROUP, which the realm file declares for skat" "the realm file with /apps/skat/admin" \
+  judge_render skat ./apps/skat "$skat" "$(realm_facts "$work/realm.yaml")"
+
 # A throwaway root with a layer that has no kustomization.yaml, which Flux renders from its files.
 throwaway="$work/root"
 mkdir -p "$throwaway/clusters/pc" "$throwaway/apps/throwaway"
@@ -140,6 +192,9 @@ metadata:
   name: throwaway
 spec:
   path: ./apps/throwaway
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
 YAML
 cat >"$throwaway/apps/throwaway/cronjob.yaml" <<'YAML'
 apiVersion: batch/v1
@@ -183,10 +238,25 @@ expect_problem "Flux renders its subdirectory $throwaway/apps/throwaway/nested a
   judge_layers "$throwaway" "$realm_file"
 rm -r "$throwaway/apps/throwaway/nested" "$throwaway/apps/throwaway/cronjob.yaml" "$throwaway/apps/throwaway/pod.yml"
 
+# An app with a realm client whose layer hands no key, and a layer that names a missing resource.
+yq '.clients += [{"clientId": "throwaway"}]' "$realm_file" >"$work/realm.yaml"
+expect_problem "throwaway has realm objects (REALM_CLIENT_ID), and its layers hand no REALM_ key" "a realm client of an app whose layer hands no key" \
+  judge_layers "$throwaway" "$work/realm.yaml"
+printf 'resources:\n  - missing.yaml\n' >"$throwaway/apps/throwaway/kustomization.yaml"
+expect_problem "missing.yaml" "a layer naming a missing resource" judge_layers "$throwaway" "$realm_file"
+rm "$throwaway/apps/throwaway/kustomization.yaml"
+
+# A Kustomization of the cluster whose apps path the check would skip.
+for skipped in ./apps ./apps/ ./apps/throwaway/ apps/throwaway ./apps//throwaway; do
+  SKIPPED="$skipped" yq '.metadata.name = "skipped" | .spec.path = strenv(SKIPPED)' "$throwaway/clusters/pc/apps.yaml" >"$throwaway/clusters/pc/skipped.yaml"
+  expect_problem "skipped has the path $skipped, which is not of the form ./apps/<dir>[/<dir>...]" "the apps path $skipped" judge_layers "$throwaway" "$realm_file"
+done
+rm "$throwaway/clusters/pc/skipped.yaml"
+
 # A Kustomization of apps/ that changes what Flux applies.
 for field in patches postBuild images components targetNamespace namePrefix; do
   FIELD="$field" yq --inplace '.spec[strenv(FIELD)] = "x"' "$throwaway/clusters/pc/apps.yaml"
   expect_problem "throwaway carries $field" "a Kustomization of apps/ with $field" judge_layers "$throwaway" "$realm_file"
   FIELD="$field" yq --inplace 'del(.spec[strenv(FIELD)])' "$throwaway/clusters/pc/apps.yaml"
 done
-echo "every handed realm name is declared, is its app's own or the fleet's, and every mutant is red"
+echo "every handed realm name is declared, is its app's own or the fleet's, every demanded key is handed, and every mutant is red"
