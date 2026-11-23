@@ -167,8 +167,10 @@ monthly check; `backup:now` takes one backup and proves it with the restore test
 - The root Kustomization health-checks only its controllers and source, so a failing layer reports itself and the
   root keeps applying the rest.
 - A Namespace with Secrets carries `prune: disabled`: neither a prune nor a revert may delete it with its Secrets. One
-  removed from Git leaves only after its Secrets left `platform-secrets`. Prometheus' Namespace stands there too,
-  since a Namespace never moves between Kustomizations.
+  removed from Git leaves only after its Secrets left `platform-secrets`. Prometheus' Namespace stands there too.
+  A Namespace moves between Kustomizations in one commit: `infrastructure/namespaces` takes it with the prune
+  annotation first, and the layer that drops it prunes nothing, since the annotation is already on the live object
+  (Gatus moved this way).
 - k8up skips Snapshot objects, which would record the repository URL with its password, and backs up only a claim with
   its annotation. A namespace that joins the backup joins its component, its `rest-users` entry and the rest-server's
   NetworkPolicy, and the rest-server needs `kubectl -n backup rollout restart deployment/rest-server`, since it builds
