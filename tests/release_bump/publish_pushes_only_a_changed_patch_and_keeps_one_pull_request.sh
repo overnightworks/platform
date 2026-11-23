@@ -44,6 +44,13 @@ log="$(bump)" || fail "the newer bump failed: ${log}"
 grep -q 'pr edit 1 --title hopin runs release 2026.11.25.1' "${work}/gh-calls" || fail "a newer release did not edit the pull request"
 echo "a newer release moves the branch and edits the one pull request"
 
+# Main runs the older release a caller names: the open pull request proposes a newer one and stays.
+tip="$(branch_tip)"
+log="$(bump "${main_version}")" || fail "the bump of the release main runs failed: ${log}"
+[ "$(calls "${work}/gh-calls" 'pr close')" -eq 0 ] && [ -e "${gh_state}/open" ] && [ "$(branch_tip)" = "${tip}" ] ||
+  fail "a pull request that proposes a newer release than main runs was closed: ${log}"
+echo "a pull request that proposes a newer release stays open"
+
 # main changes the line below the Component's tag and digest, so the branch conflicts with it while its own patch stays.
 tip="$(branch_tip)"
 clone_main "${work}/mover"

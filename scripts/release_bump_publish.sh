@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Publish what scripts/release_bump_compute.sh wrote for one app, with git and gh only: for a bump, push release/<app>
-# only when its patch differs from the open branch's or that branch conflicts with main, then open or edit the branch's
-# one pull request; for an outcome current, close the open pull request, since main runs the release or a newer one;
-# for waiting, change nothing. Run it in a checkout of platform whose origin is platform on GitHub, with the
-# credential of the caller.
+# Publish what scripts/release_bump_compute.sh wrote for one app, with git, gh and yq only: for a bump, push
+# release/<app> only when its patch differs from the open branch's or that branch conflicts with main, then open or edit
+# the branch's one pull request; for an outcome current, close the open pull request when main runs the release the
+# branch proposes or a newer one, and leave one that proposes a newer release open; for waiting, change nothing. Run it
+# in a checkout of platform whose origin is platform on GitHub, with the credential of the caller.
 # Usage: scripts/release_bump_publish.sh <app> <output directory of the compute step>
 set -Eeuo pipefail
 trap 'echo "release_bump_publish: line ${LINENO} failed: ${BASH_COMMAND}" >&2; exit 2' ERR
@@ -15,20 +15,7 @@ branch="release/${app}"
 outcome="$(cat "${output}/outcome")"
 
 [ "${outcome}" != waiting ] || { echo "release_bump: ${app}: the release is not finished, so nothing changes"; exit 0; }
-
-number="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number // empty')"
-
-if [ "${outcome}" = current ]; then
-  if [ -n "${number}" ]; then
-    gh pr close "${number}" --delete-branch \
-      --comment "main runs release $(cat "${output}/version"), so this pull request is overtaken."
-    echo "release_bump: ${app}: closed pull request ${number}, since main runs the release"
-  else
-    echo "release_bump: ${app}: main runs the release and no pull request is open"
-  fi
-  exit 0
-fi
-[ "${outcome}" = bump ] || { echo "release_bump_publish: the outcome '${outcome}' is unknown" >&2; exit 2; }
+[ "${outcome}" = bump ] || [ "${outcome}" = current ] || { echo "release_bump_publish: the outcome '${outcome}' is unknown" >&2; exit 2; }
 
 workspace="$(mktemp -d)"
 candidate_tree="${workspace}/candidate"
@@ -53,6 +40,26 @@ case "${listing}" in
   2) ;; # no such branch
   *) echo "release_bump_publish: listing ${branch} of origin failed" >&2; exit 2 ;;
 esac
+
+number="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number // empty')"
+
+if [ "${outcome}" = current ]; then
+  main_version="$(cat "${output}/version")"
+  if [ -z "${number}" ]; then
+    echo "release_bump: ${app}: main runs the release and no pull request is open"
+    exit 0
+  fi
+  # Main runs the release the caller named, which may be older than the one the open branch proposes.
+  git show "${remote_tip}:apps/${app}/release/kustomization.yaml" >"${workspace}/proposed.yaml"
+  proposed_version="$("$(dirname "${BASH_SOURCE[0]}")/release_bump_component_version.sh" "${workspace}/proposed.yaml")"
+  if [ "$(printf '%s\n%s\n' "${proposed_version}" "${main_version}" | sort -V | tail -1)" != "${main_version}" ]; then
+    echo "release_bump: ${app}: pull request ${number} proposes ${proposed_version}, newer than ${main_version} which main runs, so it stays open"
+    exit 0
+  fi
+  gh pr close "${number}" --delete-branch --comment "main runs release ${main_version}, so this pull request is overtaken."
+  echo "release_bump: ${app}: closed pull request ${number}, since main runs the release"
+  exit 0
+fi
 
 git worktree add --quiet --detach "${candidate_tree}" origin/main
 git -C "${candidate_tree}" apply --index "${output}/patch"
