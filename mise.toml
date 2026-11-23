@@ -619,6 +619,23 @@ zone="$(yq 'select(.kind == "Ingress") | .spec.rules[0].host' infrastructure/leg
 exec uv run --project src/legal --locked --no-dev --no-sync python -P -m platform_legal.build "$zone"
 '''
 
+[tasks."release:bump"]
+description = "Compute an app's release bump and publish release/<app> with its pull request: release:bump <app> [version]; run in a checkout of platform whose gh login holds repo access and read:packages"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || { echo "release:bump: usage: mise run release:bump <app> [version]" >&2; exit 2; }
+# The registry login lives only in this directory, which goes with the run and never reaches ~/.docker/config.json.
+workspace="$(mktemp -d)"
+trap 'rm -rf "$workspace"' EXIT
+trap 'exit 130' INT TERM
+export DOCKER_CONFIG="$workspace/docker"
+mkdir -m 700 "$DOCKER_CONFIG"
+gh auth token | docker login ghcr.io --username "$(gh api user --jq .login)" --password-stdin >/dev/null
+scripts/release_bump_compute.sh "$1" "$workspace/output" ${2:+"$2"}
+scripts/release_bump_publish.sh "$1" "$workspace/output"
+'''
+
 [tasks.bootstrap]
 description = "The PC's own steps after the declarative parts: the commit hook, then k3s, then Flux, then its access to platform-secrets"
 run = [{ task = "bootstrap:hook" }, { task = "bootstrap:k3s" }, { task = "bootstrap:flux" }, { task = "bootstrap:secrets" }]

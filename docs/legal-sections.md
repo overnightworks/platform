@@ -16,10 +16,10 @@ Each is a regular file: a link or a directory in its place is refused, and so is
 
 An app's files are copied byte for byte into platform's `infrastructure/legal/app-texts/<key>/`, with their `date` (the
 commit date of the file at the release) and `sha256` in `infrastructure/legal/app-texts.toml`. The release is the
-version of the app's image under `apps/<key>`, as the tag `v<version>`; an app with no image there names its `tag` in
-the list. After a release that changes a legal file, platform's pull request that bumps the image refreshes the copy
-and its entry; CI names the file and the new sha256 when it does not. A release that leaves the text alone needs no
-edit. An app joins the pages by being listed, so skat is added with its go-live. A page prints the latest date of its
+version of the app's Component `apps/<key>/release`, as the tag `v<version>`. `mise run release:bump <key>` writes
+the copies and their entries (`scripts/release_bump_legal.sh`) with the pull request that bumps the image; CI
+regenerates them at the Component's version and names a difference. A release that leaves the text alone changes
+nothing there. An app joins the pages by being listed, so skat is added with its go-live. A page prints the latest date of its
 own sections and app texts as `Stand`.
 
 ## Format

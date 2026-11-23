@@ -139,6 +139,15 @@ jobs:
       - name: Check that the app texts under infrastructure/legal equal their apps' files and dates at the release each names
         run: mise exec -- tests/legal/app_texts_equal_their_release.sh
 
+      - name: Check that release:bump turns the newest app release into its Component, legal copies and rebuilt pages, treats the release main runs as a no-op, refuses an older version, an unknown name and a changed page set, fails without a patch when a legal step fails, and waits for an unfinished release
+        run: mise exec -- tests/release_bump/compute_writes_the_release_tree_and_stops_where_it_cannot_settle.sh
+
+      - name: Check that release:bump pushes release/<app> only when its patch differs or conflicts with main, keeps one pull request, closes it once main runs the release and calls nothing for an unfinished one
+        run: mise exec -- tests/release_bump/publish_pushes_only_a_changed_patch_and_keeps_one_pull_request.sh
+
+      - name: Check that mise run release:bump logs in to the registry under a temporary configuration, hands the token only through stdin and pushes nothing when repeated
+        run: mise exec -- tests/release_bump/the_command_logs_in_under_a_temporary_config_and_leaves_no_token.sh
+
       - name: Check that the design kit under infrastructure/design equals its release wheel and holds nothing else, and that infrastructure/legal/assets holds nothing else than legal-2.css
         run: tests/legal/design_assets_equal_their_release_wheel.sh
 
