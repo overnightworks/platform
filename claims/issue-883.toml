@@ -1,0 +1,8 @@
+claim_id = "8656a34e47af4e749e484e65aa98c66f"
+agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
+role = "builder"
+base = "cddfca767df3e3b5a952fe3b2ae11cfea540d85f"
+branch = "claude/issue-883-main-update-rule"
+scope = ["docs/github-settings.md", "src/opentofu/github"]
+opened_commit = "85d137535ef8870c3ad1de6205119b930c6e086b"
+whole_reason = "The ruleset, its guarding test, GH-1 and the comment that names the exempt actor change together, or the test refuses the ruleset the root declares."
