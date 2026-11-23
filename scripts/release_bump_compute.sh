@@ -67,11 +67,11 @@ tags="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "${url}" 'refs/tags/v*')"
 if [ -n "${requested}" ]; then
   version="${requested}"
 else
-  version="$(sed -nE "s|^.*refs/tags/v(${version_pattern})\$|\1|p" <<<"${tags}" | sort -V | tail -1)"
+  version="$(sed -nE "s|^.*refs/tags/v(${version_pattern})\$|\1|p" <<<"${tags}" | "${scripts_directory}/release_bump_newest.sh")"
   [ -n "${version}" ] || { echo "release_bump: ${app}: ${url} has no release tag yet, so it waits"; finish waiting; }
 fi
 
-newest="$(printf '%s\n%s\n' "${current}" "${version}" | sort -V | tail -1)"
+newest="$(printf '%s\n%s\n' "${current}" "${version}" | "${scripts_directory}/release_bump_newest.sh")"
 [ "${newest}" = "${version}" ] || refuse "the release ${version} is older than ${current}, which main runs"
 [ "${version}" != "${current}" ] || finish current
 if ! grep -qE "refs/tags/v${version//./\\.}\$" <<<"${tags}"; then

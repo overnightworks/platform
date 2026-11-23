@@ -52,8 +52,9 @@ if [ "${outcome}" = current ]; then
   fi
   # Main runs the release the caller named, which may be older than the one the open branch proposes.
   git show "${remote_tip}:apps/${app}/release/kustomization.yaml" >"${workspace}/proposed.yaml"
-  proposed_version="$("$(dirname "${BASH_SOURCE[0]}")/release_bump_component_version.sh" "${workspace}/proposed.yaml")"
-  if [ "$(printf '%s\n%s\n' "${proposed_version}" "${main_version}" | sort -V | tail -1)" != "${main_version}" ]; then
+  scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  proposed_version="$("${scripts_directory}/release_bump_component_version.sh" "${workspace}/proposed.yaml")"
+  if [ "$(printf '%s\n%s\n' "${proposed_version}" "${main_version}" | "${scripts_directory}/release_bump_newest.sh")" != "${main_version}" ]; then
     echo "release_bump: ${app}: pull request ${number} proposes ${proposed_version}, newer than ${main_version} which main runs, so it stays open"
     exit 0
   fi
