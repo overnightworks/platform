@@ -173,33 +173,42 @@ completes it. (OPS-16)
 ## The live check (`scripts/live_check.sh`)
 
 `mise run live:check <app>` checks that a person can sign in to the app on the live stack, through one test person that
-`infrastructure/keycloak/realm.yaml` declares disabled, in `/apps/hopin` only and with no credential, and that no
-other part of the platform uses. Today the app is hopin. The command runs on the operator's PC, never from CI, since CI
-holds no route and no kubeconfig to the PC's API server; CI proves it against a fake `kubectl` and a fake `curl`
-(`tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh`) and the realm entry and Keycloak's form step on
-k3d. Hopin's own routes are proven only by a live run.
+`infrastructure/keycloak/realm.yaml` declares disabled, in `/apps/hopin`, `/apps/presentator`, `/apps/skat` and
+`/apps/songmaker` only and with no credential, and that no other part of the platform uses. The apps are hopin, skat,
+presentator and songmaker, the table in `scripts/live_check.sh`. The command runs on the operator's PC, never from CI,
+since CI holds no route and no kubeconfig to the PC's API server; CI proves it against a fake `kubectl` and a fake
+`curl` (`tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh`) and the realm entry and Keycloak's form
+step on k3d. Each app's own routes are proven only by a live run.
 
 The command keeps the test password from cooperative agents only; the boundary that stops a non-cooperative one is the
 operator's account on the PC: every agent inside it already administers Keycloak, so the password adds no reach it
 lacks, and the password never leaves it. (OPS-18)
 
-One run at a time: a second is refused before it reads or writes anything. A run clears the person's failed
-sign-ins, enables it with no required action in one write (config-cli's first create adds the realm's default action,
+One run at a time: a second is refused before it reads or writes anything, as is a missing or unknown app, which prints
+the usage and the table's app names. A run refuses, with no write, a person whose live groups differ from the file's
+(for example after `keycloak:agent-owner` added it to `/agent-owners`, or before config-cli applied a landing), naming
+the remedy: wait for the apply, or remove the membership the file does not declare. Otherwise it clears the person's
+failed sign-ins, enables it with no required action in one write (config-cli's first create adds the realm's default action,
 which this write clears), sets a random hex password through kcadm on stdin and signs in without a browser through the
 app's start route, Keycloak's form (the password on curl's stdin, a URL that carries a code in a curl option file), the
 callback and the account route, which must answer 200. The password lives in the command's memory only: no file,
 argument, environment or output holds it, and no output holds a cookie, a code or a page. (OPS-19)
 
-On every exit it can trap (success, error, TERM, INT) one EXIT trap signs out at the app (its sign-out route with the
-app's `Origin`, read back by the account route answering 401), ends the person's Keycloak sessions, deletes every
+On every exit it can trap (success, error, TERM, INT) one EXIT trap signs out at every app whose cookie jar exists (the
+app's own sign-out route with its `Origin`, read back by its account route answering 401; skat too, through its own
+`POST /logout`), ends the person's Keycloak sessions, deletes every
 password credential, disables the person, reads each back, deletes the cookie jar and removes kcadm's sign-in file
 last; each step runs whatever an earlier one did, and signs kcadm in again when its file is gone. A step that fails
 makes the run exit 1 and names what may remain. An exit it cannot trap (SIGKILL, the cap's kill, power loss) leaves the
-person enabled with a credential, its sessions and the 0600 cookie jar in `$XDG_RUNTIME_DIR/live-check`, which the next
-run finds first and cleans the same way, and kcadm's sign-in file in Keycloak's container, which no later run learns and
+person enabled with a credential, its sessions and the 0600 cookie jar `cookies-<app>` in `$XDG_RUNTIME_DIR/live-check`,
+which the next run, for any app, finds first and cleans the same way, signing out at that app with the codes of the
+result line carrying its name (`skat-sign-out=… skat-account-after=…`), and kcadm's sign-in file in Keycloak's container, which no later run learns and
 which stays until Keycloak's pod restarts, all inside that boundary; the password died with the process. The run exits 0
 when green, 1 when red and 3 when skipped, which is the app's Deployment not being Available, after the cleanup and with
 no other write. (OPS-20)
 
-A realm apply during a run disables the person and a hopin rollout ends its session, so that run is red and a rerun is
-green. The test person's account row in hopin's database is its own data and stays. (OPS-21)
+A realm apply during a run disables the person and a rollout of the app ends its session, so that run is red and a rerun
+is green; a rollout before the run makes it skipped. A sign-out that fails, or a lost jar (power loss, a reboot, a cleared
+runtime directory) when Keycloak's back-channel finds no pod either (skat and songmaker roll out by `Recreate`), leaves
+the person's session row in that app until its own session lifetime; the person has no credential by then. The test
+person's account row in each app's database is that app's own data and stays. (OPS-21)
