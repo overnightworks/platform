@@ -1,0 +1,8 @@
+claim_id = "455ee480fa0047d88804bae2cea719cc"
+agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
+role = "builder"
+base = "3390cf3f80edf1399dde73ff0542b7bf114ae314"
+branch = "claude/issue-861-live-check-three-apps"
+scope = ["docs/ARCHITECTURE.md", "docs/app.md", "docs/operations.md", "infrastructure/keycloak/realm.yaml", "mise.toml", "scripts/keycloak_kcadm.sh", "scripts/live_check.sh", "tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh"]
+opened_commit = "52dd31da36eae95f29ddc20ea4e8974b076ef5bf"
+whole_reason = "One proof of three more sign-in rows: the realm groups, the per-app rows and jars, skat's sign-out, the specs and the cell only prove together that each run leaves the person disabled and signed out of every app it touched."
