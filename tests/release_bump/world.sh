@@ -15,7 +15,7 @@ checkout="${work}/checkout"
 app_repository="${work}/app-hopin"
 registry="${work}/registry"
 gh_state="${work}/gh-state"
-mkdir -p "${work}/bin" "${work}/remote/overnightworks" "${work}/gh-config" "${work}/docker-config" "${registry}" "${gh_state}"
+mkdir -p "${work}/bin" "${work}/denied" "${work}/remote/overnightworks" "${work}/gh-config" "${work}/docker-config" "${registry}" "${gh_state}"
 : >"${work}/gh-calls"
 : >"${work}/docker-calls"
 
@@ -25,13 +25,13 @@ unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.file://${work}/remote/.insteadOf" GIT_CONFIG_VALUE_0=https://github.com/
 export FAKE_REGISTRY="${registry}" FAKE_GH_STATE="${gh_state}" FAKE_GH_CALLS="${work}/gh-calls" FAKE_DOCKER_CALLS="${work}/docker-calls"
-export PATH="${work}/bin:${PATH}"
+export PATH="${work}/bin:${work}/denied:${PATH}"
 
-# Each tool that reaches a network past git's rewritten remotes is denied first and only docker and gh are then replaced
-# by their fakes, so a removed fake leaves the denial and never the caller's real tool.
+# Each tool that reaches a network past git's rewritten remotes is denied in a directory that follows the fakes' on PATH
+# and precedes the caller's own tools, so a removed fake leaves the denial and never the caller's real tool.
 for denied in docker gh curl wget ssh; do
-  printf '#!/usr/bin/env bash\necho "the fixture world denies %s: $*" >&2\nexit 98\n' "${denied}" >"${work}/bin/${denied}"
-  chmod +x "${work}/bin/${denied}"
+  printf '#!/usr/bin/env bash\necho "the fixture world denies %s: $*" >&2\nexit 98\n' "${denied}" >"${work}/denied/${denied}"
+  chmod +x "${work}/denied/${denied}"
 done
 # docker answers only `buildx imagetools inspect <ref> --format ...` from the fixture registry, one file per ref holding
 # its digest, and `login`, whose password it reads from stdin and never records.
