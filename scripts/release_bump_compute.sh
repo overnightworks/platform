@@ -32,6 +32,7 @@ finish() { # finish <outcome>
 [[ ${app} =~ ^[a-z][a-z0-9-]*$ ]] || { echo "release_bump_compute: ${app} is no app name" >&2; exit 2; }
 [ -z "${requested}" ] || [[ ${requested} =~ ^${version_pattern}$ ]] || { echo "release_bump_compute: ${requested} is no release version" >&2; exit 2; }
 mkdir -p "${output}"
+output="$(cd "${output}" && pwd)"
 rm -f "${output}"/{outcome,version,patch,title,body}
 
 workspace="$(mktemp -d)"

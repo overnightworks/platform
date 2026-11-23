@@ -67,6 +67,8 @@ echo "a branch that conflicts with main is pushed again"
 git --git-dir="${work}/remote/overnightworks/platform" update-ref refs/heads/main "$(branch_tip)"
 log="$(bump)" || fail "the bump after the landing failed: ${log}"
 [ "$(calls "${work}/gh-calls" 'pr close 1')" -eq 1 ] || fail "the overtaken pull request was not closed"
+grep -qF 'pr close 1 --delete-branch --comment main runs release 2026.11.25.1, so' "${work}/gh-calls" ||
+  fail "the closing comment does not name the release main runs: $(grep 'pr close' "${work}/gh-calls")"
 [ ! -e "${gh_state}/open" ] || fail "a pull request is still open after main runs the release"
 echo "a release that main runs closes the open pull request"
 
@@ -74,8 +76,15 @@ echo "a release that main runs closes the open pull request"
 app_release 2026.11.26.1
 : >"${work}/gh-calls"
 tip="$(branch_tip)"
-grep -qF 'pr close 1 --delete-branch --comment main runs release 2026.11.25.1, so' "${work}/gh-calls" ||
-  fail "the closing comment does not name the release main runs: $(grep 'pr close' "${work}/gh-calls")"
 log="$(bump)" || fail "the bump of an unfinished release failed: ${log}"
 [ ! -s "${work}/gh-calls" ] && [ "$(branch_tip)" = "${tip}" ] || fail "an unfinished release called gh or pushed"
 echo "an unfinished release changes nothing"
+
+# The steps accept a relative output directory, which the compute step's own tree does not move.
+registry_add "${image}" 2026.11.26.1
+(cd "${checkout}" && "${repository_root}/scripts/release_bump_compute.sh" hopin relative-output &&
+  "${repository_root}/scripts/release_bump_publish.sh" hopin relative-output) >"${work}/relative.log" 2>&1 ||
+  fail "the steps failed with a relative output directory: $(cat "${work}/relative.log")"
+[ "$(branch_version)" = 2026.11.26.1 ] && [ "$(calls "${work}/gh-calls" 'pr create')" -eq 1 ] ||
+  fail "the steps did not publish through a relative output directory: $(cat "${work}/relative.log")"
+echo "the steps accept a relative output directory"

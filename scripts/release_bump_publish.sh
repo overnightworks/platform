@@ -12,6 +12,7 @@ trap 'echo "release_bump_publish: line ${LINENO} failed: ${BASH_COMMAND}" >&2; e
 app="$1" output="$2"
 branch="release/${app}"
 [ -f "${output}/outcome" ] || { echo "release_bump_publish: ${output} holds no outcome of the compute step" >&2; exit 2; }
+output="$(cd "${output}" && pwd)"
 outcome="$(cat "${output}/outcome")"
 
 [ "${outcome}" != waiting ] || { echo "release_bump: ${app}: the release is not finished, so nothing changes"; exit 0; }
