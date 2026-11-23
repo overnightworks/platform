@@ -1,0 +1,7 @@
+claim_id = "36fa9a4ccdac4ff4b1f5db199d1a6ebd"
+agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
+role = "builder"
+base = "8abdf34c540e2b2e2dc49a6d487eb996db9eabe6"
+branch = "claude/issue-892-bump-body-lines"
+scope = ["scripts/release_bump_publish.sh", "tests/release_bump/publish_pushes_only_a_changed_patch_and_keeps_one_pull_request.sh", "tests/release_bump/world.sh"]
+opened_commit = "765ba191c5765790150675cbaaaab5f800b67adc"
