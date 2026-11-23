@@ -184,7 +184,8 @@ call "$APP_NAMESPACE" "$front_url/v1/models"
 models_status="$status"
 call "$APP_NAMESPACE" "$front_url/v1/model/info"
 [ "$chat_status $pictures_status $models_status $status" = "401 401 401 401" ] ||
-  fail "the four routes without a key got $chat_status $pictures_status $models_status $status through the front, not LiteLLM's 401"
+  fail "the four routes without a key got $chat_status $pictures_status $models_status $status through the front, \
+not LiteLLM's 401"
 echo "POST /v1/chat/completions, POST /v1/images/generations, GET /v1/models and GET /v1/model/info without a key get" \
   "LiteLLM's 401"
 # front_refused <request>: the last call got the front's own 404, Go's text, which none of LiteLLM's answers is; a
@@ -203,7 +204,8 @@ post "$front_url/v1/models" '{}'
 front_refused "POST /v1/models"
 post "$front_url/key/generate" '{}' --header "Authorization: Bearer $master_key"
 front_refused "POST /key/generate with the master key"
-echo "GET on the two POST routes, GET /model/info, POST /v1/models and POST /key/generate with the master key get the front's 404"
+echo "GET on the two POST routes, GET /model/info, POST /v1/models and POST /key/generate with the master key \
+get the front's 404"
 # The app key reads its own model's window and prices, without a credential.
 call "$APP_NAMESPACE" "$front_url/v1/model/info" "${authorized[@]}"
 model_info="$answer"
