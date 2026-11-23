@@ -10,6 +10,7 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+declared_person="$(yq '.users[] | select(.serviceAccountClientId == null) | .username' "$repository_root/infrastructure/keycloak/realm.yaml")"
 # shellcheck source=../failure.sh
 source "$repository_root/tests/failure.sh"
 work_directory="$(mktemp -d)"
@@ -235,6 +236,7 @@ sql="${5#--command=}"
 case "$5" in
   *is_temporary_admin*) cat "$scenario/temporary-count" ;;
   *service_account_client_link*) cat "$scenario/live-service-accounts" ;;
+  *"u.username IN"*) cat "$scenario/live-persons" ;;
   *client_attributes*) cat "$scenario/live-back-channels" ;;
   *) refuse "psql query" ;;
 esac
@@ -312,6 +314,10 @@ ROWS
   append_live_row user_entity 'u-agent | service-account-agent-mozart | realm-hall | c-agent'
   append_live_row user_group_membership 'g-services | u-agent'
   echo u-agent >"$base/live-service-accounts"
+  # The realm file's person, which config-cli created after the dump was made and which live:check changes.
+  append_live_row user_entity "u-person | $declared_person | realm-hall | \\N"
+  append_live_row user_group_membership 'g-apps | u-person'
+  echo u-person >"$base/live-persons"
   echo 0 >"$base/temporary-count"
   # The healthy copy holds the realm file's back-channel URLs: "<client>|<rows>|<URL>" for every declared client.
   yq -r '.clients[] | .clientId + "|" + (if (.attributes["backchannel.logout.url"] // "") == "" then "0" else "1" end) + "|" + (.attributes["backchannel.logout.url"] // "")' \
@@ -478,6 +484,16 @@ run_load
 expect_status 0
 second_file="$(grep -o 'keycloak-before-move-group-[0-9TZ]*\.dump' "$case_directory/log/mise")"
 [ -n "$first_file" ] && [ "$first_file" != "$second_file" ] || fail "healthy: a rerun used the same move-group file: $first_file, $second_file"
+
+# A dump made while the person was signed in holds its credential, which the copy no longer does: its rows are left out.
+new_case person-in-the-dump
+add_row user_entity "u-person | $declared_person | realm-hall | \\N"
+add_row credential 'cred-person | u-person | password'
+add_row user_group_membership 'g-apps | u-person'
+run_load
+expect_status 0
+for table in user_entity credential user_group_membership user_attribute; do expect_line "^$table: .*, equal\$"; done
+expect_line '^1 persons of the realm file are left out of the digests$'
 
 new_case last-line-without-newline
 touch "$case_directory/no-newline"
