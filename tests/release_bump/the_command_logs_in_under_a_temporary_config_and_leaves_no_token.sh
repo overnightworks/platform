@@ -11,7 +11,7 @@ registry_add ghcr.io/overnightworks/hopin 2026.11.24.1
 cd "${checkout}"
 
 log="$(mise run release:bump hopin 2>&1)" || fail "release:bump failed: ${log}"
-grep -q 'opened\|pull/1' <<<"${log}" || fail "release:bump did not open the pull request: ${log}"
+[ "$(calls "${work}/gh-calls" 'pr create')" -eq 1 ] || fail "release:bump did not open the pull request: ${log}"
 [ "$(calls "${work}/docker-calls" '^docker login')" -eq 1 ] || fail "release:bump did not log in once"
 login_config="$(sed -n 's/^docker login .*\[config \(.*\)\]$/\1/p' "${work}/docker-calls")"
 [ "${login_config}" != "${DOCKER_CONFIG}" ] && [ ! -e "${login_config}" ] || fail "the login's configuration ${login_config} outlived the run or is the caller's"
