@@ -188,7 +188,7 @@ call "$APP_NAMESPACE" "$front_url/v1/model/info"
 echo "POST /v1/chat/completions, POST /v1/images/generations, GET /v1/models and GET /v1/model/info without a key get" \
   "LiteLLM's 401"
 # front_refused <request>: the last call got the front's own 404, Go's text, which none of LiteLLM's answers is; a
-# wrong method on one of the three paths would get LiteLLM's 401 or 405 if the front passed it.
+# wrong method on one of the four paths would get LiteLLM's 401 or 405 if the front passed it.
 front_refused() {
   [ "$status" = 404 ] && grep -qx '404 page not found' <<<"$answer" ||
     fail "$1 through the front got $status, not the front's 404"
