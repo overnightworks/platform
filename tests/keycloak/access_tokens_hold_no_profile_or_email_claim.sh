@@ -10,6 +10,8 @@ export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 namespace="$KEYCLOAK_NAMESPACE"
 # shellcheck source=admin_api.sh
 source "$(dirname "${BASH_SOURCE[0]}")/admin_api.sh"
+# shellcheck source=../../scripts/keycloak_login_form.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../../scripts/keycloak_login_form.sh"
 
 person="token-claims-person"
 scratch="$(mktemp -d "$RUNNER_TEMP/token-claims-cells.XXXXXX")"
@@ -108,21 +110,6 @@ check_service() {
   echo "the access token of $client ($1) names $3, the person, the client as azp and the person's groups"
 }
 
-# form_action <page>: the first form's action path, which names the public hostname that the runner cannot reach.
-form_action() {
-  grep -o '<form[^>]*action="[^"]*"' "$1" | head -n 1 | sed -n 's/.*action="\([^"]*\)".*/\1/p' | sed 's/&amp;/\&/g; s#^https\?://[^/]*##'
-}
-# curl_url <url>: a curl option file on stdout, so a URL that carries a session code stays out of the arguments.
-curl_url() { printf 'url = "%s"\n' "$1"; }
-# post_form <page> <curl argument>...: posts to the page's form; prints the status and the redirect address.
-post_form() {
-  local action
-  action="$(form_action "$1")"
-  [ -n "$action" ] || fail "the page of $client holds no form"
-  shift
-  curl --silent --show-error --output /dev/null --write-out '%{http_code} %{redirect_url}' --cookie-jar "$cookie_jar" \
-    --cookie "$cookie_jar" "$@" --config <(curl_url "$local_url$action")
-}
 # sign_in <scope> <redirect uri>: the authorization code flow with PKCE as a browser drives it, with the consent a client
 # asks for; leaves the code in its file.
 sign_in() {
@@ -136,7 +123,7 @@ sign_in() {
     --data-urlencode "scope=$scope" --data code_challenge_method=S256 --data-urlencode "code_challenge=$challenge" \
     --data "state=$state" "$base_url/auth")"
   [ "$status" = 200 ] || fail "the login page of $client answered $status, not 200"
-  status="$(post_form "$page" --data-urlencode "username=$person" --data-urlencode "password@$password_file")"
+  status="$(post_form "$page" "$local_url" --data-urlencode "username=$person" --data-urlencode password@- <"$password_file")"
   [ "${status%% *}" = 302 ] || fail "the sign-in of $client answered ${status%% *}, not a redirect"
   location="${status#* }"
   if [ "${location%%\?*}" != "$redirect_uri" ]; then
@@ -146,7 +133,7 @@ sign_in() {
     [ "$status" = 200 ] || fail "the page after the sign-in of $client answered $status, not 200"
     consent_code="$(grep -o '<input[^>]*name="code"[^>]*' "$page" | sed -n 's/.*value="\([^"]*\)".*/\1/p' | head -n 1)"
     [ -n "$consent_code" ] || fail "the sign-in of $client redirects to ${location%%\?*}, not $redirect_uri, and asks no consent"
-    status="$(post_form "$page" --config <(printf 'data-urlencode = "code=%s"\n' "$consent_code") --data accept=Yes)"
+    status="$(post_form "$page" "$local_url" --config <(printf 'data-urlencode = "code=%s"\n' "$consent_code") --data accept=Yes)"
     [ "${status%% *}" = 302 ] || fail "the consent of $client answered ${status%% *}, not a redirect"
     location="${status#* }"
   fi

@@ -36,6 +36,20 @@ while IFS= read -r group; do
   live_path="$(admin GET "$realm/group-by-path$group" | jq --raw-output .path)" || live_path=""
   [ "$live_path" = "$group" ] || fail "the realm $realm holds no group $group, which $REALM_FILE declares"
 done <<<"$declared_groups"
+# The test person live:check signs in with: declared disabled, in the groups the file names and no others, and it holds no
+# credential, so only the command's run can sign it in.
+test_person="$(yq '.users[] | select(.serviceAccountClientId == null) | .username' "$REALM_FILE")"
+[ "$(grep -c . <<<"$test_person")" = 1 ] || fail "$REALM_FILE declares no person or several, not the one test person"
+test_person_id="$(admin GET "$realm/users?exact=true&username=$test_person" | jq --raw-output '.[0].id // empty')"
+[ -n "$test_person_id" ] || fail "the realm $realm holds no person $test_person, which $REALM_FILE declares"
+[ "$(admin GET "$realm/users/$test_person_id" | jq --raw-output .enabled)" = false ] ||
+  fail "the person $test_person is enabled after the first apply"
+[ "$(admin GET "$realm/users/$test_person_id/credentials" | jq length)" = 0 ] ||
+  fail "the person $test_person holds a credential after the first apply"
+[ "$(admin GET "$realm/users/$test_person_id/groups" | jq --compact-output '[.[].path] | sort')" = \
+  "$(TEST_PERSON="$test_person" yq --output-format json --indent 0 '[.users[] | select(.username == strenv(TEST_PERSON)) | .groups[]] | sort' "$REALM_FILE")" ] ||
+  fail "the person $test_person is not in exactly the groups $REALM_FILE declares"
+echo "the person $test_person is disabled, holds no credential and belongs to exactly the groups $REALM_FILE declares"
 retired_status="$(bearer_curl "$(admin_token)" --silent --output /dev/null --write-out '%{http_code}' \
   "$local_url/admin/realms/$realm/group-by-path$RETIRED_GROUP")"
 [ "$retired_status" = 404 ] || fail "an empty database's realm $realm answers $retired_status for $RETIRED_GROUP, not 404"
@@ -80,16 +94,18 @@ echo "a realm that stores no user profile answers the built-in default profile t
 canonical_form() { jq --sort-keys 'walk(if type == "array" then sort else . end)'; }
 # keep_part <state directory> <realm> <part>: passes its input on and keeps it as one file of the state.
 keep_part() { tee "$1/$2.$3.json"; }
-# A second run on the applied realms changes nothing: their exports and their declared service accounts with their
-# roles and groups are equal, and it needs no retry.
+# A second run on the applied realms changes nothing: their exports and their declared users (service accounts and the
+# test person) with their roles and groups are equal, and it needs no retry. A user's required actions are left out:
+# config-cli's first create adds the realm's default action to a person whatever the file names, and live:check's enable
+# write clears it.
 realm_state() {
   local state_dir="$1" realm_file realm_name username user user_id
   for realm_file in "$MASTER_FILE" "$REALM_FILE"; do
     realm_name="$(yq '.realm' "$realm_file")"
     admin POST "$realm_name/partial-export?exportClients=true&exportGroupsAndRoles=true" | canonical_form |
       keep_part "$state_dir" "$realm_name" "partial export" || return 1
-    for username in $(yq '.users[] | select(.serviceAccountClientId) | .username' "$realm_file"); do
-      user="$(admin GET "$realm_name/users?exact=true&username=$username" | jq '.[0] // empty' | canonical_form)" || return 1
+    for username in $(yq '.users[].username' "$realm_file"); do
+      user="$(admin GET "$realm_name/users?exact=true&username=$username" | jq '.[0] // empty | del(.requiredActions)' | canonical_form)" || return 1
       [ -n "$user" ] || { echo "::error::the realm $realm_name holds no user $username" >&2; return 1; }
       printf '%s\n' "$user" | keep_part "$state_dir" "$realm_name" "user $username" || return 1
       user_id="$(jq --raw-output .id <<<"$user")"
