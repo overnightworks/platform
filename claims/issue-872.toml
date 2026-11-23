@@ -1,8 +1,0 @@
-claim_id = "9ddb904148294ba8b705046b1da46491"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "5dde68980d9a3b74f795672f2975a15fd6070ce1"
-branch = "claude/issue-872-hopin-2026-11-23-6"
-scope = ["apps/hopin/release/kustomization.yaml", "infrastructure/legal/app-texts/hopin"]
-opened_commit = "0b3e9a6246aa9fb26df64cb81748bba09519f10f"
-whole_reason = "A release bump moves hopin's ref and, if its legal pages changed, their copies together, since the legal check compares them at the ref."
