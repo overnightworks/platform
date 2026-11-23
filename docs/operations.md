@@ -207,8 +207,10 @@ which stays until Keycloak's pod restarts, all inside that boundary; the passwor
 when green, 1 when red and 3 when skipped, which is the app's Deployment not being Available, after the cleanup and with
 no other write. (OPS-20)
 
-A realm apply during a run disables the person and a rollout of the app ends its session, so that run is red and a rerun
-is green; a rollout before the run makes it skipped. A sign-out that fails, or a lost jar (power loss, a reboot, a cleared
+A realm apply during a run disables the person, so that run is red and a rerun is green. A rollout of the app during a
+run may end its session, so that run is red too, while presentator's session lives in its
+Postgres and survives its two `RollingUpdate` pods; a run that starts while the Deployment is not Available is skipped,
+and one that starts after a rollout finished is not. A sign-out that fails, or a lost jar (power loss, a reboot, a cleared
 runtime directory) when Keycloak's back-channel finds no pod either (skat and songmaker roll out by `Recreate`), leaves
 the person's session row in that app until its own session lifetime; the person has no credential by then. The test
 person's account row in each app's database is that app's own data and stays. (OPS-21)
