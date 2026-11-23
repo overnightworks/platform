@@ -1,7 +1,0 @@
-claim_id = "fa97e185fe104c4ca29cc78ae4b3243b"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "0520096b540155b96ac4d157d93d6373ca9756a1"
-branch = "claude/issue-845-presentator-two-pods"
-scope = ["apps/presentator/web.yaml", "tests/presentator/pods_stay_within_their_levels.sh", "tests/presentator/the_web_serves_from_its_postgres.sh"]
-opened_commit = "e77cf85426104acc05ff86739624a33b88d8e520"
