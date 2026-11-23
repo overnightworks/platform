@@ -7,7 +7,10 @@
 # short by the conversation after the system text is no read of what was cached, and a keep-alive is judged by the row of
 # its last request; a spend log that lacks a successful row ends the run 1 although failed rows exist; a failed run ends
 # its port-forward, deletes its keys and its scratch directory; `--remove` deletes the probe keys of every page of the key
-# list and no other; and no key's value or hash reaches the argument of any command.
+# list and no other; question 18 answers from the call, the arguments and the billed prompt counts the gateway showed, on each
+# model, a refusal or a reference that loads nothing is its own answer, and a run of that question alone sends only the
+# requests it needs and deletes its key on every exit, an unknown question making none; and no key's value or hash reaches
+# the argument of any command.
 # Usage: mise exec -- tests/litellm/gateway_probe_answers_on_both_routes_and_removes_its_keys.sh
 set -euo pipefail
 
@@ -142,6 +145,11 @@ start_probe undeletable "delete_fails,messages_ignores_budget" 0
 start_probe doubtful "unnamed_budget_refusal,short_read,refuse_zero,drop_row" 0
 start_probe failed "chat_fails" 0
 start_probe remove "" 120 --remove
+start_probe alone "" 0 --question 18
+start_probe alone_ignored "reference_ignored" 0 --question 18
+start_probe alone_refused "mixed_refused" 0 --question 18
+start_probe alone_failed "chat_fails" 0 --question 18
+start_probe alone_unknown "" 0 --question 3
 
 # A run with a healthy gateway.
 run_probe healthy
@@ -156,6 +164,10 @@ lacks healthy 'chat not run'
 has healthy 'Q2 \[O3\] messages text/sonnet-medium: yes read'
 has healthy 'Q9 \[O4\] messages text/haiku-fast: yes;'
 has healthy 'Q15 \[O12 F12\] messages text/sonnet-medium: yes;'
+for model in text/sonnet-medium text/haiku-fast; do
+  has healthy "Q18 \[agents#1104\] chat $model: yes; status 200; the next reply called: [a-z_]+, token in its arguments: yes, definition-only parameter used: yes; billed prompt tokens: [0-9]+ with the reference, [0-9]+ for the control \(status 200, called: no tool\)"
+done
+count_of healthy 'Q18 \[' 2
 has healthy '^litellm:gateway-probe: total cost [0-9.]+ USD from [0-9]+ spend log rows'
 echo "a healthy run answers on both routes and models, deletes both keys and prints the cost"
 # The forward outlives every wait of the run; the limit is read in minutes.
@@ -229,3 +241,37 @@ run_probe remove
 [ "$(grep -c '^an-app-key-' <<<"$held")" = 120 ] || fail "remove: the gateway holds not its 120 other keys: $held"
 ! grep -q '^gateway-probe-' <<<"$held" || fail "remove: a probe key stays: $(grep '^gateway-probe-' <<<"$held")"
 echo "--remove deletes the probe keys of every page of the list and no other key"
+
+# Question 18 alone sends the plain check of its route and its own four requests, prints no other question and deletes its key.
+run_probe alone
+[ "$status" = 0 ] || fail "alone: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly alone
+count_of alone 'Q[0-9]+ \[' 2
+count_of alone 'Q18 \[agents#1104\] chat text/(sonnet-medium|haiku-fast): yes;' 2
+count_of alone '^litellm:gateway-probe: the probe key gateway-probe-[0-9]+-[0-9]+-main is gone$' 1
+has alone '^litellm:gateway-probe: total cost [0-9.]+ USD from 5 spend log rows of the probe keys \(5 calls answered 200\)'
+echo "question 18 alone asks only what it needs and deletes its key"
+
+# A reference that loads nothing and a refusal of the mixed result are answered as no, each with its evidence.
+run_probe alone_ignored
+[ "$status" = 0 ] || fail "alone_ignored: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly alone_ignored
+count_of alone_ignored 'Q18 \[agents#1104\] chat text/(sonnet-medium|haiku-fast): no; status 200; the next reply called: no tool, token in its arguments: no, definition-only parameter used: no;' 2
+run_probe alone_refused
+[ "$status" = 0 ] || fail "alone_refused: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly alone_refused
+count_of alone_refused 'Q18 \[agents#1104\] chat text/(sonnet-medium|haiku-fast): no, status 400; status 400; the next reply called: no tool' 2
+echo "question 18 answers no for a reference that loads nothing and for a refused result"
+
+# A run of one question that fails deletes its key; a question that does not run alone makes none.
+run_probe alone_failed
+[ "$status" = 1 ] || fail "alone_failed: the probe ended $status, not 1"
+has alone_failed 'the plain request on chat answered with status 500'
+count_of alone_failed '^litellm:gateway-probe: the probe key gateway-probe-[0-9]+-[0-9]+-main is gone$' 1
+ended_cleanly alone_failed
+run_probe alone_unknown
+[ "$status" = 1 ] || fail "alone_unknown: the probe ended $status, not 1"
+has alone_unknown 'question 3 does not run alone; those that do: 18'
+lacks alone_unknown 'the probe key'
+ended_cleanly alone_unknown
+echo "a run of one question deletes its key when it fails, and an unknown question makes none"

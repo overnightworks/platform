@@ -13,7 +13,11 @@ chat_fails (the chat route answers 500), dear_writes (a cache write costs five t
 spendy_calls (each answered call costs 0.025 USD), no_cache (no route caches: usage reports no write and no read and the whole
 prompt as input), dear_misses (a call that reads less than 500000 tokens of a prompt of 500000 or more costs 3.3 USD),
 heavy_first_call (the first answered call costs 2.95 USD), small_model_limit (/model/info names 100000 as the most input
-tokens of a model).
+tokens of a model), mixed_refused (a tool message of text and a tool reference is refused with 400), reference_ignored (a tool
+reference loads nothing: the reply calls no tool and the definition is not billed).
+
+A tool with defer_loading is billed only once a tool message references it, and then the reply calls it with the text of that
+message's last word and the first value of each enum of its definition.
 """
 
 import hashlib
@@ -45,6 +49,43 @@ for number in range(SEEDED):
 if SEEDED:
     for alias in ("gateway-probe-1-2-main", "gateway-probe-3-4-budget"):
         state["keys"][key_hash(alias)] = {"key_alias": alias, "spend": 0.0}
+
+
+def tool_name(tool):
+    return tool.get("name") or tool["function"]["name"]
+
+
+def tool_messages(body):
+    return [message for message in body.get("messages", []) if message.get("role") == "tool" and isinstance(message.get("content"), list)]
+
+
+def referenced_names(body):
+    return {part["tool_name"] for message in tool_messages(body) for part in message["content"] if part.get("type") == "tool_reference"}
+
+
+def mixes_text_and_reference(body):
+    return any({part.get("type") for part in message["content"]} >= {"text", "tool_reference"} for message in tool_messages(body))
+
+
+def faulty_refusal(body, max_tokens):
+    """The message with which a fault refuses the request, or None."""
+    if max_tokens == 0 and "refuse_zero" in FAULTS:
+        return "max_tokens must be positive"
+    if "mixed_refused" in FAULTS and mixes_text_and_reference(body):
+        return "tool result content mixes text and tool references"
+    return None
+
+
+def loaded_call(body):
+    """The call a reply makes to the tool that a tool message loads, or None."""
+    for message in tool_messages(body):
+        words = " ".join(part["text"] for part in message["content"] if part.get("type") == "text").split()
+        for tool in body.get("tools") or []:
+            if tool_name(tool) in referenced_names(body) and words:
+                properties = tool["function"]["parameters"]["properties"]
+                arguments = {name: spec["enum"][0] if "enum" in spec else words[-1] for name, spec in properties.items()}
+                return {"id": "call_loaded", "type": "function", "function": {"name": tool_name(tool), "arguments": json.dumps(arguments)}}
+    return None
 
 
 class Gateway(BaseHTTPRequestHandler):
@@ -139,9 +180,10 @@ class Gateway(BaseHTTPRequestHandler):
                 message = "Budget has been exceeded! Current cost: 1, Max budget: 0" if "unnamed_budget_refusal" not in FAULTS else "invalid request"
                 self.log_call(call_id, token, body, "failure", 0, 0, 0, 0, 0)
                 return self.send_json(400, {"error": {"message": message}}, header)
-            if max_tokens == 0 and "refuse_zero" in FAULTS:
+            refusal = faulty_refusal(body, max_tokens)
+            if refusal:
                 self.log_call(call_id, token, body, "failure", 0, 0, 0, 0, 0)
-                return self.send_json(400, {"error": {"message": "max_tokens must be positive"}}, header)
+                return self.send_json(400, {"error": {"message": refusal}}, header)
             state["inflight"][token] = state["inflight"].get(token, 0) + 1
             if state["inflight"][token] > key.get("parallel", 100):
                 state["inflight"][token] -= 1
@@ -173,9 +215,10 @@ class Gateway(BaseHTTPRequestHandler):
                 self.log_call(call_id, token, body, "success", spend, total, completion, write, read)
         return uncached, write, read
 
-    def answer_body(self, chat, compaction, completion, usage):
+    def answer_body(self, chat, compaction, completion, usage, call=None):
         if chat:
-            return {"choices": [{"message": {"role": "assistant", "content": "ok",
+            return {"choices": [{"message": {"role": "assistant", "content": None if call else "ok",
+                                             **({"tool_calls": [call]} if call else {}),
                                              **({"content_blocks": [{"type": "compaction"}]} if compaction else {})}}],
                     "usage": usage}
         content = [{"type": "compaction", "content": "summary"}] if compaction else [{"type": "text", "text": "ok"}]
@@ -201,7 +244,9 @@ class Gateway(BaseHTTPRequestHandler):
 
     def answer(self, chat, body, key, token, call_id, header):
         system = json.dumps(body.get("system", body.get("messages", [{}])[0]))
-        total = max(len(json.dumps([body.get("system"), body.get("messages"), body.get("tools")])) // 4, 20)
+        loaded = set() if "reference_ignored" in FAULTS else referenced_names(body)
+        billed_tools = [tool for tool in body.get("tools") or [] if not tool.get("defer_loading") or tool_name(tool) in loaded]
+        total = max(len(json.dumps([body.get("system"), body.get("messages"), billed_tools])) // 4, 20)
         completion = 0 if body.get("max_tokens") == 0 else min(body.get("max_tokens", 1), 3)
         uncached, write, read = self.bill(body, key, token, call_id, system, total, completion)
         hour = '"ttl": "1h"' in system or '"ttl":"1h"' in system
@@ -211,7 +256,8 @@ class Gateway(BaseHTTPRequestHandler):
         compaction = "compaction" in body
         if body.get("stream"):
             return self.send_stream(self.stream_events(chat, compaction, usage), header)
-        return self.send_json(200, self.answer_body(chat, compaction, completion, usage), header)
+        call = None if "reference_ignored" in FAULTS or not chat else loaded_call(body)
+        return self.send_json(200, self.answer_body(chat, compaction, completion, usage, call), header)
 
 
 server = ThreadingHTTPServer(("127.0.0.1", 0), Gateway)
