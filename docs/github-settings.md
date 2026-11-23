@@ -7,11 +7,14 @@ Reader: whoever changes `src/opentofu/github`, and the fleet's heads and quality
 ## What `src/opentofu/github` declares
 
 `src/opentofu/github/`: the security and merge settings of the managed fleet repositories and, in the child module
-`organization/`, the organisation's four rulesets (`main: PR only`, `quality / verdict required`, `release tags are
-immutable`, `code scanning: high or higher blocks the merge`, each with `prevent_destroy`, no bypass actor and
-enforcement `active`), the schemas of the properties `quality_gate` and `code_scanning_exempt` and platform-secrets' one
-value of the latter, every resource also `destroy = false`; `organization.tf` holds the module call and the `import`
-blocks by id. (GH-1)
+`organization/`, the organisation's five rulesets (`main: PR only`, `quality / verdict required`, `release tags are
+immutable`, `code scanning: high or higher blocks the merge` and `main: only the organisation admin updates platform`,
+each with `prevent_destroy` and enforcement `active`), the schemas of the properties `quality_gate` and
+`code_scanning_exempt` and platform-secrets' one value of the latter, every resource also `destroy = false`;
+`organization.tf` holds the module call and the `import` blocks by id. Only the fifth ruleset has a bypass actor: it
+applies the `update` rule to platform's default branch, and the organisation admin is exempt from it, so the admin alone
+updates platform's main, through a pull request that `main: PR only` still demands; an integration and any other actor
+are refused. (GH-1)
 
 The ruleset `quality / verdict required` reaches a repository only through `quality_gate=true`, requires the check
 `quality / verdict` pinned to GitHub Actions (`integration_id` 15368) and is quality's contract; the property's values
