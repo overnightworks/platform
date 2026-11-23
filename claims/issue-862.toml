@@ -1,8 +1,0 @@
-claim_id = "48d351cb6d9c4713a841a42e36951729"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "17bdb606501fc427ecc52352adc46ac2f60152c5"
-branch = "claude/issue-862-skat-backchannel-logout"
-scope = [".github/workflows/ci.yml", "apps/skat/skat.yaml", "infrastructure/keycloak/keycloak-egress.yaml", "infrastructure/keycloak/realm.yaml", "tests/flux/parts.yaml", "tests/keycloak/realm_route_and_policies.sh"]
-opened_commit = "38d5e0f4b8c2c86eecf2e3d66ab1fed4f6ae645b"
-whole_reason = "Keycloak's call reaches skat only when the realm URL, Keycloak's egress and skat's ingress change together, and the cell's cleared-client case loses its subject in the same change."
