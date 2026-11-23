@@ -1,8 +1,0 @@
-claim_id = "158f633b76e84584a1cef6991d81631b"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "47ecf1e3e126040eb267c5ba1133840fe143096a"
-branch = "claude/issue-841-quality-v0-25-0"
-scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", "src/legal/pyproject.toml", "src/legal/uv.lock"]
-opened_commit = "f1a1340ddbcf47b95c06648fda2f241f2a5a68d1"
-whole_reason = "The gate pin and its CodeQL twin move together, and src/legal's lock must carry pytest-randomly in the same change or the new gate is red."
