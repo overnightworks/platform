@@ -1,8 +1,0 @@
-claim_id = "f990b80cc88346c28a4c9f26b17bc689"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "4158a81ad7ccc1123385bac61730fdb1f6d83589"
-branch = "claude/issue-874-release-bump-command"
-scope = [".github/workflows/ci.yml", "docs/app.md", "docs/legal-sections.md", "infrastructure/legal/app-texts.toml", "mise.toml", "scripts/release_bump_component_version.sh", "scripts/release_bump_compute.sh", "scripts/release_bump_legal.sh", "scripts/release_bump_newest.sh", "scripts/release_bump_publish.sh", "tests/flux/parts.yaml", "tests/legal/app_texts_equal_their_release.sh", "tests/release_bump"]
-opened_commit = "a25eedff3c148fd4fcdaff6ba243d06c22a80c53"
-whole_reason = "The compute, publish and legal scripts, their one command and the cells that prove them offline are one slice: the legal test turns into the legal script's regeneration diff in the same change, or the derivation exists twice."
