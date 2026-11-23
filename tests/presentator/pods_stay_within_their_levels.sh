@@ -167,7 +167,7 @@ judge_structure() {
     "$WEB | .containers[0].volumeMounts[] | select(.name == \"secrets\") | .mountPath + \",\" + (.readOnly | to_string)" '"/run/secrets,true"'
   # Replicas, strategy, process sharing, fsGroup and exec probes.
   found "$manifest" "the web or the worker runs fewer than two replicas" \
-    "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | select(.spec.replicas < 2)"
+    "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | select((.spec.replicas // 1) < 2)"
   # An immutable field of the StatefulSet changes only by deleting it, which Flux does for the annotation.
   found "$manifest" "the worker sets podManagementPolicy without the annotation that lets Flux recreate its StatefulSet" \
     "select($WORKER_DOCUMENT) | select(.spec.podManagementPolicy != null and .metadata.annotations[\"kustomize.toolkit.fluxcd.io/force\"] != \"enabled\")"
@@ -432,6 +432,8 @@ mutant "the web does not turn the kubelet's ServiceAccount token automount off" 
 mutant "the web does not mount that volume read-only at /run/secrets" "($on_web | .spec.template.spec.containers[0].volumeMounts[] | select(.name == \"secrets\") | .readOnly) = false"
 mutant "the web or the worker runs fewer than two replicas" "($on_web | .spec.replicas) = 1"
 mutant "the web or the worker runs fewer than two replicas" "($on_worker | .spec.replicas) = 1"
+mutant "the web or the worker runs fewer than two replicas" "del($on_web | .spec.replicas)"
+mutant "the web or the worker runs fewer than two replicas" "del($on_worker | .spec.replicas)"
 mutant "the worker sets podManagementPolicy without the annotation" "del($on_worker | .metadata.annotations)"
 mutant "the worker sets podManagementPolicy without the annotation" "($on_worker | .metadata.annotations.\"kustomize.toolkit.fluxcd.io/force\") = \"disabled\""
 mutant "the web takes a pod away before its replacement is Ready" "($on_web | .spec.strategy.rollingUpdate.maxUnavailable) = 1"
