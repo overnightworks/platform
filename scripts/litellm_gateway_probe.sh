@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The command behind `mise run litellm:gateway-probe`: answers on the live gateway the 17 questions of platform#799 that
 # serve personas' plan (inline tools, deferred tools, compaction, the keep-alive, the cache lifetime and the prices), on
-# LiteLLM's chat route and on /v1/messages, each on text/sonnet-medium and text/haiku-fast unless a question names one.
+# LiteLLM's chat route and on /v1/messages, each on text/sonnet-medium and text/haiku-fast unless a question names one,
+# and question 18 (a tool result that mixes text with a tool reference), on the chat route.
 #   scripts/litellm_gateway_probe.sh           makes a key of its own with the master key (every text name, a budget of
 #                                              5 USD, prompt caching on, an alias new to the run), sends synthetic
 #                                              requests under one test person, each prompt new to the run so that the first
@@ -9,6 +10,9 @@
 #                                              (number and tags, where, the answer, the usage fields and statuses that show
 #                                              it, never a reply body) and the run's cost from the spend log; exits 1 when the
 #                                              key cannot be made, a plain request is refused or a key cannot be removed
+#   scripts/litellm_gateway_probe.sh --question <number>
+#                                              runs one question alone (the numbers of alone_questions) with only the setup it
+#                                              needs: the key, the plain check on its route and its lines, then the cost
 #   scripts/litellm_gateway_probe.sh --remove  deletes the test person's customer row and any probe key a killed run left
 # Both probe keys are deleted on every exit, a failure included; only SIGKILL leaves one, which --remove clears. The second
 # key has a budget of one millionth of a dollar and shows the budget on both routes. The run deletes the test person's row
@@ -47,8 +51,11 @@ probe_models=("$sonnet_model" "$haiku_model")
 # rules of the calibration prefix, from which each model's tokens per rule follow; the seconds from a 1-hour write to its
 # read, past ten minutes; the seconds a request may take.
 probe_parallel=2 exhausted_budget=0.000001 small_prefix_tokens=6000 calibration_rules=1000 ttl_wait=630 call_timeout=900
+# The rules the definition of question 18's tool carries.
+mixed_definition_rules=30
 beta_inline=inline-tools-2026-09-15
 beta_compaction=compact-2026-09-04
+default_properties='{"q":{"type":"string"}}'
 mark_none=""
 mark_5m=',"cache_control":{"type":"ephemeral"}'
 mark_1h=',"cache_control":{"type":"ephemeral","ttl":"1h"}'
@@ -114,17 +121,19 @@ tool_result_turn() {
     printf '{"role":"tool","tool_call_id":"%s","content":%s}' "$1" "$2"
   fi
 }
-# tool_body <name> <description> [<extra field>]: a tool in the shape Anthropic names it, which a tool_definition carries.
+# tool_body <name> <description> [<extra field> [<properties JSON>]]: a tool in the shape Anthropic names it, which a
+# tool_definition carries; the properties are the parameters, q alone unless given.
 tool_body() {
-  printf '{"name":"%s","description":"%s","input_schema":{"type":"object","properties":{"q":{"type":"string"}}}%s}' "$1" "$2" "${3-}"
+  printf '{"name":"%s","description":"%s","input_schema":{"type":"object","properties":%s}%s}' "$1" "$2" "${4:-$default_properties}" "${3-}"
 }
-# tool_def <name> <description> [<extra field>]: an entry of the route's tools array; defer_loading is such a field.
+# tool_def <name> <description> [<extra field> [<properties JSON>]]: an entry of the route's tools array; defer_loading is
+# such a field.
 tool_def() {
   if [ "$route" = messages ]; then
     tool_body "$@"
   else
-    printf '{"type":"function","function":{"name":"%s","description":"%s","parameters":{"type":"object","properties":{"q":{"type":"string"}}}}%s}' \
-      "$1" "$2" "${3-}"
+    printf '{"type":"function","function":{"name":"%s","description":"%s","parameters":{"type":"object","properties":%s}}%s}' \
+      "$1" "$2" "${4:-$default_properties}" "${3-}"
   fi
 }
 # filler <rules>: a text of the given rules that holds no character JSON escapes. Each rule is as long as any other, so that
@@ -234,6 +243,17 @@ reply_called() {
   [ "$route" = messages ] || expression='[.choices[0].message.tool_calls[]?.function.name] | join(" ")'
   called="$(yq --input-format json "$expression" "$scratch/reply" 2>/dev/null)" || called=""
 }
+# reply_arguments: sets called_arguments to the arguments of the first tool call of the last non-streamed chat reply; they are
+# compared, never printed.
+reply_arguments() {
+  called_arguments="$(yq --input-format json '.choices[0].message.tool_calls[0].function.arguments // ""' "$scratch/reply" 2>/dev/null)" ||
+    called_arguments=""
+}
+# argument_is <name> <value>: whether the argument of that name in called_arguments is that string exactly; yq compares it, since a
+# command substitution would drop a trailing line feed of the value.
+argument_is() {
+  [ "$(expected="$2" yq --input-format json ".$1 == strenv(expected)" <<<"$called_arguments" 2>/dev/null)" = true ]
+}
 # reply_says <word>: whether the text of the last non-streamed reply holds the word; the text is not kept.
 reply_says() {
   local expression='[.content[]? | select(.type == "text") | .text] | join(" ")' text
@@ -304,17 +324,19 @@ calibrate() {
   [ "$n_prompt" -gt 1000 ] || fail "the calibration request on $1 carried no usage"
   rule_tokens[$1]=$((n_prompt - 20))
 }
-# each_target <command>...: runs the command once per route and model, which it finds in route and model.
-each_target() {
+# each_target_on <routes> <command>...: runs the command once per route of the words and per model, which it finds in route and
+# model.
+each_target_on() {
   local target_route target_model
-  for target_route in messages chat; do
+  for target_route in $1; do
     for target_model in "${probe_models[@]}"; do
       route="$target_route" model="$target_model"
       begin_flow
-      "$@"
+      "${@:2}"
     done
   done
 }
+each_target() { each_target_on "messages chat" "$@"; }
 
 # Question 1, 2, 3: the inline tool messages and the cache around them.
 flow_inline() {
@@ -361,19 +383,25 @@ skill_tools() {
   done
   printf '%s' "$list"
 }
+# reference_block <name>: the tool_reference block of a tool.
+reference_block() { printf '{"type":"tool_reference","tool_name":"%s"}' "$1"; }
 # reference_blocks <first> <last>: the tool_reference blocks of skill_NN.
 reference_blocks() {
   local number list=""
-  for number in $(seq "$1" "$2"); do list+="${list:+,}{\"type\":\"tool_reference\",\"tool_name\":\"$(printf 'skill_%02d' "$number")\"}"; done
+  for number in $(seq "$1" "$2"); do list+="${list:+,}$(reference_block "$(printf 'skill_%02d' "$number")")"; done
   printf '[%s]' "$list"
 }
+# loader_head_tools: the tools a conversation that loads deferred tools starts with.
+loader_head_tools() { printf '%s,%s' "$(tool_def ping 'Answers with pong.')" "$(tool_def load_tools 'Loads further tools by name.')"; }
+# load_call_turn: the assistant turn that calls load_tools, which the model did not write.
+load_call_turn() { tool_call_turn toolu_probe_load load_tools '{}'; }
 # Question 4, 5, 6, 8: deferred tools, references in a tool result, and the cache around both.
 flow_deferred() {
   local deferral=',"defer_loading":true' head_tools question base_total full_total deferred_total first_cached
   local d1_status d2_status d2_write d2_read d2_called d3_status d3_read add_read drop_read call_load first_turn
   fresh_system "deferred-$route-$model" "$small_prefix_tokens"
   question='Load the tools with load_tools, then call skill_07 with q set to x.'
-  head_tools="$(tool_def ping 'Answers with pong.'),$(tool_def load_tools 'Loads further tools by name.')"
+  head_tools="$(loader_head_tools)"
   messages_json="$(user_turn "$question" last)"
   tools_json="[$head_tools]"
   exchange 64
@@ -387,7 +415,7 @@ flow_deferred() {
   answer 4 F1 "$(where)" "$(gated "$d1_status" "$(yes_no test $(((full_total - deferred_total) * 10)) -ge $(((full_total - base_total) * 9)))")" \
     "status $d1_status; billed prompt tokens: no skill tools $base_total, 40 loaded $full_total, 40 deferred $deferred_total"
   first_turn="$(user_turn "$question")"
-  call_load="$(tool_call_turn toolu_probe_load load_tools '{}')"
+  call_load="$(load_call_turn)"
   messages_json="$(conversation "$first_turn" "$call_load" "$(tool_result_turn toolu_probe_load "$(reference_blocks 1 37)" last)")"
   exchange 256
   d2_status=$call_status d2_write=$n_write d2_read=$n_read
@@ -410,6 +438,40 @@ flow_deferred() {
   drop_read=$n_read
   answer 8 F5 "$(where)" "$(gated "$call_status" "$(if covers "$first_cached" "$add_read" && covers "$first_cached" "$drop_read"; then echo "no break"; else echo "break"; fi)")" \
     "cached before $first_cached; one deferred tool added: read $add_read; one dropped: read $drop_read"
+}
+
+# Question 18: a tool result of one text part and one reference to a deferred tool, on the chat route, against the same result
+# without the reference. The tool's name gives nothing away, only its definition names its lane, and neither the prompt nor the
+# text part names the tool, so a call that uses the lane shows that the definition was loaded. Billed prompt tokens are read as
+# in question 4; their rise over the control stands in for the lane when it is at least one token per rule of the definition.
+flow_mixed_result() {
+  local deferral=',"defer_loading":true' properties token first_turn text_part tool_name=vq_zeta lane=heliotrope
+  local with_status with_prompt with_called with_arguments control_status control_prompt control_called token_used=no lane_used=no passed=no
+  token="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+  properties='{"token":{"type":"string","description":"The token the load returned."},"lane":{"type":"string","enum":["'"$lane"'"]}}'
+  system_text="Probe run $run_stamp mixed result $model."
+  tools_json="[$(loader_head_tools),$(tool_def "$tool_name" "Files a record; token and lane are both required. $(filler "$mixed_definition_rules")" "$deferral" "$properties")]"
+  first_turn="$(user_turn 'Load the next tool with load_tools, then call the tool it loaded once, with the token its result gave.')"
+  text_part="{\"type\":\"text\",\"text\":\"Token of this load: $token\"}"
+  messages_json="$(conversation "$first_turn" "$(load_call_turn)" "$(tool_result_turn toolu_probe_load "[$text_part,$(reference_block "$tool_name")]")")"
+  exchange 256
+  with_status=$call_status with_prompt=$n_prompt
+  reply_called
+  with_called="${called:-no tool}"
+  reply_arguments
+  with_arguments="$called_arguments"
+  messages_json="$(conversation "$first_turn" "$(load_call_turn)" "$(tool_result_turn toolu_probe_load "[$text_part]")")"
+  exchange 256
+  control_status=$call_status control_prompt=$n_prompt
+  reply_called
+  control_called="${called:-no tool}"
+  called_arguments="$with_arguments"
+  if argument_is token "$token"; then token_used=yes; fi
+  if argument_is lane "$lane"; then lane_used=yes; fi
+  if [ "$with_called" = "$tool_name" ] && [ "$token_used" = yes ] &&
+    { [ "$lane_used" = yes ] || { [ "$control_status" = 200 ] && [ $((with_prompt - control_prompt)) -ge "$mixed_definition_rules" ]; }; }; then passed=yes; fi
+  answer 18 agents#1104 "$(where)" "$(gated "$with_status" "$passed")" \
+    "status $with_status; the next reply called: $with_called, token in its arguments: $token_used, definition-only parameter used: $lane_used; billed prompt tokens: $with_prompt with the reference, $control_prompt for the control (status $control_status, called: $control_called)"
 }
 
 # Question 7 and the time to first token of question 10 that follows an activation.
@@ -718,10 +780,11 @@ flow_model_info() {
   done
 }
 
-# plain_check: one plain request on each route, so that a refused key or a body no route takes ends the run before it spends.
+# plain_check <routes>: one plain request on each route of the words, so that a refused key or a body no route takes ends the run
+# before it spends.
 plain_check() {
   local checked
-  for checked in messages chat; do
+  for checked in $1; do
     route=$checked model=$haiku_model
     begin_flow
     system_text="Probe run $run_stamp plain check."
@@ -731,8 +794,9 @@ plain_check() {
   done
 }
 
-probe_command() {
-  local text_models size
+# probe_start <routes>: the setup every run needs: the forward, the probe key and a plain request on each route.
+probe_start() {
+  local text_models
   trap probe_exit EXIT
   connect
   ask "listing LiteLLM's models" /v1/models
@@ -743,7 +807,28 @@ probe_command() {
   request "deleting the customer row of $probe_person" /customer/delete "{\"user_ids\":[\"$probe_person\"]}" discard || true
   make_key main "$probe_budget" "$text_models" "$probe_parallel"
   main_key="$made_key" main_alias="${probe_aliases[0]}" value="$made_key"
-  plain_check
+  plain_check "$1"
+}
+
+# probe_end: the run's cost and where the test person stays.
+probe_end() {
+  total_cost
+  echo "litellm:gateway-probe: the test person $probe_person stays in LiteLLM's customer table; remove it with: mise run litellm:gateway-probe --remove"
+}
+
+# The questions that run alone, each the routes of its flow and the flow; their setup is the key and the plain check, since a
+# flow of them needs no calibration. A full run asks them through run_question too.
+declare -A alone_questions=([18]="chat flow_mixed_result")
+# run_question <number>: asks the question on its routes, as a full run and a run alone both do.
+run_question() {
+  local routes flow
+  read -r routes flow <<<"${alone_questions[$1]}"
+  each_target_on "$routes" "$flow"
+}
+
+probe_command() {
+  local size
+  probe_start "messages chat"
   for model in "${probe_models[@]}"; do calibrate "$model"; done
   flow_model_info
   value="$main_key"
@@ -751,6 +836,7 @@ probe_command() {
   ttl_started=$SECONDS
   each_target flow_inline
   each_target flow_deferred
+  run_question 18
   each_target flow_skill
   each_target flow_write_split
   each_target flow_marks
@@ -771,8 +857,16 @@ probe_command() {
   else
     answer 9 O4 "messages $haiku_model" no "the spend log holds no row of the /v1/messages call"
   fi
-  total_cost
-  echo "litellm:gateway-probe: the test person $probe_person stays in LiteLLM's customer table; remove it with: mise run litellm:gateway-probe --remove"
+  probe_end
+}
+
+alone_command() {
+  local routes
+  [ -n "${alone_questions[$1]-}" ] || fail "question $1 does not run alone; those that do: ${!alone_questions[*]}"
+  read -r routes _ <<<"${alone_questions[$1]}"
+  probe_start "$routes"
+  run_question "$1"
+  probe_end
 }
 
 remove_command() {
@@ -782,9 +876,10 @@ remove_command() {
   echo "litellm:gateway-probe: the customer row of $probe_person and every probe key are deleted"
 }
 
-usage_hint="usage: scripts/litellm_gateway_probe.sh | --remove"
+usage_hint="usage: scripts/litellm_gateway_probe.sh | --question <number> | --remove"
 case "$#:${1-}" in
   0:) probe_command ;;
+  2:--question) alone_command "$2" ;;
   1:--remove) remove_command ;;
   *) fail "$usage_hint" ;;
 esac

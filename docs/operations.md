@@ -129,7 +129,10 @@ usage and the prices of `/model/info`; `mise run litellm:measure --remove` delet
 bump lane runs again on the new version, since a bump changes it. It makes a key of its own with the master key (every
 text name, a budget of 5 USD, prompt caching on, an alias new to each run) and sends synthetic requests under one test
 person on the chat route and on `/v1/messages`, on `text/sonnet-medium` and `text/haiku-fast`: mid-conversation tool
-changes, deferred tools and tool references, compaction and its replay, the `max_tokens: 0` keep-alive, the write split
+changes, deferred tools and tool references, a tool result that mixes a text part with a tool reference (question 18, for
+agents#1104 and agents#1089, on the chat route: the next reply must call the loaded tool with the run's token and use the
+parameter only its definition names, or the billed prompt tokens must rise against the same result without the
+reference), compaction and its replay, the `max_tokens: 0` keep-alive, the write split
 by cache lifetime and a 1-hour mark, the time to the first token at 50k, 200k and 800k cached tokens, and the prices of
 `/model/info`. It prints one line per question, route and model with the answer and the usage fields and statuses that
 show it, never a reply body, and ends with the run's cost from the spend log. A second key with a budget of a millionth
@@ -142,7 +145,10 @@ cached count at the cache read price only when that call started less than 240 s
 from its last use), all others at the dearer of the input and cache write price, and the output at its 16 tokens. Else the
 point answers "not run: the key's budget"; its cost is the sum of the spend log's successful rows, and the run ends 1 when the log lacks one. It writes the keys
 until they are deleted, the test person's row and one spend log row per call; `mise run litellm:gateway-probe --remove`
-deletes the row and any key a killed run left, on every page of the key list.
+deletes the row and any key a killed run left, on every page of the key list. `mise run litellm:gateway-probe --question 18`
+runs that question alone, for a bump or a change of the agents' loading shape: the key and a plain request on its route,
+then its four requests (a result with the reference and a control, on each model), a few cents; the key is deleted on
+every exit as in a full run, and a number that does not run alone ends 1 before any key is made.
 
 `mise run litellm:keys [--plan]` makes the person budget (the id of `max_end_user_budget_id`) and each row's key equal
 to it, sending only the fields that differ, so a pure budget change keeps the period's reset; it prints the revision
