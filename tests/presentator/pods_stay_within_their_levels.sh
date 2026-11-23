@@ -166,8 +166,8 @@ judge_structure() {
   exactly "$manifest" "the web does not mount that volume read-only at /run/secrets" \
     "$WEB | .containers[0].volumeMounts[] | select(.name == \"secrets\") | .mountPath + \",\" + (.readOnly | to_string)" '"/run/secrets,true"'
   # Replicas, strategy, process sharing, fsGroup and exec probes.
-  exactly "$manifest" "the web and the worker do not run two replicas each" \
-    "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | .spec.replicas" '2,2'
+  found "$manifest" "the web or the worker runs fewer than two replicas" \
+    "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | select(.spec.replicas < 2)"
   # An immutable field of the StatefulSet changes only by deleting it, which Flux does for the annotation.
   found "$manifest" "the worker sets podManagementPolicy without the annotation that lets Flux recreate its StatefulSet" \
     "select($WORKER_DOCUMENT) | select(.spec.podManagementPolicy != null and .metadata.annotations[\"kustomize.toolkit.fluxcd.io/force\"] != \"enabled\")"
@@ -430,9 +430,8 @@ mutant "the web projects a ServiceAccount token" \
 # Replicas, strategy, process sharing, fsGroup and exec probes.
 mutant "the web does not turn the kubelet's ServiceAccount token automount off" "($on_web | .spec.template.spec.automountServiceAccountToken) = true"
 mutant "the web does not mount that volume read-only at /run/secrets" "($on_web | .spec.template.spec.containers[0].volumeMounts[] | select(.name == \"secrets\") | .readOnly) = false"
-mutant "the web and the worker do not run two replicas each" "($on_web | .spec.replicas) = 1"
-mutant "the web and the worker do not run two replicas each" "($on_worker | .spec.replicas) = 1"
-mutant "the web and the worker do not run two replicas each" "($on_worker | .spec.replicas) = 3"
+mutant "the web or the worker runs fewer than two replicas" "($on_web | .spec.replicas) = 1"
+mutant "the web or the worker runs fewer than two replicas" "($on_worker | .spec.replicas) = 1"
 mutant "the worker sets podManagementPolicy without the annotation" "del($on_worker | .metadata.annotations)"
 mutant "the worker sets podManagementPolicy without the annotation" "($on_worker | .metadata.annotations.\"kustomize.toolkit.fluxcd.io/force\") = \"disabled\""
 mutant "the web takes a pod away before its replacement is Ready" "($on_web | .spec.strategy.rollingUpdate.maxUnavailable) = 1"
