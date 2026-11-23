@@ -66,9 +66,9 @@ finish() {
   [ "$skipped" = false ] || [ "$exit_status" != 3 ] || result=skipped
   if [ "${#leftovers[@]}" != 0 ]; then
     result=red
-    exit_status=1
     echo "live:check: may remain: $(printf '%s; ' "${leftovers[@]}")run again to clean up" >&2
   fi
+  [ "$result" != red ] || exit_status=1
   echo "live:check: ${app:-none} $result${codes[*]:+ (${codes[*]})}"
   exit "$exit_status"
 }
@@ -138,17 +138,24 @@ person_needs_cleaning() {
 # ------------------------------------------------------------------------------------------------- the cleanup
 # The steps below return 1 and say nothing; clean_up_person runs every one whatever an earlier one did, none of them
 # through fail, exit or errexit, and names each that failed in leftovers.
+# visit <path or url> <curl argument>...: one request with the jar; sets answer to "<status> <redirect address>".
+visit() {
+  local target="$1"
+  shift
+  case "$target" in /*) target="$origin$target" ;; esac
+  answer="$(curl --silent --show-error --max-time "$call_seconds" --output /dev/null --write-out '%{http_code} %{redirect_url}' \
+    --cookie "$cookie_jar" --cookie-jar "$cookie_jar" "$@" --config <(curl_url "$target"))"
+}
 # app_request <path> <curl argument>...: prints the status the app answers.
 app_request() {
-  local path="$1"
-  shift
-  curl --silent --show-error --max-time "$call_seconds" --output /dev/null --write-out '%{http_code}' --cookie "$cookie_jar" \
-    --cookie-jar "$cookie_jar" "$@" --config <(curl_url "$origin$path")
+  visit "$@" || return 1
+  printf '%s' "${answer%% *}"
 }
 keycloak_is_reachable_by_kcadm() { kcadm get "users/$person_id" --target-realm "$realm" >/dev/null; }
 sign_in_kcadm_again() {
+  local previous_config_file="$config_file"
   keycloak_is_reachable_by_kcadm && return 0
-  delete_config_file
+  delete_config_file || leftovers+=("the sign-in file $previous_config_file of kcadm in Keycloak's container")
   sign_in_kcadm
 }
 sign_out_of_app() {
@@ -157,7 +164,7 @@ sign_out_of_app() {
   logout_status="$(app_request "$logout_path" --header "Origin: $origin" --data '')" || logout_status=none
   account_status="$(app_request "$account_path")" || account_status=none
   codes+=("sign-out=$logout_status" "account-after=$account_status")
-  [ "$account_status" = 401 ]
+  [[ "$logout_status" == [23]?? ]] && [ "$account_status" = 401 ]
 }
 end_keycloak_sessions() {
   kcadm create "users/$person_id/logout" --target-realm "$realm" --set "realm=$realm" >&"$kcadm_update_output_fd" || return 1
@@ -221,14 +228,6 @@ printf '{"type": "password", "value": "%s", "temporary": false}' "$password" |
   kcadm update "users/$person_id/reset-password" --target-realm "$realm" --file - --no-merge >&"$kcadm_update_output_fd" ||
   fail "the person's password could not be set"
 
-# visit <path or url> <curl argument>...: one request with the jar; sets answer to "<status> <redirect address>".
-visit() {
-  local target="$1"
-  shift
-  case "$target" in /*) target="$origin$target" ;; esac
-  answer="$(curl --silent --show-error --max-time "$call_seconds" --output /dev/null --write-out '%{http_code} %{redirect_url}' \
-    --cookie "$cookie_jar" --cookie-jar "$cookie_jar" "$@" --config <(curl_url "$target"))"
-}
 # fetch_page <url>: sets page and page_status.
 fetch_page() {
   local reply

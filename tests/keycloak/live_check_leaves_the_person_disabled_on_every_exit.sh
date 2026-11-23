@@ -43,7 +43,7 @@ FAKE
 # The realm model. State files: enabled (true or false), required (the person's required actions as JSON), credentials
 # (one id per line), keycloak-session and hopin-session (present while the session exists), signed-in (kcadm's config
 # file exists), password (what the reset wrote). FAKE_FAIL names the one write that fails; FAKE_DROP_CONFIG_AT=enable
-# removes kcadm's config file after the enable write; FAKE_DEPLOYMENT=unavailable makes hopin's Deployment not Available.
+# removes kcadm's config file after the enable write; FAKE_FAIL=remove-first-config fails the first removal of a config file; FAKE_DEPLOYMENT=unavailable makes hopin's Deployment not Available.
 cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -55,7 +55,11 @@ case " ${arguments[*]} " in
     log_event "kubectl: deployment read"
     if [ "${FAKE_DEPLOYMENT:-available}" = unavailable ]; then echo False; else echo True; fi
     exit 0 ;;
-  *" rm -f -- "*) rm -f "$FAKE_STATE/signed-in"; log_event "kubectl: config-removed"; exit 0 ;;
+  *" rm -f -- "*)
+    if [ "${FAKE_FAIL:-}" = remove-first-config ] && [ ! -e "$FAKE_STATE/config-removal-failed" ]; then
+      touch "$FAKE_STATE/config-removal-failed"; log_event "kubectl: config-removal-failed"; exit 1
+    fi
+    rm -f "$FAKE_STATE/signed-in"; log_event "kubectl: config-removed"; exit 0 ;;
   *" bash -c "*"config credentials"*) touch "$FAKE_STATE/signed-in"; log_event "kubectl: kcadm-signed-in"; exit 0 ;;
 esac
 [ -e "$FAKE_STATE/signed-in" ] || { echo "fake kubectl: kcadm has no config" >&2; log_event "kubectl: refused, no config"; exit 1; }
@@ -108,8 +112,10 @@ FAKE
 
 # hopin's routes and Keycloak's login form. The form accepts the password the realm model recorded and only for an
 # enabled person with a credential and no required action; FAKE_SIGNIN=refused makes it answer the page again;
-# FAKE_LOGOUT_STATUS sets hopin's sign-out answer; FAKE_TERM_AT=login-page sends TERM to the command's own process, through
-# the timeout that runs it, while this request is open.
+# FAKE_LOGOUT_STATUS sets hopin's sign-out answer, which ends the session only when it is 200 unless
+# FAKE_LOGOUT_ENDS_SESSION is set; FAKE_TRANSPORT_FAILS=start makes the request to hopin's start fail the way curl's
+# timeout does (exit 28); FAKE_TERM_AT=login-page sends TERM to the command's own process, through the timeout that runs
+# it, while this request is open.
 cat >"$fake_bin/curl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -145,11 +151,11 @@ terminate_command() {
   done
   [ "$capped" = true ] && [ -n "$command_pid" ] || { violate "curl: no command process below a timeout to terminate"; return; }
   kill -TERM "$command_pid"
-  sleep 2
 }
 case "$url" in
   "$FAKE_APP_ORIGIN/auth/start")
     log_event "curl: start"
+    [ "${FAKE_TRANSPORT_FAILS:-}" != start ] || exit 28
     code=303 redirect="$FAKE_KEYCLOAK_ORIGIN/realms/$FAKE_REALM/protocol/openid-connect/auth?client_id=hopin&state=fake-state" ;;
   "$FAKE_KEYCLOAK_ORIGIN/realms/$FAKE_REALM/protocol/openid-connect/auth?"*)
     log_event "curl: login page"
@@ -178,7 +184,7 @@ case "$url" in
     log_event "curl: logout"
     [ "$origin_header" = "Origin: $FAKE_APP_ORIGIN" ] || violate "curl: a sign-out without hopin's own Origin"
     code="${FAKE_LOGOUT_STATUS:-200}"
-    if [ "$code" = 200 ]; then rm -f "$FAKE_STATE/hopin-session"; : >"$jar"; fi ;;
+    if [ "$code" = 200 ] || [ -n "${FAKE_LOGOUT_ENDS_SESSION:-}" ]; then rm -f "$FAKE_STATE/hopin-session"; : >"$jar"; fi ;;
   *) echo "fake curl: unexpected request" >&2; exit 1 ;;
 esac
 format="${format//'%{http_code}'/$code}"
@@ -297,12 +303,20 @@ echo "a refused sign-in is red, and the person is signed out and disabled"
 
 prepare_case term-during-sign-in
 run_command term-during-sign-in FAKE_TERM_AT=login-page
-[ "$status" != 0 ] || refuse "term-during-sign-in: exit 0"
+[ "$status" = 1 ] || refuse "term-during-sign-in: exit $status, not 1"
 grep -qE '^live:check: hopin red' "$output_file" || refuse "term-during-sign-in: no red result line"
 kept_secret term-during-sign-in
 left_clean term-during-sign-in
 cleanup_order term-during-sign-in
 echo "a TERM during the sign-in ends red, and the person is signed out and disabled"
+
+prepare_case transport-fails
+run_command transport-fails FAKE_TRANSPORT_FAILS=start
+expect_result transport-fails 1 red
+kept_secret transport-fails
+left_clean transport-fails
+cleanup_order transport-fails
+echo "a request that fails in transport is red with exit 1 and not the status of curl, and the person is disabled"
 
 prepare_case failed-password-write
 run_command failed-password-write FAKE_FAIL=password
@@ -320,6 +334,14 @@ left_clean config-dropped
 [ "$(grep -c 'kcadm-signed-in' "$state/log")" = 2 ] || refuse "config-dropped: kcadm did not sign in again for the cleanup"
 echo "a lost kcadm sign-in file is made again for the cleanup, and the person is disabled"
 
+prepare_case config-removal-fails
+run_command config-removal-fails FAKE_DROP_CONFIG_AT=enable FAKE_FAIL=remove-first-config
+[ "$status" = 1 ] || refuse "config-removal-fails: exit $status, not 1"
+grep -q "may remain: .*sign-in file /tmp/kcadm-.* of kcadm" "$output_file" || refuse "config-removal-fails: the output names no sign-in file"
+kept_secret config-removal-fails
+left_clean config-removal-fails
+echo "a sign-in file of kcadm that cannot be removed before the new sign-in is named with its path"
+
 prepare_case hopin-sign-out-fails
 run_command hopin-sign-out-fails FAKE_LOGOUT_STATUS=502
 [ "$status" = 1 ] || refuse "hopin-sign-out-fails: exit $status, not 1"
@@ -327,6 +349,15 @@ grep -q "may remain: .*the person's hopin session" "$output_file" || refuse "hop
 kept_secret hopin-sign-out-fails
 left_clean hopin-sign-out-fails
 echo "a hopin sign-out that answers 502 is named, and the credential is still deleted and the person disabled"
+
+prepare_case hopin-sign-out-fails-session-ends
+run_command hopin-sign-out-fails-session-ends FAKE_LOGOUT_STATUS=502 FAKE_LOGOUT_ENDS_SESSION=true
+[ "$status" = 1 ] || refuse "hopin-sign-out-fails-session-ends: exit $status, not 1"
+grep -q "may remain: .*the person's hopin session" "$output_file" || refuse "hopin-sign-out-fails-session-ends: the output names no hopin session"
+grep -q 'account-after=401' "$output_file" || refuse "hopin-sign-out-fails-session-ends: the account was not read back as signed out"
+kept_secret hopin-sign-out-fails-session-ends
+left_clean hopin-sign-out-fails-session-ends
+echo "a hopin sign-out that answers 502 is named even when the account answers 401 after it"
 
 prepare_case credential-delete-fails
 run_command credential-delete-fails FAKE_FAIL=delete-credential
