@@ -3,5 +3,6 @@ agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
 role = "builder"
 base = "cddfca767df3e3b5a952fe3b2ae11cfea540d85f"
 branch = "docs/agent-steps"
-scope = ["AGENTS.md", "docs/runbooks/install-the-pc.md"]
+scope = ["AGENTS.md", "docs/runbooks/change-ai-keys-and-budgets.md", "docs/runbooks/install-the-pc.md", "scripts/gpu_use.sh"]
 opened_commit = "227e9156e9982c70a9a8aedd91717c4d481b8842"
+whole_reason = "One handover of three steps to agents: every line that names who runs them changes together, or the documents contradict each other."
