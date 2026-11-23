@@ -1,0 +1,12 @@
+# The release of hopin's image, the full app ref of a release that changes only in a pull request: its one owner,
+# included by the layer and by its pull layer, so that the init container, the main container and the pull layer's image
+# volume run one ref. A bump changes tag and digest together. The field spec makes the transform rewrite the reference of
+# a Job's image volume too, which it leaves alone by default.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: ghcr.io/overnightworks/hopin
+    newTag: 2026.11.23.5
+    digest: sha256:1caaf46142cb75c96c9ff34293f288f31c178ff1b4e95626b1dbe258f22c7aeb
+configurations:
+  - image-volume.yaml
