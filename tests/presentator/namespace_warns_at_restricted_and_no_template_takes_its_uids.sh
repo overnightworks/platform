@@ -30,7 +30,8 @@ kubectl kustomize apps/presentator >"$layers/presentator.yaml"
 layer_paths="$(yq --no-doc 'select(.kind == "Kustomization" and (.apiVersion | test("^kustomize[.]toolkit[.]fluxcd[.]io/"))) | .spec.path' clusters/pc/apps.yaml clusters/pc/infrastructure.yaml | grep -E '^[.]/(apps|infrastructure)/')" ||
   fail "clusters/pc/apps.yaml and infrastructure.yaml name no layer path"
 for path in $layer_paths; do
-  render_layer "$path" "$layers/$(tr '/' '_' <<<"${path#./}").yaml" >/dev/null || fail "layer $path does not render, or holds a kustomization below its own"
+  reason="$(render_layer "$path" "$layers/$(tr '/' '_' <<<"${path#./}").yaml")" ||
+    fail "layer $path does not render, or holds a kustomization below its own: $reason"
 done
 [ -z "$(census "$layers"/*.yaml)" ] || fail "a Pod template names 61001 or 61002: $(census "$layers"/*.yaml)"
 echo "no Pod template of a layer names 61001 or 61002"

@@ -73,6 +73,8 @@ spec:
               value: /agents
             - name: REALM_MCP_CLIENT_ID
               value: agents
+            - name: REALM_AI_GROUP
+              value: /services/litellm
             - name: DATABASE_URL
               value: postgresql://songmaker@postgres:5432/songmaker
             # songmaker's documented defaults, stated so that the connections this process may hold, pool + overflow + 1,

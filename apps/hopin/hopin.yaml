@@ -76,6 +76,10 @@ spec:
               value: /agents
             - name: REALM_MCP_CLIENT_ID
               value: agents
+            - name: REALM_AI_GROUP
+              value: /services/litellm
+            - name: REALM_SPEECH_SCOPE
+              value: speech-service-audience
             - name: HOPIN_OIDC_ISSUER
               value: https://auth.hallucinai.de/realms/hallucinai
             - name: HOPIN_OIDC_CLIENT_SECRET_FILE

@@ -117,7 +117,7 @@ jobs:
       - name: Check that every Service an Ingress routes to carries the same five sticky cookie annotations in every layer, and that the check names each breach
         run: mise exec -- tests/ingress/every_routed_service_carries_the_same_sticky_cookie.sh
 
-      - name: Check that every name a manifest under apps/ hands under a REALM_ key is a plain value that the realm file declares and that is its app's own or the fleet's, and that the check names each breach
+      - name: Check that every name a manifest under apps/ hands under a REALM_ key is a plain value that the realm file declares and that is its app's own or the fleet's, that every key the realm file demands of an app is handed, and that the check names each breach
         run: mise exec -- tests/keycloak/handed_realm_names_are_declared.sh infrastructure/keycloak/realm.yaml
 
       - name: Check that check:secrets-expiry passes no annotated Secret and a date 31 days out and names each Secret within 30 days, past, unparseable or unlisted
