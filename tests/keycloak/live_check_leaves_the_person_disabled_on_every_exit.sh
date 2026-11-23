@@ -504,7 +504,11 @@ for start in enabled jar:hopin jar:skat; do
   kept_secret "$case_name"
   left_clean "$case_name"
   grep -q "leftovers were cleaned up first" "$output_file" || refuse "$case_name: the output says nothing of the heal"
-  grep -q -- "${heal_codes[$start]}" "$output_file" || refuse "$case_name: the output holds not the codes '${heal_codes[$start]}'"
+  if [[ $start == enabled ]]; then
+    ! grep -q '[a-z]*-sign-out=' "$output_file" || refuse "$case_name: the heal printed an app's sign-out code"
+  else
+    grep -q -- "${heal_codes[$start]}" "$output_file" || refuse "$case_name: the output holds not the codes '${heal_codes[$start]}'"
+  fi
   in_order "$case_name" "${first_cleanup_event[$start]}" 'write enabled=false' 'brute-force-cleared' 'write enabled=true' 'curl: callback'
   echo "a person left $start by an earlier run is cleaned up before the new run writes"
 done
