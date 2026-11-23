@@ -148,6 +148,9 @@ jobs:
       - name: Check that a failed or lost write of the admin budget, its group or its customer row names what may be written and a rerun completes it
         run: mise exec -- tests/litellm/admin_names_what_a_failed_write_may_have_left.sh
 
+      - name: Check that live:check signs the test person in with its password on stdin only, leaves it signed out and disabled on every exit it can trap, names what a failed step may leave, cleans up an earlier run's leftovers first and refuses or skips with no write
+        run: mise exec -- tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh
+
       - name: Check that the gateway probe answers on both routes and models, keeps its port-forward through its waits, deletes its keys on every exit and judges its budget, cache and cost answers by their evidence
         run: mise exec -- tests/litellm/gateway_probe_answers_on_both_routes_and_removes_its_keys.sh
 

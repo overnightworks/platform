@@ -3,7 +3,7 @@
 This reference holds ruled sentences.
 
 Reader: the operator, and a lane that touches a Secret's expiry, an alert, a check, a page, Grafana, a scrape job, the
-PC's disk or the AI budgets.
+PC's disk, the AI budgets or the live check.
 
 ## Expiring Secrets
 
@@ -169,3 +169,35 @@ Secret's value is registered; it prints `<app> replaced`. LiteLLM binds spend to
 not carry over and the app's period starts anew. The alias holds no key between the two writes: a failure there says that
 the alias holds no key (or may hold none or the new one, when an answer was lost), names the delete, and the same command
 completes it. (OPS-16)
+
+## The live check (`scripts/live_check.sh`)
+
+`mise run live:check <app>` checks that a person can sign in to the app on the live stack, through one test person that
+`infrastructure/keycloak/realm.yaml` declares disabled, in `/apps/hopin` only and with no credential, and that no
+other part of the platform uses. Today the app is hopin. The command runs on the operator's PC, never from CI, since CI
+holds no route and no kubeconfig to the PC's API server; CI proves it against a fake `kubectl` and a fake `curl`
+(`tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh`) and the realm entry and Keycloak's form step on
+k3d. Hopin's own routes are proven only by a live run.
+
+The command keeps the test password from cooperative agents only; the boundary that stops a non-cooperative one is the
+operator's account on the PC: every agent inside it already administers Keycloak, so the password adds no reach it
+lacks, and the password never leaves it. (OPS-18)
+
+One run at a time: a second is refused before it reads or writes anything. A run clears the person's failed
+sign-ins, enables it with no required action in one write (config-cli's first create adds the realm's default action,
+which this write clears), sets a random hex password through kcadm on stdin and signs in without a browser through the
+app's start route, Keycloak's form (the password on curl's stdin, a URL that carries a code in a curl option file), the
+callback and the account route, which must answer 200. The password lives in the command's memory only: no file,
+argument, environment or output holds it, and no output holds a cookie, a code or a page. (OPS-19)
+
+On every exit it can trap (success, error, TERM, INT) one EXIT trap signs out at the app (its sign-out route with the
+app's `Origin`, read back by the account route answering 401), ends the person's Keycloak sessions, deletes every
+password credential, disables the person, reads each back, deletes the cookie jar and removes kcadm's sign-in file
+last; each step runs whatever an earlier one did, and signs kcadm in again when its file is gone. A step that fails
+makes the run exit 1 and names what may remain. An exit it cannot trap (SIGKILL, the cap's kill, power loss) leaves the
+person enabled with a credential, its sessions and the 0600 cookie jar in `$XDG_RUNTIME_DIR/live-check`, which the next
+run finds first and cleans the same way; the password died with the process. The run exits 0 when green, 1 when red and
+3 when skipped, which is the app's Deployment not being Available, after the cleanup and with no other write. (OPS-20)
+
+A realm apply during a run disables the person and a hopin rollout ends its session, so that run is red and a rerun is
+green. The test person's account row in hopin's database is its own data and stays. (OPS-21)
