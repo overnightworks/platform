@@ -1,7 +1,0 @@
-claim_id = "a031f27208ec4b28802f614455d9c1fa"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "5a22440e29825924a45c18d10ae5f869a8b7226f"
-branch = "claude/issue-842-hal-units-stop"
-scope = ["mise.toml"]
-opened_commit = "7427f2727d874eb5e2e9c74b24e096d9bc9e619f"
