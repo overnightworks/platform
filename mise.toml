@@ -111,6 +111,15 @@ state = "running"
 enabled = false
 on_change = "restart"
 
+# hal's two enabled root units, stopped and disabled while their files still exist.
+[bootstrap.services."cloudflared.service"]
+state = "stopped"
+enabled = false
+
+[bootstrap.services."hal-journal-retention.timer"]
+state = "stopped"
+enabled = false
+
 # The disk's bounds run in the operator's own user manager, with no sudo: Docuum keeps Docker's images within 100 GB, a
 # weekly clean empties uv's cache, a daily tmpfiles clean deletes Codex sessions after 30 days and a daily gtrash
 # prune deletes Trash entries whose .trashinfo date is older than 30 days. mise writes each unit
