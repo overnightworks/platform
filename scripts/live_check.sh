@@ -323,7 +323,7 @@ answer="$(printf '%s' "$password" | post_form <(printf '%s' "$page") "${login_ur
   --data-urlencode "username=$person" --data-urlencode password@-)"
 expect_status sign-in-form 302
 return_url="${answer#* }"
-[ "${return_url%%\?*}" = "$callback_url" ] || fail "the sign-in form returns to ${return_url%%\?*}, not the callback of $client"
+[ "${return_url%%\?*}" = "$callback_url" ] || fail "the sign-in form returns to ${return_url%%\?*}, not the callback of $app"
 visit "$return_url"
 expect_status callback 303
 visit "$account_path"

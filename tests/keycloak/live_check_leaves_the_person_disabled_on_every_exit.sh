@@ -380,6 +380,16 @@ left_clean transport-fails
 cleanup_order transport-fails
 echo "a request that fails in transport is red with exit 1 and not the status of curl, and the person is disabled"
 
+prepare_case foreign-callback
+run_command foreign-callback FAKE_CALLBACK_URL=https://foreign.example/callback
+expect_result foreign-callback 1 red
+grep -q "the sign-in form returns to https://foreign.example/callback, not the callback of hopin" "$output_file" ||
+  refuse "foreign-callback: the output does not name the foreign callback and the app"
+kept_secret foreign-callback
+left_clean foreign-callback
+cleanup_order foreign-callback
+echo "a sign-in form that returns to another address than the app's callback is red and names both, and the person is disabled"
+
 prepare_case failed-password-write
 run_command failed-password-write FAKE_FAIL=password
 expect_result failed-password-write 1 red
