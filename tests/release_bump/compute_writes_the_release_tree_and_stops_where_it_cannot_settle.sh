@@ -2,7 +2,8 @@
 # Drive scripts/release_bump_compute.sh against a fixture app repository, registry and platform main: the newest app
 # release, whatever other tags the repository holds, gives a patch whose tree has the release's Component, legal copies,
 # dates and sha256 and rebuilt legal pages; a second, newer release gives its own tree; a release that main runs is a
-# no-op; an older version, an unknown name and a changed page set are refused; an unfinished release waits.
+# no-op; an older version, an unknown name and a changed page set are refused; a legal step that fails fails the compute
+# step without a patch; an unfinished release waits.
 # Usage: mise exec -- tests/release_bump/compute_writes_the_release_tree_and_stops_where_it_cannot_settle.sh
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/world.sh"
@@ -97,6 +98,16 @@ compute hopin "${output}" 2026.11.28.1
 expect_status 0 "has no tag v2026.11.28.1 yet"
 [ "$(cat "${output}/outcome")" = waiting ] || fail "a release without its tag did not wait"
 echo "an unfinished release waits"
+
+# A legal step that fails other than by refusing (here a tag whose pages cannot be read) fails the compute step with 2
+# and writes no patch, with the registry holding the image.
+git -C "${app_repository}" -c user.name=fixture -c user.email=fixture@example.org tag -a v2026.11.29.1 -m unreadable "$(git -C "${app_repository}" hash-object -w --stdin <<<unreadable)"
+git -C "${app_repository}" push --quiet "file://${work}/remote/overnightworks/hopin" --tags
+registry_add "${image}" 2026.11.29.1
+compute hopin "${output}" 2026.11.29.1
+expect_status 2 "release_bump_legal"
+[ ! -e "${output}/patch" ] || fail "a failed legal step left a patch"
+echo "a failed legal step fails the compute step"
 
 # The run leaves the checkout and its worktree list as it found them.
 [ -z "$(git -C "${checkout}" status --porcelain)" ] || fail "the compute step changed the checkout"
