@@ -1,0 +1,7 @@
+claim_id = "575168c7c60a4149b8e16afb9b555629"
+agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
+role = "builder"
+base = "cddfca767df3e3b5a952fe3b2ae11cfea540d85f"
+branch = "docs/agent-steps"
+scope = ["AGENTS.md", "docs/runbooks/install-the-pc.md"]
+opened_commit = "227e9156e9982c70a9a8aedd91717c4d481b8842"
