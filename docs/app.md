@@ -88,9 +88,9 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
   cannot serve. Flux reports a layer Ready only once its pods are, so a check that passes too early hides a broken start.
 - **Connections.** A Deployment that opens its Postgres declares the connections one pod may hold: the pool and overflow
   variables its container sets (`DATABASE_POOL_SIZE` and `DATABASE_MAX_OVERFLOW`, counting one more for init-time
-  engines), or, where the app or its vendor fixes them, the annotation `hallucinai.de/postgres-connections-per-pod`. The sum over the
-  namespace's Deployments of their pods x that figure, plus the backup's dump, must stay within the base's
-  `max_connections` less its reserved slots. A `Recreate` Deployment has its replicas. A `RollingUpdate` has 2 x
+  engines), or, where the app or its vendor fixes them, the annotation `hallucinai.de/postgres-connections-per-pod`.
+  The sum over the namespace's Deployments of their pods x that figure, plus the backup's dump, must stay within the
+  base's `max_connections` less its reserved slots. A `Recreate` Deployment has its replicas. A `RollingUpdate` has 2 x
   replicas + surge pods, since a pod being stopped is no part of the surge and may hold its connections while the surge
   pods start, and each surge pod adds 1 connection where its init container migrates the database.
 - **Configuration.** Live settings come from the manifest's environment, secrets from files `platform-secrets`
