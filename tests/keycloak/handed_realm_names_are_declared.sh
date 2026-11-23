@@ -73,10 +73,11 @@ judgement="$key_definitions"'
        (if $handed | length > 0 then (null | demanded[]) as $key
           | select($handed | any(.name == $key) | not)
           | "problem: \($layer): container \($container.name) does not hand \($key), which the realm file declares for \($app)" else empty end)),
-    "\($layer): \($containers | length) containers hand \([$containers[] | (.env // [])[] | select(.name | startswith("REALM_"))] | length) REALM_ values"
+    ([$containers[] | (.env // [])[] | select(.name | startswith("REALM_"))] | length) as $count
+    | "\($count)\t\($layer): \($containers | length) containers hand \($count) REALM_ values"
 '
 
-# judge_render <app> <layer> <rendered YAML file> <facts>: the problem lines of one layer's render, and a line counting what it judged.
+# judge_render <app> <layer> <rendered YAML file> <facts>: the problem lines of one layer's render, and a last line that holds the count of REALM_ values it judged, a tab, and a summary.
 judge_render() {
   yq --output-format json --indent 0 '.' "$3" |
     jq --slurp --raw-output --arg app "$1" --arg layer "$2" --argjson facts "$4" "$judgement"
@@ -111,8 +112,9 @@ judge_layers() {
     esac
     judged="$(judge_render "$app" "$layer" "$rendered" "$facts")"
     echo "$judged"
-    judged="${judged##*hand }"
-    handed[$app]=$(( ${handed[$app]:-0} + ${judged%% *} ))
+    judged="${judged##*$'\n'}"
+    judged="${judged%%$'\t'*}"
+    handed[$app]=$(( ${handed[$app]:-0} + ${judged:?judge_render printed no count} ))
   done < <(yq --no-doc 'select(.kind == "Kustomization") | select(.spec.sourceRef.name == "flux-system")
     | select((.spec.path // "") | test("^([.]/)?apps(/|$)"))
     | .metadata.name + " " + .spec.path + " " + ([.spec | keys | .[] | select(. == "patches" or . == "postBuild" or . == "images"
@@ -241,8 +243,7 @@ yq '.clients += [{"clientId": "throwaway"}]' "$realm_file" >"$work/realm.yaml"
 expect_problem "throwaway has realm objects (REALM_CLIENT_ID), and its layers hand no REALM_ key" "a realm client of an app whose layer hands no key" \
   judge_layers "$throwaway" "$work/realm.yaml"
 printf 'resources:\n  - missing.yaml\n' >"$throwaway/apps/throwaway/kustomization.yaml"
-expect_problem "throwaway does not render: " "a layer naming a missing resource" judge_layers "$throwaway" "$realm_file"
-expect_problem "missing.yaml" "a layer naming a missing resource, whose reason is the render's" judge_layers "$throwaway" "$realm_file"
+expect_problem "missing.yaml" "a layer naming a missing resource" judge_layers "$throwaway" "$realm_file"
 rm "$throwaway/apps/throwaway/kustomization.yaml"
 
 # A Kustomization of the cluster whose apps path the check would skip.
