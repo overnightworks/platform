@@ -7,6 +7,10 @@ kind: Deployment
 metadata:
   name: skat
   namespace: skat
+  annotations:
+    # SQLAlchemy's default QueuePool (5 + 10 overflow), which skat's one engine sets nothing over, plus the health
+    # probe's own connection.
+    hallucinai.de/postgres-connections-per-pod: "16"
 spec:
   replicas: 1
   strategy:
