@@ -1,6 +1,8 @@
-# The three routes litellm-front serves, to LiteLLM's Service: the completion call, the picture call and the model
-# list. Every other method and path, the other picture paths and the model list's sub-paths included, matches no router
-# and Traefik answers 404 itself.
+# The four routes litellm-front serves, to LiteLLM's Service: the completion call, the picture call, the model list and
+# the model information. Every other method and path, the other picture paths, the model list's sub-paths and
+# `/model/info` included, matches no router and Traefik answers 404 itself. `/v1/model/info` lists only the calling
+# key's models, each without credentials, and shows a model's `api_base` and custom headers to apps, unmasked unless
+# their names look secret: a later `api_base` or custom header in litellm-config.yaml would show to apps through it.
 http:
   routers:
     completions:
@@ -16,6 +18,11 @@ http:
     models:
       entryPoints: [api]
       rule: Method(`GET`) && Path(`/v1/models`)
+      middlewares: [query-refused, query-caught, request-headers]
+      service: litellm
+    model-info:
+      entryPoints: [api]
+      rule: Method(`GET`) && Path(`/v1/model/info`)
       middlewares: [query-refused, query-caught, request-headers]
       service: litellm
   middlewares:

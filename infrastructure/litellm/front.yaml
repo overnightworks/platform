@@ -1,4 +1,4 @@
-# The front of LiteLLM: the apps' only way to the gateway, a Traefik that serves the three routes of front-route.yml
+# The front of LiteLLM: the apps' only way to the gateway, a Traefik that serves the four routes of front-route.yml
 # to the Service litellm. It reads no secret.
 apiVersion: apps/v1
 kind: Deployment

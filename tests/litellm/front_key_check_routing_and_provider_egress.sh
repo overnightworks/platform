@@ -175,17 +175,21 @@ start_client "$APP_NAMESPACE" "$idle_pod" '{}' sh -c \
   "$(base64 --wrap=0 <<<"$idle_probe")" "litellm-front.$namespace.svc.cluster.local" \
   "$(service_port litellm-front "$namespace")" "$idle_seconds"
 
-# C1: the front passes its three routes to LiteLLM, whose key check answers a call without a key, and nothing else.
+# C1: the front passes its four routes to LiteLLM, whose key check answers a call without a key, and nothing else.
 post "$front_url/v1/chat/completions" '{}'
 chat_status="$status"
 post "$front_url/v1/images/generations" '{}'
 pictures_status="$status"
 call "$APP_NAMESPACE" "$front_url/v1/models"
-[ "$chat_status $pictures_status $status" = "401 401 401" ] ||
-  fail "the three routes without a key got $chat_status $pictures_status $status through the front, not LiteLLM's 401"
-echo "POST /v1/chat/completions, POST /v1/images/generations and GET /v1/models without a key get LiteLLM's 401"
+models_status="$status"
+call "$APP_NAMESPACE" "$front_url/v1/model/info"
+[ "$chat_status $pictures_status $models_status $status" = "401 401 401 401" ] ||
+  fail "the four routes without a key got $chat_status $pictures_status $models_status $status through the front, \
+not LiteLLM's 401"
+echo "POST /v1/chat/completions, POST /v1/images/generations, GET /v1/models and GET /v1/model/info without a key get" \
+  "LiteLLM's 401"
 # front_refused <request>: the last call got the front's own 404, Go's text, which none of LiteLLM's answers is; a
-# wrong method on one of the three paths would get LiteLLM's 401 or 405 if the front passed it.
+# wrong method on one of the four paths would get LiteLLM's 401 or 405 if the front passed it.
 front_refused() {
   [ "$status" = 404 ] && grep -qx '404 page not found' <<<"$answer" ||
     fail "$1 through the front got $status, not the front's 404"
@@ -194,11 +198,25 @@ call "$APP_NAMESPACE" "$front_url/v1/chat/completions"
 front_refused "GET /v1/chat/completions"
 call "$APP_NAMESPACE" "$front_url/v1/images/generations"
 front_refused "GET /v1/images/generations"
+call "$APP_NAMESPACE" "$front_url/model/info" "${authorized[@]}"
+front_refused "GET /model/info with the key"
 post "$front_url/v1/models" '{}'
 front_refused "POST /v1/models"
 post "$front_url/key/generate" '{}' --header "Authorization: Bearer $master_key"
 front_refused "POST /key/generate with the master key"
-echo "GET on the two POST routes, POST /v1/models and POST /key/generate with the master key get the front's 404"
+echo "GET on the two POST routes, GET /model/info, POST /v1/models and POST /key/generate with the master key \
+get the front's 404"
+# The app key reads its own model's window and prices, without a credential.
+call "$APP_NAMESPACE" "$front_url/v1/model/info" "${authorized[@]}"
+model_info="$answer"
+[ "$status" = 200 ] || fail "GET /v1/model/info with the key through the front got $status, not 200"
+[ "$(MODEL="$model" yq --input-format json '
+  (.data | length) == 1 and .data[0].model_name == strenv(MODEL) and
+  (.data | all_c(.model_info | (has("max_input_tokens") and has("input_cost_per_token") and
+    has("output_cost_per_token") and has("cache_read_input_token_cost") and
+    has("cache_creation_input_token_cost"))))' <<<"$model_info")" = true ] && ! grep -q '"api_key"' <<<"$model_info" ||
+  fail "GET /v1/model/info with the key lists other models, lacks a window or price, or shows an api_key"
+echo "GET /v1/model/info with the key lists its model with window and the four prices and no api_key"
 # A query string gets query-refused's 400 on both of query-caught's redirects, 302 for a GET and 307 for a POST; each
 # request is one LiteLLM would answer with 200.
 mock="mocked-$(openssl rand -hex 8)"
@@ -206,6 +224,9 @@ call "$APP_NAMESPACE" "$front_url/v1/models?model=$model" "${authorized[@]}"
 [ "$status" = 400 ] || fail "GET /v1/models with a query string through the front got $status, not 400"
 post "$front_url/v1/chat/completions?model=$model" "$(completion "$mock")" "${authorized[@]}"
 [ "$status" = 400 ] || fail "POST /v1/chat/completions with a query string through the front got $status, not 400"
+call "$APP_NAMESPACE" "$front_url/v1/model/info?litellm_model_id=$(yq --input-format json '.data[0].model_info.id' \
+  <<<"$model_info")" "${authorized[@]}"
+[ "$status" = 400 ] || fail "GET /v1/model/info with a query string through the front got $status, not 400"
 echo "a query string gets 400 through the front on a GET and on a POST"
 post "$front_url/v1/chat/completions" "$(completion "$mock")" "${authorized[@]}"
 [ "$status" = 200 ] && [ "$(yq --input-format json '.choices[0].message.content' <<<"$answer")" = "$mock" ] ||

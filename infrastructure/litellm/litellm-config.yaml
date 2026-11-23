@@ -16,8 +16,9 @@
 # `max_end_user_budget_id` bounds unless the person's own row links another. The database holds keys, budgets and each
 # person's fingerprint with its counters, and one spend log row per call, failures included, with key hash, person,
 # model, cost, status and a failure's reason, never its prompt or answer; LiteLLM deletes a row after 30 days. Message
-# logging stays off. No app knows the master key, and the front (front.yaml) passes only three routes, so the admin
-# routes stay closed to apps.
+# logging stays off. No app knows the master key, and the front (front.yaml) passes only four routes, so the admin
+# routes stay closed to apps. One of them, GET /v1/model/info, shows a model's `api_base` and custom headers to apps,
+# unmasked unless their names look secret: a later `api_base` or custom header here would show to apps.
 model_list:
   - model_name: text/opus
     litellm_params:

@@ -49,8 +49,8 @@ provider hosts at the fixed ClusterIP of agent-egress's Service, in k3s's defaul
 The promise: [litellm](../infrastructure/legal/sections/litellm/datenschutz.html#agent-dienst).
 
 The front, a Traefik on port 4000, admits only the namespaces `hopin`, `personas`, `presentator`, `songmaker` and
-`gatus` and passes only `POST /v1/chat/completions`, `POST /v1/images/generations` and `GET /v1/models` without a query
-string. (PD-5)
+`gatus` and passes only `POST /v1/chat/completions`, `POST /v1/images/generations`, `GET /v1/models` and
+`GET /v1/model/info` without a query string. (PD-5)
 The promise: [litellm](../infrastructure/legal/sections/litellm/datenschutz.html#agent-dienst).
 
 agent-egress, a Traefik on 443 that admits only LiteLLM, passes TLS only for the SNIs of `egress-allowed.yml` and sends
