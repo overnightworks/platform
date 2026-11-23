@@ -155,32 +155,15 @@ report_difference() {
 state_root="$(mktemp -d "$RUNNER_TEMP/keycloak-state.XXXXXX")"
 mkdir "$state_root/before" "$state_root/after"
 before="$(fingerprint "$state_root/before")" || fail "the realms master and $realm cannot be read"
-# The file clears a client's back-channel URL with "" and states the others. Config-cli must leave no attribute on a
-# cleared client, which the console or an earlier run may have filled, and hold each stated URL as the file has it.
+# The file states each client's back-channel URL. Config-cli must hold each as the file has it.
 backchannel_attribute=backchannel.logout.url
 backchannel_urls() { yq --output-format json '.clients' "$REALM_FILE" | jq --raw-output --arg key "$backchannel_attribute" "$1"; }
-cleared_clients="$(backchannel_urls '.[] | select(.attributes[$key] == "") | .clientId')"
 stated_urls="$(backchannel_urls '.[] | select((.attributes[$key] // "") != "") | .clientId + "\t" + .attributes[$key]')"
-[ -n "$cleared_clients" ] && [ -n "$stated_urls" ] ||
-  fail "$REALM_FILE clears no client's back-channel URL or states none"
+[ -n "$stated_urls" ] || fail "$REALM_FILE states no client's back-channel URL"
 # client_attribute <client id> <key>: the client's attribute on the running realm.
 client_attribute() {
   admin GET "$realm/clients?clientId=$1" | jq --raw-output --exit-status --arg key "$2" '.[0].attributes[$key] // empty'
 }
-# client_holds_attribute <client id> <key>: prints true or false for whether the client has the attribute on the
-# running realm, a stored "" included, and nothing when the client or its attributes cannot be read.
-client_holds_attribute() {
-  admin GET "$realm/clients?clientId=$1" | jq --exit-status --arg key "$2" '.[0].attributes | if type == "object" then has($key) else error("no attributes") end'
-}
-written_url=http://written-by-the-cell.invalid/
-while IFS= read -r client_id; do
-  client="$(admin GET "$realm/clients?clientId=$client_id" | jq --exit-status '.[0]')" ||
-    fail "the realm $realm holds no client $client_id"
-  jq --arg key "$backchannel_attribute" --arg url "$written_url" '.attributes[$key] = $url' <<<"$client" |
-    admin PUT "$realm/clients/$(jq --raw-output .id <<<"$client")" @- >/dev/null
-  [ "$(client_attribute "$client_id" "$backchannel_attribute")" = "$written_url" ] ||
-    fail "the client $client_id did not keep the back-channel URL the cell wrote, so the next check proves nothing"
-done <<<"$cleared_clients"
 rerun_config_cli
 second_failures="$(kubectl -n "$namespace" get job/config-cli -o jsonpath='{.status.failed}')"
 [ -z "$second_failures" ] || fail "config-cli's second run failed $second_failures times before it completed"
@@ -190,15 +173,11 @@ if [ "$after" != "$before" ]; then
   fail "config-cli's second run changed the realms master or $realm"
 fi
 echo "config-cli's second run completed at its first attempt and changed neither master nor $realm"
-while IFS= read -r client_id; do
-  [ "$(client_holds_attribute "$client_id" "$backchannel_attribute")" = false ] ||
-    fail "the client $client_id holds a back-channel URL attribute, or cannot be read, after config-cli's run, though $REALM_FILE clears it"
-done <<<"$cleared_clients"
 while IFS=$'\t' read -r client_id url; do
   [ "$(client_attribute "$client_id" "$backchannel_attribute")" = "$url" ] ||
     fail "the client $client_id holds a back-channel URL other than the one $REALM_FILE states"
 done <<<"$stated_urls"
-echo "config-cli removed the back-channel URL of $(paste -sd, - <<<"$cleared_clients") and kept each stated URL as $REALM_FILE has it"
+echo "config-cli kept each stated back-channel URL as $REALM_FILE has it"
 
 # B2: through Traefik, as the tunnel asks, the public paths answer and every other path of the host is 404.
 web_port="$(kubectl -n traefik get service traefik -o jsonpath='{.spec.ports[?(@.name=="web")].port}')"
@@ -255,8 +234,8 @@ for stylesheet in "${login_list[@]}"; do expect_stylesheet login "$login_theme" 
 for stylesheet in "${account_list[@]}"; do expect_stylesheet account "$account_theme" "$stylesheet"; done
 
 # B3: only Traefik and Keycloak's own namespace reach it. Keycloak reaches its Postgres and, for its back-channel
-# logout, hopin, songmaker and presentator; the cells below check that skat, the caller, gets no answer from it and what
-# keycloak-egress alone keeps Keycloak from.
+# logout, hopin, songmaker, presentator and skat; the cells below check that skat, the caller, gets no answer from it and
+# what keycloak-egress alone keeps Keycloak from.
 keycloak_service_url="http://keycloak.$namespace.svc:$(kubectl -n "$namespace" get service keycloak -o jsonpath='{.spec.ports[0].port}')"
 request "$namespace" own-namespace-request "$public_host" "$keycloak_service_url/realms/$realm/.well-known/openid-configuration"
 [ "$status" = 200 ] || fail "Keycloak answered $status, not 200, to a Pod in $namespace"
@@ -265,7 +244,6 @@ request "$caller_namespace" caller-request "$public_host" "$keycloak_service_url
 [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
   fail "a Pod in $caller_namespace got the status $status from Keycloak, curl exit code $exit_code"
 echo "Keycloak answers a Pod in $namespace and gives one in $caller_namespace no answer (curl exit code $exit_code)"
-caller_service="$(yq 'select(.kind == "Service") | .metadata.name + "." + .metadata.namespace + ".svc:" + (.spec.ports[0].port | tostring)' "$CALLER_MANIFEST")"
 postgres_target="postgres.$namespace.svc:$(kubectl -n "$namespace" get service postgres -o jsonpath='{.spec.ports[0].port}')"
 cluster_port="$(kubectl -n "${CLUSTER_SERVICE%/*}" get service "${CLUSTER_SERVICE#*/}" -o jsonpath='{.spec.ports[0].port}')"
 cluster_target="${CLUSTER_SERVICE#*/}.${CLUSTER_SERVICE%/*}.svc:$cluster_port"
@@ -275,10 +253,11 @@ request "$namespace" free-egress-request "${cluster_target%:*}" "https://$cluste
 [ "$status" != 000 ] || fail "a Pod in $namespace without Keycloak's labels got no answer from $cluster_target, curl exit \
 code $exit_code, so the probe below proves no policy"
 echo "a Pod in $namespace without Keycloak's labels got $status from $cluster_target"
-# The caller's own policy refuses every sender but Traefik, so only a throwaway target in the caller's namespace, with
-# the caller's labels and port and a throwaway policy admitting Keycloak's namespace to it alone, leaves Keycloak's
-# egress policies as the one thing that can keep Keycloak from that namespace. It never turns ready, so the caller's
-# Service never routes to it.
+# The caller's own policy refuses every sender but Traefik and Keycloak's back-channel, so only a throwaway target in
+# the caller's namespace, on the caller's port, without the caller's labels and with a throwaway policy admitting
+# Keycloak's namespace to it alone, leaves Keycloak's egress policies as the one thing that can keep Keycloak from the
+# rest of that namespace: they name the caller's own pods, not the namespace. Without the caller's labels no Service
+# of the caller routes to it.
 target_name="keycloak-egress-target"
 target_objects=("pod/$target_name" "networkpolicy/$target_name")
 remove_target() {
@@ -290,11 +269,10 @@ remove_target() {
   echo "$caller_namespace holds none of the throwaway ${target_objects[*]}"
 }
 trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"; remove_target' EXIT
-caller_labels="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.metadata.labels' "$CALLER_MANIFEST")"
 caller_port="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.spec.containers[0].ports[0]' "$CALLER_MANIFEST")"
-jq --null-input --arg name "$target_name" --arg image "$PROBE_IMAGE" --argjson labels "$caller_labels" \
+jq --null-input --arg name "$target_name" --arg image "$PROBE_IMAGE" \
   --argjson port "$caller_port" '{apiVersion: "v1", kind: "Pod",
-    metadata: {name: $name, labels: ($labels + {"app.kubernetes.io/component": $name})},
+    metadata: {name: $name, labels: {"app.kubernetes.io/component": $name}},
     spec: {restartPolicy: "Never", automountServiceAccountToken: false, enableServiceLinks: false,
       securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: "RuntimeDefault"}},
       containers: [{name: "target", image: $image, ports: [$port],
@@ -337,11 +315,11 @@ reach() {
 }
 reach "$postgres_target" || fail "Keycloak's container does not reach its Postgres at $postgres_target"
 # The P7a step shows a Pod without Keycloak's labels reaching the outside target.
-for target in "$cluster_target" "$OUTSIDE_TARGET" "$target_address" "$caller_service"; do
+for target in "$cluster_target" "$OUTSIDE_TARGET" "$target_address"; do
   if reach "$target"; then fail "Keycloak's container reaches $target"; fi
 done
 echo "Keycloak's container reaches $postgres_target, neither $cluster_target nor $OUTSIDE_TARGET, nor the target" \
-  "$target_address in $caller_namespace, nor $caller_service"
+  "$target_address in $caller_namespace"
 remove_target
 trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"' EXIT
 

@@ -202,3 +202,27 @@ spec:
       ports:
         - port: http
           protocol: TCP
+---
+# Keycloak posts its back-channel logout here, from its own pods and no others of its namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backchannel-from-keycloak
+  namespace: skat
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: skat
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak
+      ports:
+        - port: http
+          protocol: TCP
