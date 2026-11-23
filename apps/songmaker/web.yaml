@@ -99,8 +99,6 @@ spec:
             # The web refuses to start without its sign-in settings, though it asks Keycloak only at a sign-in.
             - name: OIDC_ISSUER
               value: https://auth.hallucinai.de/realms/hallucinai
-            - name: OIDC_CLIENT_ID
-              value: songmaker
             - name: OIDC_CLIENT_SECRET_FILE
               value: /run/secrets/oidc_client_secret
             - name: PUBLIC_BASE_URL
@@ -113,14 +111,6 @@ spec:
               value: /run/secrets/litellm_key
             - name: AGENT__API_GROUP
               value: /services/litellm
-            # songmaker's /mcp answers only with all three set. The party is `agents`, the public client of a person's own
-            # agents; an agent with a client of its own passes through the group /agents.
-            - name: AGENT__MCP_CLIENT_ID
-              value: agents
-            - name: AGENT__MCP_SCOPE
-              value: mcp-songmaker
-            - name: AGENT__MCP_AGENT_GROUP
-              value: /agents
             # The platform's object store, whose Service s3 is the endpoint of every app: the SDK reads the endpoint,
             # the region and the key file from these names, and the bucket is the Namespace's own. Only the web reads
             # or writes it with its own key, and the bucket is backed up through the layer's `files/bucket` Component.
@@ -160,8 +150,6 @@ spec:
               readOnly: true
             - name: audio
               mountPath: /app/data/audio
-            - name: queue-streams
-              mountPath: /app/data/queue-streams
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -193,8 +181,6 @@ spec:
         - name: audio
           persistentVolumeClaim:
             claimName: audiofiles
-        - name: queue-streams
-          emptyDir: {}
         - name: tmp
           emptyDir: {}
 ---
