@@ -56,8 +56,10 @@ for name in "${names[@]}"; do
     refuse "the images of ${component} belong to more than one repository"
   repository="${BASH_REMATCH[1]}"
 done
-current="$(yq '[.images[].newTag] | unique | .[]' "${component}")"
-[ "$(wc -l <<<"${current}")" -eq 1 ] || refuse "the images of ${component} are at more than one version"
+version_status=0
+current="$("${scripts_directory}/release_bump_component_version.sh" "${component}")" || version_status=$?
+[ "${version_status}" -ne 1 ] || refuse "the images of ${component} are not at one version"
+[ "${version_status}" -eq 0 ] || exit 2
 url="${server}/overnightworks/${repository}"
 
 tags="$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags "${url}" 'refs/tags/v*')"

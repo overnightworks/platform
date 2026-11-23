@@ -17,11 +17,10 @@ cp -R infrastructure/legal/app-texts "${list}" "${workspace}/infrastructure/lega
 while read -r app; do
   release="apps/${app}/release/kustomization.yaml"
   [ -f "${release}" ] || fail "${list} lists ${app}, which has no Component ${release}"
-  versions="$(yq '[.images[].newTag] | unique | .[]' "${release}")"
-  [ "$(wc -l <<<"${versions}")" -eq 1 ] ||
-    fail "the images of ${app} in ${release} are at more than one version: $(tr '\n' ' ' <<<"${versions}")"
-  (cd "${workspace}" && "${repository_root}/scripts/release_bump_legal.sh" "${app}" "v${versions}") ||
-    fail "regenerating the legal copies of ${app} at v${versions} failed"
+  version="$("${repository_root}/scripts/release_bump_component_version.sh" "${release}")" ||
+    fail "${release} does not name one version for the images of ${app}"
+  (cd "${workspace}" && "${repository_root}/scripts/release_bump_legal.sh" "${app}" "v${version}") ||
+    fail "regenerating the legal copies of ${app} at v${version} failed"
 done < <(sed -n 's/^\[\([a-z0-9-]*\)\]$/\1/p' "${list}")
 
 diff -r infrastructure/legal/app-texts "${workspace}/infrastructure/legal/app-texts" &&
