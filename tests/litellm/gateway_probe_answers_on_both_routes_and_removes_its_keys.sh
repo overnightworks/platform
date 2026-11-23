@@ -155,6 +155,8 @@ alone_cases=(
   "alone_no_token_no|token_omitted|no; status 200; the next reply called: vq_zeta, token in its arguments: no, definition-only parameter used: yes;"
   "alone_extended_token_no|token_extended|no; status 200; the next reply called: vq_zeta, token in its arguments: no, definition-only parameter used: yes;"
   "alone_extended_lane_unbilled_no|lane_extended,definition_unbilled|no; status 200; the next reply called: vq_zeta, token in its arguments: yes, definition-only parameter used: no;"
+  "alone_newline_token_no|token_newline|no; status 200; the next reply called: vq_zeta, token in its arguments: no, definition-only parameter used: yes;"
+  "alone_newline_lane_unbilled_no|lane_newline,definition_unbilled|no; status 200; the next reply called: vq_zeta, token in its arguments: yes, definition-only parameter used: no;"
 )
 for alone_case in "${alone_cases[@]}"; do
   IFS='|' read -r case_id case_faults _ <<<"$alone_case"

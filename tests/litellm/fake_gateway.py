@@ -17,7 +17,7 @@ tokens of a model), mixed_refused (a tool message of text and a tool reference i
 reference loads nothing: the reply calls no tool and the definition is not billed), definition_unbilled (a referenced tool
 is called but its definition is not billed), token_omitted (the call leaves out the arguments that carry no enum), lane_omitted
 (the call leaves out the arguments that carry an enum), token_extended and lane_extended (the call's value for those
-arguments has a suffix).
+arguments has a suffix), token_newline and lane_newline (the call's value for those arguments ends in a line feed).
 
 A tool with defer_loading is billed only once a tool message references it, and then the reply calls it with the text of that
 message's last word and the first value of each enum of its definition.
@@ -84,8 +84,10 @@ def kept(spec):
 
 
 def call_value(spec, last_word):
-    suffix = "-extra" if "lane_extended" in FAULTS and "enum" in spec or "token_extended" in FAULTS and "enum" not in spec else ""
-    return (spec["enum"][0] if "enum" in spec else last_word) + suffix
+    carries_enum = "enum" in spec
+    suffix = "-extra" if "lane_extended" in FAULTS and carries_enum or "token_extended" in FAULTS and not carries_enum else ""
+    suffix += "\n" if "lane_newline" in FAULTS and carries_enum or "token_newline" in FAULTS and not carries_enum else ""
+    return (spec["enum"][0] if carries_enum else last_word) + suffix
 
 
 def loaded_call(body):
