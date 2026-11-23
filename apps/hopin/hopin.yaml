@@ -35,7 +35,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: ghcr.io/overnightworks/hopin:2026.11.23.3@sha256:467945536f37feeace45669fe436110b4176cbf3dfb63b22cb36e58cd887fa7e
+          image: ghcr.io/overnightworks/hopin:2026.11.23.4@sha256:85363559a21cc275b197e22a03b9c9c9e0f36fa84fd8da157aeb96953603bdef
           args: [hopin, migrate]
           env:
             # The URL names no password: the file below is the password's one owner, the namespace's Postgres.
@@ -56,7 +56,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: hopin
-          image: ghcr.io/overnightworks/hopin:2026.11.23.3@sha256:467945536f37feeace45669fe436110b4176cbf3dfb63b22cb36e58cd887fa7e
+          image: ghcr.io/overnightworks/hopin:2026.11.23.4@sha256:85363559a21cc275b197e22a03b9c9c9e0f36fa84fd8da157aeb96953603bdef
           ports:
             - name: http
               containerPort: 8080
