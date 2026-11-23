@@ -1,7 +1,7 @@
-# The static configuration of litellm-front (front.yaml): a three-route HTTP proxy between the apps and LiteLLM, so
+# The static configuration of litellm-front (front.yaml): a four-route HTTP proxy between the apps and LiteLLM, so
 # nothing else LiteLLM registers is reachable. One entrypoint on :4000 with the hardening of hal's edge entrypoint:
 # alias headers deleted, paths sanitized and every encoded path character refused. The api, ping and metrics blocks
-# stay absent. The three routes stand in front-route.yml. The front reads no secret file; app keys pass through its
+# stay absent. The four routes stand in front-route.yml. The front reads no secret file; app keys pass through its
 # memory only. Its access log writes one JSON line per request to standard output with an allowlist of fields: no
 # header and no path, whose query a request could fill; the router names the route.
 global:
