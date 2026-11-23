@@ -1,8 +1,0 @@
-claim_id = "c0246d09a746402781d84c43f5014ad7"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "e1d7f90df74661ac2bc42143094c1d394dc5b8b5"
-branch = "release/presentator"
-scope = ["apps/presentator/release/kustomization.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/presentator", "infrastructure/legal/built"]
-opened_commit = "5c4b504f6529f4e64286c3c280b5de0ed55db1b1"
-whole_reason = "A release bump moves the ref and, if its legal pages changed, their copies, their entries and the built pages together, since the legal check compares them at the ref."
