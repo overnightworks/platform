@@ -1,6 +1,6 @@
-# The apps whose own legal text the pages show: the copies under app-texts/<key>/ equal the files of
-# overnightworks/<key> at the release, which tests/legal/app_texts_equal_their_release.sh proves. An app with an image
-# under apps/<key> has its release from that image and no tag here; any other app names its tag.
+# The apps whose own legal text the pages show: the copies under app-texts/<key>/ and the date and sha256 of each page
+# are what scripts/release_bump_legal.sh writes from the files of overnightworks/<key> at the version of the Component
+# apps/<key>/release, which tests/legal/app_texts_equal_their_release.sh proves by regenerating them.
 
 [hopin]
 
