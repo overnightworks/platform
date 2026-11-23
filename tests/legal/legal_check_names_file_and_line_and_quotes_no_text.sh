@@ -8,10 +8,8 @@ marker="The marker sentence must never be printed."
 workspace="$(mktemp -d)"
 trap 'rm -rf "$workspace"' EXIT
 
-image_ref="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].image' apps/hopin/hopin.yaml)"
-version="${image_ref#*:}"
-version="${version%%@*}"
-[ -n "$version" ] && [ "$version" != "$image_ref" ] || fail "apps/hopin/hopin.yaml names no hopin image tag"
+version="$(yq '.images[0].newTag' apps/hopin/release/kustomization.yaml)"
+[ -n "$version" ] && [ "$version" != null ] || fail "apps/hopin/release/kustomization.yaml names no hopin image tag"
 
 git -c advice.detachedHead=false clone --quiet --depth 1 --branch "v$version" "$repository_url" "$workspace/hopin" ||
   fail "fetching $repository_url at the tag v$version failed, so the real legal files could not be read"

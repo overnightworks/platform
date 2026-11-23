@@ -5,7 +5,7 @@
 # refused while a label-only patch of it is admitted; a throwaway copy of the policy that names another repository for
 # hopin refuses hopin's real ref beside the real policy, which keeps admitting it, and the copy is deleted on every exit;
 # and a Pod of a vendor image reaches no answer from Kyverno's Service, which the API server's calls still reach.
-# Needs PROBE_NAMESPACE, PROBE_IMAGE, ATTESTATION_LAYER, HOPIN_MANIFEST, LIVE_APP_NAMESPACE and GITHUB_REPOSITORY_OWNER.
+# Needs PROBE_NAMESPACE, PROBE_IMAGE, ATTESTATION_LAYER, HOPIN_RELEASE, LIVE_APP_NAMESPACE and GITHUB_REPOSITORY_OWNER.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -74,7 +74,7 @@ kubectl --namespace "$LIVE_APP_NAMESPACE" patch pod "$live_pod" --type=merge --p
 echo "the in-place image change of $live_pod is refused and its label-only patch admitted"
 
 # One policy's cached success does not serve another: a copy that names another repository for hopin refuses hopin's ref.
-hopin_image="$(yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].image' "$HOPIN_MANIFEST")"
+hopin_image="$(yq '.images[0] | .name + ":" + .newTag + "@" + .digest' "$HOPIN_RELEASE")"
 hopin_pod="$(pod_yaml "$(container app "$hopin_image")")"
 dry_run <<<"$hopin_pod" >/dev/null || fail "hopin's ref $hopin_image was refused before the copy existed"
 OWNER="$owner" PROBE="$PROBE_NAMESPACE" NAME="$sentinel_name" yq 'select(.kind == "ImageValidatingPolicy") | .metadata.name = strenv(NAME)

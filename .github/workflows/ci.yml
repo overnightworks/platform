@@ -879,7 +879,7 @@ jobs:
         env:
           PROBE_NAMESPACE: attestation-probe
           ATTESTATION_LAYER: infrastructure/app-attestations
-          HOPIN_MANIFEST: apps/hopin/hopin.yaml
+          HOPIN_RELEASE: apps/hopin/release/kustomization.yaml
           LIVE_APP_NAMESPACE: presentator
         run: tests/admission/app_attestations_refuse_by_dry_run.sh
 

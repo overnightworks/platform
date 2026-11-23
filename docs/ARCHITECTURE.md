@@ -72,7 +72,7 @@ NetworkPolicies.
 - Observability: `infrastructure/prometheus` (with Alertmanager), `infrastructure/loki`, `infrastructure/alloy`,
   `infrastructure/grafana`, `infrastructure/gatus`.
 - Admission: `infrastructure/admission` (form rule, the vendor list) and `infrastructure/app-attestations` (Kyverno).
-- Apps: `apps/hopin`, `apps/personas`, `apps/presentator`, `apps/skat`, `apps/songmaker`, `apps/speech-runtime`; presentator,
+- Apps: `apps/hopin`, `apps/personas`, `apps/presentator`, `apps/skat`, `apps/songmaker`, `apps/speech-runtime`; hopin, presentator,
   skat and songmaker each have a `pull` layer that puts their release's images on the node first.
 - Legal pages: `infrastructure/legal`; `infrastructure/design` is the one copy of the design kit.
 - `infrastructure/namespaces`: the Namespaces that receive Secrets.
