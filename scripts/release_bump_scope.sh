@@ -74,7 +74,7 @@ if "${list_changed}"; then
   # outside_tables <commit>: the list without the tables [<app>] and [<app>.*].
   outside_tables() {
     at "$1" "${list}" | awk -v app="${app}" '
-      /^\[/ { name = $0; sub(/^\[/, "", name); sub(/\].*$/, "", name); split(name, parts, "."); inside = (parts[1] == app) }
+      /^[[:space:]]*\[/ { name = $0; sub(/^[[:space:]]*\[+[[:space:]]*/, "", name); sub(/[[:space:]]*\].*$/, "", name); split(name, parts, "."); inside = (parts[1] == app) }
       !inside { print }
     '
   }

@@ -127,9 +127,11 @@ add_a_script() { echo 'echo hi' >scripts/added.sh; }
 edit_a_script() { echo 'echo hi' >>scripts/release_bump_compute.sh; }
 edit_the_guard() { echo 'exit 0' >scripts/release_bump_scope.sh; }
 edit_the_list_outside_the_app() { sed -i '/^\[skat.datenschutz\]/,/^$/ s/^sha256 = .*/sha256 = "1111111111111111111111111111111111111111111111111111111111111111"/' infrastructure/legal/app-texts.toml; }
+add_an_indented_table_of_another_app_inside_the_app() { sed -i '/^\[hopin.datenschutz\]/i \  [skat.extra]\ndate = 2026-11-23\n' infrastructure/legal/app-texts.toml; }
 edit_another_apps_copy() { echo '<p>new</p>' >>infrastructure/legal/app-texts/skat/datenschutz.html; }
 rename_the_image() { sed -i 's|ghcr.io/overnightworks/hopin|ghcr.io/overnightworks/hopin-other|' apps/hopin/release/kustomization.yaml; }
 edit_another_field() { sed -i 's|image-volume.yaml|other.yaml|' apps/hopin/release/kustomization.yaml; }
+run_a_tag_that_is_no_release() { set_component latest "$(digest_of ghcr.io/overnightworks/hopin latest)"; }
 run_an_older_release() { set_component 2020.01.01.1 "$(digest_of ghcr.io/overnightworks/hopin 2020.01.01.1)"; }
 run_the_same_release() { set_component "${main_version}" "$(digest_of ghcr.io/overnightworks/hopin other)"; }
 write_a_bad_digest() { set_component "${newest}" sha256:abc; }
@@ -153,9 +155,11 @@ expect_green "an allowed bump" "the bump of hopin is in scope" pull_request rele
 expect_red "a bump that adds a script" "scripts/added.sh is outside what a bump changes" bump_and add_a_script
 expect_red "a bump that edits a script" "scripts/release_bump_compute.sh is outside what a bump changes" bump_and edit_a_script
 expect_red "a bump that edits another app's table" "changes outside the tables of hopin" bump_and edit_the_list_outside_the_app
+expect_red "a bump that adds an indented table of another app inside the app's tables" "changes outside the tables of hopin" bump_and add_an_indented_table_of_another_app_inside_the_app
 expect_red "a bump that edits another app's copy" "name 2 apps" bump_and edit_another_apps_copy
 expect_red "a bump that renames an image" "names of its images" bump_and rename_the_image
 expect_red "a bump that edits another field of the Component" "more than newTag and digest" bump_and edit_another_field
+expect_red "a bump to a tag that is no release version" "which is no release version" bump_and run_a_tag_that_is_no_release
 expect_red "a bump to an older release" "not newer than" bump_and run_an_older_release
 expect_red "a bump that keeps the version" "not newer than" bump_and run_the_same_release
 expect_red "a bump with a bad digest" "no sha256 digest" bump_and write_a_bad_digest
