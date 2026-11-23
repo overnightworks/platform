@@ -1054,9 +1054,12 @@ jobs:
       # runtime-install: the job proves the first run on a fresh system, so it installs what that system lacks
       - name: Install the first-run prerequisites
         run: |
-          # One setting for every apt call of the job, the tests' installs included: archive.ubuntu.com
-          # sometimes refuses a connection, and a failed download is retried 5 times before apt fails.
-          echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
+          # Settings for every apt call of the job, the tests' installs included. The runners sit in Azure's
+          # network, so the archive and the security pocket come from Azure's mirror, which answers them; a
+          # hanging archive fails the step after the 20-second timeout and 5 retries, not at the job's timeout.
+          sed -i -E 's#https?://(archive|security)\.ubuntu\.com/ubuntu/?#http://azure.archive.ubuntu.com/ubuntu#' \
+            /etc/apt/sources.list.d/ubuntu.sources
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\n' > /etc/apt/apt.conf.d/80-retries
           apt-get update
           apt-get install --yes --no-install-recommends ca-certificates curl git
 
