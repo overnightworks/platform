@@ -4,6 +4,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: keycloak
+  annotations:
+    # Keycloak 26.8.2's db-pool-max-size default.
+    hallucinai.de/postgres-connections-per-pod: "100"
 spec:
   replicas: 1
   # One pod per database: two Keycloaks would share its caches' state only through a cluster this one never forms.

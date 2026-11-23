@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Usage: tests/postgres/connections_stay_within_max_connections.sh <layer directory>...
 # Needs kubectl and yq, and no cluster. Renders each layer directory (one namespace with its own Postgres) and judges
-# that what can hold a connection to that Postgres at once fits: the sum over its Deployments that mount the Secret
-# postgres of the pods they can have at once x connections per pod, plus the backup's dump, is at most max_connections
-# less superuser_reserved_connections, both read from the Postgres StatefulSet's arguments. A Recreate Deployment has
-# its replicas, since its old pods are gone before the new ones start. A RollingUpdate has 2 x replicas + the surge: a
-# pod being stopped is no part of the surge and may hold its connections for as long as its stop takes, so every old pod
-# may still be stopping while the surge pods run. Each surge pod also runs its migrate before its own pool opens,
-# which adds 1 connection per surge pod where an init container mounts a volume that mounts the Secret postgres. A
-# Deployment declares its connections per pod once: the pool and overflow its container sets (the process holds at most
-# pool + overflow + 1, its init-time engines being the 1), or, where the app fixes them, the annotation below. The
-# restore test restores into a throwaway server of its own and holds none. It then renders apps/songmaker and
-# apps/personas with one value each changed to break exactly one rule, and fails unless the judgement names that rule.
+# that what can hold a connection to that Postgres at once fits: the sum over its Deployments that mount or read the
+# Secret postgres of the pods they can have at once x connections per pod, plus the backup's dump, is at most
+# max_connections less superuser_reserved_connections, both read from the Postgres StatefulSet's arguments. A Recreate
+# Deployment has its replicas, since its old pods are gone before the new ones start. A RollingUpdate has 2 x replicas
+# + the surge: a pod being stopped is no part of the surge and may hold its connections for as long as its stop takes,
+# so every old pod may still be stopping while the surge pods run. Each surge pod also runs its migrate before its own
+# pool opens, which adds 1 connection per surge pod where an init container mounts a volume that mounts the Secret
+# postgres. A Deployment declares its connections per pod once: the pool and overflow its container sets (the process
+# holds at most pool + overflow + 1, its init-time engines being the 1), or, where the app fixes them, the annotation
+# below. The restore test restores into a throwaway server of its own and holds none. It then renders apps/songmaker
+# and apps/personas with one value each changed to break exactly one rule, and fails unless the judgement names that
+# rule.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -25,8 +26,8 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # deployments <rendered>: one line per Deployment: name|replicas|strategy|surge|pool|overflow|declared|opens|migrates,
-# where opens is the number of its volumes that mount the Secret postgres and migrates the number of its init containers
-# that mount one of them.
+# where opens is the number of its volumes that mount the Secret postgres plus its container environment variables that
+# read it, and migrates the number of its init containers that mount one of those volumes.
 deployments() {
   yq --no-doc 'select(.kind == "Deployment") | [
     .metadata.name,
@@ -36,7 +37,8 @@ deployments() {
     [.spec.template.spec.containers[].env[]? | select(.name == "DATABASE_POOL_SIZE") | .value][0] // "",
     [.spec.template.spec.containers[].env[]? | select(.name == "DATABASE_MAX_OVERFLOW") | .value][0] // "",
     .metadata.annotations["'"$declared_annotation"'"] // "",
-    ([.spec.template.spec.volumes[]? | select(.secret.secretName == "postgres" or .projected.sources[]?.secret.name == "postgres")] | length),
+    ([.spec.template.spec.volumes[]? | select(.secret.secretName == "postgres" or .projected.sources[]?.secret.name == "postgres")] | length) +
+      ([.spec.template.spec.containers[].env[]? | select(.valueFrom.secretKeyRef.name == "postgres")] | length),
     ([.spec.template.spec.volumes[]? | select(.secret.secretName == "postgres" or .projected.sources[]?.secret.name == "postgres") | .name] as $postgres_volumes |
       [.spec.template.spec.initContainers[]? | select(([.volumeMounts[]?.name] - ([.volumeMounts[]?.name] - $postgres_volumes)) | length > 0)] | length)
   ] | join("|")' "$1"
@@ -134,5 +136,6 @@ mutant apps/songmaker "exceed max_connections" "($web | .spec.template.spec.cont
 mutant apps/songmaker "declares no connections per pod" "del($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_MAX_OVERFLOW\"))"
 mutant apps/songmaker "not a non-negative integer" "($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_POOL_SIZE\") | .value) = \"5x\""
 mutant apps/personas "not a non-negative integer" "($personas | .metadata.annotations.\"$declared_annotation\") = \"31x\""
+mutant infrastructure/keycloak "declares no connections per pod" "del(select(.kind == \"Deployment\" and .metadata.name == \"keycloak\") | .metadata.annotations)"
 mutant apps/songmaker "declares its connections twice" "($web | .metadata.annotations.\"$declared_annotation\") = \"16\""
 echo "every mutant of the connection budget is red"

@@ -6,6 +6,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: litellm
+  annotations:
+    # LiteLLM v1.106.6's database_connection_pool_limit default (10 per worker, one worker as the command sets no
+    # --num_workers), plus one for the migrate its start runs before the pool opens.
+    hallucinai.de/postgres-connections-per-pod: "11"
 spec:
   replicas: 1
   strategy:
