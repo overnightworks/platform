@@ -139,7 +139,7 @@ jobs:
       - name: Check that the app texts under infrastructure/legal equal their apps' files and dates at the release each names
         run: mise exec -- tests/legal/app_texts_equal_their_release.sh
 
-      - name: Check that release:bump turns the newest app release into its Component, legal copies and rebuilt pages, treats the release main runs as a no-op, refuses an older version, an unknown name and a changed page set, and waits for an unfinished release
+      - name: Check that release:bump turns the newest app release into its Component, legal copies and rebuilt pages, treats the release main runs as a no-op, refuses an older version, an unknown name and a changed page set, fails without a patch when a legal step fails, and waits for an unfinished release
         run: mise exec -- tests/release_bump/compute_writes_the_release_tree_and_stops_where_it_cannot_settle.sh
 
       - name: Check that release:bump pushes release/<app> only when its patch differs or conflicts with main, keeps one pull request, closes it once main runs the release and calls nothing for an unfinished one
