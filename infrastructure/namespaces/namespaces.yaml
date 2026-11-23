@@ -109,6 +109,16 @@ metadata:
   labels:
     pod-security.kubernetes.io/enforce: restricted
 ---
+# The API server refuses every Gatus pod that runs as root, escalates, keeps capabilities or mounts a host path.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatus
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
 # No level is enforced: the build worker's init container holds NET_ADMIN, which baseline refuses, and Pod Security
 # judges per Namespace. warn and audit hold the web's level; tests/presentator/pods_stay_within_their_levels.sh holds
 # every Pod template the layer renders to restricted and the worker to baseline without that init's capability, and the
