@@ -1,7 +1,0 @@
-claim_id = "a2072f5e78c043a3b0df715c8ac35cbb"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "2c1a77aa0d817d8ba078c5f57521920349c8da90"
-branch = "claude/issue-852-bootstrap-apt-mirror"
-scope = [".github/workflows/ci.yml"]
-opened_commit = "888559681f79b3ec2bcf0cef75549b1bc5088b2e"
