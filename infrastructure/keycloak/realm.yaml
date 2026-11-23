@@ -516,6 +516,9 @@ users:
     enabled: false
     groups:
       - /apps/hopin
+      - /apps/presentator
+      - /apps/skat
+      - /apps/songmaker
   - username: service-account-presentator
     enabled: true
     serviceAccountClientId: presentator
