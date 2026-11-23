@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 # `mise run gpu:use <songs|speech|free>`: gives the PC's one card to songmaker's music or to speech's GPU image, or
-# frees it for a measurement window. The operator switches; Git names no replica count for a card's user, so Flux keeps what this sets. One card serves one user at a
-# time only because the PC holds one: each user requests one GPU, and with a second card both may run.
-# `songs` starts speech's small image on the CPU at two pods and waits until both are Ready, stops the GPU image and waits until its
-# pod is gone, which frees the card, then runs acestep-worker and waits until it is Ready, which its /health grants only
-# with the card. `speech` stops acestep-worker and waits until its pod is gone, runs the GPU image and waits until it is
-# Ready, which takes minutes, since it loads its models first, then stops the small image. Each wait is for the
-# Deployment's ready replicas, so no progress deadline ends it. The small image runs at two pods so that a rollout or a
-# drain leaves the other to serve; the GPU image stays at one, since the card is one. The Service speech-runtime reaches whichever one is
-# Ready, and no step leaves it without one while the next is not Ready.
-# `free` runs only while speech holds the card (acestep-worker at 0, the GPU image at 1). It stops a stale timer, arms
-# the user timer gpu-use-return to run `gpu_use.sh return` after the bound, then runs the voice half `songs` runs (the
-# small image at two pods Ready, the GPU image at 0 and gone) and leaves the worker alone. The bound is armed before the
-# first scale, so a failure or kill later still returns the card, and an arm that fails refuses before any scale.
-# `return` is the timer's, no choice of the task: it runs `speech` only while the worker and the GPU image both stand at
-# 0, else it returns nothing and ends 0, so it never takes the card from songmaker nor restarts a restored voice. A
-# reboot loses the timer, and the timer runs this script at the path it was armed from.
+# frees it for a measurement window. An agent switches inside a window the operator named; Git names no replica count
+# for a card's user, so Flux keeps what this sets. One card serves one user at a time only because the PC holds one:
+# each user requests one GPU, and with a second card both may run. `songs` starts speech's small image on the CPU at two
+# pods and waits until both are Ready, stops the GPU image and waits until its pod is gone, which frees the card, then
+# runs acestep-worker and waits until it is Ready, which its /health grants only with the card. `speech` stops
+# acestep-worker and waits until its pod is gone, runs the GPU image and waits until it is Ready, which takes minutes,
+# since it loads its models first, then stops the small image. Each wait is for the Deployment's ready replicas, so no
+# progress deadline ends it. The small image runs at two pods so that a rollout or a drain leaves the other to serve;
+# the GPU image stays at one, since the card is one. The Service speech-runtime reaches whichever one is Ready, and no
+# step leaves it without one while the next is not Ready. `free` runs only while speech holds the card (acestep-worker
+# at 0, the GPU image at 1). It stops a stale timer, arms the user timer gpu-use-return to run `gpu_use.sh return` after
+# the bound, then runs the voice half `songs` runs (the small image at two pods Ready, the GPU image at 0 and gone) and
+# leaves the worker alone. The bound is armed before the first scale, so a failure or kill later still returns the card,
+# and an arm that fails refuses before any scale. `return` is the timer's, no choice of the task: it runs `speech` only
+# while the worker and the GPU image both stand at 0, else it returns nothing and ends 0, so it never takes the card
+# from songmaker nor restarts a restored voice. A reboot loses the timer, and the timer runs this script at the path it
+# was armed from.
 # Usage: scripts/gpu_use.sh <songs|speech|free>
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
