@@ -1,0 +1,8 @@
+claim_id = "529887d113df4c3ea0dab6c7b9221474"
+agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
+role = "builder"
+base = "e7ae17199c406b0a24fed154c3eefe86553d6867"
+branch = "claude/issue-608-hopin-pull-layer"
+scope = [".github/workflows/ci.yml", "apps/hopin", "clusters/pc/apps.yaml", "tests/admission/app_attestations_refuse_by_dry_run.sh", "tests/legal", "tests/workloads"]
+opened_commit = "8311aa354cb146a7987c9afad71ac7b3249f506d"
+whole_reason = "hopin's release owner, its pull layer and the Flux edge that orders them make one slice; the cells only learn the new app."
