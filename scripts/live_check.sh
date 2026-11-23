@@ -30,6 +30,8 @@ holds_lock=false
 person_touched=false
 skipped=false
 leftovers=()
+# The sign-in files of kcadm that could not be removed when kcadm signed in again; every pass of the cleanup retries them.
+stranded_config_files=()
 codes=()
 # fail <what>: ends the run red; a step of the cleanup only reports and returns 1.
 fail() {
@@ -61,6 +63,10 @@ finish() {
     [ "$person_touched" = false ] || clean_up_person
     attempt "the sign-in file of kcadm in Keycloak's container" delete_config_file
   fi
+  local stranded_file
+  for stranded_file in "${stranded_config_files[@]}"; do
+    leftovers+=("the sign-in file $stranded_file of kcadm in Keycloak's container")
+  done
   local result=red
   [ "$exit_status" != 0 ] || result=green
   [ "$skipped" = false ] || [ "$exit_status" != 3 ] || result=skipped
@@ -135,9 +141,6 @@ person_needs_cleaning() {
   [ "$enabled" = true ] || [ -n "$credential_ids" ] || [ "$sessions" != 0 ] || [ -e "$cookie_jar" ]
 }
 
-# ------------------------------------------------------------------------------------------------- the cleanup
-# The steps below return 1 and say nothing; clean_up_person runs every one whatever an earlier one did, none of them
-# through fail, exit or errexit, and names each that failed in leftovers.
 # visit <path or url> <curl argument>...: one request with the jar; sets answer to "<status> <redirect address>".
 visit() {
   local target="$1"
@@ -146,6 +149,10 @@ visit() {
   answer="$(curl --silent --show-error --max-time "$call_seconds" --output /dev/null --write-out '%{http_code} %{redirect_url}' \
     --cookie "$cookie_jar" --cookie-jar "$cookie_jar" "$@" --config <(curl_url "$target"))"
 }
+
+# ------------------------------------------------------------------------------------------------- the cleanup
+# The steps below return 1 and say nothing; clean_up_person runs every one whatever an earlier one did, none of them
+# through fail, exit or errexit, and names each that failed in leftovers.
 # app_request <path> <curl argument>...: prints the status the app answers.
 app_request() {
   visit "$@" || return 1
@@ -155,8 +162,15 @@ keycloak_is_reachable_by_kcadm() { kcadm get "users/$person_id" --target-realm "
 sign_in_kcadm_again() {
   local previous_config_file="$config_file"
   keycloak_is_reachable_by_kcadm && return 0
-  delete_config_file || leftovers+=("the sign-in file $previous_config_file of kcadm in Keycloak's container")
+  delete_config_file || stranded_config_files+=("$previous_config_file")
   sign_in_kcadm
+}
+delete_stranded_config_files() {
+  local file remaining=()
+  for file in "${stranded_config_files[@]}"; do
+    delete_config_file "$file" || remaining+=("$file")
+  done
+  stranded_config_files=("${remaining[@]}")
 }
 sign_out_of_app() {
   local logout_status account_status
@@ -195,6 +209,7 @@ clean_up_person() {
   attempt "the person's password credential" delete_password_credentials
   attempt "the person, who may be enabled" disable_person
   attempt "the cookie jar $cookie_jar" delete_cookie_jar
+  delete_stranded_config_files
 }
 
 # ----------------------------------------------------------------------------------------------------- the run
@@ -205,7 +220,8 @@ find_person "$person"
 if person_needs_cleaning; then
   person_touched=true
   clean_up_person
-  [ "${#leftovers[@]}" = 0 ] || fail "an earlier run left something that could not be cleaned"
+  [ "${#leftovers[@]}" = 0 ] && [ "${#stranded_config_files[@]}" = 0 ] ||
+    fail "an earlier run left something that could not be cleaned"
   person_touched=false
   echo "live:check: an earlier run's leftovers were cleaned up first"
 fi

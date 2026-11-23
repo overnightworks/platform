@@ -43,7 +43,9 @@ FAKE
 # The realm model. State files: enabled (true or false), required (the person's required actions as JSON), credentials
 # (one id per line), keycloak-session and hopin-session (present while the session exists), signed-in (kcadm's config
 # file exists), password (what the reset wrote). FAKE_FAIL names the one write that fails; FAKE_DROP_CONFIG_AT=enable
-# removes kcadm's config file after the enable write; FAKE_FAIL=remove-first-config fails the first removal of a config file; FAKE_DEPLOYMENT=unavailable makes hopin's Deployment not Available.
+# removes kcadm's config file after the enable write and =heal after the first read of the person's sessions;
+# FAKE_FAIL=remove-first-config fails every removal of the first config file that is removed;
+# FAKE_DEPLOYMENT=unavailable makes hopin's Deployment not Available.
 cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -56,8 +58,9 @@ case " ${arguments[*]} " in
     if [ "${FAKE_DEPLOYMENT:-available}" = unavailable ]; then echo False; else echo True; fi
     exit 0 ;;
   *" rm -f -- "*)
-    if [ "${FAKE_FAIL:-}" = remove-first-config ] && [ ! -e "$FAKE_STATE/config-removal-failed" ]; then
-      touch "$FAKE_STATE/config-removal-failed"; log_event "kubectl: config-removal-failed"; exit 1
+    if [ "${FAKE_FAIL:-}" = remove-first-config ]; then
+      [ -e "$FAKE_STATE/first-config" ] || echo "${arguments[-1]}" >"$FAKE_STATE/first-config"
+      if [ "${arguments[-1]}" = "$(<"$FAKE_STATE/first-config")" ]; then log_event "kubectl: config-removal-failed"; exit 1; fi
     fi
     rm -f "$FAKE_STATE/signed-in"; log_event "kubectl: config-removed"; exit 0 ;;
   *" bash -c "*"config credentials"*) touch "$FAKE_STATE/signed-in"; log_event "kubectl: kcadm-signed-in"; exit 0 ;;
@@ -78,7 +81,10 @@ case "$call" in
   "get users/person-id/credentials "*)
     echo "[$(sed 's/.*/{"id": "&", "type": "password"}/' "$FAKE_STATE/credentials" | paste -sd, -)]" ;;
   "get users/person-id/sessions "*)
-    if [ -e "$FAKE_STATE/keycloak-session" ]; then echo '[{"id": "session-id"}]'; else echo '[]'; fi ;;
+    if [ -e "$FAKE_STATE/keycloak-session" ]; then echo '[{"id": "session-id"}]'; else echo '[]'; fi
+    if [ "${FAKE_DROP_CONFIG_AT:-}" = heal ] && [ ! -e "$FAKE_STATE/config-dropped" ]; then
+      touch "$FAKE_STATE/config-dropped"; rm -f "$FAKE_STATE/signed-in"; log_event "kubectl: config dropped"
+    fi ;;
   "delete attack-detection/brute-force/users/person-id "*) log_event "kubectl: brute-force-cleared" ;;
   "update users/person-id --target-realm "*)
     body="$(cat)"
@@ -341,6 +347,14 @@ grep -q "may remain: .*sign-in file /tmp/kcadm-.* of kcadm" "$output_file" || re
 kept_secret config-removal-fails
 left_clean config-removal-fails
 echo "a sign-in file of kcadm that cannot be removed before the new sign-in is named with its path"
+
+prepare_case heal-config-removal-fails enabled
+run_command heal-config-removal-fails FAKE_DROP_CONFIG_AT=heal FAKE_FAIL=remove-first-config
+[ "$status" = 1 ] || refuse "heal-config-removal-fails: exit $status, not 1"
+grep -q "may remain: .*sign-in file /tmp/kcadm-.* of kcadm" "$output_file" || refuse "heal-config-removal-fails: the output names no sign-in file"
+kept_secret heal-config-removal-fails
+left_clean heal-config-removal-fails
+echo "a sign-in file of kcadm that cannot be removed during the first cleanup is still named after the run ends"
 
 prepare_case hopin-sign-out-fails
 run_command hopin-sign-out-fails FAKE_LOGOUT_STATUS=502
