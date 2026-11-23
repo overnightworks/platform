@@ -29,6 +29,11 @@ spec:
           env:
             - name: GATUS_CONFIG_PATH
               value: /config/config.yaml
+            - name: GATUS_PUSH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gatus-push
+                  key: token
           ports:
             - name: http
               containerPort: 8080

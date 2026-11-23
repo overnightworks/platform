@@ -418,7 +418,7 @@ jobs:
           PULL_USER: ${{ github.actor }}
           PULL_TOKEN: ${{ github.token }}
           # The layers whose containers read Secrets by key, each of which gets a dummy per key.
-          SECRET_KEY_LAYERS: infrastructure/keycloak infrastructure/litellm infrastructure/prometheus
+          SECRET_KEY_LAYERS: infrastructure/gatus infrastructure/keycloak infrastructure/litellm infrastructure/prometheus
           # Kyverno's layer, whose policy names the pull Secret of its own copy.
           ATTESTATION_LAYER: infrastructure/app-attestations
         run: tests/secrets/encrypt_secrets_to_a_throwaway_age_key.sh

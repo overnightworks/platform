@@ -307,7 +307,7 @@ spec:
     kind: GitRepository
     name: flux-system
 ---
-# After admission, which judges the workload's image.
+# After admission, which judges the workload's image, and platform-secrets, which holds the Secret gatus-push.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -316,6 +316,7 @@ metadata:
 spec:
   dependsOn:
     - name: admission
+    - name: platform-secrets
   interval: 10m0s
   path: ./infrastructure/gatus
   prune: true
