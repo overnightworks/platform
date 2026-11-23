@@ -8,6 +8,9 @@ kind: Deployment
 metadata:
   name: web
   namespace: presentator
+  annotations:
+    # SQLAlchemy's default QueuePool (5 + 10 overflow), which presentator's one engine sets nothing over.
+    hallucinai.de/postgres-connections-per-pod: "15"
 spec:
   replicas: 1
   strategy:
