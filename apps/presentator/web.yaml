@@ -1,8 +1,9 @@
 # presentator's web, pulled from its private package through the Secret ghcr-pull and started from the files of the
 # Secret presentator, both from platform-secrets. It serves from the Postgres of this namespace, which its init container
 # migrates to the image's head before the web starts; the first run may find Postgres not ready yet, and the init
-# container's backoff heals that. One pod runs with Recreate, as the claims are ReadWriteOnce. It shares its process
-# namespace so that a pull's git and ssh children have a reaper. It holds no token and no right in the API.
+# container's backoff heals that. Two pods roll without taking one away before its replacement is Ready: the web mounts
+# no claim, its state lives in Postgres, Redis and the bucket, and the sticky cookie keeps a browser on one pod. It shares
+# its process namespace so that a pull's git and ssh children have a reaper. It holds no token and no right in the API.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,9 +13,12 @@ metadata:
     # SQLAlchemy's default QueuePool (5 + 10 overflow), which presentator's one engine sets nothing over.
     hallucinai.de/postgres-connections-per-pod: "15"
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: web

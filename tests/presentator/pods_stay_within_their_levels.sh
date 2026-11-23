@@ -166,13 +166,13 @@ judge_structure() {
   exactly "$manifest" "the web does not mount that volume read-only at /run/secrets" \
     "$WEB | .containers[0].volumeMounts[] | select(.name == \"secrets\") | .mountPath + \",\" + (.readOnly | to_string)" '"/run/secrets,true"'
   # Replicas, strategy, process sharing, fsGroup and exec probes.
-  exactly "$manifest" "the web does not run one replica and the worker two" \
-    "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | .spec.replicas" '1,2'
+  exactly "$manifest" "the web and the worker do not run two replicas each" \
+    "select((.kind == \"Deployment\" and .metadata.name == \"web\") or ($WORKER_DOCUMENT)) | .spec.replicas" '2,2'
   # An immutable field of the StatefulSet changes only by deleting it, which Flux does for the annotation.
   found "$manifest" "the worker sets podManagementPolicy without the annotation that lets Flux recreate its StatefulSet" \
     "select($WORKER_DOCUMENT) | select(.spec.podManagementPolicy != null and .metadata.annotations[\"kustomize.toolkit.fluxcd.io/force\"] != \"enabled\")"
-  exactly "$manifest" "the web's strategy is not Recreate" \
-    'select(.kind == "Deployment" and .metadata.name == "web") | .spec.strategy.type' '"Recreate"'
+  found "$manifest" "the web takes a pod away before its replacement is Ready" \
+    "select(.kind == \"Deployment\" and .metadata.name == \"web\") | select(.spec.strategy.type != \"RollingUpdate\" or .spec.strategy.rollingUpdate.maxUnavailable != 0)"
   exactly "$manifest" "the web does not share its process namespace" "$WEB | .shareProcessNamespace" 'true'
   found "$manifest" "a template other than the web's shares its process namespace" \
     "select((.kind == \"Deployment\" and .metadata.name == \"web\") | not) | $SPECS | select(.shareProcessNamespace == true)"
@@ -430,12 +430,13 @@ mutant "the web projects a ServiceAccount token" \
 # Replicas, strategy, process sharing, fsGroup and exec probes.
 mutant "the web does not turn the kubelet's ServiceAccount token automount off" "($on_web | .spec.template.spec.automountServiceAccountToken) = true"
 mutant "the web does not mount that volume read-only at /run/secrets" "($on_web | .spec.template.spec.containers[0].volumeMounts[] | select(.name == \"secrets\") | .readOnly) = false"
-mutant "the web does not run one replica and the worker two" "($on_web | .spec.replicas) = 2"
-mutant "the web does not run one replica and the worker two" "($on_worker | .spec.replicas) = 1"
-mutant "the web does not run one replica and the worker two" "($on_worker | .spec.replicas) = 3"
+mutant "the web and the worker do not run two replicas each" "($on_web | .spec.replicas) = 1"
+mutant "the web and the worker do not run two replicas each" "($on_worker | .spec.replicas) = 1"
+mutant "the web and the worker do not run two replicas each" "($on_worker | .spec.replicas) = 3"
 mutant "the worker sets podManagementPolicy without the annotation" "del($on_worker | .metadata.annotations)"
 mutant "the worker sets podManagementPolicy without the annotation" "($on_worker | .metadata.annotations.\"kustomize.toolkit.fluxcd.io/force\") = \"disabled\""
-mutant "the web's strategy is not Recreate" "($on_web | .spec.strategy.type) = \"RollingUpdate\""
+mutant "the web takes a pod away before its replacement is Ready" "($on_web | .spec.strategy.rollingUpdate.maxUnavailable) = 1"
+mutant "the web takes a pod away before its replacement is Ready" "($on_web | .spec.strategy.type) = \"Recreate\""
 mutant "the web does not share its process namespace" "($on_web | .spec.template.spec.shareProcessNamespace) = false"
 mutant "a template sets fsGroup" "($on_web | .spec.template.spec.securityContext.fsGroup) = 1001"
 mutant "a template sets fsGroup" "($on_worker | .spec.template.spec.securityContext.fsGroup) = 1001"
