@@ -722,9 +722,8 @@ clients:
       - groups
     optionalClientScopes:
       - speech-service-audience
-  # skat signs people in like hopin and holds a refresh token per session the same way. It has no
-  # back-channel logout, so a sign-out in Keycloak ends a Skat session only at its lifetime; the file clears
-  # the URL, so one the console filled is removed.
+  # skat signs people in like hopin, holds a refresh token per session the same way and is logged out the same way,
+  # at its own Service.
   # Skat calls neither the speech service nor an AI service, so it has no service account and no
   # optional scope.
   - clientId: skat
@@ -744,7 +743,8 @@ clients:
     attributes:
       post.logout.redirect.uris: "https://skat.hallucinai.de/login"
       pkce.code.challenge.method: "S256"
-      backchannel.logout.url: ""
+      backchannel.logout.url: "http://skat.skat.svc.cluster.local:8080/auth/backchannel-logout"
+      backchannel.logout.session.required: "false"
       use.refresh.tokens: "true"
     defaultClientScopes:
       - basic
