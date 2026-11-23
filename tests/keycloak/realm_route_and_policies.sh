@@ -234,8 +234,8 @@ for stylesheet in "${login_list[@]}"; do expect_stylesheet login "$login_theme" 
 for stylesheet in "${account_list[@]}"; do expect_stylesheet account "$account_theme" "$stylesheet"; done
 
 # B3: only Traefik and Keycloak's own namespace reach it. Keycloak reaches its Postgres and, for its back-channel
-# logout, hopin, songmaker and presentator; the cells below check that skat, the caller, gets no answer from it and what
-# keycloak-egress alone keeps Keycloak from.
+# logout, hopin, songmaker, presentator and skat; the cells below check that skat, the caller, gets no answer from it and
+# what keycloak-egress alone keeps Keycloak from.
 keycloak_service_url="http://keycloak.$namespace.svc:$(kubectl -n "$namespace" get service keycloak -o jsonpath='{.spec.ports[0].port}')"
 request "$namespace" own-namespace-request "$public_host" "$keycloak_service_url/realms/$realm/.well-known/openid-configuration"
 [ "$status" = 200 ] || fail "Keycloak answered $status, not 200, to a Pod in $namespace"
@@ -244,7 +244,6 @@ request "$caller_namespace" caller-request "$public_host" "$keycloak_service_url
 [ "$status" = 000 ] && { [ "$exit_code" = 7 ] || [ "$exit_code" = 28 ]; } ||
   fail "a Pod in $caller_namespace got the status $status from Keycloak, curl exit code $exit_code"
 echo "Keycloak answers a Pod in $namespace and gives one in $caller_namespace no answer (curl exit code $exit_code)"
-caller_service="$(yq 'select(.kind == "Service") | .metadata.name + "." + .metadata.namespace + ".svc:" + (.spec.ports[0].port | tostring)' "$CALLER_MANIFEST")"
 postgres_target="postgres.$namespace.svc:$(kubectl -n "$namespace" get service postgres -o jsonpath='{.spec.ports[0].port}')"
 cluster_port="$(kubectl -n "${CLUSTER_SERVICE%/*}" get service "${CLUSTER_SERVICE#*/}" -o jsonpath='{.spec.ports[0].port}')"
 cluster_target="${CLUSTER_SERVICE#*/}.${CLUSTER_SERVICE%/*}.svc:$cluster_port"
@@ -254,10 +253,11 @@ request "$namespace" free-egress-request "${cluster_target%:*}" "https://$cluste
 [ "$status" != 000 ] || fail "a Pod in $namespace without Keycloak's labels got no answer from $cluster_target, curl exit \
 code $exit_code, so the probe below proves no policy"
 echo "a Pod in $namespace without Keycloak's labels got $status from $cluster_target"
-# The caller's own policy refuses every sender but Traefik, so only a throwaway target in the caller's namespace, with
-# the caller's labels and port and a throwaway policy admitting Keycloak's namespace to it alone, leaves Keycloak's
-# egress policies as the one thing that can keep Keycloak from that namespace. It never turns ready, so the caller's
-# Service never routes to it.
+# The caller's own policy refuses every sender but Traefik and Keycloak's back-channel, so only a throwaway target in
+# the caller's namespace, on the caller's port, without the caller's labels and with a throwaway policy admitting
+# Keycloak's namespace to it alone, leaves Keycloak's egress policies as the one thing that can keep Keycloak from the
+# rest of that namespace: they name the caller's own pods, not the namespace. Without the caller's labels no Service
+# of the caller routes to it.
 target_name="keycloak-egress-target"
 target_objects=("pod/$target_name" "networkpolicy/$target_name")
 remove_target() {
@@ -269,11 +269,10 @@ remove_target() {
   echo "$caller_namespace holds none of the throwaway ${target_objects[*]}"
 }
 trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"; remove_target' EXIT
-caller_labels="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.metadata.labels' "$CALLER_MANIFEST")"
 caller_port="$(yq --output-format json 'select(.kind == "Deployment") | .spec.template.spec.containers[0].ports[0]' "$CALLER_MANIFEST")"
-jq --null-input --arg name "$target_name" --arg image "$PROBE_IMAGE" --argjson labels "$caller_labels" \
+jq --null-input --arg name "$target_name" --arg image "$PROBE_IMAGE" \
   --argjson port "$caller_port" '{apiVersion: "v1", kind: "Pod",
-    metadata: {name: $name, labels: ($labels + {"app.kubernetes.io/component": $name})},
+    metadata: {name: $name, labels: {"app.kubernetes.io/component": $name}},
     spec: {restartPolicy: "Never", automountServiceAccountToken: false, enableServiceLinks: false,
       securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: "RuntimeDefault"}},
       containers: [{name: "target", image: $image, ports: [$port],
@@ -316,11 +315,11 @@ reach() {
 }
 reach "$postgres_target" || fail "Keycloak's container does not reach its Postgres at $postgres_target"
 # The P7a step shows a Pod without Keycloak's labels reaching the outside target.
-for target in "$cluster_target" "$OUTSIDE_TARGET" "$target_address" "$caller_service"; do
+for target in "$cluster_target" "$OUTSIDE_TARGET" "$target_address"; do
   if reach "$target"; then fail "Keycloak's container reaches $target"; fi
 done
 echo "Keycloak's container reaches $postgres_target, neither $cluster_target nor $OUTSIDE_TARGET, nor the target" \
-  "$target_address in $caller_namespace, nor $caller_service"
+  "$target_address in $caller_namespace"
 remove_target
 trap 'kill "$forward_pid" 2>/dev/null || true; rm -f -- "$admin_secret_file"' EXIT
 

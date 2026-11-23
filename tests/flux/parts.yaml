@@ -14,7 +14,7 @@ litellm: {layers: [litellm, keycloak], paths: [tests/keycloak/*, tests/litellm/*
 observability: {layers: [prometheus, grafana, loki, alloy, gatus, speech-runtime, songmaker, litellm], paths: [tests/grafana/*, tests/prometheus/*]}
 # Gatus probes every endpoint of its configuration.
 observability-2: {layers: [gatus, traefik, hopin, skat, keycloak, speech-runtime, loki, prometheus, grafana, litellm, songmaker, backup], paths: [tests/backup/*, tests/gatus/*]}
-apps: {layers: [presentator, songmaker, keycloak, hopin, legal, traefik, tunnel, loki, alloy], paths: [tests/alloy/*, tests/keycloak/*, tests/legal/*, tests/loki/*, tests/no_network/*, tests/presentator/*, tests/songmaker/*]}
+apps: {layers: [presentator, songmaker, keycloak, hopin, skat, legal, traefik, tunnel, loki, alloy], paths: [tests/alloy/*, tests/keycloak/*, tests/legal/*, tests/loki/*, tests/no_network/*, tests/presentator/*, tests/songmaker/*]}
 # The Postgres cells loop over every namespace whose layer includes the Postgres base.
 load-1: {layers: [hopin, keycloak, litellm, personas, presentator, skat, songmaker, nvidia, traefik], paths: [tests/nvidia/*, tests/postgres/*, tests/songmaker/*]}
 load-2: {layers: [songmaker, hopin, skat], paths: [tests/redis/*]}
