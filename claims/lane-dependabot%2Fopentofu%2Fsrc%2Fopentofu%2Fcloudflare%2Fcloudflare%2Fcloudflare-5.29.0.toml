@@ -1,7 +1,0 @@
-claim_id = "3692528e74aa46a284af484e2236efbd"
-agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
-role = "builder"
-base = "cf988b286e9525f82e4d3b5f91525e87fc06010f"
-branch = "dependabot/opentofu/src/opentofu/cloudflare/cloudflare/cloudflare-5.29.0"
-scope = ["src/opentofu/cloudflare/.terraform.lock.hcl", "src/opentofu/cloudflare/main.tf"]
-opened_commit = "c27c58c9d3492e1bae483e54197d87f9bde49e29"
