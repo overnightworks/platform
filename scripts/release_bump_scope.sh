@@ -15,8 +15,7 @@ trap 'echo "release_bump_scope: line ${LINENO} failed: ${BASH_COMMAND}" >&2; exi
 [ "$#" -eq 1 ] || { echo "usage: release_bump_scope.sh <merge commit>" >&2; exit 2; }
 merge="$1"
 scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-app_name='[a-z][a-z0-9-]*'
-version_pattern='[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+'
+source "${scripts_directory}/release_bump_patterns.sh"
 list="infrastructure/legal/app-texts.toml"
 
 refuse() { echo "release_bump_scope: refused: $1" >&2; exit 1; }
@@ -31,8 +30,8 @@ declare -A apps=()
 list_changed=false
 while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
   read -r old_mode new_mode _ _ status <<<"${meta#:}"
-  if [[ ${path} =~ ^apps/(${app_name})/release/kustomization\.yaml$ ]] ||
-    [[ ${path} =~ ^infrastructure/legal/app-texts/(${app_name})/[a-z]+\.html$ ]]; then
+  if [[ ${path} =~ ^apps/(${app_name_pattern})/release/kustomization\.yaml$ ]] ||
+    [[ ${path} =~ ^infrastructure/legal/app-texts/(${app_name_pattern})/[a-z]+\.html$ ]]; then
     apps["${BASH_REMATCH[1]}"]=true
   elif [ "${path}" = "${list}" ]; then
     list_changed=true
@@ -56,7 +55,7 @@ if [ "$(at "${base}" "${component}" | sha256sum)" != "$(at "${merge}" "${compone
   [ "$(yq -o json -I 0 "${strip}" "${workspace}/base.yaml")" = "$(yq -o json -I 0 "${strip}" "${workspace}/merge.yaml")" ] ||
     refuse "${component} changes more than newTag and digest, or the names of its images"
   while IFS= read -r digest; do
-    [[ ${digest} =~ ^sha256:[0-9a-f]{64}$ ]] || refuse "${component} holds the digest '${digest}', which is no sha256 digest"
+    [[ ${digest} =~ ^${digest_pattern}$ ]] || refuse "${component} holds the digest '${digest}', which is no sha256 digest"
   done < <(yq '.images[].digest' "${workspace}/merge.yaml")
   for side in base merge; do
     status=0
