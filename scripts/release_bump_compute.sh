@@ -23,6 +23,7 @@ component="apps/${app}/release/kustomization.yaml"
 
 refuse() { echo "release_bump_compute: refused: $1; ${app}'s release stays an ordinary lane" >&2; exit 1; }
 finish() { # finish <outcome>
+  [ "$1" != current ] || echo "${version}" >"${output}/version"
   echo "$1" >"${output}/outcome"
   echo "release_bump: ${app}: $1${version:+ ${version}}"
   exit 0

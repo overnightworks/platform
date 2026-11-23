@@ -67,6 +67,8 @@ echo "a release that main runs closes the open pull request"
 app_release 2026.11.26.1
 : >"${work}/gh-calls"
 tip="$(branch_tip)"
+grep -qF 'pr close 1 --delete-branch --comment main runs release 2026.11.25.1, so' "${work}/gh-calls" ||
+  fail "the closing comment does not name the release main runs: $(grep 'pr close' "${work}/gh-calls")"
 log="$(bump)" || fail "the bump of an unfinished release failed: ${log}"
 [ ! -s "${work}/gh-calls" ] && [ "$(branch_tip)" = "${tip}" ] || fail "an unfinished release called gh or pushed"
 echo "an unfinished release changes nothing"

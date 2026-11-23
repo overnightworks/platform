@@ -64,6 +64,7 @@ echo "a second release rewrites the tree"
 compute hopin "${output}" "${main_version}"
 expect_status 0 "hopin: current ${main_version}"
 [ "$(cat "${output}/outcome")" = current ] && [ ! -e "${output}/patch" ] || fail "the release main runs is not a no-op"
+[ "$(cat "${output}/version")" = "${main_version}" ] || fail "the outcome current does not name the version main runs"
 compute hopin "${output}" 2026.11.01.1
 expect_status 1 "older than ${main_version}"
 [ ! -e "${output}/patch" ] || fail "a refused release left a patch"
