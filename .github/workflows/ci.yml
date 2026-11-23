@@ -1057,11 +1057,16 @@ jobs:
           # Settings for every apt call of the job, the tests' installs included. The runners sit in Azure's
           # network, so the archive and the security pocket come from Azure's mirror, which answers them; a
           # hanging archive fails the step after the 20-second timeout and 5 retries, not at the job's timeout.
-          sed -i -E 's#https?://(archive|security)\.ubuntu\.com/ubuntu/?#http://azure.archive.ubuntu.com/ubuntu#' \
+          sed -i -E 's#(https?)://(archive|security)\.ubuntu\.com/ubuntu/?#\1://azure.archive.ubuntu.com/ubuntu#' \
             /etc/apt/sources.list.d/ubuntu.sources
-          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\n' > /etc/apt/apt.conf.d/80-retries
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' \
+            > /etc/apt/apt.conf.d/80-retries
           apt-get update
           apt-get install --yes --no-install-recommends ca-certificates curl git
+          # The bare image has no CA certificates, so the first install runs over apt's signed plain transport;
+          # every later call uses TLS.
+          sed -i -E 's#^(URIs: .*)\bhttp:#\1https:#' /etc/apt/sources.list.d/ubuntu.sources
+          apt-get update
 
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
