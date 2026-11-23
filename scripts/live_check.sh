@@ -22,7 +22,7 @@ export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 task_name=live:check
 person=live-check
 # Each call of the cluster or the app ends past this bound, as a hung one would hold the cleanup, which mise.toml's
-# timeout -k covers with its calls: 13 at most.
+# timeout -k covers with its calls: 15 at most (kcadm's file lost, one credential), which is the whole 300 seconds.
 call_seconds=20
 
 cleaning=false
@@ -93,7 +93,7 @@ esac
 realm="$(yq '.realm' "$realm_file")"
 PERSON="$person" yq --exit-status '.users[] | select(.username == strenv(PERSON) and .serviceAccountClientId == null)' \
   "$realm_file" >/dev/null 2>&1 || fail "$realm_file declares no person $person"
-client_entry="$(CLIENT="$client" yq --output-format json '.clients[] | select(.clientId == strenv(CLIENT))' "$realm_file")" ||
+client_entry="$(CLIENT="$client" yq --exit-status --output-format json '.clients[] | select(.clientId == strenv(CLIENT))' "$realm_file")" ||
   fail "$realm_file declares no client $client"
 origin="$(yq -p json -r '.baseUrl' <<<"$client_entry")"
 origin="${origin%/}"

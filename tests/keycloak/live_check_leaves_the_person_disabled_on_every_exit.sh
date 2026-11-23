@@ -393,6 +393,16 @@ grep -q "declares no person" "$output_file" || refuse "undeclared-person: the re
 [ "$(<"$state/enabled")" = true ] || refuse "undeclared-person: a person was written"
 echo "a person the realm file does not declare is refused before any call"
 
+clientless="$work_directory/realm-without-client.yaml"
+yq 'del(.clients[] | select(.clientId == "hopin"))' "$realm_file" >"$clientless"
+prepare_case undeclared-client enabled
+run_command undeclared-client REALM_FILE="$clientless"
+[ "$status" = 1 ] || refuse "undeclared-client: exit $status, not 1"
+grep -q "declares no client" "$output_file" || refuse "undeclared-client: the refusal names no missing client"
+[ ! -s "$state/log" ] || refuse "undeclared-client: the stack was called: $(paste -sd'|' "$state/log")"
+[ "$(<"$state/enabled")" = true ] || refuse "undeclared-client: a person was written"
+echo "a client the realm file does not declare is refused before any call"
+
 prepare_case lock-held enabled
 mkdir -m 700 "$runtime/live-check"
 exec {lock_descriptor}>"$runtime/live-check/lock"

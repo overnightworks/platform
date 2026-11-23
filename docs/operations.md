@@ -196,8 +196,10 @@ password credential, disables the person, reads each back, deletes the cookie ja
 last; each step runs whatever an earlier one did, and signs kcadm in again when its file is gone. A step that fails
 makes the run exit 1 and names what may remain. An exit it cannot trap (SIGKILL, the cap's kill, power loss) leaves the
 person enabled with a credential, its sessions and the 0600 cookie jar in `$XDG_RUNTIME_DIR/live-check`, which the next
-run finds first and cleans the same way; the password died with the process. The run exits 0 when green, 1 when red and
-3 when skipped, which is the app's Deployment not being Available, after the cleanup and with no other write. (OPS-20)
+run finds first and cleans the same way, and kcadm's sign-in file in Keycloak's container, which no later run learns and
+which stays until Keycloak's pod restarts, all inside that boundary; the password died with the process. The run exits 0
+when green, 1 when red and 3 when skipped, which is the app's Deployment not being Available, after the cleanup and with
+no other write. (OPS-20)
 
 A realm apply during a run disables the person and a hopin rollout ends its session, so that run is red and a rerun is
 green. The test person's account row in hopin's database is its own data and stays. (OPS-21)
