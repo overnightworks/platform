@@ -8,9 +8,14 @@ kcadm_path=/opt/keycloak/bin/kcadm.sh
 config_file=""
 unreadable="Keycloak cannot be read"
 keycloak_exec() { kubectl --namespace keycloak exec "$@"; }
+# delete_config_file [path]: deletes the current sign-in file or the path named; returns 1 when it stays in the
+# container; remove_config, which a task's EXIT trap runs, only reports that.
+delete_config_file() {
+  local file="${1:-$config_file}"
+  [ -z "$file" ] || keycloak_exec deployment/keycloak --container keycloak -- rm -f -- "$file"
+}
 remove_config() {
-  [ -z "$config_file" ] || keycloak_exec deployment/keycloak --container keycloak -- rm -f -- "$config_file" ||
-    echo "$task_name: could not remove $config_file in Keycloak's container" >&2
+  delete_config_file || echo "$task_name: could not remove $config_file in Keycloak's container" >&2
 }
 # sign_in_kcadm: kcadm signs in once with the secret in Keycloak's environment variable KC_CLI_CLIENT_SECRET, never in
 # an argument list that another host user could read, and keeps its token in a private file of the container that

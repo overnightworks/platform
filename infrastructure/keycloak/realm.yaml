@@ -1,8 +1,8 @@
 # The hallucinai realm: the one login for the apps. Applied by keycloak-config-cli's Job (config-cli.yaml).
-# People and their memberships are console data, never here; a service account is no person, so its
-# roles and groups are its rights and live here. The apply adds and changes
-# and deletes no undeclared top-level object and no person (IMPORT_MANAGED_* is no-delete in config-cli.yaml);
-# a console addition inside an object declared here is reset with it. Removing or renaming a group
+# People and their memberships are console data, never here, except the one test person `live-check`
+# (mise run live:check); a service account is no person, so its roles and groups are its rights and live here.
+# The apply adds and changes and deletes no undeclared top-level object and no person (IMPORT_MANAGED_* is no-delete in
+# config-cli.yaml); a console addition inside an object declared here is reset with it. Removing or renaming a group
 # below leaves the old group and its memberships in Keycloak, and so does a subgroup the console
 # made under /apps or /services. What this file declares belongs to it: a console change to a
 # declared object (a flow step, a mapper, a client's scope list, a service account's client role,
@@ -502,9 +502,20 @@ requiredActions:
     defaultAction: true
     priority: 20
 # A service account is no person: its roles and groups are its rights, and they live here. No person is
-# ever listed. An agent's entry names no attributes, as config-cli would replace the whole map with them and so lose
-# agent_owner, and no enabled, so a switch-off in the console survives every apply.
+# listed but the test person `live-check`, which `mise run live:check` enables for one run and disables again; the
+# file declares it with no credential and no required action, and config-cli's first create adds the realm's default
+# action whatever the file names, which the command's enable write clears. An agent's entry names no attributes, as
+# config-cli would replace the whole map with them and so lose agent_owner, and no enabled, so a switch-off in the
+# console survives every apply.
 users:
+  - username: live-check
+    firstName: Live
+    lastName: Check
+    email: live-check@hallucinai.invalid
+    emailVerified: true
+    enabled: false
+    groups:
+      - /apps/hopin
   - username: service-account-presentator
     enabled: true
     serviceAccountClientId: presentator
