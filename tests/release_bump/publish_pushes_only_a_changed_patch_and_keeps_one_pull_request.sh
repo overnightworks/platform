@@ -44,6 +44,17 @@ log="$(bump)" || fail "the newer bump failed: ${log}"
 grep -q 'pr edit 1 --title hopin runs release 2026.11.25.1' "${work}/gh-calls" || fail "a newer release did not edit the pull request"
 echo "a newer release moves the branch and edits the one pull request"
 
+# Lines added to the open pull request's body by others survive the next bump, and the Release line stays one.
+{ printf 'Release: https://example.org/old\n'; printf 'Work-Item: #7\n'; printf 'Closes #7\n'; } >"${gh_state}/body"
+app_release 2026.11.25.2
+registry_add "${image}" 2026.11.25.2
+log="$(bump)" || fail "the bump over a body with other lines failed: ${log}"
+body="$(cat "${gh_state}/body")"
+[ "$(grep -c '^Release: ' <<<"${body}")" -eq 1 ] && ! grep -q 'example.org/old' <<<"${body}" ||
+  fail "the body does not carry the new Release line once: ${body}"
+grep -qx 'Work-Item: #7' <<<"${body}" && grep -qx 'Closes #7' <<<"${body}" || fail "the bump dropped a line it did not write: ${body}"
+echo "a newer release keeps the lines of the pull request's body it did not write"
+
 # Main runs the older release a caller names: the open pull request proposes a newer one and stays.
 tip="$(branch_tip)"
 log="$(bump "${main_version}")" || fail "the bump of the release main runs failed: ${log}"
@@ -67,7 +78,7 @@ echo "a branch that conflicts with main is pushed again"
 git --git-dir="${work}/remote/overnightworks/platform" update-ref refs/heads/main "$(branch_tip)"
 log="$(bump)" || fail "the bump after the landing failed: ${log}"
 [ "$(calls "${work}/gh-calls" 'pr close 1')" -eq 1 ] || fail "the overtaken pull request was not closed"
-grep -qF 'pr close 1 --delete-branch --comment main runs release 2026.11.25.1, so' "${work}/gh-calls" ||
+grep -qF 'pr close 1 --delete-branch --comment main runs release 2026.11.25.2, so' "${work}/gh-calls" ||
   fail "the closing comment does not name the release main runs: $(grep 'pr close' "${work}/gh-calls")"
 [ ! -e "${gh_state}/open" ] || fail "a pull request is still open after main runs the release"
 echo "a release that main runs closes the open pull request"

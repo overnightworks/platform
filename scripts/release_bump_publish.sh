@@ -85,7 +85,14 @@ else
 fi
 
 if [ -n "${number}" ]; then
-  gh pr edit "${number}" --title "$(cat "${output}/title")" --body-file "${output}/body"
+  # Only the Release line is this script's: the other lines of the open pull request's body stay as they are, in order.
+  release_line="$(cat "${output}/body")"
+  gh pr view "${number}" --json body --jq .body >"${workspace}/current-body"
+  {
+    grep -q '^Release: ' "${workspace}/current-body" || printf '%s\n' "${release_line}"
+    awk -v release="${release_line}" '/^Release: / { if (!written) print release; written = 1; next } { print }' "${workspace}/current-body"
+  } >"${workspace}/body"
+  gh pr edit "${number}" --title "$(cat "${output}/title")" --body-file "${workspace}/body"
   echo "release_bump: ${app}: edited pull request ${number}"
 else
   gh pr create --base main --head "${branch}" --title "$(cat "${output}/title")" --body-file "${output}/body"

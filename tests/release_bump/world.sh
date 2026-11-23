@@ -48,15 +48,23 @@ case "$1 $2 $3" in
   *) echo "the fake docker has no answer for: $*" >&2; exit 97 ;;
 esac
 FAKE
-# gh answers the pull request calls of the publish step from one file naming the open pull request, and the two calls the
-# hand command makes for its login.
+# gh answers the pull request calls of the publish step from one file naming the open pull request and one file holding
+# its body, which pr create and pr edit take from --body-file and pr view --json body answers, and the two calls the hand
+# command makes for its login.
 cat >"${work}/bin/gh" <<'FAKE'
 #!/usr/bin/env bash
 echo "gh $*" >>"${FAKE_GH_CALLS}"
+body_file=""
+previous=""
+for argument in "$@"; do
+  [ "${previous}" != --body-file ] || body_file="${argument}"
+  previous="${argument}"
+done
 case "$1 $2" in
   "pr list") [ ! -f "${FAKE_GH_STATE}/open" ] || cat "${FAKE_GH_STATE}/open" ;;
-  "pr create") echo 1 >"${FAKE_GH_STATE}/open"; echo https://github.com/overnightworks/platform/pull/1 ;;
-  "pr edit") ;;
+  "pr create") echo 1 >"${FAKE_GH_STATE}/open"; cat "${body_file}" >"${FAKE_GH_STATE}/body"; echo https://github.com/overnightworks/platform/pull/1 ;;
+  "pr edit") cat "${body_file}" >"${FAKE_GH_STATE}/body" ;;
+  "pr view") cat "${FAKE_GH_STATE}/body" ;;
   "pr close") rm -f "${FAKE_GH_STATE}/open" ;;
   "auth token") echo fixture-token ;;
   "api user") echo fixture-user ;;
