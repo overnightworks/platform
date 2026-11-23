@@ -78,6 +78,14 @@ registry_add "${image}" 2026.11.26.1
 compute hopin "${output}" 2026.11.26.1
 expect_status 1 "a changed page set"
 [ ! -e "${output}/patch" ] || fail "a refused page set left a patch"
+# The legal step itself refuses a changed page set with 1 and fails a fetch of a missing tag with 2.
+legal_step() { (cd "${work}/first" && "${repository_root}/scripts/release_bump_legal.sh" hopin "$1" >/dev/null 2>&1); }
+status=0
+legal_step v2026.11.26.1 || status=$?
+[ "${status}" -eq 1 ] || fail "the legal step ended ${status} on a changed page set, not 1"
+status=0
+legal_step v2099.01.01.1 || status=$?
+[ "${status}" -eq 2 ] || fail "the legal step ended ${status} on a tag it cannot fetch, not 2"
 echo "a changed legal page set is refused"
 
 # An unfinished release waits, also as the newest, and a release without a tag waits.

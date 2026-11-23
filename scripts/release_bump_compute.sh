@@ -92,7 +92,10 @@ for name in "${names[@]}"; do
 done
 
 if grep -qxF "[${app}]" infrastructure/legal/app-texts.toml; then
-  "${scripts_directory}/release_bump_legal.sh" "${app}" "v${version}" || refuse "the legal step refused the release"
+  legal_status=0
+  "${scripts_directory}/release_bump_legal.sh" "${app}" "v${version}" || legal_status=$?
+  [ "${legal_status}" -ne 1 ] || refuse "the legal step refused the release"
+  [ "${legal_status}" -eq 0 ] || exit 2
   # The tree's own mise.toml is a file of main, which this one run trusts.
   MISE_TRUSTED_CONFIG_PATHS="${tree}" mise run legal:build
 fi
