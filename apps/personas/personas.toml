@@ -47,19 +47,19 @@ client_id = "agent-mozart"
 secret_file = "/run/secrets/mozart_client_secret"
 persona_file = "/app/characters/mozart.md"
 model = "text/haiku-fast"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.22.1/mozart.vrm", sha256 = "61ddbe483b0de6ace152f7b8b0a972abcc444101523572afb6293e70320350e2" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.23.1/mozart.vrm", sha256 = "61ddbe483b0de6ace152f7b8b0a972abcc444101523572afb6293e70320350e2" }
 # ryan exists only in speech's GPU image; Thorsten is speech's male German Piper voice for the CPU.
 voice = { names = ["ryan", "de_DE-thorsten-medium"] }
-room = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.22.1/mozart.room.glb", sha256 = "def5d5dc1acbd1ff689ea9e6d20f09d69b3c1272ebd166dafa383541caee0795" }
+room = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.23.1/mozart.room.glb", sha256 = "def5d5dc1acbd1ff689ea9e6d20f09d69b3c1272ebd166dafa383541caee0795" }
 
 [[agents]]
 client_id = "agent-leonardo"
 secret_file = "/run/secrets/leonardo_client_secret"
 persona_file = "/app/characters/leonardo.md"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.22.1/leonardo.vrm", sha256 = "0d439c692756c7e26340e9ea2699ae309cbade0d7139959f684a7fe75a6cea33" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.23.1/leonardo.vrm", sha256 = "0d439c692756c7e26340e9ea2699ae309cbade0d7139959f684a7fe75a6cea33" }
 # ryan exists only in speech's GPU image; Thorsten is speech's male German Piper voice for the CPU.
 voice = { names = ["ryan", "de_DE-thorsten-medium"] }
-room = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.22.1/leonardo.room.glb", sha256 = "de0198142b69a0883cca307d56dc5a767c152af95b5ef6cdb0b0e785f0498c9d" }
+room = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.23.1/leonardo.room.glb", sha256 = "de0198142b69a0883cca307d56dc5a767c152af95b5ef6cdb0b0e785f0498c9d" }
 
 # The four test agents run on gateway models of their own, so that one call compares a lower effort and Haiku. Each
 # speaks first with a voice of the language its prompt defaults to, German.
@@ -69,7 +69,7 @@ client_id = "agent-humboldt"
 secret_file = "/run/secrets/humboldt_client_secret"
 persona_file = "/app/characters/humboldt.md"
 model = "text/sonnet-medium"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.22.1/humboldt.vrm", sha256 = "1b50be7fc3a348f2882c2803d92a0c9a315689c6fd0c77b22698e7fcffad6df8" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.23.1/humboldt.vrm", sha256 = "1b50be7fc3a348f2882c2803d92a0c9a315689c6fd0c77b22698e7fcffad6df8" }
 voice = { names = ["de_DE-thorsten-medium", "en_US-norman-medium"] }
 
 [[agents]]
@@ -77,7 +77,7 @@ client_id = "agent-curie"
 secret_file = "/run/secrets/curie_client_secret"
 persona_file = "/app/characters/curie.md"
 model = "text/sonnet-low"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.22.1/curie.vrm", sha256 = "e56409000c52917641c137cf5abf148c69ca92686fddf7f180ad405f28f3a9cf" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.23.1/curie.vrm", sha256 = "e56409000c52917641c137cf5abf148c69ca92686fddf7f180ad405f28f3a9cf" }
 voice = { names = ["de_DE-kerstin-medium", "en_US-ljspeech-medium"] }
 
 [[agents]]
@@ -85,7 +85,7 @@ client_id = "agent-lovelace"
 secret_file = "/run/secrets/lovelace_client_secret"
 persona_file = "/app/characters/lovelace.md"
 model = "text/haiku-medium"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.22.1/lovelace.vrm", sha256 = "dacf975d4b66a7ab9259cd0d7b19a02ed366b82438c196c80569d0ee424c827b" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.23.1/lovelace.vrm", sha256 = "dacf975d4b66a7ab9259cd0d7b19a02ed366b82438c196c80569d0ee424c827b" }
 voice = { names = ["de_DE-kerstin-medium", "en_GB-cori-medium"] }
 
 [[agents]]
@@ -93,5 +93,5 @@ client_id = "agent-hildegard"
 secret_file = "/run/secrets/hildegard_client_secret"
 persona_file = "/app/characters/hildegard.md"
 model = "text/haiku-low"
-figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.22.1/hildegard.vrm", sha256 = "a4087d022169fe4d634cf256debe8e9aeea4d703415e2ea61c463caef1531aa2" }
+figure = { url = "https://github.com/overnightworks/personas/releases/download/v2026.11.23.1/hildegard.vrm", sha256 = "a4087d022169fe4d634cf256debe8e9aeea4d703415e2ea61c463caef1531aa2" }
 voice = { names = ["de_DE-kerstin-medium", "en_GB-cori-medium"] }

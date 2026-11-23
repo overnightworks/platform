@@ -93,8 +93,9 @@ rows_by_column='BEGIN { count = split(added, ids, " "); for (i = 1; i <= count; 
   copying && field { split($0, cells, "\t"); if (print_column) { print cells[field]; next } if (cells[field] in skip) next }
   { if (!print_column) print }
   END { if (!seen) { print "the stream holds no COPY of the table" > "/dev/stderr"; missing = 1 }; if (missing) exit 1 }'
-# The service accounts a realm-file client gained since the dump: user ids that stay in this script; a person or any
-# other added row shows up as a difference in the digests below, which skip only these users' rows.
+# The service accounts a realm-file client gained since the dump: user ids that stay in this script; any other added row
+# shows up as a difference in the digests below, which skip only these users' rows and those of the realm file's persons,
+# whom a run of live:check changes (a dump from before the person was declared, or from mid-run, still compares).
 declared_clients="$(yq "[.clients[].clientId] | map(\"'\" + . + \"'\") | join(\",\")" "$realm_file")"
 live_service_accounts="$(in_postgres psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT u.id
   FROM user_entity u JOIN client c ON c.id = u.service_account_client_link JOIN realm r ON r.id = c.realm_id
@@ -106,29 +107,36 @@ dumped_user_ids="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail
   step_failed "$?" "reading the dump's user ids"
 added_service_accounts="$(comm -13 <(printf '%s\n' "$dumped_user_ids") <(printf '%s\n' "$live_service_accounts") | tr '\n' ' ')"
 added_service_accounts="${added_service_accounts%% }"
+declared_persons="$(yq "[.users[] | select(.serviceAccountClientId == null) | .username] | map(\"'\" + . + \"'\") | join(\",\")" "$realm_file")"
+person_ids="$(in_postgres psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="SELECT u.id
+  FROM user_entity u JOIN realm r ON r.id = u.realm_id WHERE r.name = '$realm' AND u.username IN ($declared_persons)" 2>/dev/null |
+  LC_ALL=C sort | tr '\n' ' ')" || step_failed "$?" "reading the declared persons"
+person_ids="${person_ids%% }"
 # Each table's rows from the dump and from the database through the ConfigMap postgres's table-digests.sh, the
 # loader's own digest, inside the container; pg_dump's and pg_restore's stderr stays there too. The database's rows of
 # an added service account are dropped before the digest, by the column that names the user, so every other row still
 # has to match.
-for table_and_column in user_entity:id credential: user_group_membership:user_id user_attribute:user_id; do
+for table_and_column in user_entity:id credential:user_id user_group_membership:user_id user_attribute:user_id; do
   table="${table_and_column%%:*}" column="${table_and_column#*:}"
   dumped="$(dump_into_postgres sh -c "$remote_bound"'; set -o pipefail
-    bounded "$2" pg_restore --data-only --table="$1" --file=- 2>/dev/null | sh /etc/postgres-checks/table-digests.sh' \
-    sh "$table" "$remote_deadline")" || step_failed "$?" "reading the dump's $table"
+    bounded "$2" pg_restore --data-only --table="$1" --file=- 2>/dev/null |
+      awk -v column="$3" -v added="$4" "$5" | sh /etc/postgres-checks/table-digests.sh' \
+    sh "$table" "$remote_deadline" "$column" "$person_ids" "$rows_by_column")" || step_failed "$?" "reading the dump's $table"
   loaded="$(in_postgres sh -c "$remote_bound"'; set -o pipefail
     bounded "$2" pg_dump --data-only --lock-wait-timeout=10s --table="$1" 2>/dev/null |
       awk -v column="$3" -v added="$4" "$5" | sh /etc/postgres-checks/table-digests.sh' \
-    sh "$table" "$remote_deadline" "$column" "$added_service_accounts" "$rows_by_column")" ||
+    sh "$table" "$remote_deadline" "$column" "$added_service_accounts $person_ids" "$rows_by_column")" ||
     step_failed "$?" "reading the database's $table"
   [ -n "$dumped" ] && [ -n "$loaded" ] || fail "$table: the digest of the dump or of the database is empty, though it holds a line for every table"
   verdict=equal
   [ "$dumped" = "$loaded" ] || { verdict=DIFFERS; outcome=1; }
   loaded_rows="${loaded##* }" dumped_rows="${dumped##* }"
-  echo "$table: ${loaded_rows:-0} rows in the database beyond added service accounts, ${dumped_rows:-0} in the dump, $verdict"
+  echo "$table: ${loaded_rows:-0} rows in the database beyond added service accounts and persons, ${dumped_rows:-0} in the dump, $verdict"
 done
 added_count=0
 [ -z "$added_service_accounts" ] || added_count="$(wc -w <<<"$added_service_accounts")"
 echo "$added_count service accounts of declared clients were added since the dump, with their memberships"
+echo "$(wc -w <<<"$person_ids") persons of the realm file are left out of the digests"
 # Each client of the realm that holds a secret, as "<client><tab><sha256 of its COPY-escaped secret>", from the dump and from
 # the database through the same awk program, as the four tables are. The digests are made in the container, so no secret
 # reaches this shell, and the escaped text has no newline or tab that could split a line: only a client's name is printed.
