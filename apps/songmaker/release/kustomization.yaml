@@ -6,16 +6,16 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: ghcr.io/overnightworks/songmaker/web
-    newTag: 2026.11.18.2
-    digest: sha256:71603b2b9a5e59d21ad9142893748dc7277e4dc295e7eb36c69b9f80eea571d7
+    newTag: 2026.11.23.1
+    digest: sha256:05f49e4fb6b8d4cff932dae8165338b940a6de67f2dedc9d0a25ae35063ab437
   - name: ghcr.io/overnightworks/songmaker/music-worker
-    newTag: 2026.11.18.2
-    digest: sha256:b8640506cd97b7615bbec242ed2614d6b605413bcaea72194f8b3f3a1b043915
+    newTag: 2026.11.23.1
+    digest: sha256:d8990098d2a0c8306001b446c229a63dc7e78f0d5a272b273875bd22ad454d85
   - name: ghcr.io/overnightworks/songmaker/scoring-worker
-    newTag: 2026.11.18.2
-    digest: sha256:6a764b925fe1f9c15e798137924f46a4d15486ecb76b7cc4b8b4d7d80dd5d7fc
+    newTag: 2026.11.23.1
+    digest: sha256:ca3d1657344ea22ff49aa395c6c84c941bf536b566e91e80c489b1c87d55619d
   - name: ghcr.io/overnightworks/songmaker/acestep-worker
-    newTag: 2026.11.18.2
-    digest: sha256:87c5e533d214958dd0125a6672c515b6a0369752a5dc3d0675b1ec1401521c0f
+    newTag: 2026.11.23.1
+    digest: sha256:458a90b3a4789a977adcecdc162684de95d8e635161605be7d2686608054805d
 configurations:
   - image-volume.yaml
