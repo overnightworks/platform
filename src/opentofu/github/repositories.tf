@@ -24,8 +24,7 @@ locals {
 
   # Listed repositories outside the contract, each with its reason.
   unmanaged = {
-    "ACE-Step-1.5"        = "a vendor fork that follows its upstream, not the fleet"
-    "scratch-board-drive" = "aco's throwaway repository for its board drives, archived when they end"
+    "ACE-Step-1.5" = "a vendor fork that follows its upstream, not the fleet"
   }
 }
 

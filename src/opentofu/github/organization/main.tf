@@ -60,7 +60,8 @@ resource "github_organization_ruleset" "main_pull_request_only" {
   }
 }
 
-# quality's merge command is the one deliberate way past a ruleset, so no ruleset has a bypass actor.
+# quality's merge command is the one deliberate way past a ruleset, so no ruleset has a bypass actor but the
+# organisation admin on the one that updates platform's main.
 resource "github_organization_ruleset" "quality_verdict_required" {
   name        = "quality / verdict required"
   target      = "branch"
@@ -186,6 +187,40 @@ resource "github_organization_ruleset" "code_scanning_required" {
         alerts_threshold          = "none"
       }
     }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    destroy         = false
+  }
+}
+
+# Only the organisation admin updates platform's main, which `main: PR only` keeps behind a pull request. `exempt` skips
+# the rule for the admin and logs no bypass; `pull_request` mode would make GitHub report every pull request as blocked,
+# and `aco land` merges only at the state `clean`. Everyone else, an integration included, is refused the update.
+resource "github_organization_ruleset" "platform_main_update_by_admin_only" {
+  name        = "main: only the organisation admin updates platform"
+  target      = "branch"
+  enforcement = "active"
+
+  conditions {
+    ref_name {
+      include = ["~DEFAULT_BRANCH"]
+      exclude = []
+    }
+    repository_name {
+      include = ["platform"]
+      exclude = []
+    }
+  }
+
+  bypass_actors {
+    actor_type  = "OrganizationAdmin"
+    bypass_mode = "exempt"
+  }
+
+  rules {
+    update = true
   }
 
   lifecycle {

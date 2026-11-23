@@ -91,7 +91,7 @@ run "the_quality_and_code_scanning_rulesets_refuse_merges_on_branches" {
   }
 }
 
-run "no_organisation_ruleset_has_a_bypass_actor" {
+run "only_the_update_ruleset_has_a_bypass_actor_the_exempt_organisation_admin" {
   command = plan
 
   module {
@@ -107,7 +107,37 @@ run "no_organisation_ruleset_has_a_bypass_actor" {
         github_organization_ruleset.code_scanning_required,
       ] : ruleset.bypass_actors == null || length(ruleset.bypass_actors) == 0
     ])
-    error_message = "A ruleset must have an empty bypass list."
+    error_message = "A ruleset other than the update ruleset must have an empty bypass list."
+  }
+
+  assert {
+    condition = (
+      length(github_organization_ruleset.platform_main_update_by_admin_only.bypass_actors) == 1
+      && one(github_organization_ruleset.platform_main_update_by_admin_only.bypass_actors).actor_type == "OrganizationAdmin"
+      && one(github_organization_ruleset.platform_main_update_by_admin_only.bypass_actors).bypass_mode == "exempt"
+    )
+    error_message = "The update ruleset must have exactly one bypass actor: the organisation admin, exempt, since a pull request mode makes GitHub report every pull request as blocked."
+  }
+}
+
+run "the_update_ruleset_refuses_every_update_of_platforms_default_branch_but_the_admins" {
+  command = plan
+
+  module {
+    source = "./organization"
+  }
+
+  assert {
+    condition     = github_organization_ruleset.platform_main_update_by_admin_only.target == "branch" && github_organization_ruleset.platform_main_update_by_admin_only.rules[0].update == true
+    error_message = "The ruleset must apply the update rule to branches."
+  }
+
+  assert {
+    condition = (
+      github_organization_ruleset.platform_main_update_by_admin_only.conditions[0].ref_name[0].include == github_organization_ruleset.quality_verdict_required.conditions[0].ref_name[0].include
+      && github_organization_ruleset.platform_main_update_by_admin_only.conditions[0].repository_name[0].include == tolist(["platform"])
+    )
+    error_message = "The rule must reach the default branch of platform alone."
   }
 }
 
@@ -125,6 +155,7 @@ run "every_organisation_ruleset_is_enforced" {
         github_organization_ruleset.quality_verdict_required,
         github_organization_ruleset.release_tags_immutable,
         github_organization_ruleset.code_scanning_required,
+        github_organization_ruleset.platform_main_update_by_admin_only,
       ] : ruleset.enforcement == "active"
     ])
     error_message = "Every ruleset must be active."
