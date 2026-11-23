@@ -7,10 +7,10 @@
 # cookie, a code or a page.
 #
 # The password is made per run, lives in this process's memory and reaches Keycloak and the sign-in form on stdin only.
-# On every exit the command can trap (success, error, TERM, INT) one EXIT trap signs out at the app, ends the person's
-# Keycloak sessions, deletes its password credentials, disables it and reads each back; a step that fails does not stop
-# the next, and the run names what may remain. A run that was killed untrapped leaves the person enabled: the next run
-# finds that first and runs the same cleanup.
+# On every exit the command can trap (success, error, TERM, INT) one EXIT trap signs out at every app whose cookie jar
+# exists, ends the person's Keycloak sessions, deletes its password credentials, disables it and reads each back; a step
+# that fails does not stop the next, and the run names what may remain. A run that was killed untrapped leaves the person
+# enabled: the next run, for any app, finds that first and runs the same cleanup.
 { set +x; } 2>/dev/null
 set -euo pipefail
 umask 077
@@ -22,10 +22,13 @@ export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 task_name=live:check
 person=live-check
 # Each call of the cluster or the app ends past this bound, as a hung one would hold the cleanup, which mise.toml's
-# timeout -k covers with its calls: 15 at most (kcadm's file lost, one credential), which is the whole 300 seconds.
+# timeout -k covers with its calls: 15 at most (kcadm's file lost, one credential), which is the whole 300 seconds. A
+# cleanup pass meets at most one cookie jar, of hopin, skat, presentator or songmaker: a run makes its own only after a
+# heal that deleted every leftover, and a heal with leftovers ends the run.
 call_seconds=20
 
 cleaning=false
+healing=false
 holds_lock=false
 person_touched=false
 skipped=false
@@ -47,6 +50,43 @@ source "$(dirname "${BASH_SOURCE[0]}")/keycloak_login_form.sh"
 keycloak_exec() { timeout --foreground "$call_seconds" kubectl --namespace keycloak exec "$@"; }
 exec {kcadm_diagnostics_fd}>/dev/null
 kcadm_update_output_fd=$kcadm_diagnostics_fd
+
+# cookie_jar_of <app>: the app's own cookie jar, so a jar left by a killed run is signed out at the app that made it.
+cookie_jar_of() { printf '%s/cookies-%s' "$lock_directory" "$1"; }
+# load_app <app>: sets the app's Deployment and routes from its row, its origin and callback from its client in
+# realm.yaml, and its cookie jar; says why and returns 1 when the client is missing.
+load_app() {
+  local client_entry
+  read -r _ deployment_namespace deployment start_path account_path logout_path < <(app_row "$1")
+  client_entry="$(CLIENT="$1" yq --exit-status --output-format json '.clients[] | select(.clientId == strenv(CLIENT))' "$realm_file")" || {
+    echo "live:check: $realm_file declares no client $1" >&2
+    return 1
+  }
+  origin="$(yq -p json -r '.baseUrl' <<<"$client_entry")"
+  origin="${origin%/}"
+  callback_url="$(yq -p json -r '.redirectUris[0]' <<<"$client_entry")"
+  cookie_jar="$(cookie_jar_of "$1")"
+}
+
+# The apps this command signs in to, one row each, and the one list of their names (the usage message and the cleanup
+# read it): the app, which is also its client in realm.yaml, whose baseUrl and first redirect URI are its origin and
+# callback; the namespace and name of the Deployment that must be Available; and the paths of the app's own routes (its
+# route contract): where a sign-in starts, the account route that answers 200 signed in and 401 otherwise, and the
+# sign-out.
+app_table='
+hopin        hopin        hopin   /auth/start  /api/account  /logout
+skat         skat         skat    /auth/start  /api/account  /logout
+presentator  presentator  web     /login/oidc  /api/account  /logout
+songmaker    songmaker    web     /login/oidc  /api/auth/me  /auth/logout
+'
+app_names() { awk 'NF { print $1 }' <<<"$app_table"; }
+app_row() { awk -v wanted="$1" '$1 == wanted' <<<"$app_table"; }
+app="${1:-}"
+if [ -z "$(app_row "$app")" ]; then
+  echo "usage: mise run live:check <app>" >&2
+  echo "apps: $(app_names | paste -sd ' ' -)" >&2
+  exit 1
+fi
 
 # What the run does at the end, and what it says: the one place that reads the exit status.
 attempt() {
@@ -75,38 +115,25 @@ finish() {
     echo "live:check: may remain: $(printf '%s; ' "${leftovers[@]}")run again to clean up" >&2
   fi
   [ "$result" != red ] || exit_status=1
-  echo "live:check: ${app:-none} $result${codes[*]:+ (${codes[*]})}"
+  echo "live:check: $app $result${codes[*]:+ (${codes[*]})}"
   exit "$exit_status"
 }
 trap finish EXIT
 trap 'exit 143' TERM INT
 
-# The apps this command signs in to, one row each: the Deployment that must be Available, the client of realm.yaml that
-# names the app's origin and callback, and the paths of the app's own routes (its route contract).
-app="${1:?usage: live_check.sh <app>}"
-case "$app" in
-  hopin) deployment_namespace=hopin deployment=hopin client=hopin start_path=/auth/start account_path=/api/account logout_path=/logout ;;
-  *) fail "no app $app" ;;
-esac
-
 # The refusals that need no cluster: nothing is read or written before them.
 realm="$(yq '.realm' "$realm_file")"
 PERSON="$person" yq --exit-status '.users[] | select(.username == strenv(PERSON) and .serviceAccountClientId == null)' \
   "$realm_file" >/dev/null 2>&1 || fail "$realm_file declares no person $person"
-client_entry="$(CLIENT="$client" yq --exit-status --output-format json '.clients[] | select(.clientId == strenv(CLIENT))' "$realm_file")" ||
-  fail "$realm_file declares no client $client"
-origin="$(yq -p json -r '.baseUrl' <<<"$client_entry")"
-origin="${origin%/}"
-callback_url="$(yq -p json -r '.redirectUris[0]' <<<"$client_entry")"
-[ -n "${XDG_RUNTIME_DIR:-}" ] || fail "XDG_RUNTIME_DIR is unset, so the run has no private directory for its lock and cookie jar"
+[ -n "${XDG_RUNTIME_DIR:-}" ] || fail "XDG_RUNTIME_DIR is unset, so the run has no private directory for its lock and cookie jars"
+lock_directory="$XDG_RUNTIME_DIR/live-check"
+load_app "$app" || exit 1
 
 # One run at a time; a second is refused before it reads or writes anything.
-lock_directory="$XDG_RUNTIME_DIR/live-check"
 [ -d "$lock_directory" ] || mkdir -m 700 -- "$lock_directory"
 exec {lock_descriptor}>"$lock_directory/lock"
 flock --nonblock "$lock_descriptor" || fail "another run holds $lock_directory/lock; nothing was changed"
 holds_lock=true
-cookie_jar="$lock_directory/cookies"
 
 # ------------------------------------------------------------------------------------------ the person's state
 person_json() { kcadm get "users/$person_id" --target-realm "$realm"; }
@@ -138,7 +165,14 @@ person_needs_cleaning() {
   enabled="$(enabled_state)" || fail "$unreadable"
   credential_ids="$(password_credential_ids)" || fail "$unreadable"
   sessions="$(session_count)" || fail "$unreadable"
-  [ "$enabled" = true ] || [ -n "$credential_ids" ] || [ "$sessions" != 0 ] || [ -e "$cookie_jar" ]
+  [ "$enabled" = true ] || [ -n "$credential_ids" ] || [ "$sessions" != 0 ] || a_cookie_jar_is_left
+}
+a_cookie_jar_is_left() {
+  local name
+  for name in $(app_names); do
+    [ ! -e "$(cookie_jar_of "$name")" ] || return 0
+  done
+  return 1
 }
 
 # visit <path or url> <curl argument>...: one request with the jar; sets answer to "<status> <redirect address>".
@@ -172,12 +206,18 @@ delete_stranded_config_files() {
   done
   stranded_config_files=("${remaining[@]}")
 }
+# sign_out_of_app <app>: with the app's jar, its own sign-out route and Origin, read back by its account route answering
+# 401. The codes of a jar that is not this run's own, or of the first cleanup's, carry the app's name, so the result line
+# holds no key twice.
 sign_out_of_app() {
-  local logout_status account_status
-  [ -e "$cookie_jar" ] || return 0
+  local name="$1" code_prefix="" logout_status account_status
+  local deployment_namespace deployment start_path account_path logout_path origin callback_url cookie_jar
+  [ -e "$(cookie_jar_of "$name")" ] || return 0
+  load_app "$name" || return 1
+  { [ "$name" != "$app" ] || [ "$healing" = true ]; } && code_prefix="$name-"
   logout_status="$(app_request "$logout_path" --header "Origin: $origin" --data '')" || logout_status=none
   account_status="$(app_request "$account_path")" || account_status=none
-  codes+=("sign-out=$logout_status" "account-after=$account_status")
+  codes+=("${code_prefix}sign-out=$logout_status" "${code_prefix}account-after=$account_status")
   [[ "$logout_status" == [23]?? ]] && [ "$account_status" = 401 ]
 }
 end_keycloak_sessions() {
@@ -198,17 +238,22 @@ disable_person() {
   [ "$(enabled_state)" = false ]
 }
 delete_cookie_jar() {
-  rm -f -- "$cookie_jar"
-  [ ! -e "$cookie_jar" ]
+  rm -f -- "$(cookie_jar_of "$1")"
+  [ ! -e "$(cookie_jar_of "$1")" ]
 }
 clean_up_person() {
+  local name
   leftovers=()
   attempt "kcadm's sign-in to Keycloak" sign_in_kcadm_again
-  attempt "the person's hopin session" sign_out_of_app
+  for name in $(app_names); do
+    attempt "the person's $name session" sign_out_of_app "$name"
+  done
   attempt "the person's Keycloak sessions" end_keycloak_sessions
   attempt "the person's password credential" delete_password_credentials
   attempt "the person, who may be enabled" disable_person
-  attempt "the cookie jar $cookie_jar" delete_cookie_jar
+  for name in $(app_names); do
+    attempt "the cookie jar $(cookie_jar_of "$name")" delete_cookie_jar "$name"
+  done
   delete_stranded_config_files
 }
 
@@ -219,12 +264,22 @@ find_person "$person"
 # A person found enabled, with a credential or a session, or a leftover jar is what an untrapped run left.
 if person_needs_cleaning; then
   person_touched=true
+  healing=true
   clean_up_person
+  healing=false
   [ "${#leftovers[@]}" = 0 ] && [ "${#stranded_config_files[@]}" = 0 ] ||
     fail "an earlier run left something that could not be cleaned"
   person_touched=false
   echo "live:check: an earlier run's leftovers were cleaned up first"
 fi
+
+# The person belongs to the groups the file declares and no others, so that no agent-owner membership or realm not yet
+# applied reaches the sign-in.
+declared_groups="$(PERSON="$person" yq '(.users[] | select(.username == strenv(PERSON)) | .groups // [])[]' "$realm_file" | sort)"
+live_groups="$(kcadm get "users/$person_id/groups" --target-realm "$realm")" || fail "$unreadable"
+live_groups="$(yq -p json -r '.[].path' <<<"$live_groups" | sort)"
+[ "$live_groups" = "$declared_groups" ] ||
+  fail "$person is in $(paste -sd ' ' - <<<"$live_groups"), the file declares $(paste -sd ' ' - <<<"$declared_groups"); nothing was written. Wait for config-cli's apply of the file, or remove the membership the file does not declare"
 
 available="$(timeout --foreground "$call_seconds" kubectl --namespace "$deployment_namespace" get deployment "$deployment" \
   --output jsonpath='{.status.conditions[?(@.type=="Available")].status}')" || fail "the Deployment $deployment cannot be read"
@@ -268,7 +323,7 @@ answer="$(printf '%s' "$password" | post_form <(printf '%s' "$page") "${login_ur
   --data-urlencode "username=$person" --data-urlencode password@-)"
 expect_status sign-in-form 302
 return_url="${answer#* }"
-[ "${return_url%%\?*}" = "$callback_url" ] || fail "the sign-in form returns to ${return_url%%\?*}, not the callback of $client"
+[ "${return_url%%\?*}" = "$callback_url" ] || fail "the sign-in form returns to ${return_url%%\?*}, not the callback of $app"
 visit "$return_url"
 expect_status callback 303
 visit "$account_path"

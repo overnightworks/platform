@@ -146,6 +146,13 @@ checks the answers as owner; a line not yet held names its owning item and stays
 ref on, this standard holds. A compose file used only by CI or local runs is not covered by the no-second-deploy-path rule; quality's
 gate judges it by its own rules.
 
+Platform reports a release live when its ref's merge is on main, Flux shows the app's Kustomization (and its pull layer)
+Ready at that merge or a later one, and each of the app's Deployments runs the release's digest with every replica Ready
+and Available; platform's head writes that on the release item and tells the app's head. For an app where a person signs
+in, the app's head then runs `mise run live:check <app>` from platform's primary checkout, which `aco land` keeps at the
+landed main, and records the result line on its release item. On red it reruns once; a red whose line names another app's
+leftover, or a refusal by the lock, goes to platform's head.
+
 ## The GPU
 
 The platform's node offers its one card to Kubernetes as `nvidia.com/gpu: 1`, through the RuntimeClass `nvidia` and

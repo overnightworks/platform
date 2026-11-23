@@ -137,7 +137,7 @@ Facts of today's boundaries, each held by a manifest or a cell:
 - Keycloak's admin console, Grafana and Gatus are reached through a port-forward from the PC; the tunnel routes
   none of them. Only the realm `hallucinai`, its localization and its static resources are routed.
 - No access token carries a person's name or e-mail address; the ID token and userinfo do.
-- A declared test person can sign in to hopin only during a run of `mise run live:check`: at rest it is disabled with no
+- A declared test person can sign in to hopin, skat, presentator and songmaker only during a run of `mise run live:check`: at rest it is disabled with no
   credential, and the boundary that keeps its password from a non-cooperative agent is the operator's account on the PC.
 - Flux reads two sources: this repository's default branch and `platform-secrets`.
 

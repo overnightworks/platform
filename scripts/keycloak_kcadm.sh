@@ -24,10 +24,10 @@ sign_in_kcadm() {
   config_file="/tmp/kcadm-$(</proc/sys/kernel/random/uuid).config"
   keycloak_exec deployment/keycloak --container keycloak -- bash -c 'umask 077 && : >"$0" &&
     KC_CLI_CLIENT_SECRET="$KC_BOOTSTRAP_ADMIN_CLIENT_SECRET" exec '"$kcadm_path"' config credentials --config "$0" \
-      --server http://localhost:8080 --realm master --client "$KC_BOOTSTRAP_ADMIN_CLIENT_ID"' "$config_file" >/dev/null ||
+      --server http://localhost:8080 --realm master --client "$KC_BOOTSTRAP_ADMIN_CLIENT_ID"' "$config_file" >/dev/null 2>&"$kcadm_diagnostics_fd" ||
     fail "Keycloak cannot be signed in to"
 }
-# kcadm_diagnostics_fd: the descriptor kcadm's diagnostics go to, a descriptor and not a path since opening /dev/stderr
+# kcadm_diagnostics_fd: the descriptor kcadm's diagnostics go to (its sign-in notice included), a descriptor and not a path since opening /dev/stderr
 # truncates the file the caller's stderr is and fails on a socket. They can quote a request URL that holds a person's id,
 # so a task that never prints one opens /dev/null on a descriptor and sets that. kcadm_update_output_fd is the same for
 # the output of a membership write, which holds nothing the task prints.
