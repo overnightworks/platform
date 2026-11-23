@@ -804,6 +804,22 @@ probe_start() {
   plain_check "$1"
 }
 
+# probe_end: the run's cost and where the test person stays.
+probe_end() {
+  total_cost
+  echo "litellm:gateway-probe: the test person $probe_person stays in LiteLLM's customer table; remove it with: mise run litellm:gateway-probe --remove"
+}
+
+# The questions that run alone, each the routes of its flow and the flow; their setup is the key and the plain check, since a
+# flow of them needs no calibration. A full run asks them through run_question too.
+declare -A alone_questions=([18]="chat flow_mixed_result")
+# run_question <number>: asks the question on its routes, as a full run and a run alone both do.
+run_question() {
+  local routes flow
+  read -r routes flow <<<"${alone_questions[$1]}"
+  each_target_on "$routes" "$flow"
+}
+
 probe_command() {
   local size
   probe_start "messages chat"
@@ -814,7 +830,7 @@ probe_command() {
   ttl_started=$SECONDS
   each_target flow_inline
   each_target flow_deferred
-  each_target_on chat flow_mixed_result
+  run_question 18
   each_target flow_skill
   each_target flow_write_split
   each_target flow_marks
@@ -835,21 +851,16 @@ probe_command() {
   else
     answer 9 O4 "messages $haiku_model" no "the spend log holds no row of the /v1/messages call"
   fi
-  total_cost
-  echo "litellm:gateway-probe: the test person $probe_person stays in LiteLLM's customer table; remove it with: mise run litellm:gateway-probe --remove"
+  probe_end
 }
 
-# The questions that run alone, each the routes of its flow and the flow; their setup is the key and the plain check, since a
-# flow of them needs no calibration.
-declare -A alone_questions=([18]="chat flow_mixed_result")
 alone_command() {
-  local routes flow
+  local routes
   [ -n "${alone_questions[$1]-}" ] || fail "question $1 does not run alone; those that do: ${!alone_questions[*]}"
-  read -r routes flow <<<"${alone_questions[$1]}"
+  read -r routes _ <<<"${alone_questions[$1]}"
   probe_start "$routes"
-  each_target_on "$routes" "$flow"
-  total_cost
-  echo "litellm:gateway-probe: the test person $probe_person stays in LiteLLM's customer table; remove it with: mise run litellm:gateway-probe --remove"
+  run_question "$1"
+  probe_end
 }
 
 remove_command() {
