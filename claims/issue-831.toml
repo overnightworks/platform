@@ -3,6 +3,6 @@ agent = "Claude d685ac94-35ee-4f1f-9c8a-5d19d2ad7b55"
 role = "builder"
 base = "5a22440e29825924a45c18d10ae5f869a8b7226f"
 branch = "claude/issue-831-front-serves-model-info"
-scope = ["docs/personal-data.md", "infrastructure/litellm/front-route.yml", "infrastructure/litellm/litellm-config.yaml", "scripts/litellm_keys.sh", "tests/litellm/front_key_check_routing_and_provider_egress.sh"]
+scope = ["docs/personal-data.md", "infrastructure/litellm/front-route.yml", "infrastructure/litellm/front-traefik.yml", "infrastructure/litellm/front.yaml", "infrastructure/litellm/litellm-config.yaml", "scripts/litellm_keys.sh", "tests/litellm/front_key_check_routing_and_provider_egress.sh"]
 opened_commit = "beff9dddcd47d9a23e21cf8e7d64b6437cac5cec"
 whole_reason = "One route opened at the front, the one promise sentence naming the front's routes and the cell that proves it land together, or PD-5 states a route list the front does not serve."
