@@ -14,7 +14,10 @@ spendy_calls (each answered call costs 0.025 USD), no_cache (no route caches: us
 prompt as input), dear_misses (a call that reads less than 500000 tokens of a prompt of 500000 or more costs 3.3 USD),
 heavy_first_call (the first answered call costs 2.95 USD), small_model_limit (/model/info names 100000 as the most input
 tokens of a model), mixed_refused (a tool message of text and a tool reference is refused with 400), reference_ignored (a tool
-reference loads nothing: the reply calls no tool and the definition is not billed).
+reference loads nothing: the reply calls no tool and the definition is not billed), definition_unbilled (a referenced tool
+is called but its definition is not billed), token_omitted (the call leaves out the arguments that carry no enum), lane_omitted
+(the call leaves out the arguments that carry an enum), token_extended and lane_extended (the call's value for those
+arguments has a suffix).
 
 A tool with defer_loading is billed only once a tool message references it, and then the reply calls it with the text of that
 message's last word and the first value of each enum of its definition.
@@ -76,6 +79,15 @@ def faulty_refusal(body, max_tokens):
     return None
 
 
+def kept(spec):
+    return not ("lane_omitted" in FAULTS and "enum" in spec or "token_omitted" in FAULTS and "enum" not in spec)
+
+
+def call_value(spec, last_word):
+    suffix = "-extra" if "lane_extended" in FAULTS and "enum" in spec or "token_extended" in FAULTS and "enum" not in spec else ""
+    return (spec["enum"][0] if "enum" in spec else last_word) + suffix
+
+
 def loaded_call(body):
     """The call a reply makes to the tool that a tool message loads, or None."""
     for message in tool_messages(body):
@@ -83,7 +95,7 @@ def loaded_call(body):
         for tool in body.get("tools") or []:
             if tool_name(tool) in referenced_names(body) and words:
                 properties = tool["function"]["parameters"]["properties"]
-                arguments = {name: spec["enum"][0] if "enum" in spec else words[-1] for name, spec in properties.items()}
+                arguments = {name: call_value(spec, words[-1]) for name, spec in properties.items() if kept(spec)}
                 return {"id": "call_loaded", "type": "function", "function": {"name": tool_name(tool), "arguments": json.dumps(arguments)}}
     return None
 
@@ -244,7 +256,7 @@ class Gateway(BaseHTTPRequestHandler):
 
     def answer(self, chat, body, key, token, call_id, header):
         system = json.dumps(body.get("system", body.get("messages", [{}])[0]))
-        loaded = set() if "reference_ignored" in FAULTS else referenced_names(body)
+        loaded = set() if FAULTS & {"reference_ignored", "definition_unbilled"} else referenced_names(body)
         billed_tools = [tool for tool in body.get("tools") or [] if not tool.get("defer_loading") or tool_name(tool) in loaded]
         total = max(len(json.dumps([body.get("system"), body.get("messages"), billed_tools])) // 4, 20)
         completion = 0 if body.get("max_tokens") == 0 else min(body.get("max_tokens", 1), 3)

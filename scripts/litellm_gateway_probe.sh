@@ -249,6 +249,8 @@ reply_arguments() {
   called_arguments="$(yq --input-format json '.choices[0].message.tool_calls[0].function.arguments // ""' "$scratch/reply" 2>/dev/null)" ||
     called_arguments=""
 }
+# argument_value <name>: the value of the argument of that name in called_arguments, empty when it is none or they are no JSON object.
+argument_value() { yq --input-format json ".$1 // \"\"" <<<"$called_arguments" 2>/dev/null || true; }
 # reply_says <word>: whether the text of the last non-streamed reply holds the word; the text is not kept.
 reply_says() {
   local expression='[.content[]? | select(.type == "text") | .text] | join(" ")' text
@@ -460,8 +462,9 @@ flow_mixed_result() {
   control_status=$call_status control_prompt=$n_prompt
   reply_called
   control_called="${called:-no tool}"
-  if contains "$with_arguments" "$token"; then token_used=yes; fi
-  if contains "$with_arguments" "$lane"; then lane_used=yes; fi
+  called_arguments="$with_arguments"
+  if [ "$(argument_value token)" = "$token" ]; then token_used=yes; fi
+  if [ "$(argument_value lane)" = "$lane" ]; then lane_used=yes; fi
   if [ "$with_called" = "$tool_name" ] && [ "$token_used" = yes ] &&
     { [ "$lane_used" = yes ] || { [ "$control_status" = 200 ] && [ $((with_prompt - control_prompt)) -ge "$mixed_definition_rules" ]; }; }; then passed=yes; fi
   answer 18 agents#1104 "$(where)" "$(gated "$with_status" "$passed")" \

@@ -148,6 +148,18 @@ start_probe remove "" 120 --remove
 start_probe alone "" 0 --question 18
 start_probe alone_ignored "reference_ignored" 0 --question 18
 start_probe alone_refused "mixed_refused" 0 --question 18
+# Question 18's pass rule, one run alone for each way the evidence may fall short: <id> <faults> <the verdict with its evidence>.
+alone_cases=(
+  "alone_token_without_lane_billed_yes|lane_omitted|yes; status 200; the next reply called: vq_zeta, token in its arguments: yes, definition-only parameter used: no;"
+  "alone_token_without_lane_unbilled_no|lane_omitted,definition_unbilled|no; status 200; the next reply called: vq_zeta, token in its arguments: yes, definition-only parameter used: no;"
+  "alone_no_token_no|token_omitted|no; status 200; the next reply called: vq_zeta, token in its arguments: no, definition-only parameter used: yes;"
+  "alone_extended_token_no|token_extended|no; status 200; the next reply called: vq_zeta, token in its arguments: no, definition-only parameter used: yes;"
+  "alone_extended_lane_unbilled_no|lane_extended,definition_unbilled|no; status 200; the next reply called: vq_zeta, token in its arguments: yes, definition-only parameter used: no;"
+)
+for alone_case in "${alone_cases[@]}"; do
+  IFS='|' read -r case_id case_faults _ <<<"$alone_case"
+  start_probe "$case_id" "$case_faults" 0 --question 18
+done
 start_probe alone_failed "chat_fails" 0 --question 18
 start_probe alone_unknown "" 0 --question 3
 
@@ -261,7 +273,15 @@ run_probe alone_refused
 [ "$status" = 0 ] || fail "alone_refused: the probe ended $status: $(tail -n 20 <<<"$output")"
 ended_cleanly alone_refused
 count_of alone_refused 'Q18 \[agents#1104\] chat text/(sonnet-medium|haiku-fast): no, status 400; status 400; the next reply called: no tool' 2
+for alone_case in "${alone_cases[@]}"; do
+  IFS='|' read -r case_id _ case_verdict <<<"$alone_case"
+  run_probe "$case_id"
+  [ "$status" = 0 ] || fail "$case_id: the probe ended $status: $(tail -n 20 <<<"$output")"
+  ended_cleanly "$case_id"
+  count_of "$case_id" "Q18 \[agents#1104\] chat text/(sonnet-medium|haiku-fast): $case_verdict" 2
+done
 echo "question 18 answers no for a reference that loads nothing and for a refused result"
+echo "question 18 answers from the token, the lane and the billed rise, each of which must hold on its own"
 
 # A run of one question that fails deletes its key; a question that does not run alone makes none.
 run_probe alone_failed
