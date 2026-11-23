@@ -1438,7 +1438,7 @@ say "$client's agent_owner is $username; $username is in ${groups[*]}; $owners_g
 # cap's -k covers the cleanup: at most 15 calls of 20 seconds each, 300 seconds (scripts/live_check.sh), which the first
 # live run measures.
 [tasks."live:check"]
-description = "Sign the one test person of realm.yaml in to <app> through its own page, then sign it out and disable it again; prints the app, green, red or skipped (exit 0, 1, 3) and codes only"
+description = "Runs on the operator's PC against the public names, never from CI: signs the one test person of realm.yaml in to <app> through its own page, then signs it out and disables it again; prints the app, green, red or skipped (exit 0, 1, 3) and codes only"
 usage = 'arg "<app>" help="The app to check: hopin"'
 quiet = true
 run = 'exec timeout -k 300 900 scripts/live_check.sh "${usage_app?}"'

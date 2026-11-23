@@ -383,24 +383,19 @@ in_order credential-delete-fails 'keycloak-logout' 'write enabled=false' 'config
 echo "a credential that cannot be deleted is named, and the person is still disabled"
 
 # ------------------------------------------------------------------------------- what stops the run before a write
-undeclared="$work_directory/realm-without-person.yaml"
-yq 'del(.users[] | select(.serviceAccountClientId == null))' "$realm_file" >"$undeclared"
-prepare_case undeclared-person enabled
-run_command undeclared-person REALM_FILE="$undeclared"
-[ "$status" = 1 ] || refuse "undeclared-person: exit $status, not 1"
-grep -q "declares no person" "$output_file" || refuse "undeclared-person: the refusal names no missing person"
-[ ! -s "$state/log" ] || refuse "undeclared-person: the stack was called: $(paste -sd'|' "$state/log")"
-[ "$(<"$state/enabled")" = true ] || refuse "undeclared-person: a person was written"
+refused_before_any_call() {
+  local case_name="$1" deletion="$2" refusal="$3" realm_without="$work_directory/realm-$1.yaml"
+  yq "$deletion" "$realm_file" >"$realm_without"
+  prepare_case "$case_name" enabled
+  run_command "$case_name" REALM_FILE="$realm_without"
+  [ "$status" = 1 ] || refuse "$case_name: exit $status, not 1"
+  grep -q "$refusal" "$output_file" || refuse "$case_name: the refusal does not say: $refusal"
+  [ ! -s "$state/log" ] || refuse "$case_name: the stack was called: $(paste -sd'|' "$state/log")"
+  [ "$(<"$state/enabled")" = true ] || refuse "$case_name: a person was written"
+}
+refused_before_any_call undeclared-person 'del(.users[] | select(.serviceAccountClientId == null))' "declares no person"
 echo "a person the realm file does not declare is refused before any call"
-
-clientless="$work_directory/realm-without-client.yaml"
-yq 'del(.clients[] | select(.clientId == "hopin"))' "$realm_file" >"$clientless"
-prepare_case undeclared-client enabled
-run_command undeclared-client REALM_FILE="$clientless"
-[ "$status" = 1 ] || refuse "undeclared-client: exit $status, not 1"
-grep -q "declares no client" "$output_file" || refuse "undeclared-client: the refusal names no missing client"
-[ ! -s "$state/log" ] || refuse "undeclared-client: the stack was called: $(paste -sd'|' "$state/log")"
-[ "$(<"$state/enabled")" = true ] || refuse "undeclared-client: a person was written"
+refused_before_any_call undeclared-client 'del(.clients[] | select(.clientId == "hopin"))' "declares no client"
 echo "a client the realm file does not declare is refused before any call"
 
 prepare_case lock-held enabled
