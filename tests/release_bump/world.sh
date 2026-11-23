@@ -27,6 +27,12 @@ export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.file://${work}/remote/.insteadOf
 export FAKE_REGISTRY="${registry}" FAKE_GH_STATE="${gh_state}" FAKE_GH_CALLS="${work}/gh-calls" FAKE_DOCKER_CALLS="${work}/docker-calls"
 export PATH="${work}/bin:${PATH}"
 
+# Each tool that reaches a network past git's rewritten remotes is denied first and only docker and gh are then replaced
+# by their fakes, so a removed fake leaves the denial and never the caller's real tool.
+for denied in docker gh curl wget ssh; do
+  printf '#!/usr/bin/env bash\necho "the fixture world denies %s: $*" >&2\nexit 98\n' "${denied}" >"${work}/bin/${denied}"
+  chmod +x "${work}/bin/${denied}"
+done
 # docker answers only `buildx imagetools inspect <ref> --format ...` from the fixture registry, one file per ref holding
 # its digest, and `login`, whose password it reads from stdin and never records.
 cat >"${work}/bin/docker" <<'FAKE'
