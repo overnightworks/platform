@@ -22,8 +22,8 @@ Impact: what the apps and the people may spend through LiteLLM.
    registers the Secret's value, then prints `<app> replaced`. The old value stops working at once and the app's spend
    of the period starts anew, since LiteLLM binds spend to the key. A failure between the delete and the registration
    names the alias as holding no key; the same command completes it.
-5. An admin's unlimited budget, the operator: `mise run litellm:admin <username>`. A second run prints
-   `<username> unchanged`.
+5. An admin's unlimited budget, an agent, for a person the operator names: `mise run litellm:admin <username>`. A second run
+   prints `<username> unchanged`.
 
 Rollback: a pull request that reverts `keys.yaml`, then step 2; a replaced key is restored by putting the old value
 back in `platform-secrets` and running step 4 with `--replace`.
