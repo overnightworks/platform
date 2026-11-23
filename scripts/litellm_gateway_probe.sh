@@ -2,7 +2,7 @@
 # The command behind `mise run litellm:gateway-probe`: answers on the live gateway the 17 questions of platform#799 that
 # serve personas' plan (inline tools, deferred tools, compaction, the keep-alive, the cache lifetime and the prices), on
 # LiteLLM's chat route and on /v1/messages, each on text/sonnet-medium and text/haiku-fast unless a question names one,
-# and question 18 of platform#850 (a tool result that mixes text with a tool reference), on the chat route.
+# and question 18 (a tool result that mixes text with a tool reference), on the chat route.
 #   scripts/litellm_gateway_probe.sh           makes a key of its own with the master key (every text name, a budget of
 #                                              5 USD, prompt caching on, an alias new to the run), sends synthetic
 #                                              requests under one test person, each prompt new to the run so that the first
