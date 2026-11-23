@@ -148,6 +148,9 @@ jobs:
       - name: Check that mise run release:bump logs in to the registry under a temporary configuration, hands the token only through stdin and pushes nothing when repeated
         run: mise exec -- tests/release_bump/the_command_logs_in_under_a_temporary_config_and_leaves_no_token.sh
 
+      - name: Check that release-bump-scope passes an allowed bump and every run that is no bump with one line, and is red for a script, another app's table or file, a name change, an older version, a deletion, a mode or type change, a rename out of a protected path, a head that replaces the guard and a base without the script
+        run: mise exec -- tests/release_bump/the_guard_judges_a_bump_by_the_bases_script_and_passes_every_other_run.sh
+
       - name: Check that the design kit under infrastructure/design equals its release wheel and holds nothing else, and that infrastructure/legal/assets holds nothing else than legal-2.css
         run: tests/legal/design_assets_equal_their_release_wheel.sh
 
@@ -1242,10 +1245,59 @@ jobs:
       - name: Check that the Keycloak hold serves hallucinai's realm to an app's proof and leaves no container, network or volume
         run: mise exec -- tests/keycloak/hold_serves_the_realm_and_leaves_nothing.sh
 
+  # The guard of every release/* pull request: the YAML below decides from the event alone whether the run is a bump, and
+  # a bump is judged by the base's own script, read from a checkout of the base alone, on the merge commit as data. Every
+  # other run passes with one line, so the job is green before and after the script lands on the base.
+  release-bump-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Decide from the event whether this run is a bump
+        id: event
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = pull_request ] && [[ "$HEAD_REF" == release/* ]] && [ "$HEAD_REPOSITORY" = "$REPOSITORY" ]; then
+            echo "bump=true" >> "$GITHUB_OUTPUT"
+            echo "the pull request from $HEAD_REF is a bump: the base judges its merge commit"
+          else
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+            echo "this run is no release bump of $REPOSITORY: nothing to judge"
+          fi
+
+      - name: Check out the base alone
+        if: steps.event.outputs.bump == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Fetch the merge commit with its parents
+        if: steps.event.outputs.bump == 'true'
+        env:
+          MERGE_COMMIT: ${{ github.sha }}
+        run: git fetch --quiet --no-tags --depth=2 origin "$MERGE_COMMIT"
+
+      - name: Judge the merge commit with the base's script
+        if: steps.event.outputs.bump == 'true'
+        env:
+          MERGE_COMMIT: ${{ github.sha }}
+        run: |
+          if [ ! -f scripts/release_bump_scope.sh ]; then
+            echo "::error::the base holds no scripts/release_bump_scope.sh, so it cannot judge this bump"
+            exit 1
+          fi
+          bash scripts/release_bump_scope.sh "$MERGE_COMMIT"
+
   # A failed full run has no pull request to show it, so it comments on the standing item where the platform head reads it.
   report-failed-full-run:
     if: failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-    needs: [checks, scope, cluster, bootstrap, opentofu, images, keycloak-hold, quality]
+    needs: [checks, scope, cluster, bootstrap, opentofu, images, keycloak-hold, release-bump-scope, quality]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1260,7 +1312,7 @@ jobs:
 
   quality:
     if: always()
-    needs: [checks, cluster, bootstrap, opentofu, images, keycloak-hold]
+    needs: [checks, cluster, bootstrap, opentofu, images, keycloak-hold, release-bump-scope]
     permissions:
       contents: read
       actions: read

@@ -17,8 +17,8 @@ trap 'echo "release_bump_compute: line ${LINENO} failed: ${BASH_COMMAND}" >&2; e
 [ "$#" -ge 2 ] && [ "$#" -le 3 ] || { echo "usage: release_bump_compute.sh <app> <output directory> [version]" >&2; exit 2; }
 app="$1" output="$2" requested="${3:-}"
 scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${scripts_directory}/release_bump_patterns.sh"
 server="${GITHUB_SERVER_URL:-https://github.com}"
-version_pattern='[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+'
 component="apps/${app}/release/kustomization.yaml"
 
 refuse() { echo "release_bump_compute: refused: $1; ${app}'s release stays an ordinary lane" >&2; exit 1; }
@@ -29,7 +29,7 @@ finish() { # finish <outcome>
   exit 0
 }
 
-[[ ${app} =~ ^[a-z][a-z0-9-]*$ ]] || { echo "release_bump_compute: ${app} is no app name" >&2; exit 2; }
+[[ ${app} =~ ^${app_name_pattern}$ ]] || { echo "release_bump_compute: ${app} is no app name" >&2; exit 2; }
 [ -z "${requested}" ] || [[ ${requested} =~ ^${version_pattern}$ ]] || { echo "release_bump_compute: ${requested} is no release version" >&2; exit 2; }
 mkdir -p "${output}"
 output="$(cd "${output}" && pwd)"
@@ -87,7 +87,7 @@ for name in "${names[@]}"; do
     finish waiting
   fi
   digest="$(yq -p json '.digest' <<<"${manifest}")"
-  [[ ${digest} =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "release_bump_compute: the registry gave no digest for ${name}:${version}" >&2; exit 2; }
+  [[ ${digest} =~ ^${digest_pattern}$ ]] || { echo "release_bump_compute: the registry gave no digest for ${name}:${version}" >&2; exit 2; }
   NAME="${name}" VERSION="${version}" DIGEST="${digest}" yq -i \
     '(.images[] | select(.name == strenv(NAME))) |= (.newTag = strenv(VERSION) | .digest = strenv(DIGEST))' "${component}"
 done
