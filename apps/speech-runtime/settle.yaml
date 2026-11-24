@@ -12,11 +12,15 @@ metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
-  # A retry covers a pod lost; a script that exits non-zero has decided, so it fails the Job at once. The deadline bounds all
-  # attempts.
+  # A pod lost to a disruption (preemption, eviction) counts against backoffLimit, so a retry covers it; a script that exits
+  # non-zero has decided, so it fails the Job at once. The first rule that matches wins, so the Count rule stands first: a
+  # killed pod exits 137, which the FailJob rule would match. The deadline bounds all attempts.
   backoffLimit: 2
   podFailurePolicy:
     rules:
+      - action: Count
+        onPodConditions:
+          - type: DisruptionTarget
       - action: FailJob
         onExitCodes:
           containerName: settle
