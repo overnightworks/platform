@@ -3,7 +3,8 @@
 # speech-runtime-gpu renders in the annotation gpu-image of their pod template, so a new release changes both templates and
 # Flux re-creates them; neither Job runs an image of the app, so neither needs a pull layer; each mounts one ConfigMap that
 # its own layer renders from the one script file; each fails its Job at once on any non-zero exit of its script, so a Job
-# decides in one pod and backoffLimit covers a lost pod only; and the two layers render no object in common, so every object has one layer.
+# decides in one pod and backoffLimit covers a lost pod only; the Role bridge grants no right the script does not use
+# (a scale with a precondition reads and replaces the scale, never patches); and the two layers render no object in common, so every object has one layer.
 # Usage: mise exec -- tests/speech_runtime/both_jobs_carry_the_rendered_gpu_release.sh
 set -euo pipefail
 
@@ -49,6 +50,10 @@ judge() {
 }
 judge "$bridge_layer" bridge speech-runtime-bridge
 judge "$runtime_layer" settle speech-runtime
+
+scale_verbs="$(NAME=bridge yq 'select(.kind == "Role" and .metadata.name == strenv(NAME)) | .rules[] | select(.resources[] == "deployments/scale") | .verbs | sort | join(",")' <<<"$bridge_layer")"
+[ "$scale_verbs" = "get,update" ] || fail "the Role bridge grants '$scale_verbs' on deployments/scale, not get and update"
+echo "the Role bridge reads and replaces the scale of speech-runtime and never patches it"
 
 # objects <layer render>: kind, namespace and name of each object, sorted.
 objects() { yq --no-doc '.kind + " " + (.metadata.namespace // "") + " " + .metadata.name' <<<"$1" | LC_ALL=C sort; }

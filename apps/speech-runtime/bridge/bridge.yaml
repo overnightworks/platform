@@ -3,8 +3,9 @@ kind: ServiceAccount
 metadata:
   name: bridge
 ---
-# What both Jobs read and scale: the two Deployments' state, the small image's count, and the Job bridge's annotation. No
-# right reaches the GPU image's scale, so no Job can start or stop the card's user.
+# What both Jobs read and scale: the two Deployments' state, the small image's count, and the Job bridge's annotation. A scale
+# with a precondition reads and replaces the scale, so no right patches it. No right reaches the GPU image's scale, so no Job
+# can start or stop the card's user.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -17,7 +18,7 @@ rules:
   - apiGroups: [apps]
     resources: [deployments/scale]
     resourceNames: [speech-runtime]
-    verbs: [get, patch, update]
+    verbs: [get, update]
   - apiGroups: [batch]
     resources: [jobs]
     resourceNames: [bridge]
