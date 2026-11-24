@@ -1,0 +1,7 @@
+claim_id = "ef37fc211c1a43b0a5f355996be99f0e"
+agent = "Claude 931ae605-f1bd-431a-bedc-82984afcc371"
+role = "builder"
+base = "081fff05030cd5cf297768e7d44203f91394ea90"
+branch = "claude/issue-900-the-release-bump-cells-stay-green-whatev"
+scope = ["tests/release_bump/world.sh"]
+opened_commit = "c157f80b654d729a465b031aefa76ea84f030864"
