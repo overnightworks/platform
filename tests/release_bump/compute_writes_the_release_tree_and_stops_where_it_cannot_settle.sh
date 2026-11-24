@@ -143,20 +143,25 @@ expect_status 0 "is not in the registry yet"
 [ "$(cat "${output}/outcome")" = waiting ] && [ ! -e "${output}/patch" ] || fail "a release without its variant image did not wait"
 echo "a release without its variant image waits"
 
-# Images of two repositories and a name outside the owner's registry are refused, as for any Component.
-change_speech_main() { # <name of the second image>
+# Images of two repositories, a name outside the owner's registry and a tag suffix that is no variant are refused, as
+# for any Component.
+change_speech_main() { # <label> <field of the second image> <value>
   clone_main "${work}/mutant-$1"
-  NAME="$1" yq -i '.images[1].newName = strenv(NAME)' "${work}/mutant-$1/${speech_component}"
+  FIELD="$2" VALUE="$3" yq -i '.images[1][strenv(FIELD)] = strenv(VALUE)' "${work}/mutant-$1/${speech_component}"
   git -C "${work}/mutant-$1" -c user.name=fixture -c user.email=fixture@example.org commit --quiet --all --message "mutant"
   git -C "${work}/mutant-$1" push --quiet --force origin HEAD:main
 }
-change_speech_main ghcr.io/overnightworks/other
+change_speech_main other-suffix newTag "${speech_main_version}-other"
+compute speech-runtime "${output}"
+expect_status 1 "are at more than one version"
+[ ! -e "${output}/patch" ] || fail "a Component with a tag suffix that is no variant was bumped"
+change_speech_main other-repository newName ghcr.io/overnightworks/other
 compute speech-runtime "${output}"
 expect_status 1 "belong to more than one repository"
-change_speech_main ghcr.io/someone/speech
+change_speech_main foreign-owner newName ghcr.io/someone/speech
 compute speech-runtime "${output}"
 expect_status 1 "is no ghcr.io/overnightworks/<repository>"
-echo "a Component of two repositories and a name outside the owner are refused"
+echo "a Component of two repositories, a name outside the owner and a suffix that is no variant are refused"
 
 # The run leaves the checkout and its worktree list as it found them.
 [ -z "$(git -C "${checkout}" status --porcelain)" ] || fail "the compute step changed the checkout"

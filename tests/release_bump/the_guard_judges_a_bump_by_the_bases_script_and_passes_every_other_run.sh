@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Run the steps of ci.yml's release-bump-scope job, as yq reads them from the file, against a fixture platform remote:
-# an allowed bump passes, also one of an app whose Component names two variants of one repository; a script, another app's table or file, a name change, an older version, a deletion, a mode or
-# type change and a rename out of a protected path are red, as are a Component whose images sit at two versions and a
-# variant that moves between base and bump; a head that edits the guard stays red, since the base's
-# script judges; a bump whose base lacks the script is red; a push, a schedule, a dispatch, a pull request from another
-# branch and one from a fork pass with one line. The cell runs only the checkout action, by a plain git fetch of the
-# ref the step names, and refuses any other action, expression or condition the job comes to use.
+# an allowed bump passes, also one of an app whose Component names two variants of one repository; a script, another
+# app's table or file, a name change, an older version, a deletion, a mode or type change and a rename out of a
+# protected path are red, as are a Component whose images sit at two versions, a variant that moves between base and
+# bump and a suffix that is no variant; a head that edits the guard stays red, since the base's script judges; a bump
+# whose base lacks the script is red; a push, a schedule, a dispatch, a pull request from another branch and one from a
+# fork pass with one line. The cell runs only the checkout action, by a plain git fetch of the ref the step names, and
+# refuses any other action, expression or condition the job comes to use.
 # Usage: mise exec -- tests/release_bump/the_guard_judges_a_bump_by_the_bases_script_and_passes_every_other_run.sh
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/world.sh"
@@ -127,7 +128,7 @@ bump() {
 speech_component=apps/speech-runtime/release/kustomization.yaml
 move_speech_image() { # <index> <version>
   local variant
-  variant="$(yq ".images[$1].newTag" "${speech_component}")" variant="${variant#"${fixture_main_release}"}"
+  read -r _ variant < <(split_image_tag "$(yq ".images[$1].newTag" "${speech_component}")")
   INDEX="$1" TAG="$2${variant}" DIGEST="$(digest_of ghcr.io/overnightworks/speech "$2${variant}")" \
     yq -i '.images[env(INDEX)] |= (.newTag = strenv(TAG) | .digest = strenv(DIGEST))' "${speech_component}"
 }
@@ -150,6 +151,7 @@ swap_the_variants() {
   INDEX=1 TAG="${newest}" yq -i '.images[env(INDEX)].newTag = strenv(TAG)' "${speech_component}"
 }
 run_a_tag_that_is_no_release() { set_component latest "$(digest_of ghcr.io/overnightworks/hopin latest)"; }
+run_a_release_with_another_suffix() { set_component "${newest}-other" "$(digest_of ghcr.io/overnightworks/hopin "${newest}-other")"; }
 run_an_older_release() { set_component 2020.01.01.1 "$(digest_of ghcr.io/overnightworks/hopin 2020.01.01.1)"; }
 run_the_same_release() { set_component "${main_version}" "$(digest_of ghcr.io/overnightworks/hopin other)"; }
 write_a_bad_digest() { set_component "${newest}" sha256:abc; }
@@ -181,6 +183,7 @@ expect_red "a bump that edits another app's copy" "name 2 apps" bump_and edit_an
 expect_red "a bump that renames an image" "their names or variants" bump_and rename_the_image
 expect_red "a bump that edits another field of the Component" "more than the version and digest" bump_and edit_another_field
 expect_red "a bump to a tag that is no release version" "which is no release version" bump_and run_a_tag_that_is_no_release
+expect_red "a bump to a release tagged with a suffix that is no variant" "which is no release version" bump_and run_a_release_with_another_suffix
 expect_red "a bump to an older release" "not newer than" bump_and run_an_older_release
 expect_red "a bump that keeps the version" "not newer than" bump_and run_the_same_release
 expect_red "a bump that moves one of two variant images" "not at one version in the merge" bump_one_speech_image
