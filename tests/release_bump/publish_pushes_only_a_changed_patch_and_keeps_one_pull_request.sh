@@ -16,12 +16,16 @@ bump() {
   (cd "${checkout}" && "${repository_root}/scripts/release_bump_compute.sh" hopin "${output}" "$@" &&
     "${repository_root}/scripts/release_bump_publish.sh" hopin "${output}") 2>&1
 }
+# release_and_bump <version> [change]: the app releases <version>, the registry holds it, and the bump runs; the output is in $log.
+release_and_bump() {
+  app_release "$@"
+  registry_add "${image}" "$1"
+  log="$(bump)"
+}
 branch_tip() { git ls-remote "${platform}" refs/heads/release/hopin | cut -f1; }
 branch_version() { git --git-dir="${work}/remote/overnightworks/platform" show release/hopin:apps/hopin/release/kustomization.yaml | yq '.images[0].newTag'; }
 
-app_release 2026.11.24.1 text
-registry_add "${image}" 2026.11.24.1
-log="$(bump)" || fail "the first bump failed: ${log}"
+release_and_bump 2026.11.24.1 text || fail "the first bump failed: ${log}"
 [ "$(branch_version)" = 2026.11.24.1 ] || fail "release/hopin does not run 2026.11.24.1"
 [ "$(git ls-remote "${platform}" refs/heads/release/hopin | wc -l)" -eq 1 ] || fail "release/hopin is not one branch"
 [ "$(git --git-dir="${work}/remote/overnightworks/platform" rev-list --count main..release/hopin)" -eq 1 ] || fail "the branch is not one commit on main"
@@ -36,9 +40,7 @@ log="$(bump)" || fail "the repeated bump failed: ${log}"
 grep -q 'nothing is pushed' <<<"${log}" || fail "the second run did not say it pushed nothing: ${log}"
 echo "the same bump again pushes nothing and keeps the pull request"
 
-app_release 2026.11.25.1
-registry_add "${image}" 2026.11.25.1
-log="$(bump)" || fail "the newer bump failed: ${log}"
+release_and_bump 2026.11.25.1 || fail "the newer bump failed: ${log}"
 [ "$(branch_tip)" != "${tip}" ] && [ "$(branch_version)" = 2026.11.25.1 ] || fail "a newer release did not move the branch"
 [ "$(calls "${work}/gh-calls" 'pr create')" -eq 1 ] || fail "a newer release opened a second pull request"
 grep -q 'pr edit 1 --title hopin runs release 2026.11.25.1' "${work}/gh-calls" || fail "a newer release did not edit the pull request"
@@ -46,9 +48,8 @@ echo "a newer release moves the branch and edits the one pull request"
 
 # Lines added to the open pull request's body by others survive the next bump, and the Release line stays one.
 { printf 'Release: https://example.org/old\n'; printf 'Work-Item: #7\n'; printf 'Closes #7\n'; } >"${gh_state}/body"
-app_release 2026.11.25.2
-registry_add "${image}" 2026.11.25.2
-log="$(bump)" || fail "the bump over a body with other lines failed: ${log}"
+landed_version=2026.11.25.2
+release_and_bump "${landed_version}" || fail "the bump over a body with other lines failed: ${log}"
 body="$(cat "${gh_state}/body")"
 [ "$(grep -c '^Release: ' <<<"${body}")" -eq 1 ] && ! grep -q 'example.org/old' <<<"${body}" ||
   fail "the body does not carry the new Release line once: ${body}"
@@ -79,7 +80,7 @@ echo "a branch that conflicts with main is pushed again"
 git --git-dir="${work}/remote/overnightworks/platform" update-ref refs/heads/main "$(branch_tip)"
 log="$(bump)" || fail "the bump after the landing failed: ${log}"
 [ "$(calls "${work}/gh-calls" 'pr close 1')" -eq 1 ] || fail "the overtaken pull request was not closed"
-grep -qF 'pr close 1 --delete-branch --comment main runs release 2026.11.25.2, so' "${work}/gh-calls" ||
+grep -qF "pr close 1 --delete-branch --comment main runs release ${landed_version}, so" "${work}/gh-calls" ||
   fail "the closing comment does not name the release main runs: $(grep 'pr close' "${work}/gh-calls")"
 [ ! -e "${gh_state}/open" ] || fail "a pull request is still open after main runs the release"
 echo "a release that main runs closes the open pull request"
