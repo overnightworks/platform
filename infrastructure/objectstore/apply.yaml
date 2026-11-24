@@ -63,8 +63,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: apply
-          # The image of k8up's operator, which ships curl, jq and kubectl; its digest moves with k8up's bump.
-          image: ghcr.io/k8up-io/k8up:v2.16.1@sha256:f59bfa37c51511d5ad67e53816fb55c62d0e6411890e59bb6b965923129f30b5
+          # The image of k8up's operator, which ships curl, jq and kubectl; its tag and digest are the Component's.
+          image: ghcr.io/k8up-io/k8up
           command: [sh, /apply/apply_buckets.sh]
           securityContext:
             allowPrivilegeEscalation: false
