@@ -65,7 +65,35 @@ The Service `speech-runtime` reaches whichever speech Deployment is Ready, so it
 image offers other voices and a different hearing model than the small one, so a caller that names a voice follows the
 switch. The two small pods let a rollout or a drain leave one serving; the GPU image runs at one, since the card is one.
 Git names no replica count for these three Deployments, so Flux keeps the choice, and a Deployment applied afresh runs
-one small pod until the first `gpu:use songs`.
+one small pod until the first `gpu:use songs` or the first GPU release.
+
+A speech GPU release keeps speech answering while speech holds the card. `speech-runtime-gpu` rolls with `Recreate`, since
+the one card admits no second pod, so a roll would leave the Service without a Ready pod for the pull and the start
+(37 minutes and up to 10 more). The layer `speech-runtime-bridge` holds the Job `bridge`, which `speech-runtime` waits for:
+with the GPU image at one pod and not yet at the release's image, it raises the small image from none to one pod and waits
+until it is Ready, so the old GPU pod stops only after that. The Job `settle` of `speech-runtime` waits until the new GPU
+pod is Ready and lowers the small image to none again, the count `gpu:use speech` leaves. Both Jobs carry the release's GPU
+ref, so a new release re-runs them, and their scales name the count they expect, so a count that `gpu:use` set meanwhile
+is kept: with the GPU image at none (songmaker holds the card, or it is free) they change nothing, and the next
+`gpu:use speech` pulls the new image inside its own wait. A first apply and a fresh cluster's first release leave the
+counts at Kubernetes' default until the first `gpu:use` or the first GPU release lowers the small image. While a roll
+runs, the small image answers a retryable 503 to a caller that names a voice only the GPU image offers and live hearing
+sessions close and reconnect. The head lands no GPU release inside a `gpu:use` window: `gpu:use speech` scales the small
+image to none without a precondition, which would stop the bridge before the roll.
+
+A `bridge` that fails (a small pod that does not turn Ready within 25 minutes, or a count that moved under three scales)
+leaves `speech-runtime-bridge` not Ready and `speech-runtime` applying nothing, so the old GPU pod keeps serving and the
+small image stays raised; it mails `KustomizationNotReady` after 15 minutes. Read the Job's log and the small pod's events,
+fix the cause, then delete the Job `bridge`, which Flux creates again at its next reconcile; or revert the release. Until
+then no change of `speech-runtime` applies. A `settle` whose wait passes its deadline (3300 seconds) leaves
+`speech-runtime` not Ready with the small pod still serving, and mails `KustomizationNotReady` and `DeploymentUnavailable`
+for the GPU image: read the GPU pod's events (disk, card, pull); once it is Ready, delete the Job `settle`, whose run
+lowers the small image, or run `gpu:use songs`, after which a run changes nothing. A `settle` that finds the Job `bridge`
+gone fails: wait until Flux created `bridge` again, then delete `settle`. A `settle` that finds a newer release pending in
+the Job `bridge`, or a count that `gpu:use` set, ends at once and leaves the small image to the newer release's `settle`
+or to `gpu:use`. Before the first GPU release, read on the node the free space of the image filesystem, which must hold the
+new GPU image (about 12.6 GB) beside the old, and the allocatable memory less requests, which must hold the small pod's
+2 GiB; otherwise the release waits.
 
 `mise run gpu:use free` frees the card for a measurement window and gives it back by itself. It runs only while speech
 holds the card (`acestep-worker` at 0, `speech-runtime-gpu` at 1) and refuses otherwise without a scale call. It
