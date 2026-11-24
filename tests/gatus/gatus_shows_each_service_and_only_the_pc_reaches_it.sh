@@ -72,9 +72,10 @@ push_status() {
     curl --silent --max-time 10 --output /dev/null --write-out '%{http_code}' --request POST --header @- \
       "http://127.0.0.1:$local_port/api/v1/endpoints/$1/external?$3"
 }
-# pushed_result <key> <field>: that field of the row's newest result.
+# pushed_result <key> <field>: that field of the row's newest result. The row's own page is asked, because Gatus serves
+# the list of all statuses from a cache of a few seconds that still lacks a row pushed just now.
 pushed_result() {
-  curl --silent --max-time 5 "$statuses_url" | yq -p=json ".[] | select(.key == \"$1\") | .results[-1].$2"
+  curl --silent --max-time 5 "http://127.0.0.1:$local_port/api/v1/endpoints/$1/statuses" | yq -p=json ".results[-1].$2"
 }
 while read -r key; do
   [ "$(push_status "$key" "$push_token" success=true)" = 200 ] || fail "a push of true to $key was not accepted with 200"
