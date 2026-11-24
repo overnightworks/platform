@@ -89,12 +89,15 @@ move_gpu_ref() {
 }
 
 # serve_commit <message>: commits the tree as a child of the last commit, serves it as the candidate and reconciles it. The
-# GPU Deployment keeps the count Git gives it, as the stand-in runs.
+# GPU Deployment keeps the count Git gives it, as the stand-in runs. The source is fetched before the overlay changes the
+# layer's patches: a layer whose spec changed reconciles at once at the revision it holds, which would give the old GPU
+# Deployment, with its card and runtime class, the count of one and make the layer wait on a pod that k3d cannot start.
 serve_commit() {
   git -C "$tree" -c user.name="speech release" -c user.email="speech-release@invalid" commit --quiet --no-verify --all --message="$1"
   revision="$(git -C "$tree" rev-parse HEAD)"
   git push --quiet "$served" "${revision}:refs/heads/${CANDIDATE_BRANCH}"
   echo "the candidate branch serves $revision: $1"
+  flux reconcile source git flux-system --timeout="${phase_seconds}s"
   local scratch
   scratch="$(mktemp -d)"
   RUNNER_TEMP="$scratch" CANDIDATE_REVISION="$revision" SPEECH_GPU_STAND_IN=1 "$cells/flux/reconcile_the_candidate_tree.sh" >/dev/null
