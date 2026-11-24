@@ -1,7 +1,8 @@
 # songmaker's music worker, pulled from the same private package release as the web and started from the two files of
 # the Secret songmaker it reads and the namespace's Postgres password, which songmaker reads from the fixed directory
-# /run/secrets. Its settings refuse any other file there. It has no port; it is ready while arq's health key in Redis
-# is fresh. It calls the GPU worker by the host the database holds, which no workload of this layer serves yet.
+# /run/secrets. Its settings refuse any other file there. It has no port; it is ready while the file it writes under /tmp
+# holds this start's owner id and PID 1's current start ticks and that owner's lease is live. It calls the GPU
+# worker by the host the database holds, which no workload of this layer serves yet.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,7 +32,6 @@ spec:
       containers:
         - name: music-worker
           image: ghcr.io/overnightworks/songmaker/music-worker
-          args: [songmaker_cli.music_worker.MusicWorkerSettings]
           env:
             # The URL names no password: the file in /run/secrets is the password's one owner, the namespace's Postgres.
             - name: DATABASE_URL
@@ -50,10 +50,11 @@ spec:
             # HOME, and the root is read-only.
             - name: NUMBA_CACHE_DIR
               value: /tmp
-          # arq writes its health key every 30 seconds, so the first success comes within a minute of the start.
+          # The script resolves against the image's working directory, /app, and reads the file the worker writes under
+          # /tmp; it succeeds once that file's ticks are current and the owner's lease is live.
           startupProbe:
             exec:
-              command: &health [/app/.venv/bin/python, /app/scripts/arq_healthcheck.py, music]
+              command: &health [/app/.venv/bin/python, scripts/music_worker_readiness.py]
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 60
