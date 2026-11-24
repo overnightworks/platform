@@ -1267,14 +1267,15 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+source scripts/loopback_forward.sh
 namespace="${usage_namespace?}" caller="${usage_caller?}"
-port="$(kubectl --namespace "$namespace" get service "$namespace" -o jsonpath='{.spec.ports[0].port}')"
+port="$(service_port "$namespace")"
 # kubectl runs in the foreground, so Ctrl-C reaches it and ends it; the reader on its stdout prints the address once
 # kubectl says it listens, and a forward that fails prints none.
 announce() {
   local line local_port
   while IFS= read -r line; do
-    local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) ->.*/\1/p' <<<"$line")"
+    local_port="$(forwarded_port "$line")"
     if [ -n "$local_port" ]; then
       echo "$caller: open http://127.0.0.1:$local_port/; Ctrl-C ends the forward"
     fi
