@@ -317,6 +317,13 @@ no_gh_call || refuse "every-app-green: gh was called"
 kept_clean every-app-green
 echo "no app argument reports every app of the table"
 
+# Gatus' key of a row is its group and its name with the spaces made hyphens: the rows the config declares are the keys
+# the report pushes, one per app of the table.
+pushed_keys="$(cut -d' ' -f1 "$state/pushes" | sort)"
+configured_keys="$(yq '.external-endpoints[] | .group + "_" + (.name | sub(" ", "-"))' "$repository_root/infrastructure/gatus/gatus-config.yaml" | sort)"
+[ "$pushed_keys" = "$configured_keys" ] || refuse "the keys of the Gatus config ($(paste -sd' ' <<<"$configured_keys")) are not the keys the report pushes ($(paste -sd' ' <<<"$pushed_keys"))"
+echo "the external endpoints of the Gatus config are the keys the report pushes for each app of the table"
+
 # --------------------------------------------------------------------------------------------------------- skipped
 prepare_case skipped-twice
 script hopin "$(skipped_attempt hopin)" "$(skipped_attempt hopin)"

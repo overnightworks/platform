@@ -2,6 +2,9 @@
 # its web port with their own Host header, the way the tunnel asks; the others directly at their Service. Gatus holds no
 # key, so the LiteLLM front is healthy when it and LiteLLM answer a call without one with 401.
 # Prometheus scrapes the results, which AiGatewayProbeFailing reads.
+# The external endpoints are the results of `mise run live:report sign-in`, one row per app of scripts/live_check_apps.sh,
+# which pushes each result with the token of the Secret gatus-push; a row shows its first result after its first push, and
+# LiveCheckRed reads the group live-check.
 metrics: true
 storage:
   type: memory
@@ -65,3 +68,16 @@ endpoints:
     interval: 60s
     conditions:
       - "[STATUS] == 401"
+external-endpoints:
+  - name: hopin sign-in
+    group: live-check
+    token: "${GATUS_PUSH_TOKEN}"
+  - name: skat sign-in
+    group: live-check
+    token: "${GATUS_PUSH_TOKEN}"
+  - name: presentator sign-in
+    group: live-check
+    token: "${GATUS_PUSH_TOKEN}"
+  - name: songmaker sign-in
+    group: live-check
+    token: "${GATUS_PUSH_TOKEN}"
