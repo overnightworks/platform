@@ -102,13 +102,17 @@ app_release() {
 }
 
 # Platform's main holds the real tree of what a bump reads and writes: the legal layer and its builder, hopin's
-# Component, whose version the releases of a cell are newer than, and the bump's own scripts.
+# Component, whose shape the fixture keeps and whose release it replaces, and the bump's own scripts.
 git init --quiet --bare --initial-branch=main "${work}/remote/overnightworks/platform"
 seed="${work}/seed"
 mkdir "${seed}"
 (cd "${repository_root}" && git ls-files -z -- mise.toml mise.lock src/legal/pyproject.toml src/legal/uv.lock src/legal/src \
   infrastructure/legal apps/hopin/release | xargs -0 cp --parents --target-directory "${seed}" &&
   cp --parents scripts/release_bump_*.sh "${seed}")
+# The release main runs in the fixture: newer than the cells' "older" releases (2026.11.01.1, 2020.01.01.1) and older
+# than every release they bump to, whatever release the shipped Component names.
+fixture_main_release=2026.11.22.1
+yq -i ".images[0].newTag = \"${fixture_main_release}\"" "${seed}/apps/hopin/release/kustomization.yaml"
 git -C "${seed}" init --quiet --initial-branch=main
 git -C "${seed}" add --all
 git -C "${seed}" -c user.name=fixture -c user.email=fixture@example.org commit --quiet --message "main"
