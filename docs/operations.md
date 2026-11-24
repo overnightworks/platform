@@ -211,7 +211,7 @@ completes it. (OPS-16)
 `mise run live:check <app>` checks that a person can sign in to the app on the live stack, through one test person that
 `infrastructure/keycloak/realm.yaml` declares disabled, in `/apps/hopin`, `/apps/presentator`, `/apps/skat` and
 `/apps/songmaker` only and with no credential, and that no other part of the platform uses. The apps are hopin, skat,
-presentator and songmaker, the table in `scripts/live_check.sh`. The command runs on the operator's PC, never from CI,
+presentator and songmaker, the table in `scripts/live_check_apps.sh`. The command runs on the operator's PC, never from CI,
 since CI holds no route and no kubeconfig to the PC's API server; CI proves it against a fake `kubectl` and a fake
 `curl` (`tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh`) and the realm entry and Keycloak's form
 step on k3d. Each app's own routes are proven only by a live run.
@@ -241,7 +241,9 @@ which the next run, for any app, finds first and cleans the same way, signing ou
 result line carrying its name (`skat-sign-out=… skat-account-after=…`), and kcadm's sign-in file in Keycloak's container, which no later run learns and
 which stays until Keycloak's pod restarts, all inside that boundary; the password died with the process. The run exits 0
 when green, 1 when red and 3 when skipped, which is the app's Deployment not being Available, after the cleanup and with
-no other write. (OPS-20)
+no other write. A run whose lock another run holds reads and writes nothing, prints the result `refused` and exits 4; a red
+result line ends with `step=<step>` while the sign-in was under way (`start`, `login-page`, `sign-in-form`, `callback`,
+`account`, or `sign-out` once it passed), and the names that may remain survive a failed first cleanup. (OPS-20)
 
 A realm apply during a run disables the person, so that run is red and a rerun is green. A rollout of the app during a
 run may end its session, so that run is red too, while presentator's session lives in its
@@ -250,3 +252,30 @@ and one that starts after a rollout finished is not. A sign-out that fails, or a
 runtime directory) when Keycloak's back-channel finds no pod either (skat and songmaker roll out by `Recreate`), leaves
 the person's session row in that app until its own session lifetime; the person has no credential by then. The test
 person's account row in each app's database is that app's own data and stays. (OPS-21)
+
+`mise run live:report sign-in [<app>]` (`scripts/live_check_report.sh`) is the way a result reaches anyone, for every
+app of the command's table when none is named. It takes `$XDG_RUNTIME_DIR/live-check/report.lock`, waiting up to 60
+minutes, and exits 4 with `refused: another live:report is running; nothing ran` when it is still held. For each app it
+runs `mise run live:check <app>`; exit 4 of the command is its lock being held, which the report polls for up to 30
+minutes per app and never pushes red (an app whose lock is held that long is reported `skipped reason=command-busy`,
+with nothing pushed or opened, and the report exits 4 after the other apps), and a red or skipped run is repeated once
+after 10 minutes. A final green is pushed as `success=true`; a final red as `success=false` with the codes and the names
+that may remain as its error, followed by one item `live:check <app> red after a rerun` at `overnightworks/<app>`,
+unless an item of that exact title is open. The item holds the date, the result line, the failing step, whether the step
+is the app's (`start`, `callback`, `account`, `sign-out`) or the cause sits at platform (`login-page`, `sign-in-form`, a
+refusal of Keycloak or the stack, or a name that may remain other than the person's session at the app itself), and the
+command to reproduce; the app's head closes it after a green. An app skipped twice gets no push and no item. While the
+Kustomization `tunnel` is suspended, which `mise run offline` does, the report checks before each attempt, push and item
+and then prints `<app> skipped reason=offline`; a suspend it cannot read counts as online and says so. The push goes
+through a loopback forward to the Service `gatus` (the one `gatus:open` uses), three tries over two minutes, with the
+token of the Secret `gatus-push` on curl's stdin only; the item is opened with the operator's `gh` login on the PC and
+does not depend on the push. A failed push or item prints its name and, for gh, its exit code, never the body, and makes
+the report exit 1. (OPS-22)
+
+Each app of the table has a Gatus row of the group `live-check`, named `<app> sign-in`, which takes a push with the token
+(a wrong token answers 401, an unknown row 404) and shows its first result after its first push. `LiveCheckRed` fires for a
+row whose last result in 30 days is red for 5 minutes, which a restart of Gatus does not end; the next green push resolves
+it. Its alerts, and those of `LiveCheckMissed`, take the route that groups by alertname, so reds that arrive together give
+one mail listing each row and a red that joins them, or a row that turns green, gives one more at the next group interval;
+the mail's text lists the rows still red under `firing:` and those that turned green under `resolved:`, one per line, as it
+does for every other alert. (OPS-23)

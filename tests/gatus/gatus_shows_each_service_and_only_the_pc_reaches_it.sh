@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Proves docs/operations.md OPS-2, OPS-3.
+# Proves docs/operations.md OPS-2, OPS-3 and the push of the live check's rows (OPS-23).
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -62,6 +62,32 @@ while read -r name; do
   if [ "$name" = "$TUNNEL_ENDPOINT" ]; then wait_for "$tunnel_state" "$name"; else wait_for healthy "$name"; fi
 done < <(yq '.endpoints[].name' infrastructure/gatus/gatus-config.yaml)
 echo "every other endpoint of infrastructure/gatus/gatus-config.yaml is healthy, and $TUNNEL_ENDPOINT is $tunnel_state with $((tunnel_ready_replicas + 0)) ready cloudflared replicas"
+
+# Each row of the live check takes a push with the token of the Secret gatus-push, refuses another token with 401 and an
+# unknown row with 404, shows the pushed result and, after a second push, its error. The token reaches curl on stdin only.
+push_token="$(kubectl -n gatus get secret gatus-push -o go-template='{{ .data.token | base64decode }}')"
+# push_status <key> <token> <query>: the status of one push.
+push_status() {
+  printf 'Authorization: Bearer %s\n' "$2" |
+    curl --silent --max-time 10 --output /dev/null --write-out '%{http_code}' --request POST --header @- \
+      "http://127.0.0.1:$local_port/api/v1/endpoints/$1/external?$3"
+}
+# pushed_result <key> <field>: that field of the row's newest result. The row's own page is asked, because Gatus serves
+# the list of all statuses from a cache of a few seconds that still lacks a row pushed just now.
+pushed_result() {
+  curl --silent --max-time 5 "http://127.0.0.1:$local_port/api/v1/endpoints/$1/statuses" | yq -p=json ".results[-1].$2"
+}
+while read -r key; do
+  [ "$(push_status "$key" "$push_token" success=true)" = 200 ] || fail "a push of true to $key was not accepted with 200"
+  [ "$(pushed_result "$key" success)" = true ] || fail "Gatus shows no success after a push of true to $key"
+  [ "$(push_status "$key" "$push_token" 'success=false&error=probe+error')" = 200 ] || fail "a push of false to $key was not accepted with 200"
+  [ "$(pushed_result "$key" success)" = false ] && [ "$(pushed_result "$key" 'errors[0]')" = "probe error" ] ||
+    fail "Gatus shows not the pushed failure and its error for $key"
+  [ "$(push_status "$key" wrong-token success=true)" = 401 ] || fail "a push to $key with a wrong token was not refused with 401"
+  [ "$(push_status "$key" "$push_token" success=true)" = 200 ] || fail "the closing push of true to $key was not accepted with 200"
+done < <(yq '.external-endpoints[] | .group + "_" + (.name | sub(" ", "-"))' infrastructure/gatus/gatus-config.yaml)
+[ "$(push_status live-check_no-such-app-sign-in "$push_token" success=true)" = 404 ] || fail "a push to an unknown row was not refused with 404"
+echo "each external endpoint of infrastructure/gatus/gatus-config.yaml takes a push with the Secret's token, shows its result and error, and refuses a wrong token with 401 and an unknown row with 404"
 
 stopped_replicas="$(kubectl -n "$STOPPED_NAMESPACE" get deployment "$STOPPED_DEPLOYMENT" -o jsonpath='{.spec.replicas}')"
 kubectl -n "$STOPPED_NAMESPACE" scale "deployment/$STOPPED_DEPLOYMENT" --replicas=0

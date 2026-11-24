@@ -156,9 +156,11 @@ gate judges it by its own rules.
 Platform reports a release live when its ref's merge is on main, Flux shows the app's Kustomization (and its pull layer)
 Ready at that merge or a later one, and each of the app's Deployments runs the release's digest with every replica Ready
 and Available; platform's head writes that on the release item and tells the app's head. For an app where a person signs
-in, the app's head then runs `mise run live:check <app>` from platform's primary checkout, which `aco land` keeps at the
-landed main, and records the result line on its release item. On red it reruns once; a red whose line names another app's
-leftover, or a refusal by the lock, goes to platform's head.
+in, the app's head then runs `mise run live:report sign-in <app>` from platform's primary checkout, which `aco land` keeps
+at the landed main, and records the result line on its release item. The report reruns a red once, pushes the result to
+the app's Gatus row and opens the item at the app for a red after the rerun; exit 4 means a timer or another head is
+running, and the head runs it again after that run ends. A red whose line names another app's leftover goes to platform's
+head.
 
 ## The GPU
 

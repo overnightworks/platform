@@ -73,7 +73,9 @@ data:
           Subject: '[{{ .Status }}] {{ .CommonLabels.alertname }}'
         html: ""
         send_resolved: true
-        text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+        text: '{{ range .Alerts.Firing }}firing: {{ .Annotations.summary }}{{ "\n" }}{{
+          end }}{{ range .Alerts.Resolved }}resolved: {{ .Annotations.summary }}{{ "\n"
+          }}{{ end }}'
         to: '@TO@'
       name: mail
     route:
@@ -83,6 +85,11 @@ data:
       group_wait: 10s
       receiver: mail
       repeat_interval: 8760h
+      routes:
+      - group_by:
+        - alertname
+        matchers:
+        - alertname=~"LiveCheckRed|LiveCheckMissed"
     templates: []
 
 ---
@@ -888,7 +895,7 @@ spec:
         app.kubernetes.io/instance: prometheus
       annotations:
         kubectl.kubernetes.io/default-container: alertmanager
-        checksum/config: 3bb8610ab0ddf382f313d2785a4be05e5649fe80f8f98a6a1e97bde7eb70ee8e
+        checksum/config: 340f42c9691f5b144cb71d3cf3f3bfc70284108b2fe8efb1f320d071d2bab10a
     spec:
       automountServiceAccountToken: false
       serviceAccountName: prometheus-alertmanager

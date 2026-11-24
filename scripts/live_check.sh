@@ -3,8 +3,8 @@
 # The command behind `mise run live:check <app>`: signs the one test person of realm.yaml in to the app through the
 # app's own page on the live stack, the way a browser does, and leaves the person disabled. Exit 0 is green, 1 red
 # (a failed sign-in, an unreadable stack, a refusal, or a step of the cleanup that may have left something), 3 skipped
-# (the app's Deployment is not Available). Output is the app, the result and HTTP codes or counts, never a password, a
-# cookie, a code or a page.
+# (the app's Deployment is not Available), 4 refused (another run holds the lock; nothing was read or written). Output is
+# the app, the result and HTTP codes or counts, never a password, a cookie, a code or a page.
 #
 # The password is made per run, lives in this process's memory and reaches Keycloak and the sign-in form on stdin only.
 # On every exit the command can trap (success, error, TERM, INT) one EXIT trap signs out at every app whose cookie jar
@@ -32,6 +32,10 @@ healing=false
 holds_lock=false
 person_touched=false
 skipped=false
+refused=false
+# The step of the sign-in under way, named on a red result line when it did not finish: start, login-page,
+# sign-in-form, callback, account or sign-out. A red without one failed at Keycloak or the stack.
+sign_in_step=""
 leftovers=()
 # The sign-in files of kcadm that could not be removed when kcadm signed in again; every pass of the cleanup retries them.
 stranded_config_files=()
@@ -68,19 +72,8 @@ load_app() {
   cookie_jar="$(cookie_jar_of "$1")"
 }
 
-# The apps this command signs in to, one row each, and the one list of their names (the usage message and the cleanup
-# read it): the app, which is also its client in realm.yaml, whose baseUrl and first redirect URI are its origin and
-# callback; the namespace and name of the Deployment that must be Available; and the paths of the app's own routes (its
-# route contract): where a sign-in starts, the account route that answers 200 signed in and 401 otherwise, and the
-# sign-out.
-app_table='
-hopin        hopin        hopin   /auth/start  /api/account  /logout
-skat         skat         skat    /auth/start  /api/account  /logout
-presentator  presentator  web     /login/oidc  /api/account  /logout
-songmaker    songmaker    web     /login/oidc  /api/auth/me  /auth/logout
-'
-app_names() { awk 'NF { print $1 }' <<<"$app_table"; }
-app_row() { awk -v wanted="$1" '$1 == wanted' <<<"$app_table"; }
+# shellcheck source=live_check_apps.sh
+source "$(dirname "${BASH_SOURCE[0]}")/live_check_apps.sh"
 app="${1:-}"
 if [ -z "$(app_row "$app")" ]; then
   echo "usage: mise run live:check <app>" >&2
@@ -89,10 +82,16 @@ if [ -z "$(app_row "$app")" ]; then
 fi
 
 # What the run does at the end, and what it says: the one place that reads the exit status.
+# attempt <what> <command>...: runs the step; a failing one is named once in leftovers, which a second pass of the cleanup
+# (the first cleanup's, then the trap's) keeps.
 attempt() {
-  local what="$1"
+  local what="$1" named
   shift
-  "$@" || leftovers+=("$what")
+  "$@" && return 0
+  for named in "${leftovers[@]}"; do
+    [ "$named" != "$what" ] || return 0
+  done
+  leftovers+=("$what")
 }
 finish() {
   local exit_status=$?
@@ -114,8 +113,9 @@ finish() {
     result=red
     echo "live:check: may remain: $(printf '%s; ' "${leftovers[@]}")run again to clean up" >&2
   fi
+  [ "$refused" = false ] || result=refused
   [ "$result" != red ] || exit_status=1
-  echo "live:check: $app $result${codes[*]:+ (${codes[*]})}"
+  echo "live:check: $app $result${codes[*]:+ (${codes[*]})}${sign_in_step:+ step=$sign_in_step}"
   exit "$exit_status"
 }
 trap finish EXIT
@@ -132,7 +132,11 @@ load_app "$app" || exit 1
 # One run at a time; a second is refused before it reads or writes anything.
 [ -d "$lock_directory" ] || mkdir -m 700 -- "$lock_directory"
 exec {lock_descriptor}>"$lock_directory/lock"
-flock --nonblock "$lock_descriptor" || fail "another run holds $lock_directory/lock; nothing was changed"
+if ! flock --nonblock "$lock_descriptor"; then
+  echo "live:check: another run holds $lock_directory/lock; nothing was changed" >&2
+  refused=true
+  exit 4
+fi
 holds_lock=true
 
 # ------------------------------------------------------------------------------------------ the person's state
@@ -218,7 +222,9 @@ sign_out_of_app() {
   logout_status="$(app_request "$logout_path" --header "Origin: $origin" --data '')" || logout_status=none
   account_status="$(app_request "$account_path")" || account_status=none
   codes+=("${code_prefix}sign-out=$logout_status" "${code_prefix}account-after=$account_status")
-  [[ "$logout_status" == [23]?? ]] && [ "$account_status" = 401 ]
+  [[ "$logout_status" == [23]?? ]] && [ "$account_status" = 401 ] && return 0
+  [ "$name" != "$app" ] || [ "$healing" = true ] || [ -n "$sign_in_step" ] || sign_in_step=sign-out
+  return 1
 }
 end_keycloak_sessions() {
   kcadm create "users/$person_id/logout" --target-realm "$realm" --set "realm=$realm" >&"$kcadm_update_output_fd" || return 1
@@ -243,7 +249,6 @@ delete_cookie_jar() {
 }
 clean_up_person() {
   local name
-  leftovers=()
   attempt "kcadm's sign-in to Keycloak" sign_in_kcadm_again
   for name in $(app_names); do
     attempt "the person's $name session" sign_out_of_app "$name"
@@ -313,18 +318,24 @@ expect_status() {
 }
 
 : >"$cookie_jar"
+sign_in_step=start
 visit "$start_path"
 expect_status start 303
 login_url="${answer#* }"
+sign_in_step=login-page
 fetch_page "$login_url"
 codes+=("login-page=$page_status")
 [ "$page_status" = 200 ] || fail "the login page answered $page_status, not 200"
+sign_in_step=sign-in-form
 answer="$(printf '%s' "$password" | post_form <(printf '%s' "$page") "${login_url%%/realms/*}" \
   --data-urlencode "username=$person" --data-urlencode password@-)"
 expect_status sign-in-form 302
 return_url="${answer#* }"
 [ "${return_url%%\?*}" = "$callback_url" ] || fail "the sign-in form returns to ${return_url%%\?*}, not the callback of $app"
+sign_in_step=callback
 visit "$return_url"
 expect_status callback 303
+sign_in_step=account
 visit "$account_path"
 expect_status account 200
+sign_in_step=""

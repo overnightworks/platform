@@ -85,9 +85,9 @@ alertmanager:
           printf '%s' "$PASSWORD" > /run/alertmanager/password
           sed -e "s|@SMARTHOST@|$SMARTHOST|g" -e "s|@USERNAME@|$USERNAME|g" -e "s|@TO@|$TO|g" \
             /etc/alertmanager/alertmanager.yml > /run/alertmanager/alertmanager.yml
-  # One mail per alert: every label is a grouping label, so no two alerts share a mail. The repeat interval is a year,
-  # so an alert that fires for a whole year is mailed again and none sooner; the resolved mail follows within the
-  # group interval.
+  # One mail per alert, except the live check's, which group by alertname: every label is a grouping label, so no two
+  # other alerts share a mail. The repeat interval is a year, so an alert that fires for a whole year is mailed again and
+  # none sooner; the resolved mail follows within the group interval.
   config:
     templates: []
     global:
@@ -101,6 +101,11 @@ alertmanager:
       group_wait: 10s
       group_interval: 30s
       repeat_interval: 8760h
+      # The live check's reds that arrive together give one mail listing each; a red that joins an open group, or a row
+      # that turns green, gives one more at the next group interval.
+      routes:
+        - matchers: ['alertname=~"LiveCheckRed|LiveCheckMissed"']
+          group_by: [alertname]
     receivers:
       - name: mail
         email_configs:
@@ -109,7 +114,8 @@ alertmanager:
             html: ''
             headers:
               Subject: '[{{ .Status }}] {{ .CommonLabels.alertname }}'
-            text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+            # A grouped mail's alerts hold the rows that turned green beside those still red, so each line says which.
+            text: '{{ range .Alerts.Firing }}firing: {{ .Annotations.summary }}{{ "\n" }}{{ end }}{{ range .Alerts.Resolved }}resolved: {{ .Annotations.summary }}{{ "\n" }}{{ end }}'
 prometheus-node-exporter:
   enabled: false
 prometheus-pushgateway:

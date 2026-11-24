@@ -1267,14 +1267,15 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+source scripts/loopback_forward.sh
 namespace="${usage_namespace?}" caller="${usage_caller?}"
-port="$(kubectl --namespace "$namespace" get service "$namespace" -o jsonpath='{.spec.ports[0].port}')"
+port="$(service_port "$namespace")"
 # kubectl runs in the foreground, so Ctrl-C reaches it and ends it; the reader on its stdout prints the address once
 # kubectl says it listens, and a forward that fails prints none.
 announce() {
   local line local_port
   while IFS= read -r line; do
-    local_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) ->.*/\1/p' <<<"$line")"
+    local_port="$(forwarded_port "$line")"
     if [ -n "$local_port" ]; then
       echo "$caller: open http://127.0.0.1:$local_port/; Ctrl-C ends the forward"
     fi
@@ -1457,6 +1458,17 @@ say "$client's agent_owner is $username; $username is in ${groups[*]}; $owners_g
 # makes its own only after a heal that deleted every leftover.
 [tasks."live:check"]
 description = "Runs on the operator's PC against the public names, never from CI: signs the one test person of realm.yaml in to <app> through its own page, then signs it out and disables it again; prints the app, green, red or skipped (exit 0, 1, 3) and codes only"
-usage = 'arg "[app]" help="The app to check: one of the apps in the table in scripts/live_check.sh"'
+usage = 'arg "[app]" help="The app to check: one of the apps in the table in scripts/live_check_apps.sh"'
 quiet = true
 run = 'exec timeout -k 300 900 scripts/live_check.sh "${usage_app:-}"'
+
+# The report of the sign-in check, on the operator's PC, never from CI: it waits for the report's lock up to 60 minutes
+# and then runs `live:check` for each app with its waits, so it has no cap of its own.
+[tasks."live:report"]
+description = "Runs on the operator's PC, never from CI: runs live:check for <app> (every app when none is given), once more after 10 minutes when red or skipped, pushes the final green or red to the app's Gatus row, and opens one item at the app's repository for a red after the rerun; nothing runs, is pushed or is opened while the platform is offline; exit 4 means another report holds the lock"
+usage = '''
+arg "<check>" help="The check to report: sign-in"
+arg "[app]" help="The app to report: one of the apps in the table in scripts/live_check_apps.sh"
+'''
+quiet = true
+run = 'exec scripts/live_check_report.sh "${usage_check?}" "${usage_app:-}"'
