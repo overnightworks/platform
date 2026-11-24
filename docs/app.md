@@ -86,7 +86,8 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
   that pull request from the app's newest release: it sets the tag and digest, refreshes the app's legal copies and
   rebuilds the legal pages, and pushes `release/<app>` only when its patch differs from the open branch's or the
   branch conflicts with main. A release that needs other settings (a changed legal page set, a new variable) stays an
-  ordinary lane.
+  ordinary lane. speech-runtime's Component holds two images of one repository under placeholder names, which
+  `release:bump` refuses, so its release stays an ordinary lane.
 - **Pod shape.** Each pod passes Pod Security `restricted` in its namespace and admission's image policy.
 - **Readiness.** Each long-running process exposes a readiness check, an HTTP route or a command, that fails while it
   cannot serve. Flux reports a layer Ready only once its pods are, so a check that passes too early hides a broken start.

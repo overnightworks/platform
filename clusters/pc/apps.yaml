@@ -7,6 +7,8 @@
 # An app that has a pull layer, apps/<app>/pull, has a second Kustomization <app>-pull, which the app's layer waits for:
 # its Job pulls the release's images onto the node before the app's layer rolls them. A timeout of the layer does not
 # cancel the pull, so the roll follows at the next retry.
+# speech-runtime's timeout is an hour: its GPU image is pulled by the roll itself and the pull took 37 minutes, a start
+# takes up to 10 more, so the default of 10 minutes reports the layer Failed while it still pulls.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -127,7 +129,7 @@ spec:
   path: ./apps/speech-runtime
   prune: true
   wait: true
-  timeout: 10m0s
+  timeout: 60m0s
   sourceRef:
     kind: GitRepository
     name: flux-system
