@@ -106,6 +106,9 @@ jobs:
       - name: Check that both speech pods mount /tmp, where an upload is spooled, as a memory-backed emptyDir
         run: mise exec -- tests/speech_runtime/upload_spool_is_memory_backed_in_both_speech_pods.sh
 
+      - name: Check that the bridge of a speech GPU release raises the small image and waits for it Ready only while speech holds the card, lowers it only once the GPU pod runs the release and no newer release is pending, keeps a count that gpu:use set, decides again after a refused scale and fails after the third, and never scales the GPU image
+        run: mise exec -- tests/speech_runtime/bridge_raises_the_cpu_voice_only_while_speech_holds_the_card.sh
+
       - name: Check that cutover:load and cutover:check name each difference, print no value, exit 1 or 2 and make only the listed calls
         run: mise exec -- tests/cutover/load_and_check_name_each_difference_and_print_no_value.sh
 
