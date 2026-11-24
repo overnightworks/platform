@@ -3,7 +3,9 @@
 # release, whatever other tags the repository holds, gives a patch whose tree has the release's Component, legal copies,
 # dates and sha256 and rebuilt legal pages; a second, newer release gives its own tree; a release that main runs is a
 # no-op; an older version, an unknown name and a changed page set are refused; a legal step that fails fails the compute
-# step without a patch; an unfinished release waits.
+# step without a patch; an unfinished release waits. An app whose Component names two images of one repository by
+# placeholders, the second a variant, moves both tags and digests together, each with its variant, and waits while
+# either image is missing; images of two repositories and a name outside the owner's registry are refused.
 # Usage: mise exec -- tests/release_bump/compute_writes_the_release_tree_and_stops_where_it_cannot_settle.sh
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/world.sh"
@@ -108,6 +110,57 @@ compute hopin "${output}" 2026.11.29.1
 expect_status 2 "release_bump_legal"
 [ ! -e "${output}/patch" ] || fail "a failed legal step left a patch"
 echo "a failed legal step fails the compute step"
+
+# An app whose directory differs from its repository, with two images under placeholder names, moves both together.
+speech_image=ghcr.io/overnightworks/speech
+speech_main_version="$(yq '.images[0].newTag' "${checkout}/${speech_component}")"
+speech_release 2026.11.30.1
+registry_add "${speech_image}" 2026.11.30.1
+registry_add "${speech_image}" "2026.11.30.1${APP_IMAGE_VARIANT_SUFFIX}"
+compute speech-runtime "${output}"
+expect_status 0 "bump ${speech_main_version} -> 2026.11.30.1"
+grep -qF "https://github.com/overnightworks/speech/releases/tag/v2026.11.30.1" "${output}/body" || fail "the body does not link the release of the image's repository"
+patched "${work}/speech"
+[ "$(yq '[.images[] | [.name, .newName]]' "${work}/speech/${speech_component}")" = "$(yq '[.images[] | [.name, .newName]]' "${checkout}/${speech_component}")" ] ||
+  fail "the bump changed the names of the images"
+for index in 0 1; do
+  variant="${speech_variants[index]}"
+  [ "$(yq ".images[${index}].newTag" "${work}/speech/${speech_component}")" = "2026.11.30.1${variant}" ] || fail "image ${index} does not run 2026.11.30.1 with its variant '${variant}'"
+  [ "$(yq ".images[${index}].digest" "${work}/speech/${speech_component}")" = "$(digest_of "${speech_image}" "2026.11.30.1${variant}")" ] || fail "image ${index} holds another digest than the registry's for its tag"
+done
+git -C "${work}/speech" diff --name-only | grep -qvx "${speech_component}" && fail "the bump of an app without legal pages changes more than its Component"
+compute speech-runtime "${output}" "${speech_main_version}"
+expect_status 0 "speech-runtime: current ${speech_main_version}"
+[ "$(cat "${output}/outcome")" = current ] || fail "the release the variants' Component runs is not a no-op"
+echo "a Component of two variants of one repository moves both images together"
+
+# A release whose variant image is missing waits and moves neither entry.
+speech_release 2026.12.01.1
+registry_add "${speech_image}" 2026.12.01.1
+compute speech-runtime "${output}"
+expect_status 0 "is not in the registry yet"
+[ "$(cat "${output}/outcome")" = waiting ] && [ ! -e "${output}/patch" ] || fail "a release without its variant image did not wait"
+echo "a release without its variant image waits"
+
+# Images of two repositories, a name outside the owner's registry and a tag suffix that is no variant are refused, as
+# for any Component.
+change_speech_main() { # <label> <field of the second image> <value>
+  clone_main "${work}/mutant-$1"
+  FIELD="$2" VALUE="$3" yq -i '.images[1][strenv(FIELD)] = strenv(VALUE)' "${work}/mutant-$1/${speech_component}"
+  git -C "${work}/mutant-$1" -c user.name=fixture -c user.email=fixture@example.org commit --quiet --all --message "mutant"
+  git -C "${work}/mutant-$1" push --quiet --force origin HEAD:main
+}
+change_speech_main other-suffix newTag "${speech_main_version}-other"
+compute speech-runtime "${output}"
+expect_status 1 "are at more than one version"
+[ ! -e "${output}/patch" ] || fail "a Component with a tag suffix that is no variant was bumped"
+change_speech_main other-repository newName ghcr.io/overnightworks/other
+compute speech-runtime "${output}"
+expect_status 1 "belong to more than one repository"
+change_speech_main foreign-owner newName ghcr.io/someone/speech
+compute speech-runtime "${output}"
+expect_status 1 "is no ghcr.io/overnightworks/<repository>"
+echo "a Component of two repositories, a name outside the owner and a suffix that is no variant are refused"
 
 # The run leaves the checkout and its worktree list as it found them.
 [ -z "$(git -C "${checkout}" status --porcelain)" ] || fail "the compute step changed the checkout"
