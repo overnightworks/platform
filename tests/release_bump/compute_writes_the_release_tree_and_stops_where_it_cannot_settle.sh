@@ -112,7 +112,6 @@ expect_status 2 "release_bump_legal"
 echo "a failed legal step fails the compute step"
 
 # An app whose directory differs from its repository, with two images under placeholder names, moves both together.
-speech_component=apps/speech-runtime/release/kustomization.yaml
 speech_image=ghcr.io/overnightworks/speech
 speech_main_version="$(yq '.images[0].newTag' "${checkout}/${speech_component}")"
 speech_release 2026.11.30.1
@@ -125,7 +124,7 @@ patched "${work}/speech"
 [ "$(yq '[.images[] | [.name, .newName]]' "${work}/speech/${speech_component}")" = "$(yq '[.images[] | [.name, .newName]]' "${checkout}/${speech_component}")" ] ||
   fail "the bump changed the names of the images"
 for index in 0 1; do
-  variant="$([ "${index}" -eq 0 ] || echo "${APP_IMAGE_VARIANT_SUFFIX}")"
+  variant="${speech_variants[index]}"
   [ "$(yq ".images[${index}].newTag" "${work}/speech/${speech_component}")" = "2026.11.30.1${variant}" ] || fail "image ${index} does not run 2026.11.30.1 with its variant '${variant}'"
   [ "$(yq ".images[${index}].digest" "${work}/speech/${speech_component}")" = "$(digest_of "${speech_image}" "2026.11.30.1${variant}")" ] || fail "image ${index} holds another digest than the registry's for its tag"
 done

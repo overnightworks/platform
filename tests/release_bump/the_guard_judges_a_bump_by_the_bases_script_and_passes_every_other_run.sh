@@ -125,13 +125,7 @@ bump() {
   echo '<p>new</p>' >>infrastructure/legal/built/datenschutz.html
 }
 # What a release bump of speech-runtime changes: both images of its Component, to one version, each with its variant.
-speech_component=apps/speech-runtime/release/kustomization.yaml
-move_speech_image() { # <index> <version>
-  local variant
-  read -r _ variant < <(split_image_tag "$(yq ".images[$1].newTag" "${speech_component}")")
-  INDEX="$1" TAG="$2${variant}" DIGEST="$(digest_of ghcr.io/overnightworks/speech "$2${variant}")" \
-    yq -i '.images[env(INDEX)] |= (.newTag = strenv(TAG) | .digest = strenv(DIGEST))' "${speech_component}"
-}
+move_speech_image() { set_speech_image "${speech_component}" "$1" "$2"; } # <index> <version>
 bump_speech() { move_speech_image 0 "${newest}"; move_speech_image 1 "${newest}"; }
 bump_one_speech_image() { move_speech_image 0 "${newest}"; }
 bump_speech_images_to_two_versions() { move_speech_image 0 "${newest}"; move_speech_image 1 2099.12.30.1; }

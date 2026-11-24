@@ -128,8 +128,9 @@ mkdir "${seed}"
 # than every release they bump to, whatever release the shipped Component names.
 fixture_main_release=2026.11.22.1
 yq -i ".images[0].newTag = \"${fixture_main_release}\"" "${seed}/apps/hopin/release/kustomization.yaml"
-mkdir -p "${seed}/apps/speech-runtime/release"
-cat >"${seed}/apps/speech-runtime/release/kustomization.yaml" <<'FIXTURE'
+speech_component=apps/speech-runtime/release/kustomization.yaml
+mkdir -p "${seed}/${speech_component%/*}"
+cat >"${seed}/${speech_component}" <<'FIXTURE'
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
@@ -138,10 +139,15 @@ images:
   - name: speech-gpu
     newName: ghcr.io/overnightworks/speech
 FIXTURE
+# The variant each image of speech_component carries: the first runs the plain version, the second its variant.
+speech_variants=("" "${APP_IMAGE_VARIANT_SUFFIX}")
+set_speech_image() { # <file> <index> <version>: the image of that index runs the version with its variant
+  local tag="$3${speech_variants[$2]}"
+  INDEX="$2" TAG="${tag}" DIGEST="$(digest_of ghcr.io/overnightworks/speech "${tag}")" \
+    yq -i '.images[env(INDEX)] |= (.newTag = strenv(TAG) | .digest = strenv(DIGEST))' "$1"
+}
 for index in 0 1; do
-  variant="$([ "${index}" -eq 0 ] || echo "${APP_IMAGE_VARIANT_SUFFIX}")"
-  INDEX="${index}" TAG="${fixture_main_release}${variant}" DIGEST="$(digest_of ghcr.io/overnightworks/speech "${fixture_main_release}${variant}")" \
-    yq -i '.images[env(INDEX)] |= (.newTag = strenv(TAG) | .digest = strenv(DIGEST))' "${seed}/apps/speech-runtime/release/kustomization.yaml"
+  set_speech_image "${seed}/${speech_component}" "${index}" "${fixture_main_release}"
 done
 git -C "${seed}" init --quiet --initial-branch=main
 git -C "${seed}" add --all
