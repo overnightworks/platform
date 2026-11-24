@@ -10,7 +10,8 @@
 # shows none from the small pod's Ready to the end. Then, with the layer speech-runtime suspended, it commits a second
 # release, waits until the new Job bridge raised the small image, applies the Job settle of the first release by hand, which
 # finds the newer release pending and leaves the small image up, and resumes the layer: the Job settle of the second release
-# lowers it. Each Job is a new object each time.
+# lowers it. Each Job is a new object each time. Every wait ends within the time of one phase, so that a stall fails the cell
+# with the state of the layers, the pods, the Jobs and their logs inside the part's time limit, which a cancelled job would not print.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -22,6 +23,9 @@ small_ready_pods="$RUNNER_TEMP/speech-small-ready-pods"
 namespace=speech-runtime
 small=speech-runtime
 gpu=speech-runtime-gpu
+# The longest a phase may wait: a pull and a start take about a minute on the runner, and the part's limit stands about
+# fourteen minutes after this cell's start.
+phase_seconds=300
 layer=speech-runtime
 bridge_layer=speech-runtime-bridge
 small_manifest="$tree/apps/speech-runtime/speech-runtime.yaml"
@@ -31,7 +35,24 @@ release_component="$tree/apps/speech-runtime/release/kustomization.yaml"
 git worktree add --quiet --detach "$tree" "$CANDIDATE_REVISION"
 sampler_pid=""
 layer_suspended=""
+# diagnose: what a stalled or failed phase leaves in the cluster, read only and never failing.
+diagnose() {
+  echo "::group::the state of $layer and $bridge_layer at the failure"
+  kubectl --namespace flux-system get kustomization "$bridge_layer" "$layer" -o jsonpath='{range .items[*]}{.metadata.name}{" applied "}{.status.lastAppliedRevision}{": "}{.status.conditions[?(@.type=="Ready")].status}{" "}{.status.conditions[?(@.type=="Ready")].message}{"\n"}{end}' || true
+  kubectl --namespace "$namespace" get deployments,pods,jobs --output wide || true
+  kubectl --namespace "$namespace" get events --sort-by=.lastTimestamp || true
+  local job
+  for job in bridge settle; do
+    echo "the log of the Job $job:"
+    kubectl --namespace "$namespace" logs "job/$job" --tail=40 || true
+  done
+  echo "the log of $gpu:"
+  kubectl --namespace "$namespace" logs "deployment/$gpu" --tail=40 || true
+  echo "::endgroup::"
+}
 cleanup() {
+  local status=$?
+  [ "$status" -eq 0 ] || diagnose
   [ -z "$sampler_pid" ] || kill "$sampler_pid" 2>/dev/null || true
   [ -z "$layer_suspended" ] || flux resume kustomization "$layer" >/dev/null || true
   git worktree remove --force "$tree"
@@ -77,7 +98,7 @@ serve_commit() {
   local scratch
   scratch="$(mktemp -d)"
   RUNNER_TEMP="$scratch" CANDIDATE_REVISION="$revision" SPEECH_GPU_STAND_IN=1 "$cells/flux/reconcile_the_candidate_tree.sh" >/dev/null
-  flux reconcile kustomization flux-system --with-source --timeout=5m
+  flux reconcile kustomization flux-system --with-source --timeout="${phase_seconds}s"
 }
 
 # applied <layer> <revision>: the layer is Ready and applied the revision.
@@ -126,11 +147,11 @@ stand_in
 move_gpu_ref "$previous_tag" "$previous_digest"
 serve_commit "Stand in a CPU Deployment for the GPU Deployment at the previous CPU release"
 stand_in_revision="$revision"
-until_true 1800 "the Kustomization $layer applied the stand-in $stand_in_revision" applied "$layer" "$stand_in_revision"
+until_true "$phase_seconds" "the Kustomization $layer applied the stand-in $stand_in_revision" applied "$layer" "$stand_in_revision"
 kubectl --namespace "$namespace" scale "deployment/$gpu" --replicas=1 >/dev/null
-kubectl --namespace "$namespace" wait "deployment/$gpu" --for=jsonpath='{.status.readyReplicas}'=1 --timeout=15m >/dev/null
+kubectl --namespace "$namespace" wait "deployment/$gpu" --for=jsonpath='{.status.readyReplicas}'=1 --timeout="${phase_seconds}s" >/dev/null
 kubectl --namespace "$namespace" scale "deployment/$small" --replicas=0 >/dev/null
-kubectl --namespace "$namespace" wait --for=delete pod --selector "app.kubernetes.io/name=$small" --timeout=5m >/dev/null
+kubectl --namespace "$namespace" wait --for=delete pod --selector "app.kubernetes.io/name=$small" --timeout="${phase_seconds}s" >/dev/null
 echo "the card is speech's: $gpu stands at 1 and $small at none"
 
 old_gpu_pod="$(pod_of "$gpu")"
@@ -145,8 +166,8 @@ sampler_pid=$!
 move_gpu_ref "$current_tag" "$current_digest"
 serve_commit "A GPU release at the current CPU release"
 release_revision="$revision"
-until_true 1800 "the Kustomization $bridge_layer applied $release_revision" applied "$bridge_layer" "$release_revision"
-until_true 1800 "the Kustomization $layer applied $release_revision" applied "$layer" "$release_revision"
+until_true "$phase_seconds" "the Kustomization $bridge_layer applied $release_revision" applied "$bridge_layer" "$release_revision"
+until_true "$phase_seconds" "the Kustomization $layer applied $release_revision" applied "$layer" "$release_revision"
 sleep 2
 kill "$sampler_pid"
 sampler_pid=""
@@ -186,23 +207,23 @@ layer_suspended=1
 move_gpu_ref "$previous_tag" "$previous_digest"
 serve_commit "A second GPU release, the previous CPU release"
 second_revision="$revision"
-until_true 1800 "the Kustomization $bridge_layer applied $second_revision" applied "$bridge_layer" "$second_revision"
+until_true "$phase_seconds" "the Kustomization $bridge_layer applied $second_revision" applied "$bridge_layer" "$second_revision"
 [ "$(uid_of job bridge)" != "$bridge_before" ] || fail "the Job bridge of the second release is the object of the first"
 [ "$(replicas_of "$small")" -eq 1 ] || fail "the Job bridge of the second release left the small image at $(replicas_of "$small"), not one"
-kubectl --namespace "$namespace" wait "deployment/$small" --for=jsonpath='{.status.readyReplicas}'=1 --timeout=15m >/dev/null
+kubectl --namespace "$namespace" wait "deployment/$small" --for=jsonpath='{.status.readyReplicas}'=1 --timeout="${phase_seconds}s" >/dev/null
 echo "the Job bridge of the second release raised the small image to one Ready pod"
 
 # The Job settle of the first release, applied again by hand, finds the newer release pending and leaves the small image up.
 kubectl --namespace "$namespace" delete job settle --wait >/dev/null
 kubectl apply -f "$settle_of_release" >/dev/null
-kubectl --namespace "$namespace" wait job/settle --for=condition=complete --timeout=15m >/dev/null
+kubectl --namespace "$namespace" wait job/settle --for=condition=complete --timeout="${phase_seconds}s" >/dev/null
 [ "$(replicas_of "$small")" -eq 1 ] || fail "the Job settle of the first release lowered the small image to $(replicas_of "$small") although a newer release was pending"
 echo "the Job settle of the first release left the small image up for the second release"
 
 settle_before="$(uid_of job settle)"
 flux resume kustomization "$layer" >/dev/null
 layer_suspended=""
-until_true 1800 "the Kustomization $layer applied $second_revision" applied "$layer" "$second_revision"
+until_true "$phase_seconds" "the Kustomization $layer applied $second_revision" applied "$layer" "$second_revision"
 [ "$(uid_of job settle)" != "$settle_before" ] || fail "the Job settle of the second release is the object of the first"
 [ "$(replicas_of "$small")" -eq 0 ] || fail "the Job settle of the second release left the small image at $(replicas_of "$small"), not none"
 [ "$(replicas_of "$gpu")" -eq 1 ] || fail "$gpu stands at $(replicas_of "$gpu") after the second release, not one"
