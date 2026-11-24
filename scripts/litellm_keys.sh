@@ -21,6 +21,8 @@ set -euo pipefail
 export LC_ALL=C
 # shellcheck source=keycloak_kcadm.sh
 source "$(dirname "${BASH_SOURCE[0]}")/keycloak_kcadm.sh"
+# shellcheck source=loopback_forward.sh
+source "$(dirname "${BASH_SOURCE[0]}")/loopback_forward.sh"
 
 namespace=litellm
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
@@ -175,24 +177,10 @@ await_spend_log() {
   return 1
 }
 
-# The longest a port-forward lives; a command that runs longer sets a limit past its run before it connects.
-forward_limit=10m
-# start_forward <namespace> <service> <port>: port-forwards the Service to a free local port, which it sets as
-# forwarded_port.
-start_forward() {
-  local pid log="$scratch/forward-$2.log"
-  : >"$log"
-  timeout "$forward_limit" kubectl --namespace "$1" port-forward "service/$2" ":$3" >"$log" 2>&1 &
-  pid=$!
-  forwards+=("$pid")
-  forwarded_port=""
-  for _ in $(seq 30); do
-    forwarded_port="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$log" | head -n 1)"
-    [ -z "$forwarded_port" ] || break
-    kill -0 "$pid" 2>/dev/null || fail "kubectl port-forward to the Service $2 ended"
-    sleep 1
-  done
-  [ -n "$forwarded_port" ] || fail "kubectl port-forward to the Service $2 did not start within 30 seconds"
+# forward_to <namespace> <service> <port>: port-forwards the Service to a free local port, which it sets as forward_port.
+forward_to() {
+  start_forward "$1" "$2" "$3" "$scratch/forward-$2.log" || fail "kubectl port-forward to the Service $2 did not start"
+  forwards+=("$forward_pid")
 }
 # connect: reads the master key and starts the port-forward to LiteLLM; sets master_key and local_port.
 connect() {
@@ -204,8 +192,8 @@ connect() {
   [ -n "$master_key" ] || fail "the Secret litellm holds an empty master_key"
   port="$(in_cluster "reading the Service litellm" --namespace "$namespace" get service litellm \
     -o jsonpath='{.spec.ports[0].port}')"
-  start_forward "$namespace" litellm "$port"
-  local_port="$forwarded_port"
+  forward_to "$namespace" litellm "$port"
+  local_port="$forward_port"
 }
 
 # applied_revision: the Git revision Flux applied to the layer.
@@ -521,8 +509,8 @@ admin_command() {
   connect
   sign_in_kcadm
   find_person "$username"
-  start_forward keycloak keycloak http
-  reply="$(curl --silent --fail --max-time 30 "http://127.0.0.1:$forwarded_port/realms/$realm/.well-known/openid-configuration" \
+  forward_to keycloak keycloak http
+  reply="$(curl --silent --fail --max-time 30 "http://127.0.0.1:$forward_port/realms/$realm/.well-known/openid-configuration" \
     </dev/null)" || fail "Keycloak's discovery document of the realm cannot be read"
   issuer="$(json '.issuer')"
   [[ $issuer == http*://* ]] || fail "Keycloak's discovery document names no issuer"

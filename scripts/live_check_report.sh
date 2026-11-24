@@ -35,14 +35,7 @@ if [ "$check" != sign-in ] || { [ -n "$wanted_app" ] && [ -z "$(app_row "$wanted
 fi
 [ -n "${XDG_RUNTIME_DIR:-}" ] || { echo "live:report: XDG_RUNTIME_DIR is unset, so the report has no private directory for its lock" >&2; exit 1; }
 
-forward_pid=""
 scratch="$(mktemp -d)"
-stop_forward() {
-  [ -z "$forward_pid" ] && return 0
-  kill "$forward_pid" 2>/dev/null || true
-  wait "$forward_pid" 2>/dev/null || true
-  forward_pid=""
-}
 finish() {
   stop_forward
   rm -rf "$scratch"
@@ -67,32 +60,14 @@ platform_is_offline() {
 }
 
 # ------------------------------------------------------------------------------------------------------ the push
-# start_forward: sets forward_pid and forward_port once kubectl says it listens; says nothing and returns 1 when it does not.
-start_forward() {
-  local port line try forward_log="$scratch/forward.log"
-  forward_port=""
-  : >"$forward_log"
-  port="$(service_port gatus)" || return 1
-  kubectl --namespace gatus port-forward --address 127.0.0.1 service/gatus ":$port" >"$forward_log" 2>&1 &
-  forward_pid=$!
-  for try in $(seq 100); do
-    while IFS= read -r line; do
-      forward_port="$(forwarded_port "$line")"
-      [ -z "$forward_port" ] || return 0
-    done <"$forward_log"
-    kill -0 "$forward_pid" 2>/dev/null || break
-    sleep 0.2
-  done
-  stop_forward
-  return 1
-}
 gatus_token_header() {
   kubectl --namespace gatus get secret gatus-push --output go-template='Authorization: Bearer {{ .data.token | base64decode }}{{ "\n" }}'
 }
 # push_once <app> <true|false> <error>: one push through a fresh forward.
 push_once() {
-  local key="live-check_$1-sign-in" push_status=0
-  start_forward || return 1
+  local key="live-check_$1-sign-in" push_status=0 port
+  port="$(service_port gatus)" || return 1
+  start_forward gatus gatus "$port" "$scratch/forward.log" || return 1
   gatus_token_header | curl --request POST --get --silent --show-error --fail --max-time 20 --output /dev/null --header @- \
     --data-urlencode "success=$2" --data-urlencode "error=$3" \
     "http://127.0.0.1:$forward_port/api/v1/endpoints/$key/external" || push_status=$?
