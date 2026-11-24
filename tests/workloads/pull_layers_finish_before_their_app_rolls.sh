@@ -3,9 +3,9 @@
 # For every Kustomization whose path is ./apps/<app>/pull: it applied the candidate, waits for its objects, and the app's
 # Kustomization depends on it; its Job completed with its pod kept and no time to live; the Job completed before the
 # ReplicaSet of the current revision of each Deployment that runs an image the Job mounts was created; and the pods of
-# every workload that runs such an image report it as already present on the node; of a StatefulSet, the pods at its
-# update revision, since a rolling update creates the next one only after the last turned Ready, which a previous
-# release's pods may never do. The order is read from the objects'
+# every workload that runs such an image report it as already present on the node; of a Deployment, the pods of that
+# ReplicaSet, and of a StatefulSet, the pods at its update revision, since a rolling update keeps the old pods until
+# the next one turned Ready, which a previous release's pods may never do. The order is read from the objects'
 # creation and completion times, which a later reconcile does not move, never from a condition's lastTransitionTime,
 # which every reconcile of a layer resets.
 set -euo pipefail
@@ -51,13 +51,15 @@ while read -r pull_layer path; do
       workload="${runner%%|*}" selector="${runner#*|}"
       if [[ $workload == Deployment/* ]]; then
         revision="$(kubectl --namespace "$namespace" get "$workload" -o jsonpath='{.metadata.annotations.deployment\.kubernetes\.io/revision}')"
-        replica_set_created="$(kubectl --namespace "$namespace" get replicasets --selector="$selector" -o yaml |
-          REVISION="$revision" yq '[.items[] | select(.metadata.annotations["deployment.kubernetes.io/revision"] == strenv(REVISION))
-            | .metadata.creationTimestamp] | sort | .[0]')"
+        replica_sets="$(kubectl --namespace "$namespace" get replicasets --selector="$selector" -o yaml)"
+        replica_set_created="$(REVISION="$revision" yq '[.items[] | select(.metadata.annotations["deployment.kubernetes.io/revision"] == strenv(REVISION))
+            | .metadata.creationTimestamp] | sort | .[0]' <<<"$replica_sets")"
         [ "$replica_set_created" != null ] || fail "the $workload has no ReplicaSet at its revision $revision"
         [[ ! $replica_set_created < "$completed" ]] ||
           fail "the ReplicaSet of the $workload at revision $revision was created at $replica_set_created, before the Job $namespace/pull completed at $completed"
         echo "the Job completed at $completed, the ReplicaSet of the $workload at revision $revision was created at $replica_set_created"
+        selector+=",pod-template-hash=$(REVISION="$revision" yq '.items[] | select(.metadata.annotations["deployment.kubernetes.io/revision"] == strenv(REVISION))
+          | .metadata.labels["pod-template-hash"]' <<<"$replica_sets" | head -n 1)"
       fi
       if [[ $workload == StatefulSet/* ]]; then
         selector+=",controller-revision-hash=$(kubectl --namespace "$namespace" get "$workload" -o jsonpath='{.status.updateRevision}')"

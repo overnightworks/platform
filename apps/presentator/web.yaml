@@ -106,12 +106,8 @@ spec:
               value: http://litellm-front.litellm.svc.cluster.local:4000
             - name: PRESENTATOR_AGENT__GATEWAY__KEY_FILE
               value: /run/secrets/litellm_key
-            - name: PRESENTATOR_AGENT__API_GROUP
-              value: /services/litellm
             - name: PRESENTATOR_SPEECH_SERVICE
               value: http://speech-runtime.speech-runtime.svc.cluster.local:8080
-            - name: PRESENTATOR_SPEECH_SERVICE_SCOPE
-              value: speech-service-audience
             - name: PRESENTATOR_BUILD_RUNNER
               value: worker
             # The Service of the build workers, one of whose pods takes each step; the web starts without them.

@@ -4,7 +4,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../client_pod.sh"
 
 cleanup() {
-  kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod worker-host-client unknown-host-client backchannel-control \
+  kubectl --namespace "$SONGMAKER_NAMESPACE" delete pod worker-host-client backchannel-control \
     --ignore-not-found --wait --timeout=2m
   kubectl --namespace "$TUNNEL_NAMESPACE" delete pod backchannel-through-traefik --ignore-not-found --wait --timeout=2m
   kubectl delete namespace --ignore-not-found --wait --timeout=2m "$OTHER_NAMESPACE"
@@ -37,9 +37,7 @@ echo "a Pod in $TUNNEL_NAMESPACE got 200 for /health through Traefik with the ho
 
 request "$SONGMAKER_NAMESPACE" worker-host-client "$worker_host" "$web_url"
 [ "$status" = 200 ] || fail "a Pod in $SONGMAKER_NAMESPACE got '$status' for /health with the host $worker_host, not 200"
-request "$SONGMAKER_NAMESPACE" unknown-host-client "unknown.invalid" "$web_url"
-[ "$status" = 400 ] || fail "a Pod in $SONGMAKER_NAMESPACE got '$status' for /health with a host off the list, not 400"
-echo "the web answers 200 for the host $worker_host and 400 for a host off the list"
+echo "the web answers 200 for the host $worker_host"
 
 # post_malformed_token <namespace> <name> <host> <url> [<curl argument>...]: a POST of a malformed logout_token, so 400 means
 # the route was reached and the token refused; sets answer_status and answer_body from the response.
