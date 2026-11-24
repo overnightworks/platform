@@ -1,0 +1,8 @@
+claim_id = "ffd1f43737e043628bca859ea37c3b4a"
+agent = "Claude 931ae605-f1bd-431a-bedc-82984afcc371"
+role = "builder"
+base = "39483e5abb1342b56e10c680f3920255944b50d1"
+branch = "claude/issue-912-p4-release-bump-supports-speech-s-two-va"
+scope = ["apps/speech-runtime/release/kustomization.yaml", "docs/app.md", "mise.toml", "scripts/release_bump_component_version.sh", "scripts/release_bump_compute.sh", "scripts/release_bump_patterns.sh", "scripts/verify_image_release.sh", "tests/release_bump"]
+opened_commit = "86df2492e1530a2be6d163c9db425e1d7e8facfe"
+whole_reason = "One rule, a Component's version with its variants, has to hold in the compute step, the version judge, the shared pattern and the cells together; one of them alone leaves the command refusing or the guard disagreeing."
