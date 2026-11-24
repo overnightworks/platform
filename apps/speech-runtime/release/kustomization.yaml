@@ -1,7 +1,6 @@
 # The release of speech's two images, which stand in one repository: the CPU image and its -gpu variant of the same
 # version. Both containers name one repository, so the entries cannot share the real name; each container names its own
-# placeholder and the entries are independent of their order. A bump changes both tags and digests together, in an
-# ordinary pull request: release:bump refuses this Component, as its names are placeholders and its tags two forms.
+# placeholder and the entries are independent of their order. A bump changes both tags and digests together.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
