@@ -56,7 +56,12 @@ if ! flock --nonblock "$lock_descriptor"; then
 fi
 
 platform_is_offline() {
-  [ "$(timeout --foreground 20 kubectl --namespace flux-system get kustomization tunnel --output jsonpath='{.spec.suspend}' 2>/dev/null || true)" = true ]
+  local suspended
+  suspended="$(timeout --foreground 20 kubectl --namespace flux-system get kustomization tunnel --output jsonpath='{.spec.suspend}' 2>/dev/null)" || {
+    echo "live:report: the suspend of the tunnel cannot be read; the platform counts as online" >&2
+    return 1
+  }
+  [ "$suspended" = true ]
 }
 
 # ------------------------------------------------------------------------------------------------------ the push

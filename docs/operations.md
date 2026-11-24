@@ -227,14 +227,16 @@ person's account row in each app's database is that app's own data and stays. (O
 the command's table when none is named. It takes `$XDG_RUNTIME_DIR/live-check/report.lock`, waiting up to 60 minutes, and
 exits 4 with `refused: another live:report is running; nothing ran` when it is still held. For each app it runs `mise run
 live:check <app>`; exit 4 of the command is its lock being held, which the report polls for up to 30 minutes per app and
-never pushes red, and a red or skipped run is repeated once after 10 minutes. A final green is pushed as `success=true`; a
+never pushes red (an app whose lock is held that long is reported `skipped reason=command-busy`, with nothing pushed or
+opened, and the report exits 4 after the other apps), and a red or skipped run is repeated once after 10 minutes. A final green is pushed as `success=true`; a
 final red as `success=false` with the codes and the names that may remain as its error, followed by one item
 `live:check <app> red after a rerun` at `overnightworks/<app>`, unless an item of that exact title is open. The item holds
 the date, the result line, the failing step, whether the step is the app's (`start`, `callback`, `account`, `sign-out`) or
-the cause sits at platform (`login-page`, `sign-in-form`, a refusal of Keycloak or the stack, or a name that may remain),
+the cause sits at platform (`login-page`, `sign-in-form`, a refusal of Keycloak or the stack, or a name that may remain
+other than the person's session at the app itself),
 and the command to reproduce; the app's head closes it after a green. An app skipped twice gets no push and no item. While
 the Kustomization `tunnel` is suspended, which `mise run offline` does, the report checks before each attempt, push and item
-and then prints `<app> skipped reason=offline`. The push goes through a loopback forward to the Service `gatus` (the one
+and then prints `<app> skipped reason=offline`; a suspend it cannot read counts as online and says so. The push goes through a loopback forward to the Service `gatus` (the one
 `gatus:open` uses), three tries over two minutes, with the token of the Secret `gatus-push` on curl's stdin only; the item
 is opened with the operator's `gh` login on the PC and does not depend on the push. A failed push or item prints its name
 and, for gh, its exit code, never the body, and makes the report exit 1. (OPS-22)
