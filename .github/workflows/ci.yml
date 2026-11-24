@@ -163,6 +163,9 @@ jobs:
       - name: Check that live:check signs the test person in with its password on stdin only, leaves it signed out and disabled on every exit it can trap, names what a failed step may leave, cleans up an earlier run's leftovers first and refuses or skips with no write
         run: mise exec -- tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh
 
+      - name: Check that live:report pushes each final green or red once, reruns a red or skipped app once, opens one item at the app for a red after the rerun and names the step and the side of the cause, waits for the command's lock without pushing red, serializes on its own lock, pushes and opens nothing while offline, and keeps the token off every argument, environment and output
+        run: mise exec -- tests/keycloak/live_report_pushes_each_result_and_opens_one_item_per_red.sh
+
       - name: Check that the gateway probe answers on both routes and models, keeps its port-forward through its waits, deletes its keys on every exit and judges its budget, cache and cost answers by their evidence
         run: mise exec -- tests/litellm/gateway_probe_answers_on_both_routes_and_removes_its_keys.sh
 

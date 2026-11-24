@@ -1461,3 +1461,14 @@ description = "Runs on the operator's PC against the public names, never from CI
 usage = 'arg "[app]" help="The app to check: one of the apps in the table in scripts/live_check.sh"'
 quiet = true
 run = 'exec timeout -k 300 900 scripts/live_check.sh "${usage_app:-}"'
+
+# The report of the sign-in check, on the operator's PC, never from CI: it waits for the report's lock up to 60 minutes
+# and then runs `live:check` for each app with its waits, so it has no cap of its own.
+[tasks."live:report"]
+description = "Runs on the operator's PC, never from CI: runs live:check for <app> (every app when none is given), once more after 10 minutes when red or skipped, pushes the final green or red to the app's Gatus row, and opens one item at the app's repository for a red after the rerun; nothing runs, is pushed or is opened while the platform is offline; exit 4 means another report holds the lock"
+usage = '''
+arg "<check>" help="The check to report: sign-in"
+arg "[app]" help="The app to report: one of the apps in the table in scripts/live_check_apps.sh"
+'''
+quiet = true
+run = 'exec scripts/live_check_report.sh "${usage_check?}" "${usage_app:-}"'
