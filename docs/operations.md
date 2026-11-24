@@ -88,8 +88,9 @@ fix the cause, then delete the Job `bridge`, which Flux creates again at its nex
 then no change of `speech-runtime` applies. A `settle` whose wait passes its deadline (3300 seconds) leaves
 `speech-runtime` not Ready with the small pod still serving, and mails `KustomizationNotReady` and `DeploymentUnavailable`
 for the GPU image: read the GPU pod's events (disk, card, pull); once it is Ready, delete the Job `settle`, whose run
-lowers the small image, or run `gpu:use songs`, after which a run changes nothing. A `settle` whose `kubectl wait` is refused (Forbidden, or an API server it cannot reach) fails at once and leaves the
-small image up: read the Job's log, fix the cause, then delete the Job `settle`. A `settle` that finds the Job `bridge`
+lowers the small image, or run `gpu:use songs`, after which a run changes nothing. A `settle` whose `kubectl wait` is
+refused (Forbidden, or an API server it cannot reach) fails at once and leaves the small image up: read the Job's log,
+fix the cause, then delete the Job `settle`. A `settle` that finds the Job `bridge`
 gone fails: wait until Flux created `bridge` again, then delete `settle`. A `settle` that finds a newer release pending in
 the Job `bridge`, or a count that `gpu:use` set, ends at once and leaves the small image to the newer release's `settle`
 or to `gpu:use`. Before the first GPU release, read on the node the free space of the image filesystem, which must hold the
