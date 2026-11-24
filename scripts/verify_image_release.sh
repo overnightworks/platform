@@ -12,6 +12,8 @@
 # Exit: 0 nothing is red, 1 after at least one red record, 2 on any other failure.
 set -Eeuo pipefail
 trap 'echo "verify_image_release: line ${LINENO} failed: ${BASH_COMMAND}" >&2; exit 2' ERR
+# shellcheck source=release_bump_patterns.sh
+source "$(dirname "${BASH_SOURCE[0]}")/release_bump_patterns.sh"
 
 ROOT_SYNC_FILE="clusters/pc/flux-system/gotk-sync.yaml"
 # The CI workflow whose env values name the images its probes run in the cluster.
@@ -25,9 +27,8 @@ PC_ONLY_SOURCE="GitRepository/flux-system/platform-secrets"
 # The render of the real tree ends in about 2 seconds; a Kustomization whose path is its own ancestor never ends.
 RENDER_TIMEOUT_SECONDS_DEFAULT=120
 # An app's release: its image is built and attested by quality's reusable workflow from the app's main, and the
-# signer's commit must lie on quality's main. A release may publish a second image, tagged <version>-gpu, from the
-# same commit with the same attestation; both belong to the tag v<version>.
-APP_IMAGE_VARIANT_SUFFIX="-gpu"
+# signer's commit must lie on quality's main; the variant image of a release (APP_IMAGE_VARIANT_SUFFIX) is checked
+# against the same tag.
 SIGNER_REPOSITORY_NAME="quality"
 SIGNER_WORKFLOW=".github/workflows/image.yml"
 SIGNER_BRANCH="main"
