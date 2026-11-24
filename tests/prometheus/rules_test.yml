@@ -434,6 +434,34 @@ tests:
             exp_annotations: {summary: "Gatus' probe of the litellm endpoint, the AI gateway, has failed for 10 minutes"}
       - {eval_time: 19m, alertname: AiGatewayProbeFailing}
   - interval: 1m
+    name: a red live check row fires LiveCheckRed after five minutes, labelled with its row, and a push of green resolves it
+    input_series:
+      - series: gatus_results_endpoint_success{name="hopin sign-in", key="live-check_hopin-sign-in", group="live-check", type="UNKNOWN"}
+        values: "1x2 0x10 1x5"
+      - series: gatus_results_endpoint_success{name="skat sign-in", key="live-check_skat-sign-in", group="live-check", type="UNKNOWN"}
+        values: "1x17"
+      - series: gatus_results_endpoint_success{name="hopin", key="_hopin", group="", type="HTTP"}
+        values: "0x17"
+    alert_rule_test:
+      - {eval_time: 6m, alertname: LiveCheckRed}
+      - eval_time: 9m
+        alertname: LiveCheckRed
+        exp_alerts:
+          - exp_labels: {name: hopin sign-in, key: live-check_hopin-sign-in, group: live-check, type: UNKNOWN}
+            exp_annotations: {summary: "live:check hopin sign-in is red after a rerun; gatus:open shows its codes"}
+      - {eval_time: 16m, alertname: LiveCheckRed}
+  - interval: 1m
+    name: a red live check row keeps firing across a Gatus restart that leaves its series stale
+    input_series:
+      - series: gatus_results_endpoint_success{name="hopin sign-in", key="live-check_hopin-sign-in", group="live-check", type="UNKNOWN"}
+        values: "0x4 stale stale stale stale stale stale stale stale stale stale stale"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: LiveCheckRed
+        exp_alerts:
+          - exp_labels: {name: hopin sign-in, key: live-check_hopin-sign-in, group: live-check, type: UNKNOWN}
+            exp_annotations: {summary: "live:check hopin sign-in is red after a rerun; gatus:open shows its codes"}
+  - interval: 1m
     name: a platform taken offline, with cloudflared at 0 replicas, its tunnel Kustomization suspended and its Gatus endpoint red, mails nothing
     input_series:
       # States the scenario only: no listed rule reads it.
@@ -451,3 +479,4 @@ tests:
       - {eval_time: 20m, alertname: DeploymentUnavailable}
       - {eval_time: 20m, alertname: KustomizationNotReady}
       - {eval_time: 20m, alertname: AiGatewayProbeFailing}
+      - {eval_time: 20m, alertname: LiveCheckRed}

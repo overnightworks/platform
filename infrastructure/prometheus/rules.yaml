@@ -86,6 +86,14 @@ data:
             for: 10m
             annotations:
               summary: 'Gatus'' probe of the {{ $labels.name }} endpoint, the AI gateway, has failed for 10 minutes'
+          # `mise run live:report` pushes each app's final sign-in result to a row of the group live-check, only after its
+          # rerun. last_over_time reads past the stale gap a Gatus restart leaves, so a red alert stays firing until a green
+          # push and sends no resolved mail for the restart. The report pushes nothing while the platform is offline.
+          - alert: LiveCheckRed
+            expr: last_over_time(gatus_results_endpoint_success{group="live-check"}[30d]) == 0
+            for: 5m
+            annotations:
+              summary: 'live:check {{ $labels.name }} is red after a rerun; gatus:open shows its codes'
           # songmaker's web exports the series at 0 with no worker, and a Deployment at 0 replicas wants none, so the guard
           # keeps the rule quiet there. A worker that is not Ready is DeploymentUnavailable's, so this rule is the
           # Ready-and-unregistered case.

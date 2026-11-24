@@ -352,6 +352,10 @@ jobs:
         if: matrix.part == 'core'
         run: tests/prometheus/rules_pass_promtool_and_their_tests.sh
 
+      - name: Check that the live check's two alertnames reach their own Alertmanager route, that two firing reds of different rows form one group, and that the mail's text lists a row that turned green only under resolved
+        if: matrix.part == 'core'
+        run: tests/prometheus/live_check_reds_share_one_group_and_the_mail_lists_resolved_rows_apart.sh
+
       - name: Route Docker Hub pulls through the mirror and pull the registry image at its digest
         run: |
           # Google's public pull-through cache of Docker Hub needs no credential: the runner's Docker daemon and the
