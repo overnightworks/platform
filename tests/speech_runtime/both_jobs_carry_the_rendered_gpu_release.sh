@@ -13,7 +13,7 @@ cd "$repository_root"
 
 runtime_layer="$(kubectl kustomize apps/speech-runtime)"
 bridge_layer="$(kubectl kustomize apps/speech-runtime/bridge)"
-script_file=apps/speech-runtime/bridge/speech_bridge.sh
+script_file=apps/speech-runtime/bridge/scripts/speech_bridge.sh
 
 # image_of <layer render> <Deployment>: the image the layer renders for the Deployment.
 image_of() {

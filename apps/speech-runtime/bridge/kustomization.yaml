@@ -14,4 +14,4 @@ configMapGenerator:
   # A changed script changes the name, so Flux re-creates the Job, whose re-run changes nothing.
   - name: speech-bridge-up
     files:
-      - speech_bridge.sh
+      - scripts/speech_bridge.sh

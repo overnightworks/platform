@@ -13,4 +13,4 @@ configMapGenerator:
   - name: speech-bridge-settle
     namespace: speech-runtime
     files:
-      - bridge/speech_bridge.sh
+      - bridge/scripts/speech_bridge.sh

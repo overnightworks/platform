@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Drive apps/speech-runtime/bridge/speech_bridge.sh, the script of both Jobs of a speech GPU release, against a fake kubectl
+# Drive apps/speech-runtime/bridge/scripts/speech_bridge.sh, the script of both Jobs of a speech GPU release, against a fake kubectl
 # that holds the objects the script reads, for the outcomes the cluster cannot arrange. Mode `up` raises the small image
 # to one pod and waits until it is Ready only while speech holds the card (the GPU image at one pod and not yet at the
 # release's image), leaves a count above zero alone, and changes nothing without a GPU Deployment, with the GPU image at
@@ -14,7 +14,7 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=../failure.sh
 source "$repository_root/tests/failure.sh"
-bridge_script="$repository_root/apps/speech-runtime/bridge/speech_bridge.sh"
+bridge_script="$repository_root/apps/speech-runtime/bridge/scripts/speech_bridge.sh"
 work_directory="$(mktemp -d)"
 trap 'rm -rf "$work_directory"' EXIT
 fake_bin="$work_directory/bin"
