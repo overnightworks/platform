@@ -54,8 +54,8 @@ exit "$exit_code"
 FAKE
 
 # kubectl: the Secret's header on stdout, the forward line, the Service's port and the `tunnel` Kustomization's suspend,
-# which is read from tunnel-reads, one line per read, the last one for every later read. FAKE_FORWARD_FAILS ends the
-# forward with no line.
+# which is read from tunnel-reads, one line per read, the last one for every later read (`unreadable` fails the read).
+# FAKE_FORWARD_FAILS ends the forward with no line.
 cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -66,6 +66,7 @@ case " $* " in
     value="$(head -n 1 "$FAKE_STATE/tunnel-reads")"
     [ "$(wc -l <"$FAKE_STATE/tunnel-reads")" -le 1 ] || sed -i 1d "$FAKE_STATE/tunnel-reads"
     log_event "kubectl: tunnel read $value"
+    [ "$value" != unreadable ] || { echo "error: the server is unreachable" >&2; exit 1; }
     printf '%s' "$value" ;;
   *" get service gatus "*) echo 8080 ;;
   *" get secret gatus-push "*)
@@ -435,6 +436,16 @@ run_report offline-before-the-item sign-in hopin
 grep -q 'success=false' "$state/pushes" && no_gh_call || refuse "offline-before-the-item: the push is missing or gh was called"
 kept_clean offline-before-the-item
 echo "an offline that starts after the push opens no item"
+
+prepare_case offline-unreadable
+echo unreadable >"$state/tunnel-reads"
+script hopin "$(green_attempt hopin)"
+run_report offline-unreadable sign-in hopin
+expect_status offline-unreadable 0
+grep -q 'the suspend of the tunnel cannot be read; the platform counts as online' "$output_file" || refuse "offline-unreadable: the output does not say the suspend cannot be read"
+[ "$(mise_calls)" = 1 ] && pushes_are "$hopin_key success=true error=" || refuse "offline-unreadable: the attempt or its push did not run"
+kept_clean offline-unreadable
+echo "a suspend that cannot be read counts as online, says so and runs the attempt"
 
 # ------------------------------------------------------------------------------------------------ failures
 prepare_case push-fails
