@@ -3,5 +3,5 @@ agent = "Claude 931ae605-f1bd-431a-bedc-82984afcc371"
 role = "builder"
 base = "8f04e2642f4c2b17755b2150e0b21ee65626cf13"
 branch = "claude/issue-909-hopin-s-and-presentator-s-old-realm-keys"
-scope = ["apps/hopin/hopin.yaml", "apps/presentator/web.yaml"]
+scope = ["apps/hopin/hopin.yaml", "apps/presentator/web.yaml", "tests/workloads/pull_layers_finish_before_their_app_rolls.sh"]
 opened_commit = "52d9536bf8b06383877023a5e15dfaf12ebd9aca"
