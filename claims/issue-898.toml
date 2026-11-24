@@ -1,0 +1,8 @@
+claim_id = "a1b0f2b87f8444b596a72093a7edbcf8"
+agent = "Claude 931ae605-f1bd-431a-bedc-82984afcc371"
+role = "builder"
+base = "b50b23f186bd2c01fdc0dc28bb3b7a93a378a920"
+branch = "claude/issue-898-speech-s-release-refs-have-one-owner-and"
+scope = ["apps/speech-runtime", "clusters/pc/apps.yaml", "docs/app.md", "infrastructure/admission/image-vendors.yaml", "infrastructure/k8up/image", "infrastructure/objectstore/apply.yaml", "infrastructure/objectstore/kustomization.yaml"]
+opened_commit = "ed7eba8764203c9f0acb13278017462a28a7a777"
+whole_reason = "Both Components and the deadline are what the bridge needs before it can be built in ten files; each stands with today's callers, and the render proves nothing rolls."
