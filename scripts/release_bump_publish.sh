@@ -92,7 +92,7 @@ if [ -n "${number}" ]; then
   {
     printf '%s\n' "${current_body}" | grep -q '^Release: ' || printf '%s\n' "${release_line}"
     [ -z "${current_body}" ] || printf '%s\n' "${current_body}" |
-      awk -v release="${release_line}" '/^Release: / { if (!written) print release; written = 1; next } { print }'
+      release="${release_line}" awk '/^Release: / { if (!written) print ENVIRON["release"]; written = 1; next } { print }'
   } >"${workspace}/body"
   gh pr edit "${number}" --title "$(cat "${output}/title")" --body-file "${workspace}/body"
   echo "release_bump: ${app}: edited pull request ${number}"
