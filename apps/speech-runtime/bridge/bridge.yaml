@@ -43,7 +43,7 @@ subjects:
 # carries no label part-of speech-runtime, so neither the Service nor its NetworkPolicy selects it. It runs no app image,
 # so it needs no pull layer. A pod that never turns Ready fails the Job at its deadline, below the layer's timeout, and
 # speech-runtime then applies nothing: the old GPU pod keeps serving. The wait is READY_SECONDS below: the CPU image's pull
-# (10 s on CI's runner, from CI's Pulled line) and its start (30 s of the readiness probe's delay and the models' load) with
+# (12 s on CI's runner, from the cell's Pulled line) and its start (30 s of the readiness probe's delay and the models' load) with
 # ten minutes' margin, which also covers the pull at the PC's rate of about 6 MB/s for its 1 GB. activeDeadlineSeconds
 # stands two minutes above it, for the pod's own start and the scale, and is the one other value to change with it.
 apiVersion: batch/v1
