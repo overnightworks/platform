@@ -1,7 +1,0 @@
-claim_id = "1deba8d40e7a44469833acba7a7b4071"
-agent = "Claude 931ae605-f1bd-431a-bedc-82984afcc371"
-role = "builder"
-base = "336c9c6f883d3f694472f1d3779c40097b9f6199"
-branch = "claude/issue-891-update-rule-import"
-scope = ["src/opentofu/github/organization.tf", "src/opentofu/github/tests/organization_rulesets.tftest.hcl"]
-opened_commit = "4acf4c9469914cd5b58744e93ba2d46f29460eb4"
