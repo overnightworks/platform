@@ -119,6 +119,9 @@ jobs:
       - name: Check that the Jobs bridge and settle carry the GPU image that speech-runtime-gpu renders, run no image of the app, mount a ConfigMap of their own layer rendered from the one script, and that the two layers render no object in common
         run: mise exec -- tests/speech_runtime/both_jobs_carry_the_rendered_gpu_release.sh
 
+      - name: Check that the Role bridge grants on a scale only get and update, only of the Deployment speech-runtime and never of speech-runtime-gpu
+        run: mise exec -- tests/speech_runtime/the_bridge_role_scales_only_the_cpu_deployment.sh
+
       - name: Check that cutover:load and cutover:check name each difference, print no value, exit 1 or 2 and make only the listed calls
         run: mise exec -- tests/cutover/load_and_check_name_each_difference_and_print_no_value.sh
 
