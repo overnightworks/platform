@@ -925,6 +925,11 @@ jobs:
         if: matrix.part == 'presentator-2'
         run: tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh presentator
 
+      # Last of its part: the cell leaves the layer speech-runtime on a stand-in release.
+      - name: Assert that a GPU release keeps a Ready speech pod from the Job bridge to the Job settle, that two releases within one roll leave the small image up until the second release's GPU pod is Ready, and that each Job is a new object
+        if: matrix.part == 'speech'
+        run: tests/speech_runtime/a_gpu_release_keeps_a_ready_speech_pod_from_bridge_to_settle.sh
+
       - name: Assert that presentator's Namespace enforces nothing and warns and audits at restricted, and that no Pod template of a layer runs as 61001 or 61002
         if: matrix.part == 'apps'
         run: tests/presentator/namespace_warns_at_restricted_and_no_template_takes_its_uids.sh
