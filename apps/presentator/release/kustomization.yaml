@@ -6,7 +6,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: ghcr.io/overnightworks/presentator
-    newTag: 2026.11.23.1
-    digest: sha256:15e197132efe7b32475344b4025e870e911308f9303e9765a229660ee1cd6779
+    newTag: 2026.11.24.1
+    digest: sha256:5c10438d32582b9edb15d6c0144fd40bc35fbe4dec1a3a0b2fa91238b38bf622
 configurations:
   - image-volume.yaml
