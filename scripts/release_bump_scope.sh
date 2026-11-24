@@ -4,7 +4,7 @@
 # scripts/release_bump_compute.sh writes. Every changed path is a regular file edited in place: one app's
 # apps/<app>/release/kustomization.yaml, its legal copies under infrastructure/legal/app-texts/<app>/, its tables of
 # infrastructure/legal/app-texts.toml and the rebuilt pages under infrastructure/legal/built/. The changed paths name
-# one app; a Component keeps its names, the variant suffix of each tag and every other field and moves its images, which
+# one app; a Component keeps its names, the variant of each tag and every other field and moves its images, which
 # sit at one version, to a newer version and a digest; the list changes only inside the app's tables. A script, another
 # app's file, a name change, an added or deleted file, a renamed one (judged as the deletion and addition it is), a mode
 # or type change and an older version are refused.
@@ -52,10 +52,17 @@ at() { git show "$1:$2"; }
 if [ "$(at "${base}" "${component}" | sha256sum)" != "$(at "${merge}" "${component}" | sha256sum)" ]; then
   at "${base}" "${component}" >"${workspace}/base.yaml"
   at "${merge}" "${component}" >"${workspace}/merge.yaml"
-  # What a bump keeps: every name and field, and each release tag's variant suffix; the version and the digest move.
-  # A tag that is no release version is judged below.
-  strip="del(.images[].digest) | (.images[] | select(.newTag != null) | .newTag) |= (if test(\"^${version_pattern}\") then sub(\"^${version_pattern}\", \"\") else \"\" end)"
-  [ "$(yq -o json -I 0 "${strip}" "${workspace}/base.yaml")" = "$(yq -o json -I 0 "${strip}" "${workspace}/merge.yaml")" ] ||
+  # What a bump keeps: every name and field, and each image's variant; the version and the digest move.
+  # variants <file>: each image's variant on one line.
+  variants() {
+    while IFS= read -r tag; do
+      read -r _ variant < <(split_image_tag "${tag}")
+      echo "[${variant}]"
+    done < <(yq '.images[].newTag' "$1")
+  }
+  keep="del(.images[].newTag, .images[].digest)"
+  [ "$(yq -o json -I 0 "${keep}" "${workspace}/base.yaml")" = "$(yq -o json -I 0 "${keep}" "${workspace}/merge.yaml")" ] &&
+    [ "$(variants "${workspace}/base.yaml")" = "$(variants "${workspace}/merge.yaml")" ] ||
     refuse "${component} changes more than the version and digest of its images, or their names or variants"
   while IFS= read -r digest; do
     [[ ${digest} =~ ^${digest_pattern}$ ]] || refuse "${component} holds the digest '${digest}', which is no sha256 digest"

@@ -83,8 +83,8 @@ fi
 # A missing image is an unfinished release; any other failure of the registry is a failure.
 for index in "${!names[@]}"; do
   name="${names[index]}"
-  variant="$(yq ".images[${index}].newTag" "${component}")"
-  tag="${version}${variant#"${current}"}"
+  read -r _ variant < <(split_image_tag "$(yq ".images[${index}].newTag" "${component}")")
+  tag="${version}${variant}"
   if ! manifest="$(docker buildx imagetools inspect "${name}:${tag}" --format '{{json .Manifest}}' 2>"${workspace}/inspect-errors")"; then
     grep -qi 'not found' "${workspace}/inspect-errors" || { cat "${workspace}/inspect-errors" >&2; exit 2; }
     echo "release_bump: ${app}: ${name}:${tag} is not in the registry yet, so it waits"

@@ -8,7 +8,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/release_bump_patterns.sh"
 
 [ "$#" -eq 1 ] || { echo "usage: release_bump_component_version.sh <kustomization file>" >&2; exit 2; }
 tags="$(yq '.images[].newTag' "$1")" || exit 2
-versions="$(while IFS= read -r tag; do echo "${tag%"${APP_IMAGE_VARIANT_SUFFIX}"}"; done <<<"${tags}" | sort -u)"
+versions="$(while IFS= read -r tag; do read -r version _ < <(split_image_tag "${tag}"); echo "${version}"; done <<<"${tags}" | sort -u)"
 [ -n "${versions}" ] && [ "$(wc -l <<<"${versions}")" -eq 1 ] || {
   echo "release_bump_component_version: the images of $1 are at more than one version or none: $(tr '\n' ' ' <<<"${versions}")" >&2
   exit 1
