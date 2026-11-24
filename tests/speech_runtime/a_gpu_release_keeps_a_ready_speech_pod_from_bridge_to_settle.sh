@@ -89,15 +89,12 @@ move_gpu_ref() {
 }
 
 # serve_commit <message>: commits the tree as a child of the last commit, serves it as the candidate and reconciles it. The
-# GPU Deployment keeps the count Git gives it, as the stand-in runs. The source is fetched before the overlay changes the
-# layer's patches: a layer whose spec changed reconciles at once at the revision it holds, which would give the old GPU
-# Deployment, with its card and runtime class, the count of one and make the layer wait on a pod that k3d cannot start.
+# GPU Deployment keeps the count Git gives it, as the stand-in runs.
 serve_commit() {
   git -C "$tree" -c user.name="speech release" -c user.email="speech-release@invalid" commit --quiet --no-verify --all --message="$1"
   revision="$(git -C "$tree" rev-parse HEAD)"
   git push --quiet "$served" "${revision}:refs/heads/${CANDIDATE_BRANCH}"
   echo "the candidate branch serves $revision: $1"
-  flux reconcile source git flux-system --timeout="${phase_seconds}s"
   local scratch
   scratch="$(mktemp -d)"
   RUNNER_TEMP="$scratch" CANDIDATE_REVISION="$revision" SPEECH_GPU_STAND_IN=1 "$cells/flux/reconcile_the_candidate_tree.sh" >/dev/null
@@ -148,8 +145,16 @@ echo "the stand-in starts at the previous CPU release $previous_tag and the GPU 
 # The stand-in at the previous release, with the card given to speech: it at one pod, the small image at none.
 stand_in
 move_gpu_ref "$previous_tag" "$previous_digest"
+# The overlay that serves the stand-in drops the count patch of the layer speech-runtime and points the source at the new
+# commit in one apply. A layer whose spec changed reconciles at once at the revision it holds, which would give the old GPU
+# Deployment, with its card and runtime class, the count of one and keep the layer waiting on a pod that k3d cannot create.
+# The layer stands still until the source holds the stand-in.
+flux suspend kustomization "$layer"
+layer_suspended=1
 serve_commit "Stand in a CPU Deployment for the GPU Deployment at the previous CPU release"
 stand_in_revision="$revision"
+flux resume kustomization "$layer" >/dev/null
+layer_suspended=""
 until_true "$phase_seconds" "the Kustomization $layer applied the stand-in $stand_in_revision" applied "$layer" "$stand_in_revision"
 kubectl --namespace "$namespace" scale "deployment/$gpu" --replicas=1 >/dev/null
 kubectl --namespace "$namespace" wait "deployment/$gpu" --for=jsonpath='{.status.readyReplicas}'=1 --timeout="${phase_seconds}s" >/dev/null
