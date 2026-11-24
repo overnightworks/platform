@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run the steps of ci.yml's release-bump-scope job, as yq reads them from the file, against a fixture platform remote:
-# an allowed bump passes; a script, another app's table or file, a name change, an older version, a deletion, a mode or
-# type change and a rename out of a protected path are red; a head that edits the guard stays red, since the base's
+# an allowed bump passes, also one of an app whose Component names two variants of one repository; a script, another app's table or file, a name change, an older version, a deletion, a mode or
+# type change and a rename out of a protected path are red, as are a Component whose images sit at two versions and a
+# variant that moves between base and bump; a head that edits the guard stays red, since the base's
 # script judges; a bump whose base lacks the script is red; a push, a schedule, a dispatch, a pull request from another
 # branch and one from a fork pass with one line. The cell runs only the checkout action, by a plain git fetch of the
 # ref the step names, and refuses any other action, expression or condition the job comes to use.
@@ -122,7 +123,19 @@ bump() {
   sed -i '/^\[hopin.datenschutz\]/,/^$/ s/^sha256 = .*/sha256 = "0000000000000000000000000000000000000000000000000000000000000000"/' infrastructure/legal/app-texts.toml
   echo '<p>new</p>' >>infrastructure/legal/built/datenschutz.html
 }
+# What a release bump of speech-runtime changes: both images of its Component, to one version, each with its variant.
+speech_component=apps/speech-runtime/release/kustomization.yaml
+move_speech_image() { # <index> <version>
+  local variant
+  variant="$(yq ".images[$1].newTag" "${speech_component}")" variant="${variant#"${fixture_main_release}"}"
+  INDEX="$1" TAG="$2${variant}" DIGEST="$(digest_of ghcr.io/overnightworks/speech "$2${variant}")" \
+    yq -i '.images[env(INDEX)] |= (.newTag = strenv(TAG) | .digest = strenv(DIGEST))' "${speech_component}"
+}
+bump_speech() { move_speech_image 0 "${newest}"; move_speech_image 1 "${newest}"; }
+bump_one_speech_image() { move_speech_image 0 "${newest}"; }
+bump_speech_images_to_two_versions() { move_speech_image 0 "${newest}"; move_speech_image 1 2099.12.30.1; }
 bump_and() { bump; "$@"; }
+bump_speech_and() { bump_speech; "$@"; }
 add_a_script() { echo 'echo hi' >scripts/added.sh; }
 edit_a_script() { echo 'echo hi' >>scripts/release_bump_compute.sh; }
 edit_the_guard() { echo 'exit 0' >scripts/release_bump_scope.sh; }
@@ -131,6 +144,11 @@ add_an_indented_table_of_another_app_inside_the_app() { sed -i '/^\[hopin.datens
 edit_another_apps_copy() { echo '<p>new</p>' >>infrastructure/legal/app-texts/skat/datenschutz.html; }
 rename_the_image() { sed -i 's|ghcr.io/overnightworks/hopin|ghcr.io/overnightworks/hopin-other|' apps/hopin/release/kustomization.yaml; }
 edit_another_field() { sed -i 's|image-volume.yaml|other.yaml|' apps/hopin/release/kustomization.yaml; }
+add_a_variant() { set_component "${newest}${APP_IMAGE_VARIANT_SUFFIX}" "$(digest_of ghcr.io/overnightworks/hopin "${newest}${APP_IMAGE_VARIANT_SUFFIX}")"; }
+swap_the_variants() {
+  INDEX=0 TAG="${newest}${APP_IMAGE_VARIANT_SUFFIX}" yq -i '.images[env(INDEX)].newTag = strenv(TAG)' "${speech_component}"
+  INDEX=1 TAG="${newest}" yq -i '.images[env(INDEX)].newTag = strenv(TAG)' "${speech_component}"
+}
 run_a_tag_that_is_no_release() { set_component latest "$(digest_of ghcr.io/overnightworks/hopin latest)"; }
 run_an_older_release() { set_component 2020.01.01.1 "$(digest_of ghcr.io/overnightworks/hopin 2020.01.01.1)"; }
 run_the_same_release() { set_component "${main_version}" "$(digest_of ghcr.io/overnightworks/hopin other)"; }
@@ -152,16 +170,23 @@ touch_nothing() { :; }
 open_pull_request bump
 expect_green "an allowed bump" "the bump of hopin is in scope" pull_request release/hopin "${repository}"
 
+open_pull_request bump_speech
+expect_green "a bump of two variants of one repository" "the bump of speech-runtime is in scope" pull_request release/speech-runtime "${repository}"
+
 expect_red "a bump that adds a script" "scripts/added.sh is outside what a bump changes" bump_and add_a_script
 expect_red "a bump that edits a script" "scripts/release_bump_compute.sh is outside what a bump changes" bump_and edit_a_script
 expect_red "a bump that edits another app's table" "changes outside the tables of hopin" bump_and edit_the_list_outside_the_app
 expect_red "a bump that adds an indented table of another app inside the app's tables" "changes outside the tables of hopin" bump_and add_an_indented_table_of_another_app_inside_the_app
 expect_red "a bump that edits another app's copy" "name 2 apps" bump_and edit_another_apps_copy
-expect_red "a bump that renames an image" "names of its images" bump_and rename_the_image
-expect_red "a bump that edits another field of the Component" "more than newTag and digest" bump_and edit_another_field
+expect_red "a bump that renames an image" "their names or variants" bump_and rename_the_image
+expect_red "a bump that edits another field of the Component" "more than the version and digest" bump_and edit_another_field
 expect_red "a bump to a tag that is no release version" "which is no release version" bump_and run_a_tag_that_is_no_release
 expect_red "a bump to an older release" "not newer than" bump_and run_an_older_release
 expect_red "a bump that keeps the version" "not newer than" bump_and run_the_same_release
+expect_red "a bump that moves one of two variant images" "not at one version in the merge" bump_one_speech_image
+expect_red "a bump that moves two variant images to two versions" "not at one version in the merge" bump_speech_images_to_two_versions
+expect_red "a bump that adds a variant to an image" "or their names or variants" bump_and add_a_variant
+expect_red "a bump that swaps the variants of two images" "or their names or variants" bump_speech_and swap_the_variants
 expect_red "a bump with a bad digest" "no sha256 digest" bump_and write_a_bad_digest
 expect_red "a bump that deletes a page" "is D from mode 100644 to 000000" bump_and delete_a_page
 expect_red "a bump that changes a page's mode" "from mode 100644 to 100755" bump_and change_a_mode

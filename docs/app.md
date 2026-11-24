@@ -83,11 +83,13 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 - **Description.** Its manifests live only in platform, under `apps/<app>/`. Its image ref changes only in a pull
   request; a value the image validates, such as a caller table, changes in the same pull
   request as the ref. For an app with a Component `apps/<app>/release`, `mise run release:bump <app> [version]` makes
-  that pull request from the app's newest release: it sets the tag and digest, refreshes the app's legal copies and
+  that pull request from the app's newest release: it sets the tag and digest, refreshes the legal copies of an app that has legal pages and
   rebuilds the legal pages, and pushes `release/<app>` only when its patch differs from the open branch's or the
   branch conflicts with main. A release that needs other settings (a changed legal page set, a new variable) stays an
-  ordinary lane. speech-runtime's Component holds two images of one repository under placeholder names, which
-  `release:bump` refuses, so its release stays an ordinary lane.
+  ordinary lane. The command bumps a Component whose images come from one repository of the owner, named by `newName`
+  or `name`, and moves each image to the new version with the variant suffix its tag carries (speech-runtime's two
+  images of one repository, the second tagged `<version>-gpu`); a Component of images from two repositories stays an
+  ordinary lane.
 - **Pod shape.** Each pod passes Pod Security `restricted` in its namespace and admission's image policy.
 - **Readiness.** Each long-running process exposes a readiness check, an HTTP route or a command, that fails while it
   cannot serve. Flux reports a layer Ready only once its pods are, so a check that passes too early hides a broken start.
