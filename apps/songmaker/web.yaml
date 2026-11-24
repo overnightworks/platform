@@ -89,8 +89,8 @@ spec:
               value: json
             - name: HOST
               value: 0.0.0.0
-            # The Host check admits the public host, localhost, the host of the kubelet's probe, web, the name the
-            # GPU worker sends with its control-plane URL, and the Service's name Prometheus scrapes it by.
+            # The Origin allowlist: the public host, localhost, web and the Service's name, which the GPU worker sends
+            # with its control-plane URL and Prometheus scrapes by. The web answers any Host.
             - name: ALLOWED_HOSTS
               value: songmaker.hallucinai.de,web,web.songmaker.svc,localhost
             # The pod network, where Traefik's pods change address on every restart; the NetworkPolicies below admit
