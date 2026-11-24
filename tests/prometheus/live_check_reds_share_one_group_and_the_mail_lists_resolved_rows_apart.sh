@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Proves the route of docs/operations.md OPS-22 with the Alertmanager image the render pins: amtool loads the rendered file
+# Proves the route of docs/operations.md OPS-23 with the Alertmanager image the render pins: amtool loads the rendered file
 # once the init container's placeholders are filled and sends both live check alertnames to the sub-route and no other;
 # a running Alertmanager holds two firing LiveCheckRed alerts of different rows in one group and another alert in a group
 # of its own; and the receiver's text, rendered for one firing and one resolved row, lists the resolved row only under

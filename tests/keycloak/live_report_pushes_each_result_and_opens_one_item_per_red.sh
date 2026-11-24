@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Drive scripts/live_check_report.sh against fakes of mise (which scripts the exits and result lines of `live:check` per
-# attempt), kubectl (the Secret, the forward line, the `tunnel` Kustomization's suspend), curl (which records each push
-# and checks the token it reads on stdin) and gh (which keeps the open items per app repository and searches them by
-# title), for what the live stack cannot arrange: that a green pushes success=true once and opens no item; that a red
-# then green pushes true once and opens none; that a red twice pushes false with the codes and opens one item at the app,
-# naming the step and whose side the cause is on, unless one is open; that a skipped twice pushes nothing; that the
-# command's lock (exit 4) is waited for and never pushed red; that the report's own lock serializes with a bound; that an
-# offline platform pushes and opens nothing, also when it goes offline between the steps; that a failed push or item
-# does not hide the other and fails the run; and that the token stands in no argument, environment or output.
+# Proves docs/operations.md OPS-22: drives scripts/live_check_report.sh against fakes of mise (which scripts the exits
+# and result lines of `live:check` per attempt), kubectl (the Secret, the forward line, the `tunnel` Kustomization's
+# suspend), curl (which records each push and checks the token it reads on stdin) and gh (which keeps the open items
+# per app repository and searches them by title), for what the live stack cannot arrange: that a green pushes
+# success=true once and opens no item; that a red then green pushes true once and opens none; that a red twice pushes
+# false with the codes and opens one item at the app, naming the step and whose side the cause is on, unless one is
+# open; that a skipped twice pushes nothing; that the command's lock (exit 4) is waited for and never pushed red; that
+# the report's own lock serializes with a bound; that an offline platform pushes and opens nothing, also when it goes
+# offline between the steps; that a failed push or item does not hide the other and fails the run; and that the token
+# stands in no argument, environment or output.
 # Usage: tests/keycloak/live_report_pushes_each_result_and_opens_one_item_per_red.sh
 set -euo pipefail
 
