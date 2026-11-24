@@ -133,6 +133,14 @@ run "the_update_ruleset_refuses_every_update_of_platforms_default_branch_but_the
   }
 
   assert {
+    condition = alltrue([
+      for rule, value in github_organization_ruleset.platform_main_update_by_admin_only.rules[0] :
+      rule == "update" ? value == true : (value == null || value == false || try(length(value) == 0, false))
+    ])
+    error_message = "The ruleset must hold the update rule and no other rule."
+  }
+
+  assert {
     condition = (
       github_organization_ruleset.platform_main_update_by_admin_only.conditions[0].ref_name[0].include == github_organization_ruleset.quality_verdict_required.conditions[0].ref_name[0].include
       && github_organization_ruleset.platform_main_update_by_admin_only.conditions[0].repository_name[0].include == tolist(["platform"])

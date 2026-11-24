@@ -37,3 +37,8 @@ import {
   to = module.organization.github_organization_ruleset.code_scanning_required
   id = "26872357"
 }
+
+import {
+  to = module.organization.github_organization_ruleset.platform_main_update_by_admin_only
+  id = "27944592"
+}
