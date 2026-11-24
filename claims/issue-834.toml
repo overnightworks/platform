@@ -1,0 +1,8 @@
+claim_id = "d233e7827398404e90753f3ef48d0a38"
+agent = "Claude 931ae605-f1bd-431a-bedc-82984afcc371"
+role = "builder"
+base = "e791a51486a81b76e6ce671f2561bae0798fd597"
+branch = "claude/issue-834-songmaker-s-music-worker-starts-without"
+scope = ["apps/songmaker/music-worker.yaml", "apps/songmaker/release/kustomization.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/songmaker", "infrastructure/legal/built"]
+opened_commit = "a567d6a534f5610127f025372c16d18c6fbe2558"
+whole_reason = "The release ref and the worker manifest that its image needs move in one pull request, with the legal copies the release refreshes."
