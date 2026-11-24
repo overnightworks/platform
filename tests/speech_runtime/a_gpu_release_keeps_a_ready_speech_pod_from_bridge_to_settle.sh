@@ -8,9 +8,9 @@
 # current CPU release. The cell proves the order from timestamps: the small pod turns Ready before the old GPU pod is killed,
 # and the new GPU pod turns Ready before the small pod is killed; a sample of the Service's endpoints each second never
 # shows none from the small pod's Ready to the end. Then, with the layer speech-runtime suspended, it commits a second
-# release, waits until the new Job bridge raised the small image, applies the Job settle of the first release by hand, which
-# finds the newer release pending and leaves the small image up, and resumes the layer: the Job settle of the second release
-# lowers it. Each Job is a new object each time. Every wait ends within the time of one phase, so that a stall fails the cell
+# release, waits until the new Job bridge raised the small image, runs the Job settle of the first release under a name of its
+# own, which finds the newer release pending and leaves the small image up, and resumes the layer: the Job settle of the
+# second release lowers it. Each Job is a new object each time. Every wait ends within the time of one phase, so that a stall fails the cell
 # with the state of the layers, the pods, the Jobs and their logs inside the part's time limit, which a cancelled job would not print.
 set -euo pipefail
 # shellcheck source=../failure.sh
@@ -206,9 +206,11 @@ gaps="$(awk -v since="$small_ready" '$1 >= since && $2 == 0' "$samples")"
 echo "the Service had a ready endpoint in each of $(awk -v since="$small_ready" '$1 >= since' "$samples" | wc -l) samples from the small pod's Ready to the end"
 
 # Two releases within one roll: the layer speech-runtime stands still while the Job bridge of the second runs.
+# The first release's Job settle runs under a name of its own, since a Job that kubectl created or applied under the name
+# settle would carry a field manager that Flux cleans from the object it then replaces, and that fails on the deleted Job.
 settle_of_release="$RUNNER_TEMP/settle-of-the-first-release.yaml"
 kubectl kustomize "$tree/apps/speech-runtime" |
-  yq 'select((.kind == "Job" and .metadata.name == "settle") or (.kind == "ConfigMap" and (.metadata.name | test("^speech-bridge-settle-"))))' >"$settle_of_release"
+  yq 'select(.kind == "Job" and .metadata.name == "settle") | .metadata.name = "settle-of-the-first-release" | del(.metadata.annotations)' >"$settle_of_release"
 bridge_before="$(uid_of job bridge)"
 flux suspend kustomization "$layer"
 layer_suspended=1
@@ -221,10 +223,9 @@ until_true "$phase_seconds" "the Kustomization $bridge_layer applied $second_rev
 kubectl --namespace "$namespace" wait "deployment/$small" --for=jsonpath='{.status.readyReplicas}'=1 --timeout="${phase_seconds}s" >/dev/null
 echo "the Job bridge of the second release raised the small image to one Ready pod"
 
-# The Job settle of the first release, applied again by hand, finds the newer release pending and leaves the small image up.
-kubectl --namespace "$namespace" delete job settle --wait >/dev/null
-kubectl apply -f "$settle_of_release" >/dev/null
-kubectl --namespace "$namespace" wait job/settle --for=condition=complete --timeout="${phase_seconds}s" >/dev/null
+# The Job settle of the first release finds the newer release pending and leaves the small image up.
+kubectl create -f "$settle_of_release" >/dev/null
+kubectl --namespace "$namespace" wait job/settle-of-the-first-release --for=condition=complete --timeout="${phase_seconds}s" >/dev/null
 [ "$(replicas_of "$small")" -eq 1 ] || fail "the Job settle of the first release lowered the small image to $(replicas_of "$small") although a newer release was pending"
 echo "the Job settle of the first release left the small image up for the second release"
 
