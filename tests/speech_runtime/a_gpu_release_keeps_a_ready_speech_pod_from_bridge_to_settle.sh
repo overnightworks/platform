@@ -35,19 +35,16 @@ release_component="$tree/apps/speech-runtime/release/kustomization.yaml"
 git worktree add --quiet --detach "$tree" "$CANDIDATE_REVISION"
 sampler_pid=""
 layer_suspended=""
-# diagnose: what a stalled or failed phase leaves in the cluster, read only and never failing.
+# diagnose: what the step "Print Flux's state" lacks after a stalled or failed phase: the namespace's Normal events (the scale
+# and the kills of the roll) and the logs of the Jobs, read only and never failing.
 diagnose() {
-  echo "::group::the state of $layer and $bridge_layer at the failure"
-  kubectl --namespace flux-system get kustomization "$bridge_layer" "$layer" -o jsonpath='{range .items[*]}{.metadata.name}{" applied "}{.status.lastAppliedRevision}{": "}{.status.conditions[?(@.type=="Ready")].status}{" "}{.status.conditions[?(@.type=="Ready")].message}{"\n"}{end}' || true
-  kubectl --namespace "$namespace" get deployments,pods,jobs --output wide || true
-  kubectl --namespace "$namespace" get events --sort-by=.lastTimestamp || true
+  echo "::group::the Normal events and the Jobs' logs of $namespace at the failure"
+  kubectl --namespace "$namespace" get events --field-selector type=Normal --sort-by=.lastTimestamp || true
   local job
-  for job in bridge settle; do
+  for job in bridge settle settle-of-the-first-release; do
     echo "the log of the Job $job:"
     kubectl --namespace "$namespace" logs "job/$job" --tail=40 || true
   done
-  echo "the log of $gpu:"
-  kubectl --namespace "$namespace" logs "deployment/$gpu" --tail=40 || true
   echo "::endgroup::"
 }
 cleanup() {

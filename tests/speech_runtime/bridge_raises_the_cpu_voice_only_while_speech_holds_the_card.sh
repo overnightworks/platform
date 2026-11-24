@@ -103,9 +103,6 @@ esac
 FAKE
 chmod +x "$work_directory/kubectl"
 ln -s ../kubectl "$fake_bin/kubectl"
-# A wait that fails at once is retried after a pause, which the cell does not take.
-printf '#!/bin/sh\n' >"$fake_bin/sleep"
-chmod +x "$fake_bin/sleep"
 
 old_image=ghcr.io/example/speech:1.0-gpu@sha256:aaaa
 release_image=ghcr.io/example/speech:2.0-gpu@sha256:bbbb
