@@ -16,10 +16,11 @@ bump() {
   (cd "${checkout}" && "${repository_root}/scripts/release_bump_compute.sh" hopin "${output}" "$@" &&
     "${repository_root}/scripts/release_bump_publish.sh" hopin "${output}") 2>&1
 }
-# release_and_bump <version> [change]: the app releases <version>, the registry holds it, and the bump runs; the output is in $log.
+# release_and_bump <version> [change]: the app releases <version>, the registry holds it (unless registered=no), and the
+# bump runs; the output is in $log.
 release_and_bump() {
   app_release "$@"
-  registry_add "${image}" "$1"
+  [ "${registered:-yes}" = no ] || registry_add "${image}" "$1"
   log="$(bump)"
 }
 branch_tip() { git ls-remote "${platform}" refs/heads/release/hopin | cut -f1; }
@@ -46,16 +47,23 @@ release_and_bump 2026.11.25.1 || fail "the newer bump failed: ${log}"
 grep -q 'pr edit 1 --title hopin runs release 2026.11.25.1' "${work}/gh-calls" || fail "a newer release did not edit the pull request"
 echo "a newer release moves the branch and edits the one pull request"
 
-# Lines added to the open pull request's body by others survive the next bump, and the Release line stays one.
-{ printf 'Release: https://example.org/old\n'; printf 'Work-Item: #7\n'; printf 'Closes #7\n'; } >"${gh_state}/body"
-landed_version=2026.11.25.2
-release_and_bump "${landed_version}" || fail "the bump over a body with other lines failed: ${log}"
-body="$(cat "${gh_state}/body")"
-[ "$(grep -c '^Release: ' <<<"${body}")" -eq 1 ] && ! grep -q 'example.org/old' <<<"${body}" ||
-  fail "the body does not carry the new Release line once: ${body}"
-grep -qx 'Work-Item: #7' <<<"${body}" && grep -qx 'Closes #7' <<<"${body}" || fail "the bump dropped a line it did not write: ${body}"
-! grep -qx '' "${gh_state}/body" || fail "the bump added a blank line to the body: ${body}"
-echo "a newer release keeps the lines of the pull request's body it did not write and adds no blank line"
+# bump_over_body <label> <version> <seeded body> <expected body>: the open pull request's body is seeded, a newer release
+# bumps over it, and the body is then exactly the expected one, RELEASE standing for the Release line the bump computed.
+bump_over_body() {
+  local label="$1" version="$2" seeded="$3" expected="$4"
+  printf '%s\n' "${seeded}" >"${gh_state}/body"
+  release_and_bump "${version}" || fail "${label}: the bump failed: ${log}"
+  printf '%s\n' "${expected//RELEASE/$(cat "${output}/body")}" | cmp -s - "${gh_state}/body" ||
+    fail "${label}: the body is not the expected one: $(cat "${gh_state}/body")"
+  echo "a newer release keeps the lines of the pull request's body it did not write, in order, and adds no blank line (${label})"
+}
+bump_over_body "its Release line first" 2026.11.25.2 \
+  $'Release: https://example.org/old\nWork-Item: #7\nCloses #7' $'RELEASE\nWork-Item: #7\nCloses #7'
+bump_over_body "no Release line" 2026.11.25.3 \
+  $'Work-Item: #7\nCloses #7' $'RELEASE\nWork-Item: #7\nCloses #7'
+landed_version=2026.11.25.4
+bump_over_body "its Release line in the middle" "${landed_version}" \
+  $'Work-Item: #7\nRelease: https://example.org/old\nCloses #7' $'Work-Item: #7\nRELEASE\nCloses #7'
 
 # Main runs the older release a caller names: the open pull request proposes a newer one and stays.
 tip="$(branch_tip)"
@@ -86,10 +94,9 @@ grep -qF "pr close 1 --delete-branch --comment main runs release ${landed_versio
 echo "a release that main runs closes the open pull request"
 
 # An unfinished release changes nothing: no gh call, no push.
-app_release 2026.11.26.1
-: >"${work}/gh-calls"
 tip="$(branch_tip)"
-log="$(bump)" || fail "the bump of an unfinished release failed: ${log}"
+: >"${work}/gh-calls"
+registered=no release_and_bump 2026.11.26.1 || fail "the bump of an unfinished release failed: ${log}"
 [ ! -s "${work}/gh-calls" ] && [ "$(branch_tip)" = "${tip}" ] || fail "an unfinished release called gh or pushed"
 echo "an unfinished release changes nothing"
 
