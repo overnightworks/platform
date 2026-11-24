@@ -3,7 +3,9 @@ set -euo pipefail
 # The job root is the PC's own clusters/pc/flux-system as a kustomize base, no file copied. The overlay adds
 # only Flux's spec.patches on the root and the source's url and ref, which serve the run's candidate. The part
 # CLUSTER_PART names applies its own layers and what they depend on (tests/flux/parts.yaml); the root's patches delete
-# every other layer's Kustomization, and the part core deletes none.
+# every other layer's Kustomization, and the part core deletes none. SPEECH_GPU_STAND_IN, when set, leaves speech's GPU
+# Deployment at the count Git gives it instead of patching it to none: the cell that rolls it commits a CPU stand-in for
+# it (tests/speech_runtime/a_gpu_release_keeps_a_ready_speech_pod_from_bridge_to_settle.sh).
 part_closure="$(dirname "${BASH_SOURCE[0]}")/part_closure.sh"
 : "${CLUSTER_PART:?the part of the cluster job, one of tests/flux/parts.yaml}"
 applied_layers="$("$part_closure" "$CLUSTER_PART")"
@@ -61,6 +63,9 @@ patches:
                       - op: replace
                         path: /spec/replicas
                         value: 0
+YAML
+if [ -z "${SPEECH_GPU_STAND_IN:-}" ]; then
+  cat >> "$overlay/kustomization.yaml" <<'YAML'
           # k3d has no card: a pod of speech's GPU image would stay Pending on nvidia.com/gpu, and the Kustomization
           # speech-runtime, which waits, would never turn Ready; the Deployment applies and runs no pod, so its image
           # stays off the node too.
@@ -74,6 +79,9 @@ patches:
                       - op: add
                         path: /spec/replicas
                         value: 0
+YAML
+fi
+cat >> "$overlay/kustomization.yaml" <<'YAML'
           # The acestep-worker runs no pod in k3d, so its image stays off the node. The scoring-worker's, about 4 GB and
           # most of the pull time, stays off the Job too: the Job would pull it before songmaker's layer starts, and the
           # wait for every Kustomization would then run that pull and the layer's start one after the other. Its own pod

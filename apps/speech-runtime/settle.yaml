@@ -1,0 +1,73 @@
+# After a speech GPU release rolled, waits until the new GPU pod is Ready and lowers speech's small image to none again, the
+# count `gpu:use speech` leaves (speech_bridge.sh, mode settle). Its pod template carries the release's GPU ref in the
+# annotation gpu-image, as the Job bridge's does, so a new release re-creates it. It runs after the Deployments of this layer
+# are applied, so it reads the GPU Deployment until that holds the release's image. The deadline is the GPU image's pull,
+# its start and the small image's drain, below the layer's timeout of an hour. The ServiceAccount bridge and its Role stand in
+# the layer speech-runtime-bridge.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: settle
+  namespace: speech-runtime
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  # A pod lost to a disruption (preemption, eviction) counts against backoffLimit, so a retry covers it; a script that exits
+  # non-zero has decided, so it fails the Job at once. The first rule that matches wins, so the Count rule stands first: a
+  # killed pod exits 137, which the FailJob rule would match. The deadline bounds all attempts.
+  backoffLimit: 2
+  podFailurePolicy:
+    rules:
+      - action: Count
+        onPodConditions:
+          - type: DisruptionTarget
+      - action: FailJob
+        onExitCodes:
+          containerName: settle
+          operator: NotIn
+          values: [0]
+  activeDeadlineSeconds: 3300
+  template:
+    metadata:
+      annotations:
+        gpu-image: speech-gpu
+      labels:
+        app.kubernetes.io/name: settle
+    spec:
+      restartPolicy: Never
+      serviceAccountName: bridge
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: settle
+          # The image of k8up's operator, which ships kubectl; its tag and digest are the Component's.
+          image: ghcr.io/k8up-io/k8up
+          command: [sh, /bridge/speech_bridge.sh, settle]
+          env:
+            - name: GPU_IMAGE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['gpu-image']
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: script
+              mountPath: /bridge
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: script
+          configMap:
+            name: speech-bridge-settle
+        - name: tmp
+          emptyDir:
+            medium: Memory

@@ -1,6 +1,9 @@
 # The release of speech's two images, which stand in one repository: the CPU image and its -gpu variant of the same
 # version. Both containers name one repository, so the entries cannot share the real name; each container names its own
-# placeholder and the entries are independent of their order. A bump changes both tags and digests together.
+# placeholder and the entries are independent of their order. A bump changes both tags and digests together. The
+# field spec makes the transform write the GPU ref into the annotation gpu-image of a Job's pod template too, which it
+# leaves alone by default: the Jobs of the bridge layer and of speech-runtime read the ref from it, and a changed ref
+# changes both Job templates, which Flux re-creates.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
@@ -12,3 +15,5 @@ images:
     newName: ghcr.io/overnightworks/speech
     newTag: 2026.11.18.1-gpu
     digest: sha256:1b0b136ca64e96fd0b2727a13557b8644dc9b4ce66b1be55d359c65d201a94f2
+configurations:
+  - gpu-image.yaml

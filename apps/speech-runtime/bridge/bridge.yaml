@@ -1,0 +1,116 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bridge
+---
+# What both Jobs read and scale: the two Deployments' state, the small image's count, and the Job bridge's annotation. A scale
+# with a precondition reads and replaces the scale, so no right patches it. No right reaches the GPU image's scale, so no Job
+# can start or stop the card's user.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bridge
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [speech-runtime, speech-runtime-gpu]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    resourceNames: [speech-runtime]
+    verbs: [get, update]
+  - apiGroups: [batch]
+    resources: [jobs]
+    resourceNames: [bridge]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bridge
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: bridge
+subjects:
+  - kind: ServiceAccount
+    name: bridge
+---
+# Before a GPU release rolls, raises speech's small image to one pod and waits until it is Ready, so the Service keeps a Ready
+# pod through the card's Recreate roll (speech_bridge.sh, mode up). It runs once per change of its template: the annotation
+# gpu-image holds the release's GPU ref, so a new release re-creates it, and a Job's template is immutable, so Flux deletes
+# and creates it. No ttlSecondsAfterFinished: a Job gone after its run would make Flux create it at every interval. The pod
+# carries no label part-of speech-runtime, so neither the Service nor its NetworkPolicy selects it. It runs no app image,
+# so it needs no pull layer. A pod that never turns Ready fails the Job at its deadline, below the layer's timeout, and
+# speech-runtime then applies nothing: the old GPU pod keeps serving. The wait is READY_SECONDS below: the CPU image's pull
+# (12 s on CI's runner, from the part speech's pull report) and its start (30 s of the readiness probe's delay and the models' load) with
+# ten minutes' margin, which also covers the pull at the PC's rate of about 6 MB/s for its 1 GB. activeDeadlineSeconds
+# stands two minutes above it, for the pod's own start and the scale, and is the one other value to change with it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bridge
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  # A pod lost to a disruption (preemption, eviction) counts against backoffLimit, so a retry covers it; a script that exits
+  # non-zero has decided, so it fails the Job at once. The first rule that matches wins, so the Count rule stands first: a
+  # killed pod exits 137, which the FailJob rule would match. The deadline bounds all attempts.
+  backoffLimit: 2
+  podFailurePolicy:
+    rules:
+      - action: Count
+        onPodConditions:
+          - type: DisruptionTarget
+      - action: FailJob
+        onExitCodes:
+          containerName: bridge
+          operator: NotIn
+          values: [0]
+  activeDeadlineSeconds: 780
+  template:
+    metadata:
+      annotations:
+        gpu-image: speech-gpu
+      labels:
+        app.kubernetes.io/name: bridge
+    spec:
+      restartPolicy: Never
+      serviceAccountName: bridge
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bridge
+          # The image of k8up's operator, which ships kubectl; its tag and digest are the Component's.
+          image: ghcr.io/k8up-io/k8up
+          command: [sh, /bridge/speech_bridge.sh, up]
+          env:
+            - name: GPU_IMAGE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['gpu-image']
+            - name: READY_SECONDS
+              value: "660"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: script
+              mountPath: /bridge
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: script
+          configMap:
+            name: speech-bridge-up
+        - name: tmp
+          emptyDir:
+            medium: Memory

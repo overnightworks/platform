@@ -36,21 +36,28 @@ jobs:
       - name: Validate the Dependabot configuration against its schema
         run: uvx --no-build check-jsonschema@0.39.0 --builtin-schema vendor.dependabot .github/dependabot.yml
 
-      - name: Check that every directory under apps/ has its Kustomization over it, its pull layer's directory its own, and every one of those a directory
-        # pipefail: a find or yq that fails after printing its names must fail the step, not pass the comparison.
+      - name: Check that every directory under apps/ has its Kustomization over it, every subdirectory of one whose kustomization.yaml is a Kustomization its own, and every one of those a directory
+        # pipefail: a find or yq that fails after printing its names must fail the step, not pass the comparison. A
+        # subdirectory that is a Component, as release is, is no layer.
         shell: bash
         run: |
           directories="$(find apps -mindepth 1 -maxdepth 1 -type d -printf '%f\n')"
           expected="$(for directory in $directories; do
             echo "$directory ./apps/$directory"
-            if [ -d "apps/$directory/pull" ]; then echo "$directory-pull ./apps/$directory/pull"; fi
+            for layer in apps/"$directory"/*/kustomization.yaml; do
+              [ -e "$layer" ] || continue
+              if [ "$(yq '.kind' "$layer")" = Kustomization ]; then
+                subdirectory="$(basename "$(dirname "$layer")")"
+                echo "$directory-$subdirectory ./apps/$directory/$subdirectory"
+              fi
+            done
           done | sort)"
           actual="$(yq --no-doc 'select(.kind == "Kustomization") | .metadata.name + " " + .spec.path' clusters/pc/apps.yaml | sort)"
           [ "$expected" = "$actual" ] || {
-            echo "::error::apps/ and its pull layers hold [$(echo $expected)], clusters/pc/apps.yaml holds Kustomizations [$(echo $actual)]"
+            echo "::error::apps/ and its layers hold [$(echo $expected)], clusters/pc/apps.yaml holds Kustomizations [$(echo $actual)]"
             exit 1
           }
-          echo "each directory under apps/ and each pull layer has its Kustomization: $(echo $expected)"
+          echo "each directory under apps/ and each layer in a subdirectory has its Kustomization: $(echo $expected)"
 
       - name: Install the pinned tools
         run: |
@@ -105,6 +112,15 @@ jobs:
 
       - name: Check that both speech pods mount /tmp, where an upload is spooled, as a memory-backed emptyDir
         run: mise exec -- tests/speech_runtime/upload_spool_is_memory_backed_in_both_speech_pods.sh
+
+      - name: Check that the bridge of a speech GPU release raises the small image and waits for it Ready only while speech holds the card, lowers it only once the GPU pod runs the release and no newer release is pending, keeps a count that gpu:use set, decides again after a refused scale and fails after the third, and never scales the GPU image
+        run: mise exec -- tests/speech_runtime/bridge_raises_the_cpu_voice_only_while_speech_holds_the_card.sh
+
+      - name: Check that the Jobs bridge and settle carry the GPU image that speech-runtime-gpu renders, run no image of the app, mount a ConfigMap of their own layer rendered from the one script, and that the two layers render no object in common
+        run: mise exec -- tests/speech_runtime/both_jobs_carry_the_rendered_gpu_release.sh
+
+      - name: Check that the Role bridge grants on a scale only get and update, only of the Deployment speech-runtime and never of speech-runtime-gpu
+        run: mise exec -- tests/speech_runtime/the_bridge_role_scales_only_the_cpu_deployment.sh
 
       - name: Check that cutover:load and cutover:check name each difference, print no value, exit 1 or 2 and make only the listed calls
         run: mise exec -- tests/cutover/load_and_check_name_each_difference_and_print_no_value.sh
@@ -911,6 +927,11 @@ jobs:
       - name: Assert that a release with a changed reference replaces the pull layer's Job, that the app's layer creates its new pods only after the new Job completed and that they find the image already present
         if: matrix.part == 'presentator-2'
         run: tests/workloads/a_changed_release_replaces_its_pull_job_and_the_app_waits_for_it.sh presentator
+
+      # Last of its part: the cell leaves the layer speech-runtime on a stand-in release.
+      - name: Assert that a GPU release keeps a Ready speech pod from the Job bridge to the Job settle, that two releases within one roll leave the small image up until the second release's GPU pod is Ready, and that each Job is a new object
+        if: matrix.part == 'speech'
+        run: tests/speech_runtime/a_gpu_release_keeps_a_ready_speech_pod_from_bridge_to_settle.sh
 
       - name: Assert that presentator's Namespace enforces nothing and warns and audits at restricted, and that no Pod template of a layer runs as 61001 or 61002
         if: matrix.part == 'apps'
