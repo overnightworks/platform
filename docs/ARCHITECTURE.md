@@ -65,7 +65,8 @@ NetworkPolicies.
 - Identity: `infrastructure/keycloak`, the realm `hallucinai` and master, applied by the Job `config-cli`.
 - AI: `infrastructure/litellm`, three parts: the gateway with keys and budgets in its Postgres, its front, and
   `agent-egress`, the one path to the providers. `apps/speech-runtime` runs a CPU Deployment and a GPU one behind one
-  Service; `infrastructure/nvidia` offers the node's one card.
+  Service, and its layer `speech-runtime-bridge` holds the Job that raises the CPU Deployment before a GPU release rolls;
+  `infrastructure/nvidia` offers the node's one card.
 - Data: `infrastructure/storage` (local-path, class Retain), `infrastructure/postgres`, `infrastructure/redis`,
   `infrastructure/objectstore` (Garage, S3 for apps).
 - Backup: `infrastructure/k8up` and `infrastructure/backup`, whose rest-server holds one repository per namespace.
@@ -132,6 +133,8 @@ Facts of today's boundaries, each held by a manifest or a cell:
   meet both; workload objects meet the form rule.
 - Secrets live in `platform-secrets`, decrypted by Flux with the age key in the Secret `sops-age`; this tree holds
   none, and the tunnel's token and credential are one Secret.
+- The ServiceAccount `bridge` of `speech-runtime-bridge` reads the two speech Deployments and scales only the CPU
+  one; no right reaches the GPU Deployment's scale, so no Job can start or stop the card's user.
 - LiteLLM's provider keys reach no host but those `infrastructure/litellm/egress-allowed.yml` lists: only `agent-egress`
   dials out, and it dials only those upstreams.
 - Keycloak's admin console, Grafana and Gatus are reached through a port-forward from the PC; the tunnel routes

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Sourced by the cells under tests/release_bump/: the world one release bump runs in, with no way out of it. The app
-# repository hopin and platform are bare repositories under $work/remote, which git reads for github.com through
+# repositories hopin and speech and platform are bare repositories under $work/remote, which git reads for github.com through
 # insteadOf, so a call that is not faked reaches nothing: docker and gh are fakes on PATH that answer only the calls the
 # scripts make and fail any other, git has neither a global configuration nor a credential, gh has no login and
 # docker's configuration is an empty directory. A cell reads $work, $checkout (a clone of platform's main), the
@@ -8,6 +8,8 @@
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=../failure.sh
 source "${repository_root}/tests/failure.sh"
+# shellcheck source=../../scripts/release_bump_patterns.sh
+source "${repository_root}/scripts/release_bump_patterns.sh"
 
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
@@ -80,6 +82,17 @@ registry_add() { digest_of "$1" "$2" >"${registry}/${1//\//_}:$2"; }
 # calls <file> <pattern>: how many recorded calls hold the pattern.
 calls() { grep -c -- "$2" "$1" || true; }
 
+# release_commit <repository directory> <remote repository name> <version>: commits what is staged in the repository on
+# the version's day, tags v<version> and pushes both to the remote.
+release_commit() {
+  local date
+  date="$(grep -oE '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}' <<<"$3" || echo 2026.11.20)"
+  date="${date//./-}"
+  GIT_AUTHOR_DATE="${date}T12:00:00+0000" GIT_COMMITTER_DATE="${date}T12:00:00+0000" \
+    git -C "$1" -c user.name=fixture -c user.email=fixture@example.org commit --quiet --allow-empty --message "release $3"
+  git -C "$1" tag "v$3"
+  git -C "$1" push --quiet "file://${work}/remote/overnightworks/$2" main --tags
+}
 # The app repository's first commit holds the pages of the real hopin copies; app_release <version> [change] commits and
 # tags v<version> on the given day, with the pages changed ("text"), one page removed ("remove") or untouched.
 git init --quiet --bare "${work}/remote/overnightworks/hopin"
@@ -87,22 +100,24 @@ git init --quiet --initial-branch=main "${app_repository}"
 mkdir "${app_repository}/legal"
 cp "${repository_root}"/infrastructure/legal/app-texts/hopin/*.html "${app_repository}/legal/"
 app_release() {
-  local version="$1" change="${2:-}" date
-  date="$(grep -oE '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}' <<<"${version}" || echo 2026.11.20)"
-  date="${date//./-}"
+  local version="$1" change="${2:-}"
   case "${change}" in
     text) sed -i 's/Videoanrufe im Browser/Videoanrufe und Chats im Browser/' "${app_repository}/legal/datenschutz.html" ;;
     remove) rm "${app_repository}/legal/nutzungsbedingungen.html" ;;
   esac
   git -C "${app_repository}" add --all
-  GIT_AUTHOR_DATE="${date}T12:00:00+0000" GIT_COMMITTER_DATE="${date}T12:00:00+0000" \
-    git -C "${app_repository}" -c user.name=fixture -c user.email=fixture@example.org commit --quiet --allow-empty --message "release ${version}"
-  git -C "${app_repository}" tag "v${version}"
-  git -C "${app_repository}" push --quiet "file://${work}/remote/overnightworks/hopin" main --tags
+  release_commit "${app_repository}" hopin "${version}"
 }
+# The app speech-runtime runs the images of the repository speech, which holds no legal pages; speech_release <version>
+# tags v<version> in it.
+speech_repository="${work}/app-speech"
+git init --quiet --bare "${work}/remote/overnightworks/speech"
+git init --quiet --initial-branch=main "${speech_repository}"
+speech_release() { release_commit "${speech_repository}" speech "$1"; }
 
 # Platform's main holds the real tree of what a bump reads and writes: the legal layer and its builder, hopin's
-# Component, whose shape the fixture keeps and whose release it replaces, and the bump's own scripts.
+# Component, whose shape the fixture keeps and whose release it replaces, the Component of speech-runtime (two images of
+# one repository under placeholder names, the second a variant of the first) and the bump's own scripts.
 git init --quiet --bare --initial-branch=main "${work}/remote/overnightworks/platform"
 seed="${work}/seed"
 mkdir "${seed}"
@@ -113,6 +128,27 @@ mkdir "${seed}"
 # than every release they bump to, whatever release the shipped Component names.
 fixture_main_release=2026.11.22.1
 yq -i ".images[0].newTag = \"${fixture_main_release}\"" "${seed}/apps/hopin/release/kustomization.yaml"
+speech_component=apps/speech-runtime/release/kustomization.yaml
+mkdir -p "${seed}/${speech_component%/*}"
+cat >"${seed}/${speech_component}" <<'FIXTURE'
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: speech-cpu
+    newName: ghcr.io/overnightworks/speech
+  - name: speech-gpu
+    newName: ghcr.io/overnightworks/speech
+FIXTURE
+# The variant each image of speech_component carries: the first runs the plain version, the second its variant.
+speech_variants=("" "${APP_IMAGE_VARIANT_SUFFIX}")
+set_speech_image() { # <file> <index> <version>: the image of that index runs the version with its variant
+  local tag="$3${speech_variants[$2]}"
+  INDEX="$2" TAG="${tag}" DIGEST="$(digest_of ghcr.io/overnightworks/speech "${tag}")" \
+    yq -i '.images[env(INDEX)] |= (.newTag = strenv(TAG) | .digest = strenv(DIGEST))' "$1"
+}
+for index in 0 1; do
+  set_speech_image "${seed}/${speech_component}" "${index}" "${fixture_main_release}"
+done
 git -C "${seed}" init --quiet --initial-branch=main
 git -C "${seed}" add --all
 git -C "${seed}" -c user.name=fixture -c user.email=fixture@example.org commit --quiet --message "main"

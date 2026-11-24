@@ -2,7 +2,8 @@
 # Compute the bump of one app's release Component and legal copies, with no credential of its own and writing only the
 # output directory. It takes origin's main, finds the newest release of the app (a tag v<year>.<month>.<day>.<n> of the
 # app's repository, sorted by version, so a prerelease or another tag scheme never counts), reads each image's digest
-# by tag from the registry through the docker login its caller made, sets newTag and digest on a fresh tree of main,
+# by tag from the registry through the docker login its caller made, sets newTag and digest on a fresh tree of main
+# (each image keeps its name, newName and the variant suffix its tag carries),
 # runs the legal step for an app whose legal texts the pages show and rebuilds the pages. It does not check
 # attestations: scripts/verify_image_release.sh, in CI, owns them. Settings are never guessed: a Component name it
 # cannot resolve, a changed page set or a version older than main's is refused and the release stays an ordinary lane.
@@ -47,7 +48,7 @@ git worktree add --quiet --detach "${tree}" FETCH_HEAD
 cd "${tree}"
 
 [ -f "${component}" ] || refuse "${component} does not exist, so ${app} has no release Component"
-mapfile -t names < <(yq '.images[].name' "${component}")
+mapfile -t names < <(yq '.images[] | .newName // .name' "${component}")
 [ "${#names[@]}" -gt 0 ] || refuse "${component} names no image"
 repository=""
 for name in "${names[@]}"; do
@@ -80,16 +81,18 @@ if ! grep -qE "refs/tags/v${version//./\\.}\$" <<<"${tags}"; then
 fi
 
 # A missing image is an unfinished release; any other failure of the registry is a failure.
-for name in "${names[@]}"; do
-  if ! manifest="$(docker buildx imagetools inspect "${name}:${version}" --format '{{json .Manifest}}' 2>"${workspace}/inspect-errors")"; then
+for index in "${!names[@]}"; do
+  name="${names[index]}"
+  read -r _ variant < <(split_image_tag "$(yq ".images[${index}].newTag" "${component}")")
+  tag="${version}${variant}"
+  if ! manifest="$(docker buildx imagetools inspect "${name}:${tag}" --format '{{json .Manifest}}' 2>"${workspace}/inspect-errors")"; then
     grep -qi 'not found' "${workspace}/inspect-errors" || { cat "${workspace}/inspect-errors" >&2; exit 2; }
-    echo "release_bump: ${app}: ${name}:${version} is not in the registry yet, so it waits"
+    echo "release_bump: ${app}: ${name}:${tag} is not in the registry yet, so it waits"
     finish waiting
   fi
   digest="$(yq -p json '.digest' <<<"${manifest}")"
-  [[ ${digest} =~ ^${digest_pattern}$ ]] || { echo "release_bump_compute: the registry gave no digest for ${name}:${version}" >&2; exit 2; }
-  NAME="${name}" VERSION="${version}" DIGEST="${digest}" yq -i \
-    '(.images[] | select(.name == strenv(NAME))) |= (.newTag = strenv(VERSION) | .digest = strenv(DIGEST))' "${component}"
+  [[ ${digest} =~ ^${digest_pattern}$ ]] || { echo "release_bump_compute: the registry gave no digest for ${name}:${tag}" >&2; exit 2; }
+  TAG="${tag}" DIGEST="${digest}" yq -i ".images[${index}] |= (.newTag = strenv(TAG) | .digest = strenv(DIGEST))" "${component}"
 done
 
 if grep -qxF "[${app}]" infrastructure/legal/app-texts.toml; then

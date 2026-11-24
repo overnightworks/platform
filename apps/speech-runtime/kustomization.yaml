@@ -3,5 +3,14 @@ kind: Kustomization
 resources:
   - speech-runtime.yaml
   - speech-runtime-gpu.yaml
+  - settle.yaml
 components:
   - release
+  - ../../infrastructure/k8up/image
+configMapGenerator:
+  # The script of the bridge layer, which stands in its directory: a changed script changes both names, so Flux re-creates
+  # both Jobs.
+  - name: speech-bridge-settle
+    namespace: speech-runtime
+    files:
+      - bridge/scripts/speech_bridge.sh
