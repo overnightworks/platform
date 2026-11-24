@@ -358,6 +358,7 @@ for contract in "${contracts[@]}"; do
   kept_secret "red-sign-in-$checked_app"
   left_clean "red-sign-in-$checked_app"
   cleanup_order "red-sign-in-$checked_app"
+  grep -qE "^live:check: $checked_app red .* step=sign-in-form\$" "$output_file" || refuse "red-sign-in-$checked_app: the result line names not the failed step"
   echo "$checked_app: a refused sign-in is red, and the person is signed out and disabled"
 done
 checked_app=hopin
@@ -379,6 +380,11 @@ kept_secret transport-fails
 left_clean transport-fails
 cleanup_order transport-fails
 echo "a request that fails in transport is red with exit 1 and not the status of curl, and the person is disabled"
+
+prepare_case start-fails-at-the-app
+run_command start-fails-at-the-app FAKE_TRANSPORT_FAILS=start
+grep -qE '^live:check: hopin red .*step=start$' "$output_file" || refuse "start-fails-at-the-app: the result line names not the step start"
+echo "a failed start is named as the step start on the result line"
 
 prepare_case foreign-callback
 run_command foreign-callback FAKE_CALLBACK_URL=https://foreign.example/callback
@@ -439,6 +445,13 @@ kept_secret hopin-sign-out-fails-session-ends
 left_clean hopin-sign-out-fails-session-ends
 echo "a hopin sign-out that answers 502 is named even when the account answers 401 after it"
 
+prepare_case heal-sign-out-fails jar:skat
+run_command heal-sign-out-fails FAKE_LOGOUT_STATUS=502
+[ "$status" = 1 ] || refuse "heal-sign-out-fails: exit $status, not 1"
+grep -q "may remain: .*the person's skat session" "$output_file" || refuse "heal-sign-out-fails: the output names no skat session"
+[ "$(<"$state/enabled")" = false ] || refuse "heal-sign-out-fails: the person is enabled"
+echo "a skat sign-out that fails during the first cleanup is still named after the run ends"
+
 prepare_case credential-delete-fails
 run_command credential-delete-fails FAKE_FAIL=delete-credential
 [ "$status" = 1 ] || refuse "credential-delete-fails: exit $status, not 1"
@@ -470,11 +483,11 @@ exec {lock_descriptor}>"$runtime/live-check/lock"
 flock --nonblock "$lock_descriptor"
 run_command lock-held
 exec {lock_descriptor}>&-
-[ "$status" = 1 ] || refuse "lock-held: exit $status, not 1"
+expect_result lock-held 4 refused
 grep -q "another run holds" "$output_file" || refuse "lock-held: the refusal names no other run"
 [ ! -s "$state/log" ] || refuse "lock-held: the stack was called: $(paste -sd'|' "$state/log")"
 [ "$(<"$state/enabled")" = true ] || refuse "lock-held: a person was written"
-echo "a second run is refused with no call and no write"
+echo "a second run is refused with exit 4 and the result refused, with no call and no write"
 
 prepare_case unavailable
 run_command unavailable FAKE_DEPLOYMENT=unavailable
