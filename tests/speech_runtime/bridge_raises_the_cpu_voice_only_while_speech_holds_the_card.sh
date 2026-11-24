@@ -24,10 +24,11 @@ mkdir "$fake_bin" "$state"
 
 # The fake kubectl holds each object as a directory of its name in FAKE_STATE, and each field as a file of the field's
 # JSONPath. `get` prints the field, `wait` succeeds when the field equals the value (else it times out, as the real one
-# does), `scale` is refused when its --current-replicas no longer holds. Before each `wait` and `scale` the next line of
-# the file wait_effects or scale_effects in FAKE_STATE happens first: assignments `object|field|value` split by `;`,
-# which stand for the pods and for `gpu:use`. The file refuse_scales holds a number of scales that are refused whatever
-# the count, as when it moves and moves back between the read and the scale. The calls are recorded.
+# does), `scale` is refused when its --current-replicas no longer holds. Before each `wait`, `scale` and read of an object
+# that may be missing, the next line of the file wait_effects, scale_effects or read_effects in FAKE_STATE happens first:
+# assignments `object|field|value` split by `;`, which stand for the pods and for `gpu:use`. The file refuse_scales holds a
+# number of scales that are refused whatever the count, as when it moves and moves back between the read and the scale; the
+# file refuse_waits holds the text of a wait that is refused for another reason than its timeout. The calls are recorded.
 cat >"$work_directory/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -u
@@ -63,6 +64,7 @@ while [ "$#" -gt 0 ]; do
 done
 case "$command" in
   get)
+    [ -z "$ignore_missing" ] || happen read_effects
     if [ ! -d "$FAKE_STATE/$object" ]; then
       [ -n "$ignore_missing" ] && exit 0
       echo "Error from server (NotFound): $object not found" >&2
@@ -74,6 +76,7 @@ case "$command" in
   wait)
     [ -n "$timeout_given" ] || { echo "a wait without --timeout ends after 30 seconds" >&2; exit 99; }
     happen wait_effects
+    if [ -s "$FAKE_STATE/refuse_waits" ]; then cat "$FAKE_STATE/refuse_waits" >&2; exit 1; fi
     path="${condition%\}=*}"
     path="${path#\{}"
     if [ "$(field_of "$object" "$path")" = "${condition##*\}=}" ]; then echo "condition met"; exit 0; fi
@@ -132,7 +135,7 @@ cluster() {
 # refuse_scales <n>: the next n scales are refused.
 refuse_scales() { echo "$1" >"$state/refuse_scales"; }
 
-# happens <wait_effects|scale_effects> <line>...: the lines that happen before the file's calls, one for each.
+# happens <wait_effects|scale_effects|read_effects> <line>...: the lines that happen before the file's calls, one for each.
 happens() {
   local file="$state/$1"
   shift
@@ -143,7 +146,7 @@ happens() {
 run_bridge() {
   : >"$calls"
   status=0
-  output="$(PATH="$fake_bin:$PATH" FAKE_CALLS="$calls" FAKE_STATE="$state" GPU_IMAGE="$release_image" \
+  output="$(PATH="$fake_bin:$PATH" FAKE_CALLS="$calls" FAKE_STATE="$state" GPU_IMAGE="$release_image" READY_SECONDS=600 \
     MISE_DISABLE_TOOLS=kubectl KUBECONFIG=/nonexistent timeout 20 sh "$bridge_script" "$1" 2>&1)" || status=$?
 }
 
@@ -189,7 +192,7 @@ run_bridge up
 expect_status "up with speech holding the card" 0
 expect_calls "up with speech holding the card" \
   "scale deployment/speech-runtime --current-replicas=0 --replicas=1" \
-  "wait deployment/speech-runtime --for=jsonpath={.status.readyReplicas}=1"
+  "wait deployment/speech-runtime --for=jsonpath={.status.readyReplicas}=1 --timeout=600s"
 expect_replicas "up with speech holding the card" 1
 
 # up: the card is songmaker's or free, so nothing changes and it says so.
@@ -276,7 +279,8 @@ expect_calls "settle after a roll" \
   "wait deployment/speech-runtime-gpu --for=jsonpath={.status.readyReplicas}=1" \
   "scale deployment/speech-runtime --current-replicas=1 --replicas=0"
 expect_replicas "settle after a roll" 0
-if changing_calls | grep '^wait' | grep -qv -e '--timeout=60s'; then fail "a wait of settle runs longer than one round of 60 seconds"; fi
+longest_wait="$(changing_calls | sed -n 's/^wait .*--timeout=\([0-9]*\)s.*/\1/p' | sort -n | tail -1)"
+{ [ -n "$longest_wait" ] && [ "$longest_wait" -le 60 ]; } || fail "a wait of settle runs ${longest_wait:-without a timeout}, longer than one round of 60 seconds"
 
 # settle: the Deployment is already at the release's image and Ready, so it does not wait.
 cluster 1 1
@@ -311,6 +315,26 @@ run_bridge settle
 expect_status "settle while gpu:use gives the card away" 0
 expect_calls "settle while gpu:use gives the card away" "wait deployment/speech-runtime-gpu"
 expect_replicas "settle while gpu:use gives the card away" 2
+
+# settle: `gpu:use songs` and then `gpu:use speech` moved the GPU image off one pod and back to one before the next decision,
+# so it decides again from the counts, finds the roll done and lowers the small image.
+cluster 1 1
+happens read_effects "" "speech-runtime-gpu|.spec.replicas|0" \
+  "speech-runtime-gpu|.spec.replicas|1;speech-runtime-gpu|.spec.template.spec.containers[0].image|$release_image"
+run_bridge settle
+expect_status "settle while gpu:use takes the card away and gives it back" 0
+expect_calls "settle while gpu:use takes the card away and gives it back" "scale deployment/speech-runtime --current-replicas=1 --replicas=0"
+expect_replicas "settle while gpu:use takes the card away and gives it back" 0
+expect_says "settle while gpu:use takes the card away and gives it back" "moved while waiting"
+
+# settle: a wait refused for another reason than its timeout fails the Job at once, not at its deadline.
+cluster 1 1
+printf 'Error from server (Forbidden): deployments.apps is forbidden\n' >"$state/refuse_waits"
+run_bridge settle
+expect_status "settle with a refused wait" failed
+expect_calls "settle with a refused wait" "wait deployment/speech-runtime-gpu"
+expect_says "settle with a refused wait" "Forbidden"
+expect_replicas "settle with a refused wait" 1
 
 # settle: a newer release is pending in the Job bridge, whose settle lowers the small image, so this one leaves it up.
 cluster 1 1

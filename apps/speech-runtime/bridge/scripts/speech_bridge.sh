@@ -16,8 +16,6 @@ small=deployment/speech-runtime
 gpu=deployment/speech-runtime-gpu
 bridge=job/bridge
 decisions=3
-# Below the Job bridge's deadline, so that a pod that never turns Ready fails with its name.
-ready_seconds=1400
 # One round of settle's wait: after it the GPU image's count is read again.
 round_seconds=60
 
@@ -71,6 +69,8 @@ refused_again() {
 }
 
 up() {
+  # Below the Job bridge's deadline, so that a pod that never turns Ready fails with its name.
+  ready_seconds="${READY_SECONDS:?the seconds to wait for the small image, from the Job's env}"
   refused=0
   while :; do
     read_gpu_replicas
@@ -102,7 +102,13 @@ await_gpu_pod() {
     read_gpu_replicas
     [ "$gpu_count" = 1 ] || { gpu_moved=1; return 0; }
     say "waiting until $unmet_path is $unmet_value"
-    kubectl wait "$gpu" --for=jsonpath="{$unmet_path}=$unmet_value" --timeout="${round_seconds}s" || sleep 2
+    # A round that ends in a timeout is expected; any other refusal (Forbidden, a bad JSONPath) would repeat until the deadline.
+    if ! wait_output="$(kubectl wait "$gpu" --for=jsonpath="{$unmet_path}=$unmet_value" --timeout="${round_seconds}s" 2>&1)"; then
+      case "$wait_output" in
+        *"timed out"*) ;;
+        *) fail "kubectl wait was refused: $wait_output" ;;
+      esac
+    fi
   done
 }
 

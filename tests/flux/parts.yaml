@@ -35,8 +35,8 @@ backup-4: {layers: [backup, songmaker], paths: [tests/backup/*, tests/objectstor
 presentator: {layers: [presentator, keycloak], paths: [tests/keycloak/*, tests/no_network/*, tests/presentator/*, tests/redis/*]}
 # The attestation probe patches a live presentator Pod, and speech's cell of the two small pods needs the speech layer.
 presentator-2: {layers: [presentator, speech-runtime], paths: [tests/admission/app_attestations_refuse_by_dry_run.sh, tests/admission/pause_survives_the_root_reconcile.sh, tests/presentator/*, tests/speech_runtime/two_cpu_pods_serve_behind_the_service.sh, tests/workloads/*]}
-# A speech GPU release rolls a stand-in for the GPU Deployment, and its three Jobs' cells stand beside it; the part runs
-# about 17 minutes, its layer's two images start about five times.
+# A speech GPU release rolls a stand-in for the GPU Deployment, and its Jobs' and Role's cells stand beside it; the part's
+# cell runs within 14 minutes, its layer's two images start about five times.
 speech: {layers: [speech-runtime], paths: [tests/speech_runtime/*]}
 # The object store's cell drives Garage and its Job from client Pods in each app's Namespace, which holds no layer here;
 # it reads each app's directory for the web's env contract and credentials projection and for the other workloads, and

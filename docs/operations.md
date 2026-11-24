@@ -75,13 +75,13 @@ until it is Ready, so the old GPU pod stops only after that. The Job `settle` of
 pod is Ready and lowers the small image to none again, the count `gpu:use speech` leaves. Both Jobs carry the release's GPU
 ref, so a new release re-runs them, and their scales name the count they expect, so a count that `gpu:use` set meanwhile
 is kept: with the GPU image at none (songmaker holds the card, or it is free) they change nothing, and the next
-`gpu:use speech` pulls the new image inside its own wait. A first apply and a fresh cluster's first release leave the
-counts at Kubernetes' default until the first `gpu:use` or the first GPU release lowers the small image. While a roll
-runs, the small image answers a retryable 503 to a caller that names a voice only the GPU image offers and live hearing
-sessions close and reconnect. The head lands no GPU release inside a `gpu:use` window: `gpu:use speech` scales the small
-image to none without a precondition, which would stop the bridge before the roll.
+`gpu:use speech` pulls the new image inside its own wait. A first apply leaves the counts at Kubernetes' default; the
+first GPU release or the first `gpu:use` sets them, the release by lowering the small image once the GPU pod is Ready.
+While a roll runs, the small image answers a retryable 503 to a caller that names a voice only the GPU image offers and
+live hearing sessions close and reconnect. The head lands no GPU release inside a `gpu:use` window: `gpu:use speech`
+scales the small image to none without a precondition, which would stop the bridge before the roll.
 
-A `bridge` that fails (a small pod that does not turn Ready within 25 minutes, or a count that moved under three scales)
+A `bridge` that fails (a small pod that does not turn Ready within 11 minutes, or a count that moved under three scales)
 leaves `speech-runtime-bridge` not Ready and `speech-runtime` applying nothing, so the old GPU pod keeps serving and the
 small image stays raised; it mails `KustomizationNotReady` after 15 minutes. Read the Job's log and the small pod's events,
 fix the cause, then delete the Job `bridge`, which Flux creates again at its next reconcile; or revert the release. Until
