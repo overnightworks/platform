@@ -456,7 +456,8 @@ resolve_tag_commit() {
 check_app_release() {
   local image="$1" locations="$2" named="${1%@*}" repository version repository_name status signer index
   local signer_repository="${owner}/${SIGNER_REPOSITORY_NAME}" reds_before="${red_count}"
-  repository="${named%:*}" read -r version _ < <(split_image_tag "${named##*:}")
+  repository="${named%:*}"
+  read -r version _ < <(split_image_tag "${named##*:}")
   repository_name="${repository#*/*/}" repository_name="${repository_name%%/*}"
   if ! resolve_tag_commit "${repository_name}" "${version}"; then
     report_red "${locations}" "${image}" "${release_failure}"
