@@ -1,0 +1,8 @@
+claim_id = "e2788216edc445b78c8c92f884a0cefc"
+agent = "Claude 931ae605-f1bd-431a-bedc-82984afcc371"
+role = "builder"
+base = "39483e5abb1342b56e10c680f3920255944b50d1"
+branch = "release/songmaker"
+scope = ["apps/songmaker/release/kustomization.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/songmaker", "infrastructure/legal/built"]
+opened_commit = "23acb21c3df9bf58c2e81476c318d629dae99700"
+whole_reason = "The release ref moves together with the legal copies the release refreshes."
