@@ -55,6 +55,15 @@ body="$(cat "${gh_state}/body")"
 grep -qx 'Work-Item: #7' <<<"${body}" && grep -qx 'Closes #7' <<<"${body}" || fail "the bump dropped a line it did not write: ${body}"
 echo "a newer release keeps the lines of the pull request's body it did not write"
 
+# A second bump leaves the body as the first left it, apart from the Release line, with no blank line added.
+first_body="$(grep -v '^Release: ' "${gh_state}/body")"
+app_release 2026.11.25.3
+registry_add "${image}" 2026.11.25.3
+log="$(bump)" || fail "the second bump over a body with other lines failed: ${log}"
+[ "$(grep -v '^Release: ' "${gh_state}/body")" = "${first_body}" ] && ! grep -qx '' "${gh_state}/body" ||
+  fail "a bump changed the body beyond its Release line: $(cat "${gh_state}/body")"
+echo "a bump adds no blank line to the pull request's body"
+
 # Main runs the older release a caller names: the open pull request proposes a newer one and stays.
 tip="$(branch_tip)"
 log="$(bump "${main_version}")" || fail "the bump of the release main runs failed: ${log}"

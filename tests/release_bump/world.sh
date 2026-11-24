@@ -64,7 +64,7 @@ case "$1 $2" in
   "pr list") [ ! -f "${FAKE_GH_STATE}/open" ] || cat "${FAKE_GH_STATE}/open" ;;
   "pr create") echo 1 >"${FAKE_GH_STATE}/open"; cat "${body_file}" >"${FAKE_GH_STATE}/body"; echo https://github.com/overnightworks/platform/pull/1 ;;
   "pr edit") cat "${body_file}" >"${FAKE_GH_STATE}/body" ;;
-  "pr view") cat "${FAKE_GH_STATE}/body" ;;
+  "pr view") cat "${FAKE_GH_STATE}/body"; echo ;; # --jq .body prints a newline after the body
   "pr close") rm -f "${FAKE_GH_STATE}/open" ;;
   "auth token") echo fixture-token ;;
   "api user") echo fixture-user ;;

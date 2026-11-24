@@ -87,10 +87,12 @@ fi
 if [ -n "${number}" ]; then
   # Only the Release line is this script's: the other lines of the open pull request's body stay as they are, in order.
   release_line="$(cat "${output}/body")"
-  gh pr view "${number}" --json body --jq .body >"${workspace}/current-body"
+  # The command substitution drops the newline jq adds after the body, so the body does not grow by a line per run.
+  current_body="$(gh pr view "${number}" --json body --jq .body)"
   {
-    grep -q '^Release: ' "${workspace}/current-body" || printf '%s\n' "${release_line}"
-    awk -v release="${release_line}" '/^Release: / { if (!written) print release; written = 1; next } { print }' "${workspace}/current-body"
+    printf '%s\n' "${current_body}" | grep -q '^Release: ' || printf '%s\n' "${release_line}"
+    [ -z "${current_body}" ] || printf '%s\n' "${current_body}" |
+      awk -v release="${release_line}" '/^Release: / { if (!written) print release; written = 1; next } { print }'
   } >"${workspace}/body"
   gh pr edit "${number}" --title "$(cat "${output}/title")" --body-file "${workspace}/body"
   echo "release_bump: ${app}: edited pull request ${number}"
