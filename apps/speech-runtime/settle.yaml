@@ -12,7 +12,16 @@ metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
+  # A retry covers a pod lost; a script that exits non-zero has decided, so it fails the Job at once. The deadline bounds all
+  # attempts.
   backoffLimit: 2
+  podFailurePolicy:
+    rules:
+      - action: FailJob
+        onExitCodes:
+          containerName: settle
+          operator: NotIn
+          values: [0]
   activeDeadlineSeconds: 3300
   template:
     metadata:

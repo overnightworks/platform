@@ -2,7 +2,8 @@
 # The Jobs bridge (layer speech-runtime-bridge) and settle (layer speech-runtime) carry the GPU image that the Deployment
 # speech-runtime-gpu renders in the annotation gpu-image of their pod template, so a new release changes both templates and
 # Flux re-creates them; neither Job runs an image of the app, so neither needs a pull layer; each mounts one ConfigMap that
-# its own layer renders from the one script file; and the two layers render no object in common, so every object has one layer.
+# its own layer renders from the one script file; each fails its Job at once on any non-zero exit of its script, so a Job
+# decides in one pod and backoffLimit covers a lost pod only; and the two layers render no object in common, so every object has one layer.
 # Usage: mise exec -- tests/speech_runtime/both_jobs_carry_the_rendered_gpu_release.sh
 set -euo pipefail
 
@@ -41,6 +42,9 @@ judge() {
   script_map="$(job_query "$1" "$2" '.spec.template.spec.volumes[] | select(.configMap) | .configMap.name')"
   [ "$(NAME="$script_map" yq 'select(.kind == "ConfigMap" and .metadata.name == strenv(NAME)) | .data["speech_bridge.sh"]' <<<"$1")" = "$(cat "$script_file")" ] ||
     fail "the ConfigMap $script_map of the Job $2 is not rendered by $3 from $script_file"
+  [ "$(job_query "$1" "$2" '.spec.podFailurePolicy.rules | map(select(.action == "FailJob" and .onExitCodes.operator == "NotIn" and (.onExitCodes.values | length) == 1 and .onExitCodes.values[0] == 0 and .onExitCodes.containerName == "'"$2"'")) | length')" = 1 ] ||
+    fail "the Job $2 of $3 does not fail at once on a non-zero exit of its script"
+  [ "$(job_query "$1" "$2" '.spec.podFailurePolicy.rules | length')" -eq 1 ] || fail "the Job $2 of $3 carries a pod failure rule besides the one for its script"
   echo "the Job $2 of $3 carries the GPU image $gpu_image, runs no image of the app and mounts $script_map, rendered from $script_file"
 }
 judge "$bridge_layer" bridge speech-runtime-bridge
