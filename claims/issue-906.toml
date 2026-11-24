@@ -1,0 +1,8 @@
+claim_id = "ec2bd66fda8248f7baa1207a4a238ece"
+agent = "Claude 931ae605-f1bd-431a-bedc-82984afcc371"
+role = "builder"
+base = "2ba54f33a10fd16b9ede3ad98c0dd78f37f4028d"
+branch = "claude/issue-906-a-speech-gpu-release-keeps-speech-answer"
+scope = [".github/workflows/ci.yml", "apps/speech-runtime", "clusters/pc/apps.yaml", "docs/ARCHITECTURE.md", "docs/app.md", "docs/operations.md", "tests/flux", "tests/speech_runtime"]
+opened_commit = "3d1263d32a5a18ee1a5986278acd86618094b712"
+whole_reason = "The ordering edge, its two Jobs, their right and the ref they share are one mechanism: Jobs landed without the edge have no order, and an edge without both Jobs leaves the CPU raised or the GPU unbridged."
