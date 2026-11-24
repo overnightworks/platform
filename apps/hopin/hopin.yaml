@@ -104,8 +104,6 @@ spec:
               value: http://litellm-front.litellm:4000
             - name: HOPIN_AGENT__GATEWAY__KEY_FILE
               value: /run/secrets/litellm_key
-            - name: HOPIN_AGENT__API_GROUP
-              value: /services/litellm
             # The URL prefixes an agent's figure is fetched under, a JSON list: personas' release assets, which the
             # runner's figure lines name. A prefix holds no secret, so the value stands in the manifest.
             - name: HOPIN_FIGURE_SOURCES
@@ -114,8 +112,6 @@ spec:
             # hear its sponsor and speaking lets an agent with an account of its own speak in a call.
             - name: HOPIN_SPEECH__ORIGIN
               value: http://speech-runtime.speech-runtime.svc.cluster.local:8080
-            - name: HOPIN_SPEECH__AUDIENCE_SCOPE
-              value: speech-service-audience
             - name: HOPIN_SPEECH__HEARING
               value: "true"
             - name: HOPIN_SPEECH__SPEAKING
