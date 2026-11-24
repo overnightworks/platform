@@ -48,15 +48,23 @@ case "$1 $2 $3" in
   *) echo "the fake docker has no answer for: $*" >&2; exit 97 ;;
 esac
 FAKE
-# gh answers the pull request calls of the publish step from one file naming the open pull request, and the two calls the
-# hand command makes for its login.
+# gh answers the pull request calls of the publish step from one file naming the open pull request and one file holding
+# its body, which pr create and pr edit take from --body-file and pr view --json body answers, and the two calls the hand
+# command makes for its login.
 cat >"${work}/bin/gh" <<'FAKE'
 #!/usr/bin/env bash
 echo "gh $*" >>"${FAKE_GH_CALLS}"
+body_file=""
+previous=""
+for argument in "$@"; do
+  [ "${previous}" != --body-file ] || body_file="${argument}"
+  previous="${argument}"
+done
 case "$1 $2" in
   "pr list") [ ! -f "${FAKE_GH_STATE}/open" ] || cat "${FAKE_GH_STATE}/open" ;;
-  "pr create") echo 1 >"${FAKE_GH_STATE}/open"; echo https://github.com/overnightworks/platform/pull/1 ;;
-  "pr edit") ;;
+  "pr create") echo 1 >"${FAKE_GH_STATE}/open"; cat "${body_file}" >"${FAKE_GH_STATE}/body"; echo https://github.com/overnightworks/platform/pull/1 ;;
+  "pr edit") cat "${body_file}" >"${FAKE_GH_STATE}/body" ;;
+  "pr view") cat "${FAKE_GH_STATE}/body"; echo ;; # --jq .body prints a newline after the body
   "pr close") rm -f "${FAKE_GH_STATE}/open" ;;
   "auth token") echo fixture-token ;;
   "api user") echo fixture-user ;;
@@ -94,13 +102,17 @@ app_release() {
 }
 
 # Platform's main holds the real tree of what a bump reads and writes: the legal layer and its builder, hopin's
-# Component, whose version the releases of a cell are newer than, and the bump's own scripts.
+# Component, whose shape the fixture keeps and whose release it replaces, and the bump's own scripts.
 git init --quiet --bare --initial-branch=main "${work}/remote/overnightworks/platform"
 seed="${work}/seed"
 mkdir "${seed}"
 (cd "${repository_root}" && git ls-files -z -- mise.toml mise.lock src/legal/pyproject.toml src/legal/uv.lock src/legal/src \
   infrastructure/legal apps/hopin/release | xargs -0 cp --parents --target-directory "${seed}" &&
   cp --parents scripts/release_bump_*.sh "${seed}")
+# The release main runs in the fixture: newer than the cells' "older" releases (2026.11.01.1, 2020.01.01.1) and older
+# than every release they bump to, whatever release the shipped Component names.
+fixture_main_release=2026.11.22.1
+yq -i ".images[0].newTag = \"${fixture_main_release}\"" "${seed}/apps/hopin/release/kustomization.yaml"
 git -C "${seed}" init --quiet --initial-branch=main
 git -C "${seed}" add --all
 git -C "${seed}" -c user.name=fixture -c user.email=fixture@example.org commit --quiet --message "main"

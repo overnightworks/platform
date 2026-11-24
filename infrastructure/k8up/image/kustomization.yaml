@@ -1,0 +1,8 @@
+# The image of k8up's operator, which ships curl, jq and kubectl, for the Jobs that need them: its one owner there.
+# Renovate moves the entry (name, newTag and digest, each on its own line) with k8up's other pins.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: ghcr.io/k8up-io/k8up
+    newTag: v2.16.1
+    digest: sha256:f59bfa37c51511d5ad67e53816fb55c62d0e6411890e59bb6b965923129f30b5

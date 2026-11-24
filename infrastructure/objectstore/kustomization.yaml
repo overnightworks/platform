@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
   - garage.yaml
   - apply.yaml
+components:
+  - ../k8up/image
 configMapGenerator:
   # Garage's configuration; a changed file changes the name, so Flux rolls the pod.
   - name: garage-config
