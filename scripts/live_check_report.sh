@@ -93,13 +93,18 @@ push_result() {
 }
 
 # --------------------------------------------------------------------------------------------------------- the item
-# item_body <app>: the date, the result line, the step, whose side the cause is on and the command to reproduce.
+# item_body <app>: the date, the result line, the step, whose side the cause is on and the command to reproduce. A name
+# that may remain makes the cause platform's, except the person's session at the app itself, which a failed start or
+# sign-out leaves by its own nature.
 item_body() {
-  local app="$1" step="before the sign-in started" cause="the cause sits at platform; the app's head forwards it with one hop"
+  local app="$1" step="before the sign-in started" cause="the cause sits at platform; the app's head forwards it with one hop" others
+  others="${may_remain#may remain: }"
+  others="${others%run again to clean up}"
+  others="${others//the person\'s $app session; /}"
   if [[ "$result_line" =~ \ step=([a-z-]+)$ ]]; then
     step="${BASH_REMATCH[1]}"
     case "$step" in
-      start | callback | account | sign-out) [ -n "$may_remain" ] || cause="the step is the app's own" ;;
+      start | callback | account | sign-out) [ -n "$others" ] || cause="the step is the app's own" ;;
     esac
   fi
   echo "Date: $(date -u +%F)"

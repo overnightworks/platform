@@ -173,7 +173,11 @@ script() {
 }
 # The attempts' lines, as `live:check` prints them.
 green_attempt() { echo "0|live:check: $1 green (start=303 login-page=200 sign-in-form=302 callback=303 account=200 sign-out=200 account-after=401)|"; }
-red_attempt() { echo "1|live:check: $1 red (start=303 login-page=500) step=${2:-login-page}|"; }
+red_attempt() { echo "1|live:check: $1 red (start=303 login-page=500) step=${2:-login-page}|${3:-}"; }
+# The names that may remain, as `live:check` prints them: the person's session at the app itself, which a failed start or
+# sign-out leaves, and another name.
+own_session_remains() { echo "live:check: may remain: the person's $1 session; run again to clean up"; }
+other_name_remains() { echo "live:check: may remain: the person's $1 session; the person's Keycloak sessions; run again to clean up"; }
 skipped_attempt() { echo "3|live:check: $1 skipped|live:check: the Deployment $1 is not Available"; }
 run_report() {
   local name="$1"
@@ -230,11 +234,14 @@ echo "a red that is green on the rerun 10 minutes later pushes true once and ope
 # --------------------------------------------------------------------------------------------------------- red twice
 # the item's body holds only these lines, and the output never repeats them
 body_lines='^(Date: [0-9]{4}-[0-9]{2}-[0-9]{2}|Result: live:check: .*|Step: .*|Cause: .*|Reproduce: mise run live:check [a-z]+)$'
-for case_step in "hopin login-page platform" "skat start app" "presentator callback app" "songmaker sign-out app" "hopin sign-in-form platform" "hopin none platform"; do
-  read -r red_app red_step verdict <<<"$case_step"
+for case_step in "hopin login-page platform none" "skat start app own_session_remains" "presentator callback app none" \
+  "songmaker sign-out app own_session_remains" "hopin account platform other_name_remains" "hopin sign-in-form platform none" "hopin none platform none"; do
+  read -r red_app red_step verdict remains <<<"$case_step"
   case_name="red-twice-$red_app-$red_step"
   prepare_case "$case_name"
-  if [ "$red_step" = none ]; then red_line="1|live:check: $red_app red|live:check: the person could not be enabled"; else red_line="$(red_attempt "$red_app" "$red_step")"; fi
+  remaining_line=""
+  [ "$remains" = none ] || remaining_line="$("$remains" "$red_app")"
+  if [ "$red_step" = none ]; then red_line="1|live:check: $red_app red|live:check: the person could not be enabled"; else red_line="$(red_attempt "$red_app" "$red_step" "$remaining_line")"; fi
   script "$red_app" "$red_line" "$red_line"
   run_report "$case_name" sign-in "$red_app"
   expect_status "$case_name" 0
