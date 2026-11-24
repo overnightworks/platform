@@ -8,7 +8,11 @@
 # its Job pulls the release's images onto the node before the app's layer rolls them. A timeout of the layer does not
 # cancel the pull, so the roll follows at the next retry.
 # speech-runtime's timeout is an hour: its GPU image is pulled by the roll itself and the pull took 37 minutes, a start
-# takes up to 10 more, so the default of 10 minutes reports the layer Failed while it still pulls.
+# takes up to 10 more, so the default of 10 minutes reports the layer Failed while it still pulls. The GPU image rolls with
+# Recreate on the one card, so a GPU release leaves speech without a Ready pod while speech holds the card: the layer
+# speech-runtime-bridge, apps/speech-runtime/bridge, has a Job that raises the small image and waits until it is Ready, and
+# speech-runtime waits for it, so the old GPU pod stops only after that Job completed at the release's revision. Any other
+# subdirectory of apps/<app> that is a Kustomization is the layer <app>-<subdirectory> in the same way.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -118,6 +122,24 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: speech-runtime-bridge
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: admission
+  interval: 10m0s
+  retryInterval: 2m0s
+  path: ./apps/speech-runtime/bridge
+  prune: true
+  wait: true
+  timeout: 30m0s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: speech-runtime
   namespace: flux-system
 spec:
@@ -125,6 +147,7 @@ spec:
     - name: platform-secrets
     - name: admission
     - name: app-attestations
+    - name: speech-runtime-bridge
   interval: 10m0s
   path: ./apps/speech-runtime
   prune: true

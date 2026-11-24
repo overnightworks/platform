@@ -1,0 +1,17 @@
+# The layer speech-runtime-bridge, which speech-runtime waits for: the Job bridge of a speech GPU release. It holds the
+# ServiceAccount of both Jobs, its Role and the script of mode `up`; the Job settle and the script of mode `settle` stand in
+# speech-runtime, so each object has one layer. The Component k8up/image gives the Jobs the one image that ships kubectl,
+# and release the GPU ref of the annotation gpu-image.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: speech-runtime
+resources:
+  - bridge.yaml
+components:
+  - ../release
+  - ../../../infrastructure/k8up/image
+configMapGenerator:
+  # A changed script changes the name, so Flux re-creates the Job, whose re-run changes nothing.
+  - name: speech-bridge-up
+    files:
+      - speech_bridge.sh

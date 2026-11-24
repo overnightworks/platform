@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bridge
+---
+# What both Jobs read and scale: the two Deployments' state, the small image's count, and the Job bridge's annotation. No
+# right reaches the GPU image's scale, so no Job can start or stop the card's user.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bridge
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [speech-runtime, speech-runtime-gpu]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    resourceNames: [speech-runtime]
+    verbs: [get, patch, update]
+  - apiGroups: [batch]
+    resources: [jobs]
+    resourceNames: [bridge]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bridge
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: bridge
+subjects:
+  - kind: ServiceAccount
+    name: bridge
+---
+# Before a GPU release rolls, raises speech's small image to one pod and waits until it is Ready, so the Service keeps a Ready
+# pod through the card's Recreate roll (speech_bridge.sh, mode up). It runs once per change of its template: the annotation
+# gpu-image holds the release's GPU ref, so a new release re-creates it, and a Job's template is immutable, so Flux deletes
+# and creates it. No ttlSecondsAfterFinished: a Job gone after its run would make Flux create it at every interval. The pod
+# carries no label part-of speech-runtime, so neither the Service nor its NetworkPolicy selects it. It runs no app image,
+# so it needs no pull layer. A pod that never turns Ready fails the Job at its deadline, below the layer's timeout, and
+# speech-runtime then applies nothing: the old GPU pod keeps serving. The deadline is the CPU image's pull and its start
+# with ten minutes' margin.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bridge
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  # A retry covers a pod lost; the deadline bounds all attempts.
+  backoffLimit: 2
+  activeDeadlineSeconds: 1500
+  template:
+    metadata:
+      annotations:
+        gpu-image: speech-gpu
+      labels:
+        app.kubernetes.io/name: bridge
+    spec:
+      restartPolicy: Never
+      serviceAccountName: bridge
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bridge
+          # The image of k8up's operator, which ships kubectl; its tag and digest are the Component's.
+          image: ghcr.io/k8up-io/k8up
+          command: [sh, /bridge/speech_bridge.sh, up]
+          env:
+            - name: GPU_IMAGE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['gpu-image']
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: script
+              mountPath: /bridge
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: script
+          configMap:
+            name: speech-bridge-up
+        - name: tmp
+          emptyDir:
+            medium: Memory

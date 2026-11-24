@@ -1,0 +1,3 @@
+images:
+  - path: spec/template/metadata/annotations/gpu-image
+    kind: Job
