@@ -461,6 +461,96 @@ tests:
         exp_alerts:
           - exp_labels: {name: hopin sign-in, key: live-check_hopin-sign-in, group: live-check, type: UNKNOWN}
             exp_annotations: {summary: "live:check hopin sign-in is red after a rerun; gatus:open shows its codes"}
+  # LiveCheckMissed reads the 36 hours before now and the two hours before them, so every case below runs at least 38 hours.
+  - interval: 1m
+    name: a live check key whose counter rises every 24 hours never fires LiveCheckMissed
+    input_series:
+      - series: gatus_results_total{key="live-check_hopin-sign-in", group="live-check", name="hopin sign-in", type="UNKNOWN", success="true"}
+        values: "0x1439 1x1439 2x1439"
+    alert_rule_test:
+      - {eval_time: 40h, alertname: LiveCheckMissed}
+      - {eval_time: 55h, alertname: LiveCheckMissed}
+      - {eval_time: 71h, alertname: LiveCheckMissed}
+  - interval: 1m
+    name: a live check key with no rise for 36 hours fires LiveCheckMissed after its hour, labelled with its row, and a push resolves it, while a rising key and a row of another group never fire
+    input_series:
+      - series: gatus_results_total{key="live-check_hopin-sign-in", group="live-check", name="hopin sign-in", type="UNKNOWN", success="true"}
+        values: "0x719 1x2879 2x1000"
+      - series: gatus_results_total{key="live-check_skat-sign-in", group="live-check", name="skat sign-in", type="UNKNOWN", success="true"}
+        values: "0x1439 1x1439 2x1439 3x1439"
+      - series: gatus_results_total{key="other_hopin-sign-in", group="other", name="hopin sign-in", type="UNKNOWN", success="true"}
+        values: "0x4000"
+    alert_rule_test:
+      - {eval_time: 40h, alertname: LiveCheckMissed}
+      - {eval_time: 48h30m, alertname: LiveCheckMissed}
+      - eval_time: 49h30m
+        alertname: LiveCheckMissed
+        exp_alerts:
+          - exp_labels: {group: live-check, key: live-check_hopin-sign-in, name: hopin sign-in}
+            exp_annotations: {summary: "No live:check result for hopin sign-in in 36 hours"}
+      - {eval_time: 61h, alertname: LiveCheckMissed}
+  - interval: 1m
+    name: a catch-up push within the hour of for keeps LiveCheckMissed from firing
+    input_series:
+      - series: gatus_results_total{key="live-check_hopin-sign-in", group="live-check", name="hopin sign-in", type="UNKNOWN", success="true"}
+        values: "0x2309 1x1000"
+    alert_rule_test:
+      - {eval_time: 38h30m, alertname: LiveCheckMissed}
+      - {eval_time: 40h, alertname: LiveCheckMissed}
+  - interval: 1m
+    name: a live check key whose first push is within 36 hours does not fire LiveCheckMissed until its series is older
+    input_series:
+      - series: gatus_results_total{key="live-check_hopin-sign-in", group="live-check", name="hopin sign-in", type="UNKNOWN", success="true"}
+        values: "_x2399 1x2400"
+    alert_rule_test:
+      - {eval_time: 50h, alertname: LiveCheckMissed}
+      - {eval_time: 70h, alertname: LiveCheckMissed}
+      - eval_time: 77h30m
+        alertname: LiveCheckMissed
+        exp_alerts:
+          - exp_labels: {group: live-check, key: live-check_hopin-sign-in, name: hopin sign-in}
+            exp_annotations: {summary: "No live:check result for hopin sign-in in 36 hours"}
+  - interval: 1m
+    name: a first success false push beside an older success true series does not fire LiveCheckMissed until the false series is older
+    input_series:
+      - series: gatus_results_total{key="live-check_hopin-sign-in", group="live-check", name="hopin sign-in", type="UNKNOWN", success="true"}
+        values: "0x1799 1x2999"
+      - series: gatus_results_total{key="live-check_hopin-sign-in", group="live-check", name="hopin sign-in", type="UNKNOWN", success="false"}
+        values: "_x2399 1x2400"
+    alert_rule_test:
+      - {eval_time: 70h, alertname: LiveCheckMissed}
+      - eval_time: 77h30m
+        alertname: LiveCheckMissed
+        exp_alerts:
+          - exp_labels: {group: live-check, key: live-check_hopin-sign-in, name: hopin sign-in}
+            exp_annotations: {summary: "No live:check result for hopin sign-in in 36 hours"}
+  - interval: 1m
+    name: a Gatus restart whose next push resets the counter and then rises does not fire LiveCheckMissed
+    input_series:
+      - series: gatus_results_total{key="live-check_hopin-sign-in", group="live-check", name="hopin sign-in", type="UNKNOWN", success="true"}
+        values: "3x1439 4x359 stale stale stale stale stale stale stale stale stale stale stale stale _x347 1x1439 2x1439"
+    alert_rule_test:
+      - {eval_time: 45h, alertname: LiveCheckMissed}
+      - {eval_time: 60h, alertname: LiveCheckMissed}
+      - {eval_time: 75h, alertname: LiveCheckMissed}
+  - interval: 1m
+    name: a suspended tunnel keeps LiveCheckMissed silent while it is suspended and for 36 hours after, then a key without a rise fires it
+    input_series:
+      - series: gatus_results_total{key="live-check_hopin-sign-in", group="live-check", name="hopin sign-in", type="UNKNOWN", success="true"}
+        values: "0x5400"
+      - series: gotk_resource_info{customresource_kind="Kustomization", exported_namespace="flux-system", name="tunnel", ready="True", suspended="true"}
+        values: "_x1799 1x601 _x3000"
+      - series: gotk_resource_info{customresource_kind="Kustomization", exported_namespace="flux-system", name="tunnel", ready="True"}
+        values: "1x1799 _x600 1x3000"
+    alert_rule_test:
+      - {eval_time: 35h, alertname: LiveCheckMissed}
+      - {eval_time: 50h, alertname: LiveCheckMissed}
+      - {eval_time: 75h, alertname: LiveCheckMissed}
+      - eval_time: 77h30m
+        alertname: LiveCheckMissed
+        exp_alerts:
+          - exp_labels: {group: live-check, key: live-check_hopin-sign-in, name: hopin sign-in}
+            exp_annotations: {summary: "No live:check result for hopin sign-in in 36 hours"}
   - interval: 1m
     name: a platform taken offline, with cloudflared at 0 replicas, its tunnel Kustomization suspended and its Gatus endpoint red, mails nothing
     input_series:
