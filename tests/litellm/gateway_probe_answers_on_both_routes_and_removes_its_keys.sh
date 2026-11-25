@@ -9,8 +9,9 @@
 # its port-forward, deletes its keys and its scratch directory; `--remove` deletes the probe keys of every page of the key
 # list and no other; question 18 answers from the call, the arguments and the billed prompt counts the gateway showed, on each
 # model, a refusal or a reference that loads nothing is its own answer, and a run of that question alone sends only the
-# requests it needs and deletes its key on every exit, an unknown question making none; and no key's value or hash reaches
-# the argument of any command.
+# requests it needs and deletes its key on every exit, an unknown question making none; question 4 alone asks the models
+# given as arguments and no others, answers a refusing model as no, and ends 1 before any key for a model that is not a text
+# name the gateway lists; and no key's value or hash reaches the argument of any command.
 # Usage: mise exec -- tests/litellm/gateway_probe_answers_on_both_routes_and_removes_its_keys.sh
 set -euo pipefail
 
@@ -164,6 +165,15 @@ for alone_case in "${alone_cases[@]}"; do
 done
 start_probe alone_failed "chat_fails" 0 --question 18
 start_probe alone_unknown "" 0 --question 3
+# Question 4 alone, on the models it is given: the answered pair, a refusing model, a default pair, an unlisted name, a name
+# that is no text name, a model argument for a question that takes none, and a failed run.
+start_probe models_given "" 0 --question 4 --model text/sonnet --model text/haiku-low
+start_probe models_refused "defer_refused" 0 --question 4 --model text/sonnet-low --model text/haiku-low
+start_probe models_default "" 0 --question 4
+start_probe models_unlisted "" 0 --question 4 --model text/sonnet --model text/nonesuch
+start_probe models_not_text "" 0 --question 4 --model image/flare
+start_probe models_misplaced "" 0 --question 18 --model text/sonnet
+start_probe models_failed "chat_fails" 0 --question 4 --model text/sonnet
 
 # A run with a healthy gateway.
 run_probe healthy
@@ -293,7 +303,55 @@ count_of alone_failed '^litellm:gateway-probe: the probe key gateway-probe-[0-9]
 ended_cleanly alone_failed
 run_probe alone_unknown
 [ "$status" = 1 ] || fail "alone_unknown: the probe ended $status, not 1"
-has alone_unknown 'question 3 does not run alone; those that do: 18'
+has alone_unknown 'question 3 does not run alone; those that do: 4 18'
 lacks alone_unknown 'the probe key'
 ended_cleanly alone_unknown
 echo "a run of one question deletes its key when it fails, and an unknown question makes none"
+
+# Question 4 alone answers Q4, Q5, Q6 and Q8 on the chat route for each model it is given and for no other.
+run_probe models_given
+[ "$status" = 0 ] || fail "models_given: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly models_given
+count_of models_given 'Q[0-9]+ \[' 8
+for model in text/sonnet text/haiku-low; do
+  for question in 4 5 6 8; do count_of models_given "Q$question \[[A-Z0-9 ]+\] chat $model: " 1; done
+done
+count_of models_given 'Q4 \[[A-Z0-9 ]+\] chat text/(sonnet|haiku-low): yes;' 2
+count_of models_given '^litellm:gateway-probe: the probe key gateway-probe-[0-9]+-[0-9]+-main is gone$' 1
+echo "question 4 alone asks the deferral question of the models it is given and of no others"
+
+# A model that refuses deferred tools is answered as no with its status, and the run ends 0 with its key gone.
+run_probe models_refused
+[ "$status" = 0 ] || fail "models_refused: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly models_refused
+has models_refused 'Q4 \[[A-Z0-9 ]+\] chat text/haiku-low: no, status 400;'
+has models_refused 'Q4 \[[A-Z0-9 ]+\] chat text/sonnet-low: yes;'
+echo "a model that refuses deferred tools is answered no with its status"
+
+# Without a model argument question 4 asks the pair of the full run.
+run_probe models_default
+[ "$status" = 0 ] || fail "models_default: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly models_default
+count_of models_default 'Q[0-9]+ \[' 8
+count_of models_default 'Q4 \[[A-Z0-9 ]+\] chat text/(sonnet-medium|haiku-fast): yes;' 2
+echo "question 4 alone without a model argument asks the default pair"
+
+# A model name the gateway does not list as a text name, and a model argument for a question without models, end the run 1 with
+# no key made and no paid request sent.
+for case_named in models_unlisted:text/nonesuch models_not_text:image/flare models_misplaced:takes.no.--model; do
+  case="${case_named%%:*}"
+  run_probe "$case"
+  [ "$status" = 1 ] || fail "$case: the probe ended $status, not 1: $(tail -n 5 <<<"$output")"
+  has "$case" "(${case_named#*:})"
+  lacks "$case" 'Q[0-9]+ \['
+  lacks "$case" 'the probe key'
+  ended_cleanly "$case"
+done
+echo "a model that is no listed text name ends the run 1 before any key or request"
+
+# A failed run of question 4 deletes its key.
+run_probe models_failed
+[ "$status" = 1 ] || fail "models_failed: the probe ended $status, not 1"
+count_of models_failed '^litellm:gateway-probe: the probe key gateway-probe-[0-9]+-[0-9]+-main is gone$' 1
+ended_cleanly models_failed
+echo "a failed run of question 4 deletes its key"
