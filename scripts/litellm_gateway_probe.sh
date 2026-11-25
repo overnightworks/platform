@@ -804,8 +804,6 @@ probe_start() {
   trap probe_exit EXIT
   connect
   ask "listing LiteLLM's models" /v1/models
-  [ "$(json '[.data[].id | select(. == "'"$sonnet_model"'" or . == "'"$haiku_model"'")] | length')" = 2 ] ||
-    fail "LiteLLM does not list both $sonnet_model and $haiku_model"
   for listed_model in "${probe_models[@]}"; do
     [ "$(NAME="$listed_model" json '[.data[].id | select(. == strenv(NAME) and test("^text/"))] | length')" = 1 ] ||
       fail "LiteLLM lists no text model $listed_model"
