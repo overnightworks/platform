@@ -193,6 +193,27 @@ on_calendar = "daily"
 persistent = true
 unit = "trash-prune"
 
+# The nightly sign-in of every app, reported to Gatus: `persistent` runs a night the PC missed at its next boot or resume,
+# and 01:30 UTC is 02:30 CET and 03:30 CEST, outside the DST hour and before litellm-expire's 04:00 UTC. working_directory
+# names the checkout the runbook and the apply name, which mise's `{{ config_root }}` would replace by the checkout the apply
+# runs from. The start limit ends a stuck run well before the next night; the stop delay lets a run's cleanup, which
+# live:check bounds at 300 seconds after a TERM, finish.
+[bootstrap.linux.systemd.units.live-check]
+description = "Sign in to every app and report each result to Gatus"
+type = "oneshot"
+exec_start = "~/.local/bin/mise run live:report nightly"
+working_directory = "~/git/platform"
+timeout_start_sec = "6h"
+timeout_stop_sec = "330"
+start = false
+wanted_by = []
+
+[bootstrap.linux.systemd.units.live-check-nightly]
+description = "Sign in to every app and report each result to Gatus nightly"
+on_calendar = "*-*-* 01:30 UTC"
+persistent = true
+unit = "live-check"
+
 # The PC's ufw keeps its defaults and the operator's own rules (no exclusive, whose ufw reset would delete them).
 # The pods reach the API server and the kubelet on the host through cni0, which only pods sit on, so one rule on the
 # interface alone admits them. mise's ufw check reads the "/16" of a source CIDR as a protocol, so a rule with a
@@ -1463,11 +1484,11 @@ quiet = true
 run = 'exec timeout -k 300 900 scripts/live_check.sh "${usage_app:-}"'
 
 # The report of the sign-in check, on the operator's PC, never from CI: it waits for the report's lock up to 60 minutes
-# and then runs `live:check` for each app with its waits, so it has no cap of its own.
+# and then runs `live:check` for each app with its waits, so it has no cap of its own; the nightly timer's unit caps it.
 [tasks."live:report"]
-description = "Runs on the operator's PC, never from CI: runs live:check for <app> (every app when none is given), once more after 10 minutes when red or skipped, pushes the final green or red to the app's Gatus row, and opens one item at the app's repository for a red after the rerun; nothing runs, is pushed or is opened while the platform is offline; exit 4 means another report holds the lock"
+description = "Runs on the operator's PC, never from CI: runs live:check for <app> (every app when none is given, and always for nightly, which first waits up to 20 minutes for Keycloak), once more after 10 minutes when red or skipped, pushes the final green or red to the app's Gatus row, and opens one item at the app's repository for a red after the rerun; nothing runs, is pushed or is opened while the platform is offline; exit 4 means another report holds the lock"
 usage = '''
-arg "<check>" help="The check to report: sign-in"
+arg "<check>" help="The check to report: sign-in for one app or every app, nightly for every app once Keycloak is Available (started by the timer)"
 arg "[app]" help="The app to report: one of the apps in the table in scripts/live_check_apps.sh"
 '''
 quiet = true
