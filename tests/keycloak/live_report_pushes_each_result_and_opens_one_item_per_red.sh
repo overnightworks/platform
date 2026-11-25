@@ -615,15 +615,17 @@ echo "nightly takes the report's lock and exits 4 when another report holds it p
 # systemd's stop sends TERM to every process of the unit's group: the fake run of attempt 2 hangs until it comes.
 prepare_case term-during-the-rerun
 script hopin "$(red_attempt hopin)" "hang||"
-launcher=(setsid)
+# The launcher names its pid, which is the report's process group once it has called setsid.
+launcher=(bash -c 'echo $$ >"$FAKE_STATE/runner-pid" && exec setsid "$@"' _)
 report_command nightly >"$output_file" 2>&1 &
-runner_pid=$!
+background_pid=$!
 launcher=()
 for _ in $(seq 100); do grep -q '^mise: hanging' "$state/log" 2>/dev/null && break; command sleep 0.1; done
+runner_pid="$(<"$state/runner-pid")"
 grep -q '^mise: hanging' "$state/log" || { kill -TERM -- "-$runner_pid" 2>/dev/null || true; refuse "term-during-the-rerun: attempt 2 never started"; }
 kill -TERM -- "-$runner_pid"
 status=0
-wait "$runner_pid" || status=$?
+wait "$background_pid" || status=$?
 expect_status term-during-the-rerun 143
 pushes_are "" && no_gh_call || refuse "term-during-the-rerun: a push or an item followed the TERM"
 ! kill -0 "$(<"$state/hang-pid")" 2>/dev/null || refuse "term-during-the-rerun: the attempt still runs"

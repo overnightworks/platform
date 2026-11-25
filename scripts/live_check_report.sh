@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# The command behind `mise run live:report sign-in [<app>]`: runs `live:check` for each app (or the one named), runs it
-# once more after 10 minutes when it was red or skipped, pushes the final green or red to the app's Gatus row, and opens
-# one item at the app's repository for a red after the rerun. Exit 0 is done, 1 a failed push or item, 4 another report
-# holds the lock for the whole bound, or the command's lock was held for 30 minutes for an app; nothing is pushed red for
-# a lock. While the platform is offline (the Kustomization tunnel is suspended) nothing is run, pushed or opened.
+# The command behind `mise run live:report sign-in [<app>]` and `mise run live:report nightly`: runs `live:check` for each
+# app (or the one named; `nightly`, which the timer starts, takes none and first waits up to 20 minutes for the Deployment
+# keycloak to be Available), runs it once more after 10 minutes when it was red or skipped, pushes the final green or red
+# to the app's Gatus row, and opens one item at the app's repository for a red after the rerun. Exit 0 is done, 1 a failed
+# push or item, 4 another report holds the lock for the whole bound, or the command's lock was held for 30 minutes for an
+# app; nothing is pushed red for a lock. While the platform is offline (the Kustomization tunnel is suspended) nothing is
+# run, pushed or opened. A TERM ends the report with 143, with no push, item or forward left for the apps not finished.
 # Output is the apps' result lines and one line per push and item, never the Gatus token or an item's body.
 #
 # The token reaches curl on stdin only, from the Secret gatus-push through a loopback forward to the Service gatus.
@@ -19,6 +21,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/live_check_apps.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/loopback_forward.sh"
 
 lock_wait_seconds="${LIVE_REPORT_LOCK_WAIT_SECONDS:-3600}"
+# Every kubectl and gh call, except the forward which loopback_forward.sh bounds, ends within this, so none holds a night.
+read_timeout_seconds=20
+# nightly waits for Keycloak before the lock, since the read is harmless to a report that holds it.
+keycloak_poll_seconds=30
+keycloak_wait_seconds="${LIVE_REPORT_KEYCLOAK_WAIT_SECONDS:-1200}"
 rerun_delay_seconds=600
 # The command's lock is held by a run of another head or of the timer: poll for it, 30 minutes at most per app.
 command_lock_poll_seconds=60
@@ -28,8 +35,8 @@ push_retry_seconds=60
 
 check="${1:-}"
 wanted_app="${2:-}"
-if [ "$check" != sign-in ] || { [ -n "$wanted_app" ] && [ -z "$(app_row "$wanted_app")" ]; }; then
-  echo "usage: mise run live:report sign-in [<app>]" >&2
+if { [ "$check" != sign-in ] && [ "$check" != nightly ]; } || { [ -n "$wanted_app" ] && { [ "$check" = nightly ] || [ -z "$(app_row "$wanted_app")" ]; }; }; then
+  echo "usage: mise run live:report sign-in [<app>] | nightly" >&2
   echo "apps: $(app_names | paste -sd ' ' -)" >&2
   exit 1
 fi
@@ -43,6 +50,35 @@ finish() {
 trap finish EXIT
 trap 'exit 143' TERM INT
 
+platform_is_offline() {
+  local suspended
+  suspended="$(timeout --foreground "$read_timeout_seconds" kubectl --namespace flux-system get kustomization tunnel --output jsonpath='{.spec.suspend}' 2>/dev/null)" || {
+    echo "live:report: the suspend of the tunnel cannot be read; the platform counts as online" >&2
+    return 1
+  }
+  [ "$suspended" = true ]
+}
+
+# keycloak_is_available: the Deployment keycloak/keycloak's Available condition; a read that fails counts as not Available.
+keycloak_is_available() {
+  local available
+  available="$(timeout --foreground "$read_timeout_seconds" kubectl --namespace keycloak get deployment keycloak \
+    --output jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null)" || return 1
+  [ "$available" = True ]
+}
+# wait_for_keycloak: polls until Keycloak is Available, the platform goes offline or the bound passes, which the apps' own
+# attempts and rerun then face; a PC that catches up a missed night finds k3s still starting.
+wait_for_keycloak() {
+  local waited=0
+  while ! platform_is_offline; do
+    keycloak_is_available && return 0
+    [ "$waited" -lt "$keycloak_wait_seconds" ] || return 0
+    sleep "$keycloak_poll_seconds"
+    waited=$((waited + keycloak_poll_seconds))
+  done
+}
+[ "$check" != nightly ] || wait_for_keycloak
+
 # One report at a time, and the command's own lock stays its own.
 lock_directory="$XDG_RUNTIME_DIR/live-check"
 [ -d "$lock_directory" ] || mkdir -m 700 -- "$lock_directory"
@@ -55,18 +91,9 @@ if ! flock --nonblock "$lock_descriptor"; then
   }
 fi
 
-platform_is_offline() {
-  local suspended
-  suspended="$(timeout --foreground 20 kubectl --namespace flux-system get kustomization tunnel --output jsonpath='{.spec.suspend}' 2>/dev/null)" || {
-    echo "live:report: the suspend of the tunnel cannot be read; the platform counts as online" >&2
-    return 1
-  }
-  [ "$suspended" = true ]
-}
-
 # ------------------------------------------------------------------------------------------------------ the push
 gatus_token_header() {
-  kubectl --namespace gatus get secret gatus-push --output go-template='Authorization: Bearer {{ .data.token | base64decode }}{{ "\n" }}'
+  timeout --foreground "$read_timeout_seconds" kubectl --namespace gatus get secret gatus-push --output go-template='Authorization: Bearer {{ .data.token | base64decode }}{{ "\n" }}'
 }
 # push_once <app> <true|false> <error>: one push through a fresh forward.
 push_once() {
@@ -125,7 +152,7 @@ open_item() {
     echo "live:report: $app skipped reason=offline"
     return 0
   fi
-  titles="$(gh issue list --repo "overnightworks/$app" --state open --search "in:title \"$title\"" --json title)" || {
+  titles="$(timeout --foreground "$read_timeout_seconds" gh issue list --repo "overnightworks/$app" --state open --search "in:title \"$title\"" --json title)" || {
     echo "live:report: $app item failed (gh exit $?)" >&2
     return 1
   }
@@ -133,7 +160,7 @@ open_item() {
     echo "live:report: $app item exists"
     return 0
   fi
-  url="$(item_body "$app" | gh issue create --repo "overnightworks/$app" --title "$title" --body-file -)" || gh_status=$?
+  url="$(item_body "$app" | timeout --foreground "$read_timeout_seconds" gh issue create --repo "overnightworks/$app" --title "$title" --body-file -)" || gh_status=$?
   if [ "$gh_status" != 0 ]; then
     echo "live:report: $app item failed (gh exit $gh_status)" >&2
     return 1
