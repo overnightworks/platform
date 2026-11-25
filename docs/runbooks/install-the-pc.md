@@ -15,7 +15,7 @@ Impact: the platform does not run on the PC before step 6. hal runs beside it th
      the plan lists only `/etc/rancher/k3s` and its config file;
    - present, with `k3s-uninstall.sh` beside it: an existing install, which goes on at step 9.
 
-- Before step 10 and 11, an agent: `loginctl show-user "$USER" --property=Linger`. It must print `Linger=yes`.
+- Before steps 10 and 11, an agent: `loginctl show-user "$USER" --property=Linger`. It must print `Linger=yes`.
 
 ## Fix
 
