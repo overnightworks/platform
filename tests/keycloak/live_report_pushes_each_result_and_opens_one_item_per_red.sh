@@ -64,7 +64,8 @@ FAKE
 # kubectl: the Secret's header on stdout, the forward line, the Service's port and the `tunnel` Kustomization's suspend,
 # which is read from tunnel-reads, one line per read, the last one for every later read (`unreadable` fails the read), and
 # the Available condition of the Deployment keycloak, read the same way from keycloak-reads.
-# FAKE_FORWARD_FAILS ends the forward with no line.
+# FAKE_FORWARD_FAILS ends the forward with no line, FAKE_SERVICE_HANGS makes the read of the Service gatus run until a
+# signal ends it.
 cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -83,7 +84,9 @@ case " $* " in
     log_event "kubectl: keycloak read $value"
     [ "$value" != unreadable ] || { echo "error: the server is unreachable" >&2; exit 1; }
     printf '%s' "$value" ;;
-  *" get service gatus "*) echo 8080 ;;
+  *" get service gatus "*)
+    [ -z "${FAKE_SERVICE_HANGS:-}" ] || { log_event "kubectl: service read hangs"; exec "$(command -p -v sleep)" 600; }
+    echo 8080 ;;
   *" get secret gatus-push "*)
     log_event "kubectl: secret read"
     printf 'Authorization: Bearer %s\n' "$(<"$FAKE_STATE/token")" ;;
@@ -641,6 +644,18 @@ grep -q 'hopin item failed (gh exit 124)' "$output_file" || refuse "gh-hangs: th
 grep -q 'success=false' "$state/pushes" || refuse "gh-hangs: the red push is gone"
 kept_clean gh-hangs
 echo "a gh call that hangs is cut by its bound and fails the item, not the night"
+
+prepare_case service-read-hangs
+script hopin "$(green_attempt hopin)"
+extra_environment=(LIVE_REPORT_READ_TIMEOUT_SECONDS=1 FAKE_SERVICE_HANGS=1)
+run_report service-read-hangs sign-in hopin
+extra_environment=()
+expect_status service-read-hangs 1
+[ "$(grep -c '^kubectl: service read hangs' "$state/log")" = 3 ] || refuse "service-read-hangs: not three cut reads, one per try"
+grep -q 'hopin push failed' "$output_file" || refuse "service-read-hangs: the failed push is not named"
+pushes_are "" && no_item && ! grep -q '^kubectl: forward started' "$state/log" || refuse "service-read-hangs: a push, an item or a forward followed the hung read"
+kept_clean service-read-hangs
+echo "a read of the Service port that hangs is cut by its bound and fails the push after its tries, with no false red"
 
 # ------------------------------------------------------------------------------------------------------- usage
 for usage_arguments in "" "journeys" "sign-in nosuchapp" "nightly hopin"; do

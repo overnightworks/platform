@@ -21,8 +21,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/live_check_apps.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/loopback_forward.sh"
 
 lock_wait_seconds="${LIVE_REPORT_LOCK_WAIT_SECONDS:-3600}"
-# Every kubectl and gh call, except the forward which loopback_forward.sh bounds, ends within this, so none holds a night.
-read_timeout_seconds=20
+# Every kubectl and gh call, except the forward which loopback_forward.sh bounds, ends within read_timeout_seconds, so
+# none holds a night; loopback_forward.sh sets its default.
+read_timeout_seconds="${LIVE_REPORT_READ_TIMEOUT_SECONDS:-$read_timeout_seconds}"
 # nightly waits for Keycloak before the lock, since the read is harmless to a report that holds it.
 keycloak_poll_seconds=30
 keycloak_wait_seconds="${LIVE_REPORT_KEYCLOAK_WAIT_SECONDS:-1200}"
