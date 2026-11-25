@@ -9,8 +9,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Both workers are the candidate's, Available with one Ready pod at a full app ref, so their probes of arq's health key
-# passed, and neither asks for the GPU; what the images cost the runner is printed.
+# Both workers are the candidate's, Available with one Ready pod at a full app ref, so their lease-based readiness
+# probes (the readiness file under /tmp plus a live owner lease) passed, and neither asks for the GPU; what the images
+# cost the runner is printed.
 applied_revision="$(kubectl --namespace flux-system get kustomization songmaker -o jsonpath='{.status.lastAppliedRevision}')"
 [ "${applied_revision##*@sha1:}" = "$CANDIDATE_REVISION" ] ||
   fail "the Kustomization songmaker applied '$applied_revision', not the candidate $CANDIDATE_REVISION"

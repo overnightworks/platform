@@ -2,6 +2,8 @@
 # namespace's Postgres password. Whisper large-v3 and the audio model are baked into its image under /opt/songmaker/models,
 # and the image sets their paths (SCORING_WHISPER_MODEL_DIR, SCORING_AUDIOBOX_CHECKPOINT); the scorers refuse a missing
 # path before a library could fetch from the Hub, so no offline switch is set. It reads the audio claim of the music worker.
+# It has no port; it is ready while the file it writes under /tmp holds this start's owner id and PID 1's current start
+# ticks and that owner's lease is live.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,7 +33,6 @@ spec:
       containers:
         - name: scoring-worker
           image: ghcr.io/overnightworks/songmaker/scoring-worker
-          args: [songmaker_cli.scoring_worker.ScoringWorkerSettings]
           env:
             - name: DATABASE_URL
               value: postgresql://songmaker@postgres:5432/songmaker
@@ -51,7 +52,7 @@ spec:
               value: /tmp
           startupProbe:
             exec:
-              command: &health [/app/.venv/bin/python, /app/scripts/arq_healthcheck.py, scoring]
+              command: &health [/app/.venv/bin/python, /app/scripts/worker_readiness.py]
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 60
