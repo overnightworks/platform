@@ -51,10 +51,13 @@ finish() {
 trap finish EXIT
 trap 'exit 143' TERM INT
 
+# An unreadable suspend is said once per run, so the Keycloak wait of a cold boot, which polls every 30 seconds with k3s
+# still down, does not fill the journal with it.
 platform_is_offline() {
   local suspended
   suspended="$(timeout --foreground "$read_timeout_seconds" kubectl --namespace flux-system get kustomization tunnel --output jsonpath='{.spec.suspend}' 2>/dev/null)" || {
-    echo "live:report: the suspend of the tunnel cannot be read; the platform counts as online" >&2
+    [ -n "${suspend_unreadable_said:-}" ] || echo "live:report: the suspend of the tunnel cannot be read; the platform counts as online" >&2
+    suspend_unreadable_said=yes
     return 1
   }
   [ "$suspended" = true ]

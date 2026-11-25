@@ -8,7 +8,7 @@ Impact: the platform does not run on the PC before step 6. hal runs beside it th
 1. An agent: `scripts/bootstrap_pc.sh --only tools`.
 2. The operator: `scripts/bootstrap_pc.sh plan --detailed-exitcode`. It lists only the entry state's changes,
    which `/usr/local/bin/k3s` decides, and the pod-log parts and the timer until they are applied, and the live check's two
-   user units until step 11 applies them:
+   user units, `dev.mise.live-check` and `dev.mise.live-check-nightly`, until step 11 applies them:
    - absent, no `mise:` ufw rule, no `/var/lib/mise/bootstrap/firewall.json`: a first install; the plan lists
      `/etc/rancher/k3s`, its config file, the firewall and the rule;
    - absent, that rule and state file kept, `/etc/rancher` holding at most `node/password`: the uninstalled state;
