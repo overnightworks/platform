@@ -1,0 +1,7 @@
+claim_id = "e38d6d43dda346f0b9051bf97e53ee99"
+agent = "Claude 39da7639-4ab3-460b-91eb-5cd624d40a7e"
+role = "builder"
+base = "58207431d08ae794e057af0308307df3be03747b"
+branch = "claude/issue-890-platform-pins-quality-v0-27-0"
+scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml"]
+opened_commit = "657851f86088ef3f92bdd9722f56602b1b2cdece"
