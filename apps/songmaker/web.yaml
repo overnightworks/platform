@@ -106,7 +106,7 @@ spec:
             - name: PUBLIC_BASE_URL
               value: https://songmaker.hallucinai.de
             # The co-writer's gateway is the platform's AI front with the key of this app's row in keys.yaml; a partly set
-            # value stops the start, so the three stand together.
+            # value stops the start, so the two stand together.
             - name: AGENT__GATEWAY__ORIGIN
               value: http://litellm-front.litellm:4000
             - name: AGENT__GATEWAY__KEY_FILE
