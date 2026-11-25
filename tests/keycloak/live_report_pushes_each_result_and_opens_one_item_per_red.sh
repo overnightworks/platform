@@ -635,10 +635,13 @@ pushes_are "" && no_gh_call || refuse "term-during-the-rerun: a push or an item 
 kept_clean term-during-the-rerun
 echo "a TERM to the whole group during attempt 2 ends the report with 143, with no push of false, no item and no forward left"
 
-# A call that hangs is cut after 20 seconds, so one stuck read cannot hold a night until the cap.
+# A call that hangs is cut after its bound, so one stuck read cannot hold a night until the cap; the cases set the bound to
+# one second where the report's own is 20.
 prepare_case gh-hangs
 script hopin "$(red_attempt hopin)" "$(red_attempt hopin)"
+extra_environment=(LIVE_REPORT_READ_TIMEOUT_SECONDS=1)
 FAKE_GH_FAILS=hang-list run_report gh-hangs sign-in hopin
+extra_environment=()
 expect_status gh-hangs 1
 grep -q 'hopin item failed (gh exit 124)' "$output_file" || refuse "gh-hangs: the hung lookup was not cut after its bound"
 grep -q 'success=false' "$state/pushes" || refuse "gh-hangs: the red push is gone"
