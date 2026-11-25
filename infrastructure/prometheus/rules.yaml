@@ -1,4 +1,4 @@
-# The platform's alert rules, which Prometheus reads from /etc/rules; tests/prometheus/rules_test.yml proves their
+# The platform's alert rules, which Prometheus reads from /etc/rules; the *_test.yml files in tests/prometheus prove their
 # durations, firing and resolving with promtool.
 apiVersion: v1
 kind: ConfigMap

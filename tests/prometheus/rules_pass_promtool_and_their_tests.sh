@@ -12,8 +12,9 @@ image="$(yq --no-doc 'select(.kind == "Deployment" and .metadata.name == "promet
 [ -n "$image" ] || fail "infrastructure/prometheus/rendered.yaml holds no Prometheus image"
 yq 'select(.kind == "ConfigMap" and .metadata.name == "prometheus-rules") | .data["rules.yml"]' \
   infrastructure/prometheus/rules.yaml >"$scratch/rules.yml"
-cp "$tests_directory/rules_test.yml" "$scratch/rules_test.yml"
+cp "$tests_directory"/*_test.yml "$scratch"
 chmod -R a+rX "$scratch"
 promtool() { docker run --rm --volume "$scratch:/rules:ro" --workdir /rules --entrypoint promtool "$image" "$@"; }
 promtool check rules rules.yml
-promtool test rules rules_test.yml
+test_files=("$scratch"/*_test.yml)
+promtool test rules "${test_files[@]##*/}"
