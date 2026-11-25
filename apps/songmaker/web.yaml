@@ -106,13 +106,11 @@ spec:
             - name: PUBLIC_BASE_URL
               value: https://songmaker.hallucinai.de
             # The co-writer's gateway is the platform's AI front with the key of this app's row in keys.yaml; a partly set
-            # value stops the start, so the four stand together.
+            # value stops the start, so the two stand together.
             - name: AGENT__GATEWAY__ORIGIN
               value: http://litellm-front.litellm:4000
             - name: AGENT__GATEWAY__KEY_FILE
               value: /run/secrets/litellm_key
-            - name: AGENT__API_GROUP
-              value: /services/litellm
             # The platform's object store, whose Service s3 is the endpoint of every app: the SDK reads the endpoint,
             # the region and the key file from these names, and the bucket is the Namespace's own. Only the web reads
             # or writes it with its own key, and the bucket is backed up through the layer's `files/bucket` Component.
