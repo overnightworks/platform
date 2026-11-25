@@ -1,8 +1,0 @@
-claim_id = "7aaa1333ed6c43f3b94461fd30020ff2"
-agent = "Claude 39da7639-4ab3-460b-91eb-5cd624d40a7e"
-role = "builder"
-base = "9161d8104c9f150d6807030d0b5ccb905574d2be"
-branch = "claude/issue-923-songmaker-2026-11-24-3-the-bump-lands-wi"
-scope = ["apps/songmaker/music-worker.yaml", "apps/songmaker/release/kustomization.yaml", "apps/songmaker/scoring-worker.yaml", "apps/songmaker/web.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/songmaker", "infrastructure/legal/built", "tests/songmaker/workers_are_ready_at_their_full_ref_and_scoring_reaches_only_its_stores.sh"]
-opened_commit = "f1c8d8bfbcf995542717aa64137491499e57d708"
-whole_reason = "The release ref and the three manifests its images need move in one pull request, with the legal copies the release refreshes."
