@@ -1143,6 +1143,9 @@ jobs:
       - name: Check that the journal's drop-in is read by systemd, its limits add up to under 30 days and its notification names a declared service
         run: tests/journald/retention_drop_in_keeps_every_entry_under_30_days.sh
 
+      - name: Check that the nightly live check's timer parses in UTC, starts the one service that runs live:report nightly, and that the service's start limit stays below the timer's period and its stop delay above live:check's kill delay
+        run: tests/live-check/nightly_timer_parses_in_utc_and_its_start_limit_stays_below_its_period.sh
+
       - name: Check that the dotfiles step writes both commit hooks as mode 755 and leaves core.hooksPath unset
         run: tests/bootstrap/dotfiles_write_both_hooks_with_mode_755.sh
 

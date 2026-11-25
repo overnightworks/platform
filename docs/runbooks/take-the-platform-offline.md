@@ -23,7 +23,8 @@ and tells him at once.
 
 A change to a tunnel line merged while the platform is offline applies at `online`, since `tunnel` is suspended.
 
-`mise run live:report` runs, pushes and opens nothing while the platform is offline and prints `skipped reason=offline`.
+`mise run live:report` runs, pushes and opens nothing while the platform is offline and prints `skipped reason=offline`;
+`LiveCheckMissed` stays silent for 36 hours after `online` (`docs/operations.md` OPS-24).
 
 Rollback: `mise run online`.
 
