@@ -182,7 +182,8 @@ every exit as in a full run, and a number that does not run alone ends 1 before 
 `mise run litellm:gateway-probe --question 4 --model <name> [--model <name> ...]` asks the deferred-tool question (questions 4
 to 6 and 8, one flow) on the chat route for each named model, for a model an app uses that the full run does not ask; the
 caller names the models, the probe reads no app's configuration, a name that is no text model `/v1/models` lists ends 1
-before any key is made, and without `--model` it asks the pair of the full run.
+before any key is made, as does a `--model` on any question other than 4, and without `--model` it asks the pair of the
+full run. It sends seven requests per model.
 
 `mise run litellm:keys [--plan]` makes the person budget (the id of `max_end_user_budget_id`) and each row's key equal
 to it, sending only the fields that differ, so a pure budget change keeps the period's reset; it prints the revision
