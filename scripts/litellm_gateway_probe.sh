@@ -12,9 +12,11 @@
 #                                              key cannot be made, a plain request is refused or a key cannot be removed
 #   scripts/litellm_gateway_probe.sh --question <number> [--model <name>]...
 #                                              runs one question alone (the numbers of alone_questions) with only the setup it
-#                                              needs: the key, the plain check on its route and its lines, then the cost; a
-#                                              question whose models come from arguments (4) asks the --model names, each a text
-#                                              name /v1/models lists, else the pair above; any other question ends 1 on --model
+#                                              needs: the key, the plain check on its route, a calibration request per model
+#                                              where its flow has one (question 4: one small /v1/messages call), its lines, then
+#                                              the cost; a question whose models come from arguments (4) asks the --model names,
+#                                              each a text name /v1/models lists, else the pair above; any other question ends 1
+#                                              on --model
 #   scripts/litellm_gateway_probe.sh --remove  deletes the test person's customer row and any probe key a killed run left
 # Both probe keys are deleted on every exit, a failure included; only SIGKILL leaves one, which --remove clears. The second
 # key has a budget of one millionth of a dollar and shows the budget on both routes. The run deletes the test person's row
