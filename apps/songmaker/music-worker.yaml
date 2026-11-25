@@ -54,7 +54,7 @@ spec:
           # /tmp; it succeeds once that file's ticks are current and the owner's lease is live.
           startupProbe:
             exec:
-              command: &health [/app/.venv/bin/python, scripts/music_worker_readiness.py]
+              command: &health [/app/.venv/bin/python, scripts/worker_readiness.py]
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 60
