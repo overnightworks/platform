@@ -294,7 +294,10 @@ and the keys the run did not reach mail through `LiveCheckMissed`. `systemctl --
 `journalctl --user -u dev.mise.live-check` holds its result and push lines. `LiveCheckMissed` fires one alert per key of
 the group `live-check` whose counter `gatus_results_total` has not risen in 36 hours, after an hour of `for`, with the
 summary `No live:check result for <row> in 36 hours`; the Gatus row keeps its last result and its time, which the mail
-reports. A key whose series is new within the window counts as fresh (its first push, and the first push of a `success`
-value it never had); a restart of Gatus reads the next push as a counter reset. The rule is silent while `tunnel` is
-suspended and for 36 hours after `mise run online`, so an offline raises nothing, and a key with no push in 30 days
-leaves it. Gatus' heartbeat for these rows stays off, because its misses would count in the same counter. (OPS-24)
+reports. A key whose series is new within the window counts as fresh (its first push, the first push of a `success`
+value it never had and the first push after a restart of Gatus, which drops every series), and a gap of Prometheus'
+samples shorter than 3 hours changes nothing. A key seen under a Gatus that started within 39 hours counts as pushed, so
+a restart neither mails nor hides a miss, whenever the next push comes; a key pushed only in the first 3 hours after a
+Gatus start mails up to 3 hours late. The rule is silent while `tunnel` is suspended and for 36 hours after
+`mise run online`, so an offline raises nothing, and a key with no push in 30 days leaves it. Gatus' heartbeat for these
+rows stays off, because its misses would count in the same counter. (OPS-24)
