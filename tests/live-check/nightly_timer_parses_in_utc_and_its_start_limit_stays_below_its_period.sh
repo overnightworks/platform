@@ -11,7 +11,6 @@ export PATH="$HOME/.local/bin:$PATH"
 command -v systemd-analyze >/dev/null || apt-get install --yes --no-install-recommends systemd >/dev/null
 units=.bootstrap.linux.systemd.units
 unit_value() { mise exec -- yq -p toml -oy "${units}[\"$1\"].$2 // \"\"" mise.toml; }
-seconds_of_timespan() { systemd-analyze timespan "$1" | awk '/^ *[^ ]+s: /{ print int($2 / 1000000) }'; }
 
 service="$(mise exec -- yq -p toml -oy "$units | to_entries | .[] | select((.value.exec_start // \"\") | test(\"live:report nightly\$\")) | .key" mise.toml)"
 [ "$(wc -l <<<"$service")" = 1 ] && [ -n "$service" ] || fail "mise.toml declares not exactly one service that runs live:report nightly: '$service'"
