@@ -318,6 +318,8 @@ for model in text/sonnet text/haiku-low; do
 done
 count_of models_given 'Q4 \[[A-Z0-9 ]+\] chat text/(sonnet|haiku-low): yes;' 2
 count_of models_given '^litellm:gateway-probe: the probe key gateway-probe-[0-9]+-[0-9]+-main is gone$' 1
+lacks models_given 'unbound variable'
+has models_given 'Q4 \[[A-Z0-9 ]+\] chat text/sonnet: yes;.*no skill tools [0-9]{4,}'
 echo "question 4 alone asks the deferral question of the models it is given and of no others"
 
 # A model that refuses deferred tools is answered as no with its status, and the run ends 0 with its key gone.

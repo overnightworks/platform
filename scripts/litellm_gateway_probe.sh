@@ -823,9 +823,9 @@ probe_end() {
 }
 
 # The questions that run alone, each the routes of its flow, the flow and where its models come from: "pair" is probe_models,
-# "arguments" the --model names when there are any; their setup is the key and the plain check, since a flow of them needs no
-# calibration. A full run asks question 18 through run_question too.
-declare -A alone_questions=([4]="chat flow_deferred arguments" [18]="chat flow_mixed_result pair")
+# "arguments" the --model names when there are any, and whether its models are calibrated first; their setup is the key, the
+# plain check and that calibration. A full run asks question 18 through run_question too.
+declare -A alone_questions=([4]="chat flow_deferred arguments calibrate" [18]="chat flow_mixed_result pair plain")
 alone_numbers() { printf '%s\n' "${!alone_questions[@]}" | sort -n | paste -sd' '; }
 # run_question <number>: asks the question on its routes, as a full run and a run alone both do.
 run_question() {
@@ -870,20 +870,25 @@ probe_command() {
 
 # alone_command <number> [--model <name>]...: one question with only its setup, on the --model names where it takes them.
 alone_command() {
-  local routes models_from number="$1" given_models=()
+  local routes models_from calibration number="$1" given_models=()
+  local -A seen_models=()
   shift
   [ -n "${alone_questions[$number]-}" ] || fail "question $number does not run alone; those that do: $(alone_numbers)"
   while [ $# -gt 0 ]; do
     [ "$1" = --model ] && [ $# -ge 2 ] || fail "$usage_hint"
-    given_models+=("$2")
+    [ -n "${seen_models[$2]-}" ] || given_models+=("$2")
+    seen_models[$2]=1
     shift 2
   done
-  read -r routes _ models_from <<<"${alone_questions[$number]}"
+  read -r routes _ models_from calibration <<<"${alone_questions[$number]}"
   if [ "${#given_models[@]}" -gt 0 ]; then
     [ "$models_from" = arguments ] || fail "question $number takes no --model"
     probe_models=("${given_models[@]}")
   fi
   probe_start "$routes"
+  if [ "$calibration" = calibrate ]; then
+    for model in "${probe_models[@]}"; do calibrate "$model"; done
+  fi
   run_question "$number"
   probe_end
 }
