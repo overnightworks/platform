@@ -4,9 +4,9 @@
 # applies master.yaml and realm.yaml through config-cli, prints one line `READY <json>` and holds until SIGTERM, SIGINT
 # or EOF on stdin. Teardown removes every container, network and volume of its compose project, and only of that one;
 # it prints `HOLD ENDED` and exits 0. A failed bring-up, a signal before READY or an object left after teardown prints
-# `PROBE FAILED: <what>` and exits 1; a scratch directory that is not new or empty exits 2. DIR holds the generated secrets and the env files while the hold runs and loses them on
-# every exit once docker's teardown ran; the project's name and docker's log (the containers' log after a failure) stay
-# with the caller.
+# `PROBE FAILED: <what>` and exits 1; a scratch directory that is not new or empty exits 2. DIR holds the generated
+# secrets and the env files while the hold runs and loses them on every exit once docker's teardown ran; the project's
+# name and docker's log (the containers' log after a failure) stay with the caller.
 # Each run has its own compose project and its own host ports, so holds run side by side. The caller runs it under
 # probe-run. Keycloak serves edge_url itself; a client sends `Host: auth.hallucinai.de` and `X-Forwarded-Proto: https`
 # as Traefik would, from an address of the hold's network.
