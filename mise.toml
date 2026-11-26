@@ -977,7 +977,7 @@ drop_loader() {
   [ -z "$claim" ] || scripts/load_snapshot.sh stop "$namespace" ||
     echo "db:load-dump: the loader $loader of $namespace could not be deleted; delete it before Flux resumes" >&2
 }
-# Every exit that leaves the Kustomization suspended says why, then the way back.
+# Every handler that deletes the loader and leaves the Kustomization suspended says why, then the way back.
 stay_suspended() {
   drop_loader
   echo "db:load-dump: $1; the Kustomization $namespace stays suspended and its writers at 0: $(way_back)" >&2
