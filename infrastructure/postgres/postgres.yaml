@@ -1,5 +1,7 @@
-# One Postgres per namespace that includes this base: database and user are the namespace's name, its password the key
-# password of the namespace's Secret postgres from platform-secrets.
+# One Postgres per namespace that includes this base: database and app role are the namespace's name, its password the key
+# password of the namespace's Secret postgres from platform-secrets. The app's role owns the database and every object
+# in it and is no superuser (scripts/app_role.sh); the superuser is the bootstrap role postgres, without a password, which
+# only the container's local trust reaches, so a tool that needs it names it with --username=postgres.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -46,17 +48,17 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # The bootstrap role of a fresh server; the app's role is the namespace's name, which scripts/app_role.sh creates.
             - name: POSTGRES_USER
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
+              value: postgres
             - name: POSTGRES_PASSWORD_FILE
               value: /run/secrets/postgres/password
             # A subdirectory, which the entrypoint creates as uid 70 at 0700 inside the volume local-path creates 0777.
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
-            # psql, pg_dump, pg_restore and pg_isready in this container, kubectl exec included, connect as the
-            # namespace's user to its database.
+            # psql, pg_dump, pg_restore and pg_isready in this container, kubectl exec included, connect as the app's
+            # role to its database, so what an exec creates belongs to the owner; the superuser is named by
+            # --username=postgres.
             - name: PGUSER
               valueFrom:
                 fieldRef:
@@ -68,12 +70,19 @@ spec:
           ports:
             - name: postgres
               containerPort: 5432
-          # The role reader, which scripts/reader_role.sh declares at every start; the hook never fails, so Postgres starts
-          # whatever the step finds.
+          # The roles, which scripts/app_role.sh and scripts/reader_role.sh declare at every start once
+          # scripts/server_ready.sh found the server; the hook never fails, so Postgres starts whatever the steps find. The
+          # hook's own stderr reaches no log, the container's does. A container is Running only once the hook has
+          # ended, so no app reaches the server through the Service before the roles are declared.
           lifecycle:
             postStart:
               exec:
-                command: [sh, -c, sh /etc/postgres-reader/reader_role.sh keep || true]
+                command:
+                  - sh
+                  - -c
+                  - |
+                    [ ! -w /proc/1/fd/2 ] || exec 2>/proc/1/fd/2
+                    cd /etc/postgres-roles && sh server_ready.sh && { sh app_role.sh keep; sh reader_role.sh keep; } || true
           readinessProbe:
             exec:
               command: [pg_isready]
@@ -96,8 +105,8 @@ spec:
             - name: checks
               mountPath: /etc/postgres-checks
               readOnly: true
-            - name: reader
-              mountPath: /etc/postgres-reader
+            - name: roles
+              mountPath: /etc/postgres-roles
               readOnly: true
       volumes:
         - name: run
@@ -110,10 +119,10 @@ spec:
         - name: checks
           configMap:
             name: postgres
-        # The generated ConfigMap's hash changes with the script, so a changed declaration rolls the Pod.
-        - name: reader
+        # The generated ConfigMap's hash changes with a script, so a changed declaration rolls the Pod.
+        - name: roles
           configMap:
-            name: postgres-reader
+            name: postgres-roles
   volumeClaimTemplates:
     - metadata:
         name: data

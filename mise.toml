@@ -895,7 +895,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-exec kubectl --namespace "${usage_namespace?}" exec --stdin postgres-0 --container postgres -- sh /etc/postgres-reader/reader_role.sh read
+exec kubectl --namespace "${usage_namespace?}" exec --stdin postgres-0 --container postgres -- sh /etc/postgres-roles/reader_role.sh read
 '''
 
 # The platform's restore command. A dump holds keys and hashes, so every line it prints is a name, a count or an
@@ -927,8 +927,9 @@ fail() { echo "db:load-dump: $1" >&2; exit 1; }
   fail "DB_LOAD_DUMP_ALONE_SECONDS is '$alone_seconds', not a whole number of seconds from 1 without a leading zero; unset it for the default or set the seconds to wait; nothing changed"
 in_postgres() { kubectl --namespace "$namespace" exec "$pod" --container postgres -- "$@"; }
 dump_into_postgres() { kubectl --namespace "$namespace" exec --stdin "$pod" --container postgres -- "$@" <"$file"; }
+# The superuser sees every session's backend_type; another role sees other roles' sessions as NULL, which would count as none.
 other_sessions() {
-  in_postgres psql --no-psqlrc --tuples-only --no-align --command="SELECT count(*) FROM pg_stat_activity
+  in_postgres psql --username=postgres --no-psqlrc --tuples-only --no-align --command="SELECT count(*) FROM pg_stat_activity
     WHERE datname = current_database() AND backend_type = 'client backend' AND pid <> pg_backend_pid()"
 }
 # pg_restore reads the archive's header and table of contents before it connects, so one whose client died can run
@@ -1096,14 +1097,14 @@ before_load="$(fingerprint)" || fail "cannot read the database $namespace before
 log="$file.load.log"
 : >"$log" && chmod 0600 "$log"
 say "loading $file in one transaction; pg_restore's messages go to $log"
-# A COPY error quotes a row, also in the server's log, which these settings keep silent for this session. The
-# redirections stay on the kubectl command, where only its process gets them: on a function call they would hold
+# A COPY error quotes a row, also in the server's log, which these settings, a superuser's, keep silent for this
+# session. The redirections stay on the kubectl command, where only its process gets them: on a function call they would hold
 # while a trap prints the outcome, which would then go to the log.
 trap failed_load EXIT
 load_status=0
 kubectl --namespace "$namespace" exec --stdin "$pod" --container postgres -- \
   env PGOPTIONS='-c log_min_messages=panic -c log_min_error_statement=panic' pg_restore --clean --if-exists --no-owner \
-  --role="$namespace" --single-transaction --exit-on-error --dbname="$namespace" <"$file" 2>"$log" || load_status=$?
+  --username=postgres --role="$namespace" --single-transaction --exit-on-error --dbname="$namespace" <"$file" 2>"$log" || load_status=$?
 [ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log"
 # The data is committed: until it is verified, a signal or a failure leaves the writers stopped, not resumed on it.
 unverified() { stay_suspended "the loaded data is not verified against $file"; }

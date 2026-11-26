@@ -1,8 +1,9 @@
 #!/bin/sh
 # reader_role.sh keep | read: the role reader of this server's database, its one declaration and its one session.
 #   keep  declares the role: no password, no right but pg_read_all_data's, so the server refuses it every write and
-#         every object. It runs at each start of the container and ends 0 whatever it finds, since a hook that fails
-#         or hangs keeps Postgres from running while a missing role harms no state; read then refuses.
+#         every object. It runs as the superuser postgres at each start of the container, once server_ready.sh found
+#         the server, and ends 0 whatever it finds, since a hook that fails or hangs keeps Postgres from running while
+#         a missing role harms no state; read then refuses.
 #   read  runs the SQL on stdin as the role through the container's local trust, in a read-only session whose
 #         timeouts it sets itself, after it has found the session to be the declared role.
 set -eu
@@ -10,24 +11,11 @@ here="$(dirname "$0")"
 role=reader
 comment='declared by infrastructure/postgres/scripts/reader_role.sh'
 connections="$(cat "$here/connections")"
-wait_seconds=300
 
 keep() {
-  # The hook's own stderr reaches no log; the container's does.
-  [ ! -w /proc/1/fd/2 ] || exec 2>/proc/1/fd/2
-  attempts=0
-  # The first start's server listens on no TCP port, so the wait ends only when the final server answers.
-  until pg_isready --host=127.0.0.1 --quiet; do
-    attempts=$((attempts + 1))
-    if [ "$attempts" -ge "$wait_seconds" ]; then
-      echo "reader_role.sh keep: no server answered on 127.0.0.1 within $wait_seconds seconds; the role $role is not declared" >&2
-      return 0
-    fi
-    sleep 1
-  done
   # client_min_messages keeps the NOTICE of a grant the role already holds out of the log.
   if ! PGOPTIONS='-c lock_timeout=2s -c statement_timeout=10s -c client_min_messages=warning' \
-    psql --host=127.0.0.1 --no-psqlrc --quiet \
+    psql --host=127.0.0.1 --username=postgres --no-psqlrc --quiet \
     --set=ON_ERROR_STOP=1 --single-transaction --set=role="$role" --set=comment="$comment" \
     --set=connections="$connections" --set=database="$PGDATABASE" --file=- <<'SQL'
 WITH existing AS (SELECT oid FROM pg_roles WHERE rolname = :'role')

@@ -215,8 +215,8 @@ jobs:
       - name: Check that the Deployments of the namespaces of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM, a rollout's surge included, plus the backup and the role reader stay within their Postgres' max_connections, and that a raised replica, surge or pool, a missing declaration and a lowered limit are each red
         run: mise exec -- tests/postgres/connections_stay_within_max_connections.sh apps/hopin apps/songmaker apps/personas apps/skat apps/presentator infrastructure/keycloak infrastructure/litellm
 
-      - name: Check that reader_role.sh keep ends 0 with one line naming its bound when no server answers, and never reaches psql
-        run: mise exec -- tests/postgres/reader_keep_gives_up_past_its_bound.sh
+      - name: Check that server_ready.sh ends 1 with one line naming its bound when no server answers
+        run: mise exec -- tests/postgres/server_ready_gives_up_past_its_bound.sh
 
   # The legs of cluster: core and the parts the run's changed paths select, which tests/flux/parts.yaml owns. cluster is
   # never skipped, since the gate reads a skipped mandatory job as red, so a scope that selects nothing but core still has a leg.
@@ -624,9 +624,27 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
-      - name: Check that mise run db:read passes the check of the declared role reader in every Postgres namespace, which holds the connection limit of its ConfigMap and counts the first key table as the superuser does
+      - name: Check that mise run db:read passes the check of the declared role reader in every Postgres namespace, which holds the connection limit of its ConfigMap and counts the first key table as the owner does
         if: matrix.part == 'load-1'
         run: tests/postgres/every_postgres_reads_as_its_declared_reader.sh
+
+      - name: Check that in every Postgres namespace the app's role is no superuser, owns its database and every object in it and logs in with the Secret's password, and that the bootstrap role postgres has no password
+        if: matrix.part == 'load-1'
+        run: tests/postgres/every_app_role_owns_its_database_and_is_no_superuser.sh
+
+      - name: Check that app_role.sh keep moves a database the bootstrap role owns to its app role, reaches the same state on a fresh server, leaves a second run, an extension and a session's temporary table alone and refuses a kind it does not move
+        if: matrix.part == 'load-3'
+        env:
+          # The layer whose Postgres runs the throwaway servers and whose database is dumped into the first.
+          PROOF_LAYER: litellm
+        run: tests/postgres/keep_moves_a_bootstrap_owned_database_to_its_app_role.sh
+
+      - name: Check that the app's role is refused a program, a server file, an untrusted extension, a superuser attribute and a server role, and still creates its tables and plpgsql functions
+        if: matrix.part == 'load-3'
+        env:
+          # The layer whose Postgres the cell drives.
+          PROOF_LAYER: litellm
+        run: tests/postgres/an_app_role_is_refused_programs_server_files_and_untrusted_extensions.sh
 
       - name: P7a foreign-session and interrupt cells
         if: matrix.part == 'load-3'

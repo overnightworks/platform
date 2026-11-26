@@ -3,7 +3,7 @@
 # Needs kubectl and yq, and no cluster. Renders each layer directory (one namespace with its own Postgres) and judges
 # that what can hold a connection to that Postgres at once fits: the sum over its Deployments that mount or read the
 # Secret postgres of the pods they can have at once x connections per pod, plus the backup's dump and the connections
-# of the role reader (the key connections of the generated ConfigMap postgres-reader), is at most max_connections less
+# of the role reader (the key connections of the generated ConfigMap postgres-roles), is at most max_connections less
 # superuser_reserved_connections, both read from the Postgres StatefulSet's arguments. A Recreate Deployment has its
 # replicas, since its old pods are gone before the new ones start. A RollingUpdate has 2 x replicas
 # + the surge: a pod being stopped is no part of the surge and may hold its connections for as long as its stop takes,
@@ -51,8 +51,8 @@ server_limit() {
     sed -n "s/^$2=//p"
 }
 
-reader_connections_selector='select(.kind == "ConfigMap" and (.metadata.name | test("^postgres-reader-"))) | .data.connections'
-# reader_connections <rendered>: the connections the generated ConfigMap postgres-reader gives the role reader.
+reader_connections_selector='select(.kind == "ConfigMap" and (.metadata.name | test("^postgres-roles-"))) | .data.connections'
+# reader_connections <rendered>: the connections the generated ConfigMap postgres-roles gives the role reader.
 reader_connections() {
   yq --no-doc "$reader_connections_selector" "$1"
 }
@@ -69,7 +69,7 @@ judge() {
   fi
   reader="$(reader_connections "$rendered")"
   if ! [[ $reader =~ ^(0|[1-9][0-9]*)$ ]]; then
-    echo "problem: $namespace: the ConfigMap postgres-reader gives '$reader' connections to the role reader, not a non-negative integer"
+    echo "problem: $namespace: the ConfigMap postgres-roles gives '$reader' connections to the role reader, not a non-negative integer"
     return
   fi
   rows="$(deployments "$rendered")" || {

@@ -26,15 +26,16 @@ read_suspension() {
   [[ $state == "$namespace:"* ]] || fail "the suspension of the Kustomization $namespace read as '$state'"
   suspension="${state#*:}"
 }
-# Sessions of the database inside a transaction that wait for their client, as a pg_restore without input does.
+# Sessions of the database inside a transaction that wait for their client, as a pg_restore without input does. The
+# load's pg_restore is a session of the superuser postgres, whose state and wait event only a superuser reads.
 blocked_sessions() {
-  kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only --no-align \
+  kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --username=postgres --no-psqlrc --tuples-only --no-align \
     --command="SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()
       AND xact_start IS NOT NULL AND wait_event = 'ClientRead'"
 }
 # The sessions' states, wait events and whether each holds a transaction, without their queries or rows.
 session_states() {
-  kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --command="SELECT pid, state,
+  kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --username=postgres --no-psqlrc --command="SELECT pid, state,
     wait_event_type, wait_event, xact_start IS NOT NULL AS in_transaction, backend_type FROM pg_stat_activity
     WHERE datname = current_database() AND pid <> pg_backend_pid()"
 }
