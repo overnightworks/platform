@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Run the steps of release-bump.yml's job compute, as yq reads them from the file, in the fixture world: a new release of
-# one app gives a bump whose output the job keeps, another app that runs its newest release is current and an
+# Run the steps of release-bump.yml's job compute, as yq reads them from the file, in the fixture world: a new release
+# of one app gives a bump whose output the job keeps, another app that runs its newest release is current and an
 # unfinished release waits; a refusal is a warning with the run green and the other apps still report; a failure of one
-# app leaves the others reporting and their bumps kept, and then makes the run red. The cell also holds the protective
-# limits: the permissions are no more than contents and packages read, no environment and no secret, only the schedule
-# and the dispatch start it, its concurrency never cancels and the registry token reaches docker only through stdin.
-# The cell runs only the checkout action and the artifact upload, the latter as a copy of its path, and takes over the
-# tool installer, since the world holds the tools.
+# app leaves the others reporting and their bumps kept, and then makes the run red, its summary row holding the failure
+# line's pipes escaped. The cell also holds the protective limits: the permissions are no more than contents and
+# packages read, no environment and no secret, only the schedule and the dispatch start it, its concurrency never
+# cancels and the registry token reaches docker only through stdin. The cell runs only the checkout action and the
+# artifact upload, the latter as a copy of its path, and takes over the tool installer, since the world holds the tools.
 # Usage: mise exec -- tests/release_bump/the_dry_run_computes_every_component_and_holds_no_write_credential.sh
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/world.sh"
@@ -101,6 +101,12 @@ expect_summary hopin failed
 expect_summary speech-runtime bump
 [ "$(kept_bumps)" = speech-runtime ] || fail "the job kept the output of '$(kept_bumps | tr '\n' ' ')', not of speech-runtime"
 echo "a failure of one app leaves the others reporting, keeps their bumps and makes the run red"
+
+# The failure line of an app holds pipes, which leave its row of the summary table at two cells.
+row="$(grep -E '^\| hopin \| failed' "${job_directory}/summary")"
+[[ ${row} == *'\|'* ]] || fail "the failure line holds a pipe, which the summary row does not escape: ${row}"
+[ "$(tr -cd '|' <<<"${row//\\|/}" | wc -c)" -eq 3 ] || fail "the row is not two cells: ${row}"
+echo "a pipe in a failure line is escaped in the summary row"
 
 # The protective limits.
 [ "$(yq '.permissions | tag' "${workflow}")" = '!!map' ] || fail "the workflow's permissions are no map"
