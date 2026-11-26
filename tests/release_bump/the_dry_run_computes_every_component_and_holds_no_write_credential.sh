@@ -105,10 +105,12 @@ echo "a failure of one app leaves the others reporting, keeps their bumps and ma
 # The protective limits.
 [ "$(yq '.permissions | length' "${workflow}")" -eq 0 ] || fail "the workflow grants permissions to every job"
 [ "$(yq '.jobs | keys | length' "${workflow}")" -eq 1 ] || fail "the workflow holds more than the one job"
+[ "$(yq '.jobs.compute.permissions | tag' "${workflow}")" = '!!map' ] || fail "the job's permissions are no map of scopes"
 [ -z "$(yq '.jobs.compute.permissions | to_entries | .[] | select(.value != "read" or (.key != "contents" and .key != "packages")) | .key' "${workflow}")" ] ||
   fail "the job's permissions are more than contents and packages read"
 [ "$(yq '[.. | select(tag == "!!map" and has("environment"))] | length' "${workflow}")" -eq 0 ] || fail "the workflow names an environment"
 ! grep -qE 'secrets\.' "${workflow}" || fail "the workflow names a secret"
+[ "$(yq '.on | tag' "${workflow}")" = '!!map' ] || fail "the events are no map"
 [ -z "$(yq '.on | keys | .[] | select(. != "schedule" and . != "workflow_dispatch")' "${workflow}")" ] || fail "an event but the schedule and the dispatch starts the workflow"
 [ "$(yq '.concurrency.cancel-in-progress' "${workflow}")" = false ] || fail "the concurrency group cancels a run in progress"
 echo "the job holds no more than contents and packages read, no environment, no secret and no cancelling group"
