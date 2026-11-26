@@ -131,7 +131,9 @@ spec:
 # The S3 port admits only the pods that carry a bucket's key, the web of presentator and of songmaker, the pods of
 # songmaker's PreBackupPod, whose container bucket reads with the backup's key (k8up labels them
 # k8up.io/preBackupPod), and songmaker's restore test, whose bucket steps read with it (the pod label of the Component
-# infrastructure/postgres/backup/files/bucket); a namespace that gets a bucket joins this list with its pods. The admin
+# infrastructure/postgres/backup/files/bucket), and the loader of `mise run db:load-dump`, which writes with the app's
+# key while the writers are stopped (its label is scripts/load_snapshot.yaml's); a namespace that gets a bucket joins
+# this list with its pods. The admin
 # port admits only the pods of this namespace, which the apply Job is. Garage sends nothing: its one node talks to itself
 # on the loopback.
 apiVersion: networking.k8s.io/v1
@@ -172,6 +174,12 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: restore-test
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: songmaker
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: db-load-snapshot
       ports:
         - port: 3900
           protocol: TCP
