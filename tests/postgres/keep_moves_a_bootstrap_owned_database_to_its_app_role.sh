@@ -9,6 +9,8 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+# shellcheck source=loader_proof_setup.sh
+source "$(dirname "${BASH_SOURCE[0]}")/loader_proof_setup.sh"
 # shellcheck source=app_role_target.sh
 source "$(dirname "${BASH_SOURCE[0]}")/app_role_target.sh"
 export KUBECONFIG="$HOME/.kube/config"
@@ -79,7 +81,8 @@ echo "the legacy server: $layer is its bootstrap role and owns $owned_tables tab
   "SELECT count(*) FROM pg_class WHERE relowner = 10 AND oid >= 16384 AND relkind IN ('v', 'S', 'i')") views, sequences and indexes besides"
 as "$legacy_port" "$layer" 'CREATE ROLE app_role_transfer SUPERUSER LOGIN; CREATE ROLE temporary_holder SUPERUSER LOGIN'
 kubectl --namespace "$layer" exec postgres-0 --container postgres -- env PGHOST=127.0.0.1 PGPORT="$legacy_port" \
-  psql --no-psqlrc --username=temporary_holder --command='CREATE TEMPORARY TABLE held (token text); INSERT INTO held VALUES (repeat($$x$$, 4000)); SELECT pg_sleep(300)' >/dev/null 2>&1 &
+  psql --no-psqlrc --username=temporary_holder --command='CREATE TEMPORARY TABLE held (token text)' \
+  --command='INSERT INTO held VALUES (repeat($$x$$, 4000))' --command='SELECT pg_sleep(300)' >/dev/null 2>&1 &
 holder=$!
 # held <login>: the superuser session is open, as the login sees it; only a superuser sees another role's state.
 held() { [ "$(as "$legacy_port" "$1" "SELECT count(*) FROM pg_stat_activity WHERE usename = 'temporary_holder' AND state = 'active'")" = 1 ]; }

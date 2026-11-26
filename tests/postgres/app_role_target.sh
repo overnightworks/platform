@@ -3,13 +3,18 @@
 # postgres-0 of a namespace, whose server listens on the port the caller names: the Pod's own on 5432, a throwaway
 # one on another. Needs failure.sh and loader_proof_setup.sh sourced.
 
+# The schemas of sessions' temporary objects, whose tables, row types and functions belong to the session's role.
+temporary_schemas="SELECT oid FROM pg_namespace WHERE nspname ~ '^pg_(toast_)?temp_'"
+
 # The catalogs that name an owner, as "catalog|owner column|condition" of the rows of the app's database: a row above
 # the objects initdb made (oid 16384), outside the public schema, which pg_database_owner owns, outside the schemas
-# of sessions' temporary objects, which the bootstrap role owns, and outside an extension's members, has the app's role
-# as its owner.
+# of sessions' temporary objects, outside an extension's members, has the app's role as its owner.
 app_role_owner_catalogs=(
-  'pg_class|relowner|true' 'pg_type|typowner|true' 'pg_proc|proowner|true'
-  "pg_namespace|nspowner|nspname <> 'public' AND nspname !~ '^pg_(toast_)?temp_'" 'pg_collation|collowner|true' 'pg_conversion|conowner|true'
+  "pg_class|relowner|o.relnamespace NOT IN ($temporary_schemas)"
+  "pg_type|typowner|o.typnamespace NOT IN ($temporary_schemas)"
+  "pg_proc|proowner|o.pronamespace NOT IN ($temporary_schemas)"
+  "pg_namespace|nspowner|nspname <> 'public' AND o.oid NOT IN ($temporary_schemas)"
+  'pg_collation|collowner|true' 'pg_conversion|conowner|true'
   'pg_operator|oprowner|true' 'pg_opclass|opcowner|true' 'pg_opfamily|opfowner|true' 'pg_ts_config|cfgowner|true'
   'pg_ts_dict|dictowner|true' 'pg_statistic_ext|stxowner|true' 'pg_language|lanowner|true'
   'pg_largeobject_metadata|lomowner|true' 'pg_foreign_data_wrapper|fdwowner|true' 'pg_foreign_server|srvowner|true'
