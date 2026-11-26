@@ -11,12 +11,11 @@ here="$(dirname "$0")"
 role=reader
 comment='declared by infrastructure/postgres/scripts/reader_role.sh'
 connections="$(cat "$here/connections")"
+# shellcheck source=keep_session.sh
+. "$here/keep_session.sh"
 
 keep() {
-  # client_min_messages keeps the NOTICE of a grant the role already holds out of the log.
-  if ! PGOPTIONS='-c lock_timeout=2s -c statement_timeout=10s -c client_min_messages=warning' \
-    psql --host=127.0.0.1 --username=postgres --no-psqlrc --quiet \
-    --set=ON_ERROR_STOP=1 --single-transaction --set=role="$role" --set=comment="$comment" \
+  if ! as_login postgres --single-transaction --set=role="$role" --set=comment="$comment" \
     --set=connections="$connections" --set=database="$PGDATABASE" --file=- <<'SQL'
 WITH existing AS (SELECT oid FROM pg_roles WHERE rolname = :'role')
 SELECT NOT EXISTS (SELECT FROM existing) AS missing,

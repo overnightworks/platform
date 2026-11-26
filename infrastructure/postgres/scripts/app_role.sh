@@ -21,15 +21,8 @@ database="$PGDATABASE"
 password_file=/run/secrets/postgres/password
 comment='declared by infrastructure/postgres/scripts/app_role.sh'
 transfer_role=app_role_transfer
-
-# as_login <login> <psql option>...: SQL as the login through the container's local trust.
-as_login() {
-  login="$1"
-  shift
-  PGOPTIONS='-c lock_timeout=2s -c statement_timeout=10s -c transaction_timeout=30s -c client_min_messages=warning
-    -c log_min_error_statement=panic' \
-    psql --host=127.0.0.1 --username="$login" --no-psqlrc --quiet --tuples-only --no-align --set=ON_ERROR_STOP=1 "$@"
-}
+# shellcheck source=keep_session.sh
+. "$(dirname "$0")/keep_session.sh"
 
 # The name of the bootstrap role: postgres where it was renamed or made so, else the app's role.
 bootstrap_name() {

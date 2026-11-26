@@ -10,6 +10,7 @@ configMapGenerator:
   - name: postgres-roles
     files:
       - scripts/server_ready.sh
+      - scripts/keep_session.sh
       - scripts/app_role.sh
       - scripts/reader_role.sh
     literals:
