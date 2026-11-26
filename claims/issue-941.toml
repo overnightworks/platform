@@ -3,6 +3,6 @@ agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
 role = "builder"
 base = "85b63ad0f3fc6db4fc4c9eb74298d03a391253bc"
 branch = "claude/issue-941-backup-fetch-fetches-songmaker-s-dump-ag"
-scope = [".github/workflows/ci.yml", "mise.toml", "tests/backup", "tests/flux/parts.yaml"]
+scope = [".github/workflows/ci.yml", "mise.toml", "scripts/restic_dump_pod.sh", "tests/backup", "tests/flux/parts.yaml"]
 opened_commit = "669b70964503bc81e161743dda99c9639f35363d"
 whole_reason = "The fetch's Pod owner, the test helper that shares it, the songmaker fetch cell and its CI wiring prove one fix and cannot land apart."
