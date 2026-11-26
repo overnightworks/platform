@@ -536,19 +536,19 @@ cell_node_without_room_for_the_load_is_refused_before_the_suspension() {
   cell=node-without-room-for-the-load-is-refused-before-the-suspension
   FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_FREE_BYTES=1000 run_loader x "$dump"
   [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"bytes free"* ]] && [[ $output == *"nothing changed"* ]] &&
-    [ ! -e "$FAKE_DIR/restored" ] || fail "a node without room exited $status with '$output' after flux $flux_calls"
+    [[ $output != *fake-node* ]] && [ ! -e "$FAKE_DIR/restored" ] || fail "a node without room exited $status with '$output' after flux $flux_calls"
 }
 
 cell_eviction_margin_that_cannot_be_read_is_refused_before_the_suspension() {
   cell=eviction-margin-that-cannot-be-read-is-refused-before-the-suspension
   local configz
   FAKE_CLAIM=audiofiles FAKE_CONFIGZ_FAILS=1 run_loader x "$dump"
-  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] ||
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] && [[ $output != *fake-node* ]] ||
     fail "a kubelet configuration that cannot be read exited $status with '$output' after flux $flux_calls"
   for configz in '{"kubeletconfig":{"evictionHard":{"nodefs.available":"10%"}}}' \
     '{"kubeletconfig":{"evictionHard":{"nodefs.available":"ten","imagefs.available":"15%"}}}'; do
     FAKE_CLAIM=audiofiles FAKE_CONFIGZ="$configz" run_loader x "$dump"
-    [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] ||
+    [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] && [[ $output != *fake-node* ]] ||
       fail "an eviction margin of '$configz' exited $status with '$output' after flux $flux_calls"
   done
 }
@@ -575,7 +575,7 @@ cell_bucket_load_runs_its_steps_in_order_deletes_the_loader_and_names_the_backup
   FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_BUCKET_OBJECTS=3 run_loader --empty-bucket x "$dump"
   [ "$status" = 0 ] && [[ $flux_calls == "suspend resume " ]] && [ -e "$FAKE_DIR/restored" ] &&
     [ "$(tr '\n' ' ' <"$FAKE_DIR/steps")" = "source restore-bucket count restore-claim empty copy check " ] &&
-    [[ $output == *"0 differing"* ]] && [[ $output == *"mise run backup:now x"* ]] &&
+    [[ $output == *"0 differing"* ]] && [[ $output == *"mise run backup:now x"* ]] && [[ $output != *fake-node* ]] &&
     [ "$(grep -c 'delete pod' "$FAKE_DIR/deleted")" -ge 3 ] || fail "a bucket load with the flag exited $status with '$output' after flux $flux_calls"
 }
 

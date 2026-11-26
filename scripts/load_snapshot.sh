@@ -179,18 +179,18 @@ source_step() {
   say "the dump is of the staging snapshot $snapshot: the claim holds $claim_files files, $claim_bytes bytes; the bucket holds $bucket_objects objects, $bucket_bytes bytes"
   node="$(kubectl --namespace "$namespace" get pod "$source_pod" --output jsonpath='{.spec.nodeName}')" ||
     fail "cannot read the node of the Pod $source_pod; nothing changed"
-  configz="$(kubectl get --raw "/api/v1/nodes/$node/proxy/configz")" || fail "cannot read the kubelet's configuration of the node $node; nothing changed"
+  configz="$(kubectl get --raw "/api/v1/nodes/$node/proxy/configz")" || fail "cannot read the kubelet's configuration of the node; nothing changed"
   margin="$(eviction_margin "$configz" "$total")" ||
-    fail "the kubelet's eviction thresholds of the node $node are missing or unreadable; nothing changed"
+    fail "the kubelet's eviction thresholds of the node are missing or unreadable; nothing changed"
   # The scratch holds the bucket's files and one block for each of its files and directories, beside restic's working
   # files. Garage's new blocks (the bucket's bytes again) and the claim's new files, counted beside its old ones, since
   # the delete frees them only late, add to what the node must hold.
   scratch=$((bucket_bytes + (bucket_objects + bucket_prefixes) * block_bytes + margin_bytes))
   need=$((scratch + bucket_bytes + claim_bytes + (claim_files + claim_prefixes) * block_bytes))
   if [ $((free - need)) -le "$margin" ]; then
-    fail "the load needs $need bytes beside the kubelet's eviction margin of $margin, and the node $node has $free of $total bytes free; nothing changed"
+    fail "the load needs $need bytes beside the kubelet's eviction margin of $margin, and the node has $free of $total bytes free; nothing changed"
   fi
-  say "the node $node has $free of $total bytes free for a load of $need bytes beside an eviction margin of $margin"
+  say "the node has $free of $total bytes free for a load of $need bytes beside an eviction margin of $margin"
   echo "$snapshot $scratch"
 }
 
