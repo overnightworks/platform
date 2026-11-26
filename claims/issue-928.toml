@@ -1,8 +1,0 @@
-claim_id = "e175df74d2f24ab898a5077c8082a780"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "58207431d08ae794e057af0308307df3be03747b"
-branch = "claude/issue-928-deferred-tools-proven-on-every-model-the"
-scope = ["docs/operations.md", "mise.toml", "scripts/litellm_gateway_probe.sh", "tests/litellm/fake_gateway.py", "tests/litellm/gateway_probe_answers_on_both_routes_and_removes_its_keys.sh"]
-opened_commit = "6d2e1850744fd0caabcdf9659ac82d4773261c0a"
-whole_reason = "The probe's model arguments, the fake gateway that proves them and the two documents naming the run-alone questions change together, or the cell judges a probe that asks something else."
