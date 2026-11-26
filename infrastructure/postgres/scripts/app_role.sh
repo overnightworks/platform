@@ -41,14 +41,14 @@ drop_transfer_role() {
     as_login "$1" --command="DROP ROLE IF EXISTS $transfer_role"
 }
 
-# settle <stage>: the SQL of steps 1 and 2 on stdin of psql. The password never reaches an argument, and a statement's
-# text never reaches the server's log. Stage transfer renames the bootstrap role and leaves the app's role a superuser;
-# stage settle moves every object to the app's role and makes it no superuser.
+# settle <login> <stage>: the SQL of steps 1 and 2 on stdin of psql, as the login. The password never reaches an
+# argument, and a statement's text never reaches the server's log. Stage transfer renames the bootstrap role and leaves
+# the app's role a superuser; stage settle moves every object to the app's role and makes it no superuser.
 settle() {
   as_login "$1" --single-transaction --set=stage="$2" --set=role="$role" --set=database="$database" \
-    --set=comment="$comment" --file=- <<'SQL'
+    --set=comment="$comment" --set=password_file="$password_file" --file=- <<'SQL'
 SELECT :'stage' = 'transfer' AS transfer \gset
-\set password `cat /run/secrets/postgres/password`
+\set password `cat :password_file`
 \if :transfer
   ALTER ROLE :"role" RENAME TO postgres;
 \endif
