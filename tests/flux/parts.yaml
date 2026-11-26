@@ -13,7 +13,7 @@ litellm: {layers: [litellm, keycloak], paths: [tests/keycloak/*, tests/litellm/*
 # Prometheus scrapes songmaker's web and Gatus, and reads litellm's CronJob; Grafana's cell reads a Loki stream, which only alloy ships.
 observability: {layers: [prometheus, grafana, loki, alloy, gatus, speech-runtime, songmaker, litellm], paths: [tests/grafana/*, tests/prometheus/*]}
 # Gatus probes every endpoint of its configuration.
-observability-2: {layers: [gatus, traefik, hopin, skat, keycloak, speech-runtime, loki, prometheus, grafana, litellm, songmaker, backup], paths: [tests/backup/*, tests/gatus/*]}
+observability-2: {layers: [gatus, traefik, hopin, skat, keycloak, speech-runtime, loki, prometheus, grafana, litellm, songmaker], paths: [tests/gatus/*]}
 apps: {layers: [presentator, songmaker, keycloak, hopin, skat, legal, traefik, tunnel, loki, alloy], paths: [tests/alloy/*, tests/keycloak/*, tests/legal/*, tests/loki/*, tests/no_network/*, tests/presentator/*, tests/songmaker/*]}
 # The Postgres cells loop over every namespace whose layer includes the Postgres base, the reader's among them.
 load-1: {layers: [hopin, keycloak, litellm, personas, presentator, skat, songmaker, nvidia, traefik], paths: [tests/nvidia/*, tests/personas/migrate_pod.sh, tests/postgres/*, tests/songmaker/*]}
@@ -27,11 +27,14 @@ load-3: {layers: [litellm], paths: [tests/postgres/*]}
 # litellm is, the Keycloak table check where keycloak is, songmaker's dump cell and personas' cells in the part that
 # applies their layer.
 backup-1: {layers: [backup, prometheus, keycloak, litellm, personas], paths: [tests/backup/*, tests/personas/*, tests/prometheus/*]}
-# backup-2 and backup-4 fill songmaker's bucket from a client Pod that the objectstore cell's helper builds from litellm's image.
+# backup-2, backup-4 and backup-5 fill songmaker's bucket from a client Pod that the objectstore cell's helper builds from litellm's image.
 backup-2: {layers: [backup, songmaker], paths: [tests/backup/*, tests/disk/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
 backup-3: {layers: [backup, prometheus, hopin, presentator, skat, songmaker], paths: [tests/backup/*, tests/prometheus/*]}
 # The Backups of songmaker's bucket that need one run each; the namespace songmaker is held by backup-2 and backup-3 too.
 backup-4: {layers: [backup, songmaker], paths: [tests/backup/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
+# The load of songmaker's database, claim and bucket restores them after each of several refusals, kills and re-runs, which takes
+# a part's time on its own.
+backup-5: {layers: [backup, songmaker], paths: [scripts/load_snapshot.*, tests/backup/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
 # The test agents' cells drive Keycloak.
 presentator: {layers: [presentator, keycloak], paths: [tests/keycloak/*, tests/no_network/*, tests/presentator/*, tests/redis/*]}
 # The attestation probe patches a live presentator Pod, and speech's cell of the two small pods needs the speech layer.
@@ -43,5 +46,5 @@ speech: {layers: [speech-runtime], paths: [tests/speech_runtime/*]}
 # The object store's cell drives Garage and its Job from client Pods in each app's Namespace, which holds no layer here;
 # it reads each app's directory for the web's env contract and credentials projection and for the other workloads, and
 # litellm's manifest for the client image.
-objectstore: {layers: [objectstore], paths: [apps/presentator/*, apps/songmaker/*, infrastructure/litellm/litellm.yaml, tests/k3s/*, tests/objectstore/*, tests/pod-logs/kubelet_keeps_reopens_and_never_compresses_logs.sh, tests/postgres/interrupt_load.sh, tests/postgres/load_dump.sh, tests/secrets/bootstrap_secrets.sh]}
+objectstore: {layers: [objectstore], paths: [apps/presentator/*, apps/songmaker/*, infrastructure/litellm/litellm.yaml, scripts/load_snapshot.*, tests/k3s/*, tests/objectstore/*, tests/pod-logs/kubelet_keeps_reopens_and_never_compresses_logs.sh, tests/postgres/interrupt_load.sh, tests/postgres/load_dump.sh, tests/secrets/bootstrap_secrets.sh]}
 ai-gateway-outage: {layers: [litellm, gatus, prometheus], nightly_only: true, paths: [tests/prometheus/*]}

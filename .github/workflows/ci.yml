@@ -95,6 +95,12 @@ jobs:
       - name: Check that backup:fetch ends non-zero naming a file that holds no custom-format dump and deletes it, and keeps a dump at mode 0600
         run: mise exec -- tests/backup/backup_fetch_deletes_a_file_that_holds_no_custom_format_dump.sh
 
+      - name: Check that the load's source step picks the older snapshot whose MANIFEST holds the dump past a newer snapshot of another dump, and the newest of the snapshots that hold it
+        run: mise exec -- tests/backup/load_source_finds_the_older_snapshot_of_the_dump.sh
+
+      - name: Check that the load's bucket check counts the differences a status 1 list of rclone names and fails for status 1 with a list that names none and for status 2
+        run: mise exec -- tests/backup/load_check_counts_a_named_difference_and_refuses_an_unnamed_failure.sh
+
       - name: Check that gpu:use orders its steps so speech always has a Ready pod, waits for each Deployment's ready replica, names the step and the way back of a failed wait, frees the card only from speech's state with the bound armed first, returns it only while nobody took it and refuses an unknown user
         run: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh
 
@@ -898,6 +904,13 @@ jobs:
         env:
           SONGMAKER_NAMESPACE: songmaker
         run: tests/backup/backup_fetch_writes_songmaker_s_dump_of_its_staging_snapshot.sh
+      # The step changes songmaker's database, audio claim and bucket, which no later step of this part reads.
+      - name: P7f cells
+        if: matrix.part == 'backup-5'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          APP_MANIFEST: apps/songmaker/web.yaml
+        run: tests/backup/load_restores_dump_claim_and_bucket_of_one_snapshot.sh
       - name: P9f cells
         if: matrix.part == 'backup-1' || matrix.part == 'backup-3'
         env:
@@ -997,13 +1010,6 @@ jobs:
       - name: Assert that every exit of presentator's worker container gives a fresh pod, that a running pod is left alone, that an exit loop makes one pod at a time and leaves the node as it was, and that a removed sandbox ends in a fresh pod
         if: matrix.part == 'presentator'
         run: tests/presentator/a_used_worker_pod_is_replaced_by_a_fresh_one.sh
-
-      # The step changes songmaker's database and audio claim, which no later step of this part reads.
-      - name: P7f cells
-        if: matrix.part == 'observability-2'
-        env:
-          SONGMAKER_NAMESPACE: songmaker
-        run: tests/backup/load_replaces_database_and_files_together.sh
 
       - name: Assert that a Pod furnished as presentator's web reaches its bucket in the object store with the contract's environment alone and no other bucket, that only such Pods reach the S3 port and none the admin port, that a second run of the Job apply changes nothing, a rotated key loses its access and a backup key that only reads
         if: matrix.part == 'objectstore'
