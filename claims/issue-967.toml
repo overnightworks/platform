@@ -1,7 +1,0 @@
-claim_id = "bf9adaa6288241f197e48343ed086321"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "47599e5b7036504100c5fe875e5fd653eee0fa11"
-branch = "claude/issue-967-renovate-lists-patches-apart"
-scope = [".github/renovate.json5"]
-opened_commit = "ea8999d1ac3c7fd0068d8fa8a197eeab8ccf2390"
