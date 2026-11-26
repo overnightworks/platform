@@ -4,14 +4,21 @@
 # prepare_loader_proof reads $layer (the proof layer), $PROBE_IMAGE, $RUNNER_TEMP and tests/postgres/writers from the
 # working directory, and sets for its caller: layer_path, key_tables, key_table, dump, toc_dump, marker and output
 # (and dump_dir, job_uid, git_replicas, app_pods, which writers_ran and loaded use). Needs failure.sh sourced.
-sql() { kubectl --namespace "$1" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only \
-  --no-align --set=ON_ERROR_STOP=1 --command="$2"; }
+# postgres_psql <namespace> <psql option>...: psql in the namespace's Postgres container, which connects as the app's role
+# unless an option names another.
+postgres_psql() { local namespace="$1"; shift
+  kubectl --namespace "$namespace" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only --no-align \
+    --set=ON_ERROR_STOP=1 "$@"; }
+# sql <namespace> <sql>: the output of the SQL as the app's role, the owner of the database.
+sql() { postgres_psql "$1" --command="$2"; }
+# superuser_sql <namespace> <sql>: the same as the server's superuser postgres, which only the container's local trust reaches.
+superuser_sql() { postgres_psql "$1" --username=postgres --command="$2"; }
 # declared_reader_connections <namespace>: the connection limit the base declares for the role reader, read from the
-# ConfigMap its Pod mounts as the volume reader.
+# ConfigMap its Pod mounts as the volume roles.
 declared_reader_connections() {
   local reader_configmap
   reader_configmap="$(kubectl --namespace "$1" get pod postgres-0 \
-    -o jsonpath='{.spec.volumes[?(@.name=="reader")].configMap.name}')"
+    -o jsonpath='{.spec.volumes[?(@.name=="roles")].configMap.name}')"
   kubectl --namespace "$1" get configmap "$reader_configmap" -o jsonpath='{.data.connections}'
 }
 
@@ -72,7 +79,8 @@ mkdir -m 0700 "$dump_dir"
 dump="$dump_dir/synthetic.dump"
 marker="synthetic-row-$(openssl rand -hex 4)"
 key_table="${key_tables%% *}"
-sql "$layer" 'CREATE DATABASE synthetic'
+# The app's role may not create a database; it owns this one, as it owns its own.
+superuser_sql "$layer" "CREATE DATABASE synthetic OWNER \"$layer\""
 kubectl --namespace "$layer" exec --stdin postgres-0 --container postgres -- psql --no-psqlrc --quiet \
   --set=ON_ERROR_STOP=1 --set=key_table="$key_table" --set=marker="$marker" --dbname=synthetic <<'SQL'
 CREATE TABLE :"key_table" (token text PRIMARY KEY, spend numeric);

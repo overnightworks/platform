@@ -7,8 +7,11 @@ resources:
 configMapGenerator:
   # The connections the role reader may hold at once, which tests/postgres/connections_stay_within_max_connections.sh
   # counts against max_connections.
-  - name: postgres-reader
+  - name: postgres-roles
     files:
+      - scripts/server_ready.sh
+      - scripts/keep_session.sh
+      - scripts/app_role.sh
       - scripts/reader_role.sh
     literals:
       - connections=2

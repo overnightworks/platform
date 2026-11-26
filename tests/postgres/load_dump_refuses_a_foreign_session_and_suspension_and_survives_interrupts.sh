@@ -16,18 +16,20 @@ prepare_loader_proof
 loaded "$layer" "$dump" || fail "the load of the dump exited non-zero"
 writers_ran
 
-# A foreign session held through the whole run: the load waits for it once, names it once and resumes.
+# A foreign session held through the whole run: the load waits for it once, names it once and resumes. It runs as the
+# superuser: the load counts sessions as the superuser, since the app's role sees no other role's session as a client
+# backend.
 foreign_sessions() {
-  sql "$layer" "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'foreign_session'"
+  superuser_sql "$layer" "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'foreign_session'"
 }
 kubectl --namespace "$layer" exec postgres-0 --container postgres -- env PGAPPNAME=foreign_session \
-  psql --no-psqlrc --command='SELECT pg_sleep(600)' > /dev/null 2>&1 &
+  psql --no-psqlrc --username=postgres --command='SELECT pg_sleep(600)' > /dev/null 2>&1 &
 foreign=$!
 for _ in $(seq 30); do [ "$(foreign_sessions)" = 1 ] && break; sleep 1; done
 [ "$(foreign_sessions)" = 1 ] || fail "the foreign session did not start within 30 seconds"
 if DB_LOAD_DUMP_ALONE_SECONDS=10 loaded "$layer" "$dump"; then fail "the load ran beside a foreign session"; fi
 held_through="$(foreign_sessions)"
-sql "$layer" "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+superuser_sql "$layer" "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
   WHERE application_name = 'foreign_session'" > /dev/null
 wait "$foreign" || true
 [ "$held_through" = 1 ] || fail "the foreign session ended before the load did"

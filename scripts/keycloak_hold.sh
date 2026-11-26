@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # keycloak_hold.sh --scratch DIR: starts Keycloak with its Postgres at the images and environment of
-# infrastructure/keycloak and infrastructure/postgres, applies master.yaml and realm.yaml through config-cli, prints one
-# line `READY <json>` and holds until SIGTERM, SIGINT or EOF on stdin. Teardown removes every container, network and
-# volume of its compose project, and only of that one; it prints `HOLD ENDED` and exits 0. A failed bring-up, a signal
-# before READY or an object left after teardown prints `PROBE FAILED: <what>` and exits 1; a scratch directory that is
-# not new or empty exits 2. DIR holds the generated secrets and the env files while the hold runs and loses them on
-# every exit once docker's teardown ran; the project's name and docker's log (the containers' log after a failure) stay
-# with the caller.
+# infrastructure/keycloak and infrastructure/postgres, runs Postgres's postStart hook, which declares Keycloak's role,
+# applies master.yaml and realm.yaml through config-cli, prints one line `READY <json>` and holds until SIGTERM, SIGINT
+# or EOF on stdin. Teardown removes every container, network and volume of its compose project, and only of that one;
+# it prints `HOLD ENDED` and exits 0. A failed bring-up, a signal before READY or an object left after teardown prints
+# `PROBE FAILED: <what>` and exits 1; a scratch directory that is not new or empty exits 2. DIR holds the generated
+# secrets and the env files while the hold runs and loses them on every exit once docker's teardown ran; the project's
+# name and docker's log (the containers' log after a failure) stay with the caller.
 # Each run has its own compose project and its own host ports, so holds run side by side. The caller runs it under
 # probe-run. Keycloak serves edge_url itself; a client sends `Host: auth.hallucinai.de` and `X-Forwarded-Proto: https`
 # as Traefik would, from an address of the hold's network.
@@ -21,6 +21,7 @@ compose_file="$root/scripts/keycloak_hold.compose.yaml"
 keycloak_manifest="$root/infrastructure/keycloak/keycloak.yaml"
 config_cli_manifest="$root/infrastructure/keycloak/config-cli.yaml"
 postgres_manifest="$root/infrastructure/postgres/postgres.yaml"
+postgres_kustomization="$root/infrastructure/postgres/kustomization.yaml"
 kustomization="$root/infrastructure/keycloak/kustomization.yaml"
 project="" log="" scratch="" child="" failure="" stop_signal="" fail_after_teardown=""
 compose_command=()
@@ -240,6 +241,14 @@ container_value POSTGRES_DATA_DIR "$postgres_manifest" StatefulSet postgres '.vo
 container_value POSTGRES_PASSWORD_PATH "$postgres_manifest" StatefulSet postgres '.env[] | select(.name == "POSTGRES_PASSWORD_FILE") | .value'
 container_value POSTGRES_READINESS_COMMAND "$postgres_manifest" StatefulSet postgres '.readinessProbe.exec.command | join(" ")'
 container_value password_mount "$postgres_manifest" StatefulSet postgres '.volumeMounts[] | select(.name == "password") | .mountPath'
+container_value POSTGRES_ROLES_DIR "$postgres_manifest" StatefulSet postgres '.volumeMounts[] | select(.name == "roles") | .mountPath'
+# The postStart hook the cluster runs, which declares the app's role, as the words of its command; its script spans lines,
+# so the words are NUL-separated.
+mapfile -d '' -t hook < <(yq -0 'select(.kind == "StatefulSet") | .spec.template.spec.containers[] | select(.name == "postgres")
+  | .lifecycle.postStart.exec.command[]' "$postgres_manifest")
+[ "${#hook[@]}" -gt 0 ] || fail "$postgres_manifest declares no postStart command for its container postgres"
+roles_map="$(yq 'select(.kind == "StatefulSet") | .spec.template.spec.volumes[] | select(.name == "roles") | .configMap.name' "$postgres_manifest")" ||
+  fail "yq could not read the volume roles of $postgres_manifest"
 backoff_limit="$(yq 'select(.kind == "Job") | .spec.backoffLimit' "$config_cli_manifest")" ||
   fail "yq could not read the backoffLimit of $config_cli_manifest"
 [ "$(dirname "$POSTGRES_PASSWORD_PATH")" = "$password_mount" ] ||
@@ -274,14 +283,28 @@ for area in login account; do
 done
 chmod -R a+rX "$theme_dir"
 
+# The postgres container reads its role scripts from the ConfigMap the cluster mounts; the hold assembles its files and
+# literals from the generator that makes it.
+roles_dir="$scratch/roles"
+mkdir "$roles_dir"
+generator="select(.name == \"$roles_map\")"
+while IFS= read -r file; do
+  cp "$(dirname "$postgres_kustomization")/$file" "$roles_dir/$(basename "$file")"
+done < <(yq ".configMapGenerator[] | $generator | .files[]" "$postgres_kustomization")
+while IFS='=' read -r key value; do
+  printf '%s' "$value" >"$roles_dir/$key"
+done < <(yq ".configMapGenerator[] | $generator | .literals[]" "$postgres_kustomization")
+chmod -R a+rX "$roles_dir"
+
 export HOLD_THEME_SOURCE="$theme_dir"
+export HOLD_ROLES_SOURCE="$roles_dir"
 export HOLD_MASTER_FILE="$root/infrastructure/keycloak/master.yaml"
 export HOLD_REALM_FILE="$root/infrastructure/keycloak/realm.yaml"
 export POSTGRES_PASSWORD_SOURCE
 POSTGRES_PASSWORD_SOURCE="$(secret_path "postgres/$(basename "$POSTGRES_PASSWORD_PATH")")"
 export KEYCLOAK_IMAGE KEYCLOAK_ARGS KEYCLOAK_HTTP_PORT KEYCLOAK_THEME_DIR KEYCLOAK_TMP_DIR \
   CONFIG_CLI_IMAGE CONFIG_CLI_COMMAND CONFIG_CLI_DIR POSTGRES_IMAGE POSTGRES_DATA_DIR POSTGRES_PASSWORD_PATH \
-  POSTGRES_READINESS_COMMAND
+  POSTGRES_READINESS_COMMAND POSTGRES_ROLES_DIR
 
 # The network exists before Keycloak's env file is written, because Keycloak trusts the forwarded headers of that
 # network's addresses, which docker picks.
@@ -293,7 +316,14 @@ subnets="$(docker network inspect "${project}_$network_key" --format '{{range .I
 hold_env[KC_PROXY_TRUSTED_ADDRESSES]="${subnets%,}"
 write_env "$keycloak_manifest" Deployment keycloak "$scratch/keycloak.env"
 
-await "${compose_command[@]}" up --detach postgres keycloak ||
+# The cluster's postStart hook declares the app's role before any app reaches the server, so Keycloak starts after it;
+# the hook waits for the final server itself. It runs as root, which reads the Secret's password file the hold's
+# bind mount leaves at the mode the hold wrote, where the cluster's fsGroup makes it readable.
+await "${compose_command[@]}" up --detach postgres ||
+  fail "docker compose could not start Postgres: $(tail -n 1 "$log")"
+await "${compose_command[@]}" exec -T postgres "${hook[@]}" ||
+  fail "the postStart hook of Postgres failed: $(tail -n 1 "$log")"
+await "${compose_command[@]}" up --detach keycloak ||
   fail "docker compose could not start Keycloak: $(tail -n 1 "$log")"
 
 attempts=$((backoff_limit + 1))

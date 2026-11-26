@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Proves docs/personal-data.md PD-11: that in each namespace of POSTGRES_NAMESPACES mise run db:read passes reader_role.sh's
-# check of the declared role, that the role holds the connection limit the ConfigMap postgres-reader declares, and that
-# it counts the first key table as the namespace's superuser does. Needs POSTGRES_NAMESPACES, which the cluster job
+# check of the declared role, that the role holds the connection limit the ConfigMap postgres-roles declares, and that
+# it counts the first key table as the app's role, the owner, does. Needs POSTGRES_NAMESPACES, which the cluster job
 # sets, and each Postgres Ready with its app's migration run; the cluster job holds personas' Deployment at 0 replicas,
 # so the cell runs personas' migration itself.
 set -euo pipefail
@@ -31,12 +31,12 @@ for namespace in $POSTGRES_NAMESPACES; do
   count_query="SELECT count(*) FROM \"$first_table\""
   # The aligned output is a header, a rule and the value.
   read_count="$(mise run db:read "$namespace" <<<"$count_query" | sed -n 3p | tr -d ' ')"
-  superuser_count="$(sql "$namespace" "$count_query")"
-  [ -n "$read_count" ] && [ "$read_count" = "$superuser_count" ] ||
-    fail "db:read counts '$read_count' rows of $first_table in $namespace, the superuser '$superuser_count'"
+  owner_count="$(sql "$namespace" "$count_query")"
+  [ -n "$read_count" ] && [ "$read_count" = "$owner_count" ] ||
+    fail "db:read counts '$read_count' rows of $first_table in $namespace, the owner '$owner_count'"
   declared_connections="$(declared_reader_connections "$namespace")"
   connection_limit="$(sql "$namespace" "SELECT rolconnlimit FROM pg_roles WHERE rolname = 'reader'")"
   [ "$connection_limit" = "$declared_connections" ] ||
     fail "the role reader in $namespace holds the connection limit $connection_limit, not the declared $declared_connections"
-  echo "db:read passed the check in $namespace as the role reader with $connection_limit connections and counted $read_count rows of $first_table, as the superuser does"
+  echo "db:read passed the check in $namespace as the role reader with $connection_limit connections and counted $read_count rows of $first_table, as the owner does"
 done
