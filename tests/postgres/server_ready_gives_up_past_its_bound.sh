@@ -3,7 +3,8 @@
 # Needs no cluster. Runs `server_ready.sh` against a pg_isready that never answers and a sleep that returns at once,
 # and judges that it ends 1 after as many attempts as the script's wait_seconds, with one line on stderr that names the
 # bound. The wait's bound is the one branch the cluster cells cannot arrange; the cells of the cluster job run every
-# other branch of the scripts that follow the wait against a real server.
+# other branch of the scripts that follow the wait against a real server. The postStart hook of the StatefulSet then
+# runs against the same silent server and must end 0 without either keep running.
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
@@ -35,3 +36,22 @@ FAKE_CALLS="$work" PATH="$work/bin:$PATH" sh "$script" 2>"$work/stderr" || statu
 [ "$(grep -c . "$work/stderr")" = 1 ] || fail "server_ready.sh wrote $(grep -c . "$work/stderr") lines, not one: $(cat "$work/stderr")"
 grep -qF "within $wait_seconds seconds" "$work/stderr" || fail "server_ready.sh's line does not name its bound of $wait_seconds seconds: $(cat "$work/stderr")"
 echo "server_ready.sh asked $wait_seconds times, ended 1 and wrote: $(cat "$work/stderr")"
+
+# The hook enters the roles volume by its mount path and runs the two keeps there; here the volume holds the real wait
+# and keeps that only record their run.
+mount_path=/etc/postgres-roles
+mkdir "$work/roles"
+cp "$script" "$work/roles/"
+for keep in app_role reader_role; do
+  printf '#!/bin/sh\necho "%s $*" >>"$FAKE_CALLS/keeps"\n' "$keep" >"$work/roles/$keep.sh"
+done
+mapfile -d '' -t hook < <(yq -0 'select(.kind == "StatefulSet") | .spec.template.spec.containers[] | select(.name == "postgres")
+  | .lifecycle.postStart.exec.command[]' "$repository_root/infrastructure/postgres/postgres.yaml")
+[ "${#hook[@]}" -gt 0 ] || fail "the StatefulSet postgres declares no postStart command"
+[[ ${hook[*]} == *"$mount_path"* ]] || fail "the postStart hook does not enter $mount_path"
+hook=("${hook[@]//"$mount_path"/"$work/roles"}")
+status=0
+FAKE_CALLS="$work" PATH="$work/bin:$PATH" "${hook[@]}" >/dev/null 2>&1 || status=$?
+[ "$status" = 0 ] || fail "the postStart hook ended $status with no server, not 0"
+[ ! -e "$work/keeps" ] || fail "the postStart hook ran a keep with no server answering: $(cat "$work/keeps")"
+echo "the postStart hook ended 0 with no server and ran neither keep"

@@ -242,10 +242,11 @@ container_value POSTGRES_PASSWORD_PATH "$postgres_manifest" StatefulSet postgres
 container_value POSTGRES_READINESS_COMMAND "$postgres_manifest" StatefulSet postgres '.readinessProbe.exec.command | join(" ")'
 container_value password_mount "$postgres_manifest" StatefulSet postgres '.volumeMounts[] | select(.name == "password") | .mountPath'
 container_value POSTGRES_ROLES_DIR "$postgres_manifest" StatefulSet postgres '.volumeMounts[] | select(.name == "roles") | .mountPath'
-# The postStart hook the cluster runs, which declares the app's role: sh, -c and the script.
-for index in 0 1 2; do
-  container_value "hook_word_$index" "$postgres_manifest" StatefulSet postgres ".lifecycle.postStart.exec.command[$index]"
-done
+# The postStart hook the cluster runs, which declares the app's role, as the words of its command; its script spans lines,
+# so the words are NUL-separated.
+mapfile -d '' -t hook < <(yq -0 'select(.kind == "StatefulSet") | .spec.template.spec.containers[] | select(.name == "postgres")
+  | .lifecycle.postStart.exec.command[]' "$postgres_manifest")
+[ "${#hook[@]}" -gt 0 ] || fail "$postgres_manifest declares no postStart command for its container postgres"
 roles_map="$(yq 'select(.kind == "StatefulSet") | .spec.template.spec.volumes[] | select(.name == "roles") | .configMap.name' "$postgres_manifest")" ||
   fail "yq could not read the volume roles of $postgres_manifest"
 backoff_limit="$(yq 'select(.kind == "Job") | .spec.backoffLimit' "$config_cli_manifest")" ||
@@ -320,7 +321,7 @@ write_env "$keycloak_manifest" Deployment keycloak "$scratch/keycloak.env"
 # bind mount leaves at the mode the hold wrote, where the cluster's fsGroup makes it readable.
 await "${compose_command[@]}" up --detach postgres ||
   fail "docker compose could not start Postgres: $(tail -n 1 "$log")"
-await "${compose_command[@]}" exec -T postgres "$hook_word_0" "$hook_word_1" "$hook_word_2" ||
+await "${compose_command[@]}" exec -T postgres "${hook[@]}" ||
   fail "the postStart hook of Postgres failed: $(tail -n 1 "$log")"
 await "${compose_command[@]}" up --detach keycloak ||
   fail "docker compose could not start Keycloak: $(tail -n 1 "$log")"
