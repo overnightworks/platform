@@ -740,8 +740,9 @@ echo "bootstrap:hook: core.hooksPath is $hooks_directory"
 [tasks."bootstrap:docker-group"]
 description = "Add the user running the bootstrap to the docker group, and stop for a new login when this process lacks the group"
 # The user is the machine's, so [bootstrap.users] would hardcode a login in the repository. bootstrap:k3s and
-# bootstrap:flux read the kubeconfig through the docker group (#11), so they must run in a process that has it, and a
-# group added to a running process takes effect only in the next login.
+# bootstrap:flux read the kubeconfig through the docker group that host/k3s/config.yaml's write-kubeconfig-group
+# names, so they must run in a process that has it, and a group added to a running process takes effect only in the
+# next login.
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
