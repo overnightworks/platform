@@ -6,6 +6,8 @@
   dependencyDashboard: true,
   dependencyDashboardApproval: true,
   vulnerabilityAlerts: { enabled: false },
+  // A pin's newest patch is listed apart from its next minor, so a patch that closes an advisory is offered while its minor is held.
+  separateMinorPatch: true,
   ignorePaths: ["tests/**", "apps/**", "infrastructure/*/rendered.yaml"],
   dependencyDashboardFooter:
     "```aco\nversion = 1\nnow = \"The daily watch lists each vendor pin with a newer release; this block is static and Renovate rewrites this issue at every run.\"\nnext = \"Start a lane from a line of this list; its checkboxes are not used.\"\ndone_when = \"Every line of the list is bumped, or a reason to stay is written on its item.\"\n```",
