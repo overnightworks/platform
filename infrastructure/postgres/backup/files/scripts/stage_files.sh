@@ -12,7 +12,7 @@
 # dropped and a failed step names itself and its exit status.
 # `listing <tree>...` prints the file lines of the trees under the current directory, which db:load-dump's loader compares
 # with the lines MANIFEST holds for a restored tree.
-# Usage: sh stage_files.sh stager|copy|bucket|dump|listing <tree>..., run by busybox sh in each container's image.
+# Usage: sh stage_files.sh stager|copy|bucket|dump|manifest|listing <tree>..., run by busybox sh in each container's image.
 set -u
 scratch=/scratch
 staging=/staging
@@ -141,10 +141,10 @@ manifest() {
   done
   dump_sha256="$(sha256sum postgres.dump)" || exit 1
   dump_size="$(stat -c %s postgres.dump)" || exit 1
-  files="$(file_lines "$@")" || exit 1
+  files="$(listing "$@")" || exit 1
   {
     printf 'dump\t%s\t%s\n' "${dump_sha256%% *}" "$dump_size"
-    [ -z "$files" ] || printf '%s\n' "$files" | LC_ALL=C sort
+    [ -z "$files" ] || printf '%s\n' "$files"
   } >MANIFEST.tmp
 }
 
