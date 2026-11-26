@@ -142,6 +142,13 @@ Facts of today's boundaries, each held by a manifest or a cell:
 - No access token carries a person's name or e-mail address; the ID token and userinfo do.
 - A declared test person can sign in to hopin, skat, presentator and songmaker only during a run of `mise run live:check`: at rest it is disabled with no
   credential, and the boundary that keeps its password from a non-cooperative agent is the operator's account on the PC.
+- Each app connects to its Postgres as its own role, named like its namespace: the owner of its database and of every
+  object in it, no superuser and a member of no role (`infrastructure/postgres/scripts/app_role.sh`, at every start), so
+  a flaw in an app reaches its own data and not the server: no program, server file or untrusted extension. The
+  server's superuser `postgres` has no password, so only `kubectl exec` through the container's local trust reaches it,
+  for the platform's tools that name it. A boundary, Postgres' privileges, whose cases
+  `tests/postgres/an_app_role_is_refused_programs_server_files_and_untrusted_extensions.sh` and
+  `tests/postgres/every_app_role_owns_its_database_and_is_no_superuser.sh` list.
 - Each Postgres declares the role `reader` at every start (`infrastructure/postgres/scripts/reader_role.sh`), with no
   password and no right but `pg_read_all_data`'s, and `mise run db:read <namespace>` runs an agent's SQL as it through
   `kubectl exec`, in a read-only session whose timeouts it sets, after a check that the session is that role. It is a
