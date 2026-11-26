@@ -9,7 +9,7 @@ metadata:
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: traefik-traefik
-    app.kubernetes.io/version: "v3.7.17"
+    app.kubernetes.io/version: "v3.7.20"
     helm.sh/chart: traefik-42.3.1
     app.kubernetes.io/managed-by: Helm
   annotations:
@@ -24,7 +24,7 @@ metadata:
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: traefik-traefik
-    app.kubernetes.io/version: "v3.7.17"
+    app.kubernetes.io/version: "v3.7.20"
     helm.sh/chart: traefik-42.3.1
     app.kubernetes.io/managed-by: Helm
 data:
@@ -70,7 +70,7 @@ metadata:
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: traefik-traefik
-    app.kubernetes.io/version: "v3.7.17"
+    app.kubernetes.io/version: "v3.7.20"
     helm.sh/chart: traefik-42.3.1
     app.kubernetes.io/managed-by: Helm
 rules:
@@ -139,7 +139,7 @@ metadata:
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: traefik-traefik
-    app.kubernetes.io/version: "v3.7.17"
+    app.kubernetes.io/version: "v3.7.20"
     helm.sh/chart: traefik-42.3.1
     app.kubernetes.io/managed-by: Helm
 roleRef:
@@ -160,7 +160,7 @@ metadata:
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: traefik-traefik
-    app.kubernetes.io/version: "v3.7.17"
+    app.kubernetes.io/version: "v3.7.20"
     helm.sh/chart: traefik-42.3.1
     app.kubernetes.io/managed-by: Helm
   annotations:
@@ -184,7 +184,7 @@ metadata:
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: traefik-traefik
-    app.kubernetes.io/version: "v3.7.17"
+    app.kubernetes.io/version: "v3.7.20"
     helm.sh/chart: traefik-42.3.1
     app.kubernetes.io/managed-by: Helm
   annotations:
@@ -211,7 +211,7 @@ spec:
         app.kubernetes.io/instance: traefik-traefik
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/name: traefik
-        app.kubernetes.io/version: v3.7.17
+        app.kubernetes.io/version: v3.7.20
         helm.sh/chart: traefik-42.3.1
     spec:
       automountServiceAccountToken: true
@@ -254,7 +254,7 @@ spec:
               fieldPath: metadata.namespace
         - name: USER
           value: traefik
-        image: docker.io/library/traefik@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
+        image: docker.io/library/traefik@sha256:8301d6f60957a422f98918aacf2b01482abde3e74ead3719aabdb7c64045fe28
         imagePullPolicy: IfNotPresent
         lifecycle: null
         livenessProbe:
@@ -332,7 +332,7 @@ metadata:
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: traefik-traefik
-    app.kubernetes.io/version: "v3.7.17"
+    app.kubernetes.io/version: "v3.7.20"
     helm.sh/chart: traefik-42.3.1
     app.kubernetes.io/managed-by: Helm
   name: traefik
