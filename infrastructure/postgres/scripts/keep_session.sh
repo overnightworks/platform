@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 # keep_session.sh: sourced by app_role.sh and reader_role.sh, the scripts that declare a role at each start; defines
 # as_login only, the one session of a keep.
 # as_login <login> <psql option>...: psql as the login through the container's local trust. Every transaction runs
