@@ -17,7 +17,8 @@ tokens of a model), mixed_refused (a tool message of text and a tool reference i
 reference loads nothing: the reply calls no tool and the definition is not billed), definition_unbilled (a referenced tool
 is called but its definition is not billed), token_omitted (the call leaves out the arguments that carry no enum), lane_omitted
 (the call leaves out the arguments that carry an enum), token_extended and lane_extended (the call's value for those
-arguments has a suffix), token_newline and lane_newline (the call's value for those arguments ends in a line feed).
+arguments has a suffix), token_newline and lane_newline (the call's value for those arguments ends in a line feed),
+defer_refused (text/haiku-low refuses a request with a defer_loading tool with 400).
 
 A tool with defer_loading is billed only once a tool message references it, and then the reply calls it with the text of that
 message's last word and the first value of each enum of its definition.
@@ -31,7 +32,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MASTER_KEY, FAULTS, SEEDED = sys.argv[1], set(filter(None, sys.argv[2].split(","))), int(sys.argv[3])
-MODELS = ["text/sonnet", "text/haiku", "text/sonnet-medium", "text/haiku-fast", "image/flare"]
+MODELS = ["text/sonnet", "text/sonnet-low", "text/haiku", "text/haiku-medium", "text/haiku-low", "text/sonnet-medium", "text/haiku-fast", "image/flare"]
+DEFER_REFUSER = "text/haiku-low"
 WRITE_PRICE = 1e-5 if "dear_writes" in FAULTS else 2e-6
 CALL_SPEND = 0.025 if "spendy_calls" in FAULTS else 0.001
 MISS_SPEND, MISS_TOKENS, HEAVY_SPEND = 3.3, 500000, 2.95
@@ -76,6 +78,8 @@ def faulty_refusal(body, max_tokens):
         return "max_tokens must be positive"
     if "mixed_refused" in FAULTS and mixes_text_and_reference(body):
         return "tool result content mixes text and tool references"
+    if "defer_refused" in FAULTS and body["model"] == DEFER_REFUSER and any(tool.get("defer_loading") for tool in body.get("tools") or []):
+        return "defer_loading is not supported"
     return None
 
 

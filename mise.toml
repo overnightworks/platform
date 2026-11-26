@@ -1250,7 +1250,7 @@ quiet = true
 run = "scripts/litellm_effort_measure.sh"
 
 [tasks."litellm:gateway-probe"]
-description = "Live probe of what LiteLLM passes through (inline and deferred tools, a tool result that mixes text with a tool reference, compaction, max_tokens 0, cache lifetimes, prices): send synthetic requests on the chat route and /v1/messages with a key of its own (budget 5 USD, deleted on every exit) under one test person, print one line per question and route and the run's cost (spends money, writes a test person's row and one spend log row per call); --question <number> runs one question alone (18 so far) with only the setup it needs; --remove deletes the test person's row"
+description = "Live probe of what LiteLLM passes through (inline and deferred tools, a tool result that mixes text with a tool reference, compaction, max_tokens 0, cache lifetimes, prices): send synthetic requests on the chat route and /v1/messages with a key of its own (budget 5 USD, deleted on every exit) under one test person, print one line per question and route and the run's cost (spends money, writes a test person's row and one spend log row per call); --question <number> runs one question alone (4 and 18 so far) with only the setup it needs, and --question 4 asks the text models named by --model <name> (repeatable) instead of the fixed pair; --remove deletes the test person's row"
 quiet = true
 run = "scripts/litellm_gateway_probe.sh"
 

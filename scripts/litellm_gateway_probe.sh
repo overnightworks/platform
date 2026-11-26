@@ -10,9 +10,13 @@
 #                                              (number and tags, where, the answer, the usage fields and statuses that show
 #                                              it, never a reply body) and the run's cost from the spend log; exits 1 when the
 #                                              key cannot be made, a plain request is refused or a key cannot be removed
-#   scripts/litellm_gateway_probe.sh --question <number>
+#   scripts/litellm_gateway_probe.sh --question <number> [--model <name>]...
 #                                              runs one question alone (the numbers of alone_questions) with only the setup it
-#                                              needs: the key, the plain check on its route and its lines, then the cost
+#                                              needs: the key, the plain check on its route, a calibration request per model
+#                                              where its flow has one (question 4: one small /v1/messages call), its lines, then
+#                                              the cost; a question whose models come from arguments (4) asks the --model names,
+#                                              each a text name /v1/models lists, else the pair above; any other question ends 1
+#                                              on --model
 #   scripts/litellm_gateway_probe.sh --remove  deletes the test person's customer row and any probe key a killed run left
 # Both probe keys are deleted on every exit, a failure included; only SIGKILL leaves one, which --remove clears. The second
 # key has a budget of one millionth of a dollar and shows the budget on both routes. The run deletes the test person's row
@@ -796,12 +800,14 @@ plain_check() {
 
 # probe_start <routes>: the setup every run needs: the forward, the probe key and a plain request on each route.
 probe_start() {
-  local text_models
+  local text_models listed_model
   trap probe_exit EXIT
   connect
   ask "listing LiteLLM's models" /v1/models
-  [ "$(json '[.data[].id | select(. == "'"$sonnet_model"'" or . == "'"$haiku_model"'")] | length')" = 2 ] ||
-    fail "LiteLLM does not list both $sonnet_model and $haiku_model"
+  for listed_model in "${probe_models[@]}"; do
+    [ "$(NAME="$listed_model" json '[.data[].id | select(. == strenv(NAME) and test("^text/"))] | length')" = 1 ] ||
+      fail "LiteLLM lists no text model $listed_model"
+  done
   text_models="$(json --output-format json --indent 0 '[.data[].id | select(test("^text/"))] | sort')"
   # The person's spend starts at zero, so that an earlier run's cost never reaches the person's own budget.
   request "deleting the customer row of $probe_person" /customer/delete "{\"user_ids\":[\"$probe_person\"]}" discard || true
@@ -816,13 +822,15 @@ probe_end() {
   echo "litellm:gateway-probe: the test person $probe_person stays in LiteLLM's customer table; remove it with: mise run litellm:gateway-probe --remove"
 }
 
-# The questions that run alone, each the routes of its flow and the flow; their setup is the key and the plain check, since a
-# flow of them needs no calibration. A full run asks them through run_question too.
-declare -A alone_questions=([18]="chat flow_mixed_result")
+# The questions that run alone, each the routes of its flow, the flow and where its models come from: "pair" is probe_models,
+# "arguments" the --model names when there are any, and whether its models are calibrated first; their setup is the key, the
+# plain check and that calibration. A full run asks question 18 through run_question too.
+declare -A alone_questions=([4]="chat flow_deferred arguments calibrate" [18]="chat flow_mixed_result pair plain")
+alone_numbers() { printf '%s\n' "${!alone_questions[@]}" | sort -n | paste -sd' '; }
 # run_question <number>: asks the question on its routes, as a full run and a run alone both do.
 run_question() {
   local routes flow
-  read -r routes flow <<<"${alone_questions[$1]}"
+  read -r routes flow _ <<<"${alone_questions[$1]}"
   each_target_on "$routes" "$flow"
 }
 
@@ -860,12 +868,28 @@ probe_command() {
   probe_end
 }
 
+# alone_command <number> [--model <name>]...: one question with only its setup, on the --model names where it takes them.
 alone_command() {
-  local routes
-  [ -n "${alone_questions[$1]-}" ] || fail "question $1 does not run alone; those that do: ${!alone_questions[*]}"
-  read -r routes _ <<<"${alone_questions[$1]}"
+  local routes models_from calibration number="$1" given_models=()
+  local -A seen_models=()
+  shift
+  [ -n "${alone_questions[$number]-}" ] || fail "question $number does not run alone; those that do: $(alone_numbers)"
+  while [ $# -gt 0 ]; do
+    [ "$1" = --model ] && [ $# -ge 2 ] || fail "$usage_hint"
+    [ -n "${seen_models[$2]-}" ] || given_models+=("$2")
+    seen_models[$2]=1
+    shift 2
+  done
+  read -r routes _ models_from calibration <<<"${alone_questions[$number]}"
+  if [ "${#given_models[@]}" -gt 0 ]; then
+    [ "$models_from" = arguments ] || fail "question $number takes no --model"
+    probe_models=("${given_models[@]}")
+  fi
   probe_start "$routes"
-  run_question "$1"
+  if [ "$calibration" = calibrate ]; then
+    for model in "${probe_models[@]}"; do calibrate "$model"; done
+  fi
+  run_question "$number"
   probe_end
 }
 
@@ -876,10 +900,10 @@ remove_command() {
   echo "litellm:gateway-probe: the customer row of $probe_person and every probe key are deleted"
 }
 
-usage_hint="usage: scripts/litellm_gateway_probe.sh | --question <number> | --remove"
+usage_hint="usage: scripts/litellm_gateway_probe.sh | --question <number> [--model <name>]... | --remove"
 case "$#:${1-}" in
   0:) probe_command ;;
-  2:--question) alone_command "$2" ;;
+  [2-9]*:--question) alone_command "${@:2}" ;;
   1:--remove) remove_command ;;
   *) fail "$usage_hint" ;;
 esac
