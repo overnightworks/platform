@@ -1,8 +1,0 @@
-claim_id = "e071181186104e148d87ca20f21ca470"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "62613970560649b3d6eb9efb1d04deda010fb9ad"
-branch = "claude/issue-937-s3-db-load-dump-restores-dump-claim-and"
-scope = [".github/workflows/ci.yml", "docs/ARCHITECTURE.md", "docs/app.md", "docs/personal-data.md", "docs/runbooks/restore-a-database.md", "docs/runbooks/restore-the-object-store-metadata.md", "infrastructure/objectstore/garage.yaml", "infrastructure/postgres/backup/files/scripts/stage_files.sh", "mise.toml", "scripts/load_files.sh", "scripts/load_snapshot.sh", "scripts/load_snapshot.yaml", "tests/backup", "tests/flux/parts.yaml", "tests/objectstore", "tests/postgres/load_dump.sh"]
-opened_commit = "b7fce75bf50eb4de8d618ce8e0db3fe38006eefe"
-whole_reason = "One slice: the loader with its Garage grant, the deletion of --files and its rsync relay, the cells and the docs hold together, since the in-cluster claim restore replaces the PC route in the same change and app.md's clause may leave only with the bucket restore; about 300 added and 150 deleted production lines in 6 code files."
