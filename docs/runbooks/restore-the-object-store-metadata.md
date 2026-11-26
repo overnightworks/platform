@@ -40,8 +40,8 @@ Impact: every app with a bucket (presentator and songmaker) cannot read or write
 
 Objects written after the snapshot lose their metadata: they are unreachable, and their blocks stay on the claim until
 Garage's own sweep. presentator rebuilds what its bucket holds, and songmaker's bucket holds only what it can rebuild
-(its queue's stream snapshots); a later app that keeps a file only in a bucket restores it from that bucket's backup,
-which the platform does not make yet.
+(its queue's stream snapshots); an app that keeps a file only in a declared bucket gets the objects written after the
+snapshot back from that bucket's backup with `mise run db:load-dump` (restore-a-database.md).
 
 Rollback: the corrupt file stays at `/data/meta/db.sqlite.corrupt` until the operator deletes it; copying it back
 returns to the state before step 3.
