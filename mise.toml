@@ -946,8 +946,8 @@ writers at 0: delete the Pod $loader in $namespace, then run flux resume kustomi
   flux resume kustomization "$namespace" --wait
 }
 resume() {
+  trap 'trap - EXIT; stay_suspended "stopped while waiting for the database $namespace to be alone"; exit 143' TERM
   trap - EXIT
-  trap 'stay_suspended "stopped while waiting for the database $namespace to be alone"; exit 143' TERM
   trap '' INT
   wait_alone || {
     stay_suspended "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds"
