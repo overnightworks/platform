@@ -24,8 +24,8 @@ Impact: the platform does not run on the PC before step 6. hal runs beside it th
 3. The operator: `scripts/bootstrap_pc.sh --only packages,files,firewall,services`. A change of `/etc/docker/daemon.json`
    restarts Docker and every container in it, so it waits for his word. A full `scripts/bootstrap_pc.sh` run stops once
    after `bootstrap:docker-group` when it has just added the user to `docker`; after a new login, run it again. After
-   an `--only` run, `mise run bootstrap:docker-group` does the same on its own, before step 4 reads the kubeconfig
-   through that group.
+   an `--only` run, the operator runs `mise run bootstrap:docker-group` before step 4, which reads the kubeconfig
+   through that group, and runs it again after a new login when it asks.
 4. The operator: `mise run bootstrap:k3s`.
 5. An agent: `mise run bootstrap:flux`.
 6. An agent: `mise run bootstrap:secrets`, once the age key file is in place. A public key it prints is the
