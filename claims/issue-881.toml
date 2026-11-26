@@ -1,0 +1,7 @@
+claim_id = "70446987c0af4e03b4c6fe0faebe12d3"
+agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
+role = "builder"
+base = "c3fc739599fccd81d5a247e7f086051ffab34580"
+branch = "claude/issue-881-presentator-s-web-no-longer-sets-present"
+scope = ["apps/presentator/web.yaml"]
+opened_commit = "87e32a85155e31d2718efa7a59099d6cf6fcb4b7"
