@@ -1,7 +1,0 @@
-claim_id = "2c1db5f9f804476182538afbe8a7aa17"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "d49358d745f5ad98c773f0fd01190273f7cdfb44"
-branch = "dependabot/uv/src/legal/coverage-7.17.3"
-scope = ["src/legal/uv.lock"]
-opened_commit = "c65ac1a1919bf481beb1353cfa1d4e515cd61520"
