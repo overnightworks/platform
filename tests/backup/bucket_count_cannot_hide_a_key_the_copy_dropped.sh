@@ -57,7 +57,7 @@ esac
 EOF
 )"
 
-# step_exit <drop one: yes|no> [scenario]: the exit status the bucket role records for its first step.
+# step_exit <drop one: yes|no> [scenario]: the exit status the bucket role records for its pre-sync, its size step recorded as done.
 step_exit() {
   docker run --rm --network none --read-only --user 65534 --cap-drop ALL --security-opt no-new-privileges \
     --tmpfs /scratch:rw,mode=1777 --tmpfs /staging:rw,mode=1777 --tmpfs /fake:rw,exec,mode=1777 \
@@ -65,6 +65,7 @@ step_exit() {
     --entrypoint sh "$image" -c '
     printf "%s\n" "$STAND_IN" >/fake/rclone
     chmod +x /fake/rclone
+    echo 0 >/scratch/bucket-size.exit
     PATH="/fake:$PATH" sh /stage_files.sh bucket &
     : >/scratch/bucket-pre-sync.request
     tries=0

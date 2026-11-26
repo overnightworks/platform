@@ -152,11 +152,11 @@ flux suspend kustomization platform-secrets --namespace flux-system
 platform_secrets_suspended=1
 kubectl --namespace "$namespace" patch secret "$bucket_secret" --type merge \
   --patch "{\"data\": {\"credentials\": \"$(printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$wrong_id" "$wrong_secret" | base64 --wrap=0)\"}}"
-refused_backup bucket-row-14 "$step_failure"
+refused_backup bucket-row-14 '^stage: bucket-size failed with exit [0-9]+$'
 ! staged_file_exists /staging/MANIFEST || fail "a wrong key: the staging claim holds a MANIFEST"
 end_backup bucket-row-14
 restore
-echo "a wrong key failed the step bucket-pre-sync, naming it and its exit, and left no MANIFEST; the Secret $bucket_secret and platform-secrets are as they were"
+echo "a wrong key failed the step bucket-size, naming it and its exit, and left no MANIFEST; the Secret $bucket_secret and platform-secrets are as they were"
 
 # Row 7a: a zero-byte key that ends in a slash is a directory marker, not staged; the key under it is.
 plant marker
