@@ -1181,6 +1181,15 @@ jobs:
       - name: Run the dotfiles step and bootstrap:hook again and assert that they change nothing
         run: tests/bootstrap/hook_second_run_changes_nothing.sh
 
+      - name: Check that the packages part installs Docker's engine, both CLI plugins and the docker group, and a second run changes nothing
+        run: tests/docker/packages_part_installs_the_engine_both_plugins_and_the_docker_group.sh
+
+      - name: Check that dockerd reads the path mise.toml writes and accepts the committed daemon.json
+        run: tests/docker/dockerd_accepts_the_daemon_json_it_reads.sh
+
+      - name: Check that bootstrap:docker-group adds the user once and asks for a new login
+        run: tests/docker/docker_group_adds_the_user_once_and_asks_for_a_new_login.sh
+
   opentofu:
     runs-on: ubuntu-latest
     timeout-minutes: 10

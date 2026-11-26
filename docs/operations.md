@@ -128,7 +128,7 @@ deletion date is older than 30 days, with that file, and leaves an entry without
 it cannot read and the Trash of other mounts; the unit creates the home Trash first, since gtrash fails on a missing
 one. (OPS-11)
 
-Claude's sessions, Docker's volumes and its build cache (hal's) are never cleaned here. (OPS-12)
+Claude's sessions, Docker's volumes and its build cache (bounded by the bootstrap's `daemon.json`) are never cleaned here. (OPS-12)
 
 ## AI budgets (`scripts/litellm_keys.sh`)
 

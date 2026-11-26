@@ -15,11 +15,15 @@ Impact: the platform does not run on the PC before step 6. hal runs beside it th
      the plan lists only `/etc/rancher/k3s` and its config file;
    - present, with `k3s-uninstall.sh` beside it: an existing install, which goes on at step 9.
 
+- On a PC that runs Docker the plan lists no Docker row: the three packages, `/etc/docker/daemon.json` and the `docker`
+  service match. A fresh machine lists them, with `docker` as `unknown` until the packages part has installed its unit.
 - Before steps 10 and 11, an agent: `loginctl show-user "$USER" --property=Linger`. It must print `Linger=yes`.
 
 ## Fix
 
-3. The operator: `scripts/bootstrap_pc.sh --only files,firewall,services`.
+3. The operator: `scripts/bootstrap_pc.sh --only packages,files,firewall,services`. A change of `/etc/docker/daemon.json`
+   restarts Docker and every container in it, so it waits for his word. A full `scripts/bootstrap_pc.sh` run stops once
+   after `bootstrap:docker-group` when it has just added the user to `docker`; after a new login the same run goes on.
 4. The operator: `mise run bootstrap:k3s`.
 5. An agent: `mise run bootstrap:flux`.
 6. An agent: `mise run bootstrap:secrets`, once the age key file is in place. A public key it prints is the

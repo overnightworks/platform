@@ -1,0 +1,14 @@
+{
+    "builder": {
+        "gc": {
+            "defaultMaxUsedSpace": "20GB"
+        }
+    },
+    "log-driver": "journald",
+    "runtimes": {
+        "nvidia": {
+            "args": [],
+            "path": "nvidia-container-runtime"
+        }
+    }
+}
