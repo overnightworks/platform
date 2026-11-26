@@ -5,7 +5,7 @@
 # of `paths` (a bash pattern, in which * also crosses /), and every part when a path is unknown. `paths` holds the
 # directories of a part's cells; the paths of core are those that select no other part, since no cell of core reads them.
 # A part marked nightly_only runs only in a scheduled or dispatched run.
-core: {layers: all, paths: [docs/*, "*.md", tests/ingress/a_second_request_with_the_cookie_reaches_the_same_pod.sh, tests/ingress/the_cluster_exposes_only_traefik_and_trusts_the_pod_network.sh, tests/secrets/github_host_keys_pass_only_githubs_own.sh, tests/release_bump/*, tests/secrets/new_key_refuses_unsafe_key_paths.sh, scripts/release_bump*.sh]}
+core: {layers: all, paths: [docs/*, "*.md", tests/ingress/a_second_request_with_the_cookie_reaches_the_same_pod.sh, tests/ingress/the_cluster_exposes_only_traefik_and_trusts_the_pod_network.sh, tests/secrets/github_host_keys_pass_only_githubs_own.sh, tests/release_bump/*, tests/secrets/new_key_refuses_unsafe_key_paths.sh, scripts/release_bump*.sh, .github/workflows/release-bump.yml]}
 # The realm and its route; skat is the caller whose namespace and Service Keycloak's policies are probed against.
 access: {layers: [keycloak, skat, litellm, traefik, hopin, speech-runtime], paths: [scripts/keycloak_login_form.sh, tests/cutover/*, tests/ingress/traefik_answers_only_cloudflared_and_routes_the_app.sh, tests/keycloak/*, tests/litellm/*]}
 agents: {layers: [keycloak], paths: [tests/keycloak/*]}

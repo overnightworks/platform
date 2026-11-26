@@ -1,0 +1,92 @@
+name: release-bump
+
+# The dry run of the bump: every five minutes, and on dispatch, one job computes for each app with a release Component
+# what scripts/release_bump_compute.sh computes for the hand command, and publishes nothing. The job holds no write
+# credential, no secret and no environment; a bump leaves only its output, as the artifact release-bump.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+# A run in progress finishes and the next waits, so no run cuts another's registry reads short.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned tools
+        run: |
+          scripts/bootstrap_pc.sh --only tools
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # The registry read of the compute step goes through Docker's keychain; the token reaches it only through stdin.
+      - name: Log in to the registry
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      # One app never stops the others. An outcome (exit 0) and a refusal (exit 1, a release that stays an ordinary lane)
+      # keep the run green, the refusal as a warning; a failure goes on to the others and then fails the run.
+      - name: Compute the bump of every app with a release Component
+        id: compute
+        run: |
+          output="$RUNNER_TEMP/release-bump"
+          failed=false
+          bumps=false
+          printf '| app | result |\n| --- | --- |\n' >> "$GITHUB_STEP_SUMMARY"
+          for component in apps/*/release/kustomization.yaml; do
+            app="${component#apps/}"
+            app="${app%%/*}"
+            status=0
+            log="$(mise exec -- scripts/release_bump_compute.sh "$app" "$output/$app" 2>&1)" || status=$?
+            echo "::group::$app"
+            echo "$log"
+            echo "::endgroup::"
+            last_line="$(tail -n 1 <<<"$log")"
+            summary_line="${last_line//|/\\|}"
+            case "$status" in
+              0)
+                result="$(cat "$output/$app/outcome")"
+                [ "$result" != bump ] || bumps=true
+                ;;
+              1)
+                result="refused: $summary_line"
+                echo "::warning title=release-bump $app refused::$last_line"
+                ;;
+              *)
+                result="failed: $summary_line"
+                failed=true
+                echo "::error title=release-bump $app failed::$last_line"
+                ;;
+            esac
+            [ "$result" = bump ] || rm -rf "${output:?}/$app"
+            printf '| %s | %s |\n' "$app" "$result" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "bumps=$bumps" >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the output of every bump
+        if: steps.compute.outputs.bumps == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-bump
+          path: ${{ runner.temp }}/release-bump
+          if-no-files-found: error
+
+      - name: Fail the run for an app whose compute step failed
+        if: steps.compute.outputs.failed == 'true'
+        run: exit 1

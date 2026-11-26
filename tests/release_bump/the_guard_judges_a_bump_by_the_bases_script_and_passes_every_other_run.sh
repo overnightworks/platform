@@ -10,6 +10,7 @@
 # Usage: mise exec -- tests/release_bump/the_guard_judges_a_bump_by_the_bases_script_and_passes_every_other_run.sh
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/world.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/job.sh"
 
 ci="${repository_root}/.github/workflows/ci.yml"
 job_path='.jobs."release-bump-scope"'
@@ -17,7 +18,6 @@ repository=overnightworks/platform
 printf '#!/usr/bin/env bash\necho "the guard runs no mise: $*" >&2\nexit 98\n' >"${work}/denied/mise"
 chmod +x "${work}/denied/mise"
 
-declare -A context
 runs=0
 # open_pull_request <change command>...: the pull request's merge commit in the fixture remote, whose first parent is the
 # tip of base_branch and whose second holds what the change command edits in a clone of the base.
@@ -37,60 +37,11 @@ open_pull_request() {
   git -C "${directory}" push --quiet origin "HEAD:refs/pull/${runs}/merge"
 }
 
-# evaluate <text>: the text with each ${{ expression }} replaced by the event's value, and no unknown expression.
-evaluate() {
-  local text="$1" expression
-  local pattern='\$\{\{ *([^} ]+) *\}\}'
-  while [[ ${text} =~ ${pattern} ]]; do
-    expression="${BASH_REMATCH[1]}"
-    [ -n "${context[${expression}]+set}" ] || fail "the job reads ${expression}, which the cell's event does not hold"
-    text="${text/"${BASH_REMATCH[0]}"/${context[${expression}]}}"
-  done
-  printf '%s' "${text}"
-}
-
-# run_job <event name> <head ref> <head repository>: every step of the job in a fresh workspace, in order, as the runner
-# would; sets job_status (0, or the status of the first failing step) and job_log (what the steps printed).
+# run_job <event name> <head ref> <head repository>: the job's steps for that event (job.sh runs them).
 run_job() {
-  local directory="${work}/job-$((++runs))" steps index step condition uses id variable script
-  local condition_pattern="^steps\.([a-z-]+)\.outputs\.([a-z-]+) == '([a-z]*)'\$"
-  local -a step_env
-  mkdir -p "${directory}/workspace" "${directory}/outputs"
-  job_log="${directory}/log"
-  : >"${job_log}"
-  job_status=0
   context=(["github.event_name"]="$1" ["github.event.pull_request.head.ref"]="$2" ["github.event.pull_request.head.repo.full_name"]="$3"
     ["github.event.pull_request.base.sha"]="${base_sha:-}" ["github.sha"]="${merge_sha:-}" ["github.repository"]="${repository}")
-  steps="$(yq "${job_path}.steps | length" "${ci}")"
-  for ((index = 0; index < steps; index++)); do
-    step="${job_path}.steps[${index}]"
-    id="$(yq "${step}.id // \"\"" "${ci}")"
-    condition="$(yq "${step}.if // \"\"" "${ci}")"
-    if [ -n "${condition}" ]; then
-      [[ ${condition} =~ ${condition_pattern} ]] || fail "the cell reads no condition like '${condition}'"
-      [ "$(sed -n "s/^${BASH_REMATCH[2]}=//p" "${directory}/outputs/${BASH_REMATCH[1]}")" = "${BASH_REMATCH[3]}" ] || continue
-    fi
-    uses="$(yq "${step}.uses // \"\"" "${ci}")"
-    if [ -n "${uses}" ]; then
-      [[ ${uses} == actions/checkout@* ]] || fail "the cell runs no action but checkout: ${uses}"
-      [ "$(yq "${step}.with.persist-credentials" "${ci}")" = false ] || fail "the checkout keeps the credentials"
-      git -C "${directory}/workspace" init --quiet
-      git -C "${directory}/workspace" remote add origin https://github.com/overnightworks/platform
-      git -C "${directory}/workspace" fetch --quiet --no-tags --depth=1 origin "$(evaluate "$(yq "${step}.with.ref" "${ci}")")"
-      git -C "${directory}/workspace" checkout --quiet --detach FETCH_HEAD
-      continue
-    fi
-    script="$(yq "${step}.run" "${ci}")"
-    [[ ${script} != *'${{'* ]] || fail "step $((index + 1)) puts an expression into its script, not into its env"
-    step_env=("GITHUB_OUTPUT=${directory}/outputs/${id:-none}")
-    while IFS= read -r variable; do
-      [ -z "${variable}" ] || step_env+=("${variable%%=*}=$(evaluate "${variable#*=}")")
-    done < <(yq "${step}.env // {} | to_entries | .[] | .key + \"=\" + .value" "${ci}")
-    (cd "${directory}/workspace" && env "${step_env[@]}" bash -e -c "${script}") >>"${job_log}" 2>&1 || {
-      job_status=$?
-      return 0
-    }
-  done
+  run_job_steps "${ci}" "${job_path}" "${work}/job-$((++runs))"
 }
 
 # expect_green <description> <expected text> <run_job arguments>
