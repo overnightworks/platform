@@ -13,7 +13,7 @@ curl and sha256sum.
   (sudo) and `keycloak:admin` (his console sign-in).
 - An agent runs `mise run bootstrap:secrets` once the age key file is in place, `litellm:admin <username>` only for
   a person he names and `gpu:use <songs|speech|free>` only inside a window he named; `db:read <namespace>` is its one
-  way to read a Postgres: SQL on stdin, as a role that only reads.
+  way to read a live Postgres: SQL on stdin, as a read-only role.
 - `mise run offline` and `online` take the public names off and back: `docs/runbooks/take-the-platform-offline.md`.
 - `mise run admission:pause` and `admission:resume` are the head's: suspend and restore the attestation check.
 
