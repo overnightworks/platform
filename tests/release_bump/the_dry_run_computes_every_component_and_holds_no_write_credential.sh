@@ -109,7 +109,7 @@ echo "a failure of one app leaves the others reporting, keeps their bumps and ma
 [ -z "$(yq '.jobs.compute.permissions | to_entries | .[] | select(.value != "read" or (.key != "contents" and .key != "packages")) | .key' "${workflow}")" ] ||
   fail "the job's permissions are more than contents and packages read"
 [ "$(yq '[.. | select(tag == "!!map" and has("environment"))] | length' "${workflow}")" -eq 0 ] || fail "the workflow names an environment"
-! grep -qE 'secrets\.' "${workflow}" || fail "the workflow names a secret"
+! grep -qw secrets "${workflow}" || fail "the workflow names a secret"
 [ "$(yq '.on | tag' "${workflow}")" = '!!map' ] || fail "the events are no map"
 [ -z "$(yq '.on | keys | .[] | select(. != "schedule" and . != "workflow_dispatch")' "${workflow}")" ] || fail "an event but the schedule and the dispatch starts the workflow"
 [ "$(yq '.concurrency.cancel-in-progress' "${workflow}")" = false ] || fail "the concurrency group cancels a run in progress"
