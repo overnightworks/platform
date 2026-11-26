@@ -89,10 +89,12 @@ refuses_naming() {
   if output="$(read_sql 'SELECT 1')"; then fail "db:read read as a drifted role: $1"; fi
   grep -qF "$1" <<<"$output" || fail "db:read refused the drifted role without naming '$1': $output"
 }
-read_sql "COMMIT; SET default_transaction_read_only = off; ALTER ROLE reader PASSWORD 'drifted'" >/dev/null || true
+read_sql "COMMIT; SET default_transaction_read_only = off; ALTER ROLE reader PASSWORD 'drifted'; ALTER ROLE reader SET search_path = ''" >/dev/null || true
 refuses_naming 'the role has a password'
 keep
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after keep restored the role"
+[ "$(read_sql 'SELECT count(*) FROM reader_proof' | sed -n 3p | tr -d ' ')" = 3 ] ||
+  fail "db:read does not read an unqualified name after keep, so the role's own search_path survived it"
 sql "$layer" 'GRANT CREATE ON SCHEMA public TO reader'
 refuses_naming 'the role can create in a schema'
 sql "$layer" 'REVOKE CREATE ON SCHEMA public FROM reader'

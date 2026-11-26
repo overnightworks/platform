@@ -887,7 +887,7 @@ echo "bootstrap:secrets: Kustomization $source_name Ready at $applied_revision"
 [tasks."db:read"]
 description = "Read a namespace's Postgres as the role reader, which can only read: SQL on stdin"
 usage = '''
-long_about "Read only the rows and columns needed, never secrets, credentials, session data or user content, and give counts and identifiers as evidence. The role refuses a write, not a read: what is read and passed on stays the rule's. keycloak's and litellm's databases hold signing keys and hashed keys, so a read there counts rows and never selects *."
+long_about "Read only the rows and columns needed, never secrets, credentials, session data or user content, and give counts and identifiers as evidence. An error's line number counts the lines of the role's check before the SQL too. The role refuses a write, not a read: what is read and passed on stays the rule's. keycloak's and litellm's databases hold signing keys and hashed keys, so a read there counts rows and never selects *."
 arg "<namespace>" help="The namespace whose Postgres is read"
 '''
 quiet = true

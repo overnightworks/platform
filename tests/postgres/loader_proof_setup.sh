@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Sourced by the scripts that prove the loader on the proof layer and by the reader cells; defines functions only.
+# Sourced by the scripts that prove the loader on the proof layer and by the reader cells, which take its sql from it;
+# defines functions only.
 # prepare_loader_proof reads $layer (the proof layer), $PROBE_IMAGE, $RUNNER_TEMP and tests/postgres/writers from the
 # working directory, and sets for its caller: layer_path, key_tables, key_table, dump, toc_dump, marker and output
 # (and dump_dir, job_uid, git_replicas, app_pods, which writers_ran and loaded use). Needs failure.sh sourced.

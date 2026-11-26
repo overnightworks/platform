@@ -25,7 +25,9 @@ keep() {
     fi
     sleep 1
   done
-  if ! PGOPTIONS='-c lock_timeout=2s -c statement_timeout=10s' psql --host=127.0.0.1 --no-psqlrc --quiet \
+  # client_min_messages keeps the NOTICE of a grant the role already holds out of the log.
+  if ! PGOPTIONS='-c lock_timeout=2s -c statement_timeout=10s -c client_min_messages=warning' \
+    psql --host=127.0.0.1 --no-psqlrc --quiet \
     --set=ON_ERROR_STOP=1 --single-transaction --set=role="$role" --set=comment="$comment" \
     --set=connections="$connections" --set=database="$PGDATABASE" --file=- <<'SQL'
 WITH existing AS (SELECT oid FROM pg_roles WHERE rolname = :'role')
@@ -39,6 +41,7 @@ SELECT :'missing'::boolean OR :'ours'::boolean AS declared \gset
   ALTER ROLE :"role" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD NULL
     CONNECTION LIMIT :connections;
   COMMENT ON ROLE :"role" IS :'comment';
+  ALTER ROLE :"role" RESET ALL;
   GRANT pg_read_all_data TO :"role";
   REVOKE TEMPORARY ON DATABASE :"database" FROM PUBLIC;
 \else
