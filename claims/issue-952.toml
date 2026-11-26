@@ -1,0 +1,7 @@
+claim_id = "d86df3655e5e45078fc0178b010b2502"
+agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
+role = "builder"
+base = "dff8298ca0815abe9533a8771b0426d43beb4ea2"
+branch = "claude/issue-952-the-pc-s-pinned-tools-hold-shpool-the-ho"
+scope = ["docs/ARCHITECTURE.md", "mise.lock", "mise.toml"]
+opened_commit = "ec3133be1e605e35fbd7e4a4861a340004b9a03f"
