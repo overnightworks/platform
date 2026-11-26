@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the source step of scripts/load_snapshot.sh against a fake restic that holds a newer staging snapshot of another
 # dump and an older staging snapshot of the dump to load, the order of restore-a-database.md (fetch the dump, backup:now,
-# load the fetched dump): the older snapshot is picked, and a dump no snapshot holds exits 3.
+# load the fetched dump): the older snapshot is picked, and of several snapshots that hold the dump the newest.
 # Usage: mise exec -- tests/backup/load_source_finds_the_older_snapshot_of_the_dump.sh
 set -euo pipefail
 
@@ -22,7 +22,8 @@ cat >"$work_directory/bin/restic" <<'FAKE'
 set -euo pipefail
 args="$*"
 case "$args" in
-  *" snapshots "*) printf '[{"id":"older","time":"2026-11-20T03:00:00Z"},{"id":"newer","time":"2026-11-26T03:00:00Z"}]' ;;
+  *" snapshots "*) printf '[{"id":"older","time":"2026-11-20T03:00:00Z"},{"id":"newer","time":"2026-11-26T03:00:00Z"},{"id":"oldest-twin","time":"2026-11-10T03:00:00Z"},{"id":"newest-twin","time":"2026-11-23T03:00:00Z"}]' ;;
+  *" dump oldest-twin "* | *" dump newest-twin "*) printf 'dump\ttwin-dump-sha\t10\nfile\t5\t1\tbucket/a\n' ;;
   *" dump older "*) printf 'dump\tolder-dump-sha\t10\nfile\t5\t1\tbucket/a\nfile\t7\t1\tfiles/x\n' ;;
   *" dump newer "*) printf 'dump\tnewer-dump-sha\t10\nfile\t5\t1\tbucket/a\nfile\t7\t1\tfiles/x\n' ;;
   *) echo "fake restic: unexpected $args" >&2; exit 1 ;;
@@ -46,6 +47,6 @@ echo "the source step picks the older snapshot whose MANIFEST holds the dump, pa
 source_of newer-dump-sha
 [ "$(awk '$1 == "snapshot" { print $2 }' <<<"$source_output")" = newer ] || fail "the newer dump was read as '$source_output'"
 
-source_of no-snapshot-holds-this
-[ "$source_status" = 3 ] || fail "a dump no snapshot holds ended $source_status, not 3"
-echo "the source step exits 3 for a dump no snapshot holds"
+source_of twin-dump-sha
+[ "$(awk '$1 == "snapshot" { print $2 }' <<<"$source_output")" = newest-twin ] || fail "a dump two snapshots hold was read as '$source_output'"
+echo "the source step picks the newest of the snapshots that hold the dump"
