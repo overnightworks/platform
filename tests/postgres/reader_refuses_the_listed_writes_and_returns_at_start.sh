@@ -8,6 +8,8 @@
 set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
+# shellcheck source=loader_proof_setup.sh
+source "$(dirname "${BASH_SOURCE[0]}")/loader_proof_setup.sh"
 # db:read runs as on the PC, against this cluster.
 export KUBECONFIG="$HOME/.kube/config"
 layer="$PROOF_LAYER"
@@ -15,7 +17,6 @@ escape_file=/tmp/reader-proof
 lock_application=reader_proof_lock
 
 in_postgres() { kubectl --namespace "$layer" exec postgres-0 --container postgres -- "$@"; }
-as_superuser() { in_postgres psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command="$1"; }
 # read_sql <sql>: the output of db:read on the SQL, whose status the caller reads.
 read_sql() { mise run db:read "$layer" 2>&1 <<<"$1"; }
 # hook: the command the StatefulSet runs after the container starts, read from it.
@@ -26,21 +27,21 @@ mapfile -t hook < <(kubectl --namespace "$layer" get statefulset postgres -o jso
 holder=""
 cleanup() {
   [ -z "$holder" ] || kill "$holder" 2>/dev/null || true
-  as_superuser "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = '$lock_application'" >/dev/null || true
-  as_superuser 'DROP TABLE IF EXISTS reader_proof, created_by_reader; DROP SEQUENCE IF EXISTS reader_proof_sequence;
+  sql "$layer" "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = '$lock_application'" >/dev/null || true
+  sql "$layer" 'DROP TABLE IF EXISTS reader_proof, created_by_reader; DROP SEQUENCE IF EXISTS reader_proof_sequence;
     DROP SCHEMA IF EXISTS reader_later CASCADE' >/dev/null || true
-  as_superuser 'REVOKE CREATE ON SCHEMA public FROM reader' >/dev/null || true
-  as_superuser 'REVOKE SELECT ON pg_authid FROM reader' >/dev/null || true
+  sql "$layer" 'REVOKE CREATE ON SCHEMA public FROM reader' >/dev/null || true
+  sql "$layer" 'REVOKE SELECT ON pg_authid FROM reader' >/dev/null || true
   in_postgres rm -f "$escape_file" || true
 }
 trap cleanup EXIT
 
-as_superuser "CREATE TABLE reader_proof (token text); INSERT INTO reader_proof SELECT 'row-' || i FROM generate_series(1, 3) i;
+sql "$layer" "CREATE TABLE reader_proof (token text); INSERT INTO reader_proof SELECT 'row-' || i FROM generate_series(1, 3) i;
   CREATE SEQUENCE reader_proof_sequence"
 unchanged() {
-  [ "$(as_superuser "SELECT count(*) = 3 AND count(*) FILTER (WHERE token ~ '^row-[1-3]\$') = 3 FROM reader_proof")" = t ] &&
-    [ "$(as_superuser 'SELECT is_called FROM reader_proof_sequence')" = f ] &&
-    [ "$(as_superuser "SELECT to_regclass('created_by_reader') IS NULL")" = t ] &&
+  [ "$(sql "$layer" "SELECT count(*) = 3 AND count(*) FILTER (WHERE token ~ '^row-[1-3]\$') = 3 FROM reader_proof")" = t ] &&
+    [ "$(sql "$layer" 'SELECT is_called FROM reader_proof_sequence')" = f ] &&
+    [ "$(sql "$layer" "SELECT to_regclass('created_by_reader') IS NULL")" = t ] &&
     ! in_postgres test -e "$escape_file"
 }
 unchanged || fail "the proof data is not as the cell made it"
@@ -71,7 +72,7 @@ grep -qF 'canceling statement due to statement timeout' <<<"$sleep_output" ||
 echo "refused: a statement past the statement_timeout of $statement_timeout"
 
 # pg_read_all_data holds no list of tables: what the superuser makes after the role was declared is readable.
-as_superuser 'CREATE SCHEMA reader_later; CREATE TABLE reader_later.made_later (value integer); INSERT INTO reader_later.made_later VALUES (1)'
+sql "$layer" 'CREATE SCHEMA reader_later; CREATE TABLE reader_later.made_later (value integer); INSERT INTO reader_later.made_later VALUES (1)'
 [ "$(read_sql 'SELECT count(*) FROM reader_later.made_later' | sed -n 3p | tr -d ' ')" = 1 ] ||
   fail "db:read does not read a schema and table made after the start"
 echo "a schema and table made after the start are readable"
@@ -87,15 +88,15 @@ read_sql "COMMIT; SET default_transaction_read_only = off; ALTER ROLE reader PAS
 refuses_naming 'the role has a password'
 keep
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after keep restored the role"
-as_superuser 'GRANT CREATE ON SCHEMA public TO reader'
+sql "$layer" 'GRANT CREATE ON SCHEMA public TO reader'
 refuses_naming 'the role can create in a schema'
-as_superuser 'REVOKE CREATE ON SCHEMA public FROM reader'
+sql "$layer" 'REVOKE CREATE ON SCHEMA public FROM reader'
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after the superuser reverted the grant"
 # With pg_read_all_data revoked the role reads no catalog and the check fails on its first query, so the role keeps a
 # right on pg_authid to reach the membership condition, which holds no row to compare.
-as_superuser 'GRANT SELECT ON pg_authid TO reader; REVOKE pg_read_all_data FROM reader'
+sql "$layer" 'GRANT SELECT ON pg_authid TO reader; REVOKE pg_read_all_data FROM reader'
 refuses_naming 'the role is not a member of pg_read_all_data alone'
-as_superuser 'REVOKE SELECT ON pg_authid FROM reader'
+sql "$layer" 'REVOKE SELECT ON pg_authid FROM reader'
 keep
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after keep restored the membership"
 echo "a password the role set, a CREATE the superuser granted and a membership the superuser revoked each made db:read refuse naming the condition, and each was undone"
@@ -103,22 +104,22 @@ echo "a password the role set, a CREATE the superuser granted and a membership t
 # keep fails softly while a session holds a lock on the role: it ends 0, Postgres stays Ready, its line is in the log.
 in_postgres env PGAPPNAME="$lock_application" psql --no-psqlrc --command='BEGIN; ALTER ROLE reader CONNECTION LIMIT 9; SELECT pg_sleep(120)' >/dev/null 2>&1 &
 holder=$!
-holding() { [ "$(as_superuser "SELECT count(*) FROM pg_stat_activity WHERE application_name = '$lock_application' AND wait_event = 'PgSleep'")" = 1 ]; }
+holding() { [ "$(sql "$layer" "SELECT count(*) FROM pg_stat_activity WHERE application_name = '$lock_application' AND wait_event = 'PgSleep'")" = 1 ]; }
 until_true 60 "a session holds an uncommitted ALTER ROLE reader" holding
 keep || fail "keep ended non-zero while a session held a lock on the role"
 kubectl --namespace "$layer" logs postgres-0 --container postgres | grep -qF 'reader.sh keep: declaring the role reader failed' ||
   fail "the log of postgres-0 holds no line of the failed keep"
 kubectl --namespace "$layer" wait pod/postgres-0 --for=condition=Ready --timeout=1m
-as_superuser "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = '$lock_application'" >/dev/null
+sql "$layer" "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = '$lock_application'" >/dev/null
 wait "$holder" || true
 holder=""
 echo "keep ended 0 beside a lock on the role, wrote its line to the log of postgres-0 and the Pod stayed Ready"
 
 # A role reader that keep did not declare is left as it is, and db:read refuses it.
-as_superuser 'DROP ROLE reader'
-as_superuser 'CREATE ROLE reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT; GRANT pg_read_all_data TO reader'
+sql "$layer" 'DROP ROLE reader'
+sql "$layer" 'CREATE ROLE reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT; GRANT pg_read_all_data TO reader'
 keep
-[ "$(as_superuser "SELECT shobj_description(oid, 'pg_authid') IS NULL FROM pg_roles WHERE rolname = 'reader'")" = t ] ||
+[ "$(sql "$layer" "SELECT shobj_description(oid, 'pg_authid') IS NULL FROM pg_roles WHERE rolname = 'reader'")" = t ] ||
   fail "keep declared a role reader it had not made"
 kubectl --namespace "$layer" logs postgres-0 --container postgres | grep -qF 'that this script did not declare exists' ||
   fail "the log of postgres-0 holds no line of keep leaving the foreign role alone"
@@ -126,7 +127,7 @@ refuses_naming 'the role carries no declaration'
 echo "keep left a role reader it did not declare alone, named it in the log, and db:read refused it"
 
 # Without the role, db:read fails; the next start declares it again.
-as_superuser 'DROP ROLE reader'
+sql "$layer" 'DROP ROLE reader'
 if read_sql 'SELECT 1' >/dev/null; then fail "db:read read although the role reader was dropped"; fi
 kubectl --namespace "$layer" delete pod postgres-0 --wait --timeout=3m
 pod_exists() { kubectl --namespace "$layer" get pod postgres-0 >/dev/null 2>&1; }
