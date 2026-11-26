@@ -20,9 +20,10 @@ lock_application=reader_proof_lock
 in_postgres() { kubectl --namespace "$layer" exec postgres-0 --container postgres -- "$@"; }
 # read_sql <sql>: the output of db:read on the SQL, whose status the caller reads.
 read_sql() { mise run db:read "$layer" 2>&1 <<<"$1"; }
-# hook: the command the StatefulSet runs after the container starts, read from it.
-mapfile -t hook < <(kubectl --namespace "$layer" get statefulset postgres -o json |
-  yq '.spec.template.spec.containers[] | select(.name == "postgres") | .lifecycle.postStart.exec.command[]')
+# hook: the command the StatefulSet runs after the container starts, read from it; its script spans lines, so the
+# arguments are NUL-separated.
+mapfile -d '' -t hook < <(kubectl --namespace "$layer" get statefulset postgres -o json |
+  yq -0 '.spec.template.spec.containers[] | select(.name == "postgres") | .lifecycle.postStart.exec.command[]')
 [ "${#hook[@]}" -gt 0 ] || fail "the StatefulSet postgres in $layer declares no postStart command"
 
 holder=""
