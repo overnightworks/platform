@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: tests/postgres/server_ready_gives_up_past_its_bound.sh
+# Usage: tests/postgres/server_ready_gives_up_past_its_bound_and_the_hook_runs_no_keep.sh
 # Needs no cluster. Runs `server_ready.sh` against a pg_isready that never answers and a sleep that returns at once,
 # and judges that it ends 1 after as many attempts as the script's wait_seconds, with one line on stderr that names the
 # bound. The wait's bound is the one branch the cluster cells cannot arrange; the cells of the cluster job run every
@@ -39,14 +39,17 @@ echo "server_ready.sh asked $wait_seconds times, ended 1 and wrote: $(cat "$work
 
 # The hook enters the roles volume by its mount path and runs the two keeps there; here the volume holds the real wait
 # and keeps that only record their run.
-mount_path=/etc/postgres-roles
+postgres_manifest="$repository_root/infrastructure/postgres/postgres.yaml"
+mount_path="$(yq 'select(.kind == "StatefulSet") | .spec.template.spec.containers[] | select(.name == "postgres")
+  | .volumeMounts[] | select(.name == "roles") | .mountPath' "$postgres_manifest")"
+[ -n "$mount_path" ] || fail "the StatefulSet postgres mounts no roles volume"
 mkdir "$work/roles"
 cp "$script" "$work/roles/"
 for keep in app_role reader_role; do
   printf '#!/bin/sh\necho "%s $*" >>"$FAKE_CALLS/keeps"\n' "$keep" >"$work/roles/$keep.sh"
 done
 mapfile -d '' -t hook < <(yq -0 'select(.kind == "StatefulSet") | .spec.template.spec.containers[] | select(.name == "postgres")
-  | .lifecycle.postStart.exec.command[]' "$repository_root/infrastructure/postgres/postgres.yaml")
+  | .lifecycle.postStart.exec.command[]' "$postgres_manifest")
 [ "${#hook[@]}" -gt 0 ] || fail "the StatefulSet postgres declares no postStart command"
 [[ ${hook[*]} == *"$mount_path"* ]] || fail "the postStart hook does not enter $mount_path"
 hook=("${hook[@]//"$mount_path"/"$work/roles"}")
