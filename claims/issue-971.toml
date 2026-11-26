@@ -1,7 +1,0 @@
-claim_id = "a12fde34ec7345bd9053ab616eee4b92"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "b4f2401719e16baa8e95985d76f581ea65fe91d8"
-branch = "claude/issue-971-load-dump-cells-pin-exit-2"
-scope = ["tests/backup/load_source_finds_the_older_snapshot_of_the_dump.sh", "tests/postgres/load_dump.sh"]
-opened_commit = "fc6ea1a583390b1b89b689065b4a49a3d5607885"
