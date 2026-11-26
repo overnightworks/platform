@@ -199,6 +199,18 @@ expect "302 $public_issuer/account" "$public_host" / --write-out '%{http_code} %
 expect 404 "$UNROUTED_HOST" /
 expect 400 "$public_host" "/realms/$realm/a%2Fb"
 
+# Path parameters on dot segments: the edge resolves them before it routes, so each spelling gets Traefik's own 404, read
+# from the unrouted host as <status> <body bytes>, or a 400, never Keycloak's answer. Every answer is printed first.
+request "$TUNNEL_NAMESPACE" auth-route-unrouted "$UNROUTED_HOST" "$traefik_url/" --write-out '%{http_code} %{size_download}'
+traefik_not_found="$status"
+for path in "/realms/$realm/..;x/..;x/admin/" "/realms/$realm/..;x/master/.well-known/openid-configuration" \
+  "/realms/$realm/%2e%2e;x/master/.well-known/openid-configuration" "/resources/$realm/..;x/master/login/en"; do
+  request "$TUNNEL_NAMESPACE" auth-route-parameter "$public_host" "$traefik_url$path" --path-as-is --write-out '%{http_code} %{size_download}'
+  echo "Traefik answered '$status' for $public_host$path"
+  [ "$status" = "$traefik_not_found" ] || [[ $status == "400 "* ]] ||
+    fail "Traefik answered '$status', neither its own '$traefik_not_found' nor 400, for $public_host$path"
+done
+
 # The theme's stylesheets come from the two theme.properties beside the realm's file, named by the realm's themes. Hopin's
 # login page names each stylesheet of login's list, and through Traefik the tunnel's Pod gets each stylesheet of login's
 # and account's lists as text/css.
