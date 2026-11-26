@@ -89,14 +89,18 @@ refuses_naming() {
   if output="$(read_sql 'SELECT 1')"; then fail "db:read read as a drifted role: $1"; fi
   grep -qF "$1" <<<"$output" || fail "db:read refused the drifted role without naming '$1': $output"
 }
-read_sql "COMMIT; SET default_transaction_read_only = off; ALTER ROLE reader PASSWORD 'drifted'; ALTER ROLE reader SET search_path = ''" >/dev/null || true
+app_database="$(sql "$layer" 'SELECT current_database()')"
+read_sql "COMMIT; SET default_transaction_read_only = off; ALTER ROLE reader PASSWORD 'drifted'; ALTER ROLE reader SET search_path = ''; ALTER ROLE reader IN DATABASE \"$app_database\" SET search_path = ''" >/dev/null || true
 refuses_naming 'the role has a password'
-[ "$(sql "$layer" "SELECT count(*) FROM pg_db_role_setting WHERE setrole = 'reader'::regrole AND setconfig @> ARRAY['search_path=\"\"']")" = 1 ] ||
-  fail "the drift did not give the role its own search_path, so the cell would prove nothing about keep clearing it"
+role_settings() { sql "$layer" "SELECT count(*) FROM pg_db_role_setting WHERE setrole = 'reader'::regrole AND $1"; }
+[ "$(role_settings "setdatabase = 0 AND setconfig @> ARRAY['search_path=\"\"']")" = 1 ] &&
+  [ "$(role_settings "setdatabase = (SELECT oid FROM pg_database WHERE datname = '$app_database') AND setconfig @> ARRAY['search_path=\"\"']")" = 1 ] ||
+  fail "the drift did not give the role its own search_path for every database and for $app_database, so the cell would prove nothing about keep clearing them"
 keep
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after keep restored the role"
 [ "$(read_sql 'SELECT count(*) FROM reader_proof' | sed -n 3p | tr -d ' ')" = 3 ] ||
   fail "db:read does not read an unqualified name after keep, so the role's own search_path survived it"
+[ "$(role_settings true)" = 0 ] || fail "keep left a setting on the role reader in pg_db_role_setting"
 sql "$layer" 'GRANT CREATE ON SCHEMA public TO reader'
 refuses_naming 'the role can create in a schema'
 sql "$layer" 'REVOKE CREATE ON SCHEMA public FROM reader'
