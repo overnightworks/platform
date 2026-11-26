@@ -363,9 +363,9 @@ jobs:
         if: matrix.part == 'backup-2'
         run: tests/disk/docuum_deletes_the_least_recently_used_unprotected_image.sh
 
-      - name: Check that the bucket Component's rclone fails whole on a full disk and leaves no file at its final name and no partial
+      - name: Check that the staging syncs fail whole on a full disk, leaving no file at its final name and no partial, and free a replaced tree before they write
         if: matrix.part == 'backup-2'
-        run: tests/backup/bucket_sync_fails_whole_on_a_full_disk.sh
+        run: tests/backup/staging_syncs_fail_whole_when_full_and_free_a_replaced_tree_first.sh
 
       - name: Check that the bucket step fails when a key written during its sync stands in for a key the copy dropped
         if: matrix.part == 'backup-2'
