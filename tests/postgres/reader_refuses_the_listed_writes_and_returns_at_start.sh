@@ -79,6 +79,8 @@ echo "a schema and table made after the start are readable"
 
 # A drift makes the next read refuse before its SQL, naming the condition; keep, run as at a start, restores the role.
 keep() { in_postgres "${hook[@]}"; }
+# logged_lines <text>: how many lines of the container's log hold the text.
+logged_lines() { kubectl --namespace "$layer" logs postgres-0 --container postgres | grep -cF "$1" || true; }
 refuses_naming() {
   local output
   if output="$(read_sql 'SELECT 1')"; then fail "db:read read as a drifted role: $1"; fi
@@ -106,9 +108,11 @@ in_postgres env PGAPPNAME="$lock_application" psql --no-psqlrc --command='BEGIN;
 holder=$!
 holding() { [ "$(sql "$layer" "SELECT count(*) FROM pg_stat_activity WHERE application_name = '$lock_application' AND wait_event = 'PgSleep'")" = 1 ]; }
 until_true 60 "a session holds an uncommitted ALTER ROLE reader" holding
+failed_keep_line='reader.sh keep: declaring the role reader failed'
+failed_keeps_before="$(logged_lines "$failed_keep_line")"
 keep || fail "keep ended non-zero while a session held a lock on the role"
-kubectl --namespace "$layer" logs postgres-0 --container postgres | grep -qF 'reader.sh keep: declaring the role reader failed' ||
-  fail "the log of postgres-0 holds no line of the failed keep"
+[ "$(logged_lines "$failed_keep_line")" -gt "$failed_keeps_before" ] ||
+  fail "the log of postgres-0 holds no new line of the failed keep"
 kubectl --namespace "$layer" wait pod/postgres-0 --for=condition=Ready --timeout=1m
 sql "$layer" "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = '$lock_application'" >/dev/null
 wait "$holder" || true
@@ -117,7 +121,11 @@ echo "keep ended 0 beside a lock on the role, wrote its line to the log of postg
 
 # A role reader that keep did not declare is left as it is, and db:read refuses it.
 sql "$layer" 'DROP ROLE reader'
-sql "$layer" 'CREATE ROLE reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT; GRANT pg_read_all_data TO reader'
+reader_configmap="$(kubectl --namespace "$layer" get pod postgres-0 \
+  -o jsonpath='{.spec.volumes[?(@.name=="reader")].configMap.name}')"
+declared_connections="$(kubectl --namespace "$layer" get configmap "$reader_configmap" -o jsonpath='{.data.connections}')"
+sql "$layer" "CREATE ROLE reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT
+  CONNECTION LIMIT $declared_connections; GRANT pg_read_all_data TO reader"
 keep
 [ "$(sql "$layer" "SELECT shobj_description(oid, 'pg_authid') IS NULL FROM pg_roles WHERE rolname = 'reader'")" = t ] ||
   fail "keep declared a role reader it had not made"

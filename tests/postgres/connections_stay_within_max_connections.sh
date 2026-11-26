@@ -51,9 +51,10 @@ server_limit() {
     sed -n "s/^$2=//p"
 }
 
+reader_connections_selector='select(.kind == "ConfigMap" and (.metadata.name | test("^postgres-reader-"))) | .data.connections'
 # reader_connections <rendered>: the connections the generated ConfigMap postgres-reader gives the role reader.
 reader_connections() {
-  yq --no-doc 'select(.kind == "ConfigMap" and (.metadata.name | test("^postgres-reader-"))) | .data.connections' "$1"
+  yq --no-doc "$reader_connections_selector" "$1"
 }
 
 # judge <rendered>: prints one problem line for each breach and, last, one summary line for the render's namespace.
@@ -143,10 +144,9 @@ mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(tes
 mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^max_connections=\"))) = \"max_connections=161\""
 mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^superuser_reserved_connections=\"))) = \"superuser_reserved_connections=50\""
 mutant apps/personas "gives no max_connections" "del($postgres | .args)"
-reader='select(.kind == "ConfigMap" and (.metadata.name | test("^postgres-reader-"))) | .data.connections'
-mutant apps/personas "exceed max_connections" "($reader) = \"60\""
-mutant apps/personas "not a non-negative integer" "($reader) = \"2x\""
-mutant apps/personas "not a non-negative integer" "del($reader)"
+mutant apps/personas "exceed max_connections" "($reader_connections_selector) = \"60\""
+mutant apps/personas "not a non-negative integer" "($reader_connections_selector) = \"2x\""
+mutant apps/personas "not a non-negative integer" "del($reader_connections_selector)"
 mutant apps/songmaker "exceed max_connections" "($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_POOL_SIZE\") | .value) = \"250\""
 mutant apps/songmaker "declares no connections per pod" "del($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_MAX_OVERFLOW\"))"
 mutant apps/songmaker "not a non-negative integer" "($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_POOL_SIZE\") | .value) = \"5x\""
