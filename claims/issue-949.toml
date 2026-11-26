@@ -1,8 +1,0 @@
-claim_id = "4418c80075d447468800a93003e3b38c"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "1c0dcb8c6308c7462789e0bf7900874c6771da67"
-branch = "release/skat"
-scope = ["apps/skat/release/kustomization.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/skat", "infrastructure/legal/built"]
-opened_commit = "fd4c79d8b16e62a1da3e6a36849993e3cc805c5a"
-whole_reason = "A release bump moves the ref and, if its legal pages changed, their copies, their entries and the built pages together, since the legal check compares them at the ref."
