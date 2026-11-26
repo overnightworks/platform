@@ -644,6 +644,25 @@ cell_database_that_stays_busy_after_the_load_deletes_the_loader_and_stays_suspen
     fail "a claim load beside a session that joined after it exited $status with '$output' after flux $flux_calls"
 }
 
+cell_term_while_the_resume_waits_deletes_the_loader_and_stays_suspended() {
+  cell=term-while-the-resume-waits-deletes-the-loader-and-stays-suspended
+  export FAKE_DIR="$work_directory/state-$cell"
+  mkdir -p "$FAKE_DIR"
+  : >"$FAKE_DIR/flux.log"
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_SESSION_AFTER_LOAD=1 DB_LOAD_DUMP_ALONE_SECONDS=600 \
+    setsid mise run db:load-dump x "$dump" >"$FAKE_DIR/output" 2>&1 &
+  loader=$!
+  trap 'pkill -KILL --session "$loader" 2>/dev/null || true; wait "$loader" 2>/dev/null || true' EXIT
+  for _ in $(seq 150); do grep -q 'verified; resuming the Kustomization x' "$FAKE_DIR/output" && break; sleep 0.2; done
+  grep -q 'verified; resuming the Kustomization x' "$FAKE_DIR/output" || fail "the loader never reached its resume"
+  # Only the task's shell, mise's child, gets the TERM, while the resume waits for the other session to leave.
+  kill -TERM "$(pgrep --parent "$loader")"
+  status=0
+  wait "$loader" || status=$?
+  [ "$status" != 0 ] && ! grep -q resume "$FAKE_DIR/flux.log" && grep -q db-load-snapshot "$FAKE_DIR/deleted-after-load" ||
+    fail "a TERM while the resume waited exited $status after flux $(tr '\n' ' ' <"$FAKE_DIR/flux.log")"
+}
+
 cell_rerun_on_a_suspended_kustomization_runs_through() {
   cell=rerun-on-a-suspended-kustomization-runs-through
   FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_SUSPENDED=true run_loader x "$dump"
@@ -729,6 +748,7 @@ cells=(
   loader-cut-by-its-backstop-says-so-and-stays-suspended
   failed-loader-delete-keeps-flux-suspended-and-says-so
   database-that-stays-busy-after-the-load-deletes-the-loader-and-stays-suspended
+  term-while-the-resume-waits-deletes-the-loader-and-stays-suspended
   rerun-on-a-suspended-kustomization-runs-through
   only-the-rclone-container-mounts-the-app-s-key-and-the-source-pod-no-secret
 )
