@@ -7,17 +7,23 @@ export PATH="$HOME/.local/bin:$PATH"
 apt-get install --yes --no-install-recommends sudo >/dev/null
 getent group docker >/dev/null || fail "no group docker; the packages part comes first"
 user=dockeruser
+repository="$(mktemp -d)"
+cleanup() {
+  userdel --remove "$user" 2>/dev/null || true
+  rm -rf "/etc/sudoers.d/$user" "$repository"
+}
+trap cleanup EXIT
 useradd --create-home "$user"
 echo "$user ALL=(ALL) NOPASSWD:ALL" >"/etc/sudoers.d/$user"
 chmod 0440 "/etc/sudoers.d/$user"
-# The user runs the repository's task with mise's binary and the checkout, neither of which sits under root's home.
-install -m 0755 "$(command -v mise)" /usr/local/bin/mise
-repository="$(mktemp -d)"
+# The user runs the repository's task with a copy of mise's binary and of the checkout, neither of which sits under
+# root's home.
 cp -a . "$repository/platform"
+install -m 0755 "$(command -v mise)" "$repository/mise"
 chown -R "$user" "$repository"
 chmod 0755 "$repository"
 run_task() {
-  runuser --login "$user" --command "cd '$repository/platform' && MISE_TASK_RUN_AUTO_INSTALL=0 mise trust --quiet && MISE_TASK_RUN_AUTO_INSTALL=0 mise run bootstrap:docker-group" 2>&1
+  runuser --login "$user" --command "cd '$repository/platform' && MISE_TASK_RUN_AUTO_INSTALL=0 '$repository/mise' trust --quiet && MISE_TASK_RUN_AUTO_INSTALL=0 '$repository/mise' run bootstrap:docker-group" 2>&1
 }
 
 status=0
