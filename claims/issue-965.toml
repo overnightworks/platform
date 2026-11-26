@@ -1,8 +1,0 @@
-claim_id = "cd7714b93de44dc2832eda586d9b5908"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "8117ce98701a84918aae471c8c09a4ea7c663d46"
-branch = "claude/issue-965-traefik-runs-3-7-20"
-scope = ["infrastructure/litellm/kustomization.yaml", "infrastructure/traefik/rendered.yaml", "infrastructure/traefik/values.yaml", "tests/keycloak/realm_route_and_policies.sh", "tests/traefik/backchannel_logout_is_refused_at_the_edge.sh"]
-opened_commit = "675926fd5cdd48fd2f023b2ee8816c100b4697f3"
-whole_reason = "One image's three pins, its rendered tree and the two edge cells whose new spellings prove the bump move together."
