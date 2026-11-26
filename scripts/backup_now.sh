@@ -27,9 +27,10 @@ restore_test="$(kubectl --namespace "$namespace" get cronjob restore-test --igno
 [ -n "$restore_test" ] ||
   fail "$namespace holds no CronJob restore-test; wait until Flux has applied the namespace's backup component, then run it again"
 
-# The seed Pod's backstop in seconds (activeDeadlineSeconds), which ends a seed that stages too slowly. One pass of the
-# claim and the bucket together writes at most the room above the kubelet's eviction on the PC's disk after its cleanup,
-# 108.55 GB.
+# The seed Pod's backstop in seconds (activeDeadlineSeconds), which ends a seed that stages too slowly and which is a whole
+# number of hours. One pass of the claim and the bucket together writes at most the room above the kubelet's eviction on
+# the PC's disk after its cleanup, 108.55 GB; at the probe's slowest rate, 115 MB/s, that takes 16 minutes, and twice that
+# is the margin for real files read from a busy disk.
 seed_backstop_seconds=3600
 seed_start_seconds=300
 seed_pod=backup-seed
