@@ -4,9 +4,10 @@
 # unfinished release waits; a refusal is a warning with the run green and the other apps still report; a failure of one
 # app leaves the others reporting and their bumps kept, and then makes the run red, its summary row holding the failure
 # line's pipes escaped. The cell also holds the protective limits: the permissions are no more than contents and
-# packages read, no environment and no secret, only the schedule and the dispatch start it, its concurrency never
-# cancels and the registry token reaches docker only through stdin. The cell runs only the checkout action and the
-# artifact upload, the latter as a copy of its path, and takes over the tool installer, since the world holds the tools.
+# packages read, no environment and no secret, only the schedule (every 5 minutes) and the dispatch start it, the
+# artifact is named release-bump, its concurrency never cancels and the registry token reaches docker only through
+# stdin. The cell runs only the checkout action and the artifact upload, the latter as a copy of its path, and takes
+# over the tool installer, since the world holds the tools.
 # Usage: mise exec -- tests/release_bump/the_dry_run_computes_every_component_and_holds_no_write_credential.sh
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/world.sh"
@@ -24,7 +25,8 @@ fake_step() {
     actions/upload-artifact@*)
       path="$(evaluate "$(yq "$1.with.path" "${workflow}")")"
       [ -n "$(ls -A "${path}" 2>/dev/null)" ] || fail "the job uploads an artifact with no file"
-      artifact="${job_directory}/artifacts/$(evaluate "$(yq "$1.with.name" "${workflow}")")"
+      [ "$(yq "$1.with.name" "${workflow}")" = release-bump ] || fail "the artifact is not named release-bump, the input of the publishing job"
+      artifact="${job_directory}/artifacts/release-bump"
       mkdir -p "${artifact}"
       cp -r "${path}/." "${artifact}"
       return 0
@@ -116,8 +118,11 @@ echo "a pipe in a failure line is escaped in the summary row"
 [ -z "$(yq '.jobs.compute.permissions | to_entries | .[] | select(.value != "read" or (.key != "contents" and .key != "packages")) | .key' "${workflow}")" ] ||
   fail "the job's permissions are more than contents and packages read"
 [ "$(yq '[.. | select(tag == "!!map" and has("environment"))] | length' "${workflow}")" -eq 0 ] || fail "the workflow names an environment"
-! grep -qw secrets "${workflow}" || fail "the workflow names a secret"
+! grep -qiw secrets "${workflow}" || fail "the workflow names a secret"
 [ "$(yq '.on | tag' "${workflow}")" = '!!map' ] || fail "the events are no map"
 [ -z "$(yq '.on | keys | .[] | select(. != "schedule" and . != "workflow_dispatch")' "${workflow}")" ] || fail "an event but the schedule and the dispatch starts the workflow"
+[ "$(yq '.on | has("workflow_dispatch")' "${workflow}")" = true ] || fail "the workflow cannot be dispatched"
+schedule="$(yq '.on.schedule | length' "${workflow}") $(yq '.on.schedule[0].cron' "${workflow}")"
+[[ ${schedule} =~ ^1\ \*/[1-5]\ \*\ \*\ \*\ \*$ ]] || fail "the schedule is not one cron that fires at least every 5 minutes: ${schedule}"
 [ "$(yq '.concurrency.cancel-in-progress' "${workflow}")" = false ] || fail "the concurrency group cancels a run in progress"
 echo "the job holds no more than contents and packages read, no environment, no secret and no cancelling group"

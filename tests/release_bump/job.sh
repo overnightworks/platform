@@ -12,7 +12,7 @@ evaluate() {
   local pattern='\$\{\{ *([^} ]+) *\}\}'
   while [[ ${text} =~ ${pattern} ]]; do
     expression="${BASH_REMATCH[1]}"
-    [ -n "${context[${expression}]+set}" ] || fail "the job reads ${expression}, which the cell's event does not hold"
+    [ -n "${context[${expression}]+set}" ] || fail "the job reads ${expression}, which the cell's event does not hold" >&2
     text="${text/"${BASH_REMATCH[0]}"/${context[${expression}]}}"
   done
   printf '%s' "${text}"
