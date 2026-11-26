@@ -12,7 +12,8 @@
 # dropped and a failed step names itself and its exit status.
 # `listing <tree>...` prints the file lines of the trees under the current directory, which db:load-dump's loader compares
 # with the lines MANIFEST holds for a restored tree.
-# Usage: sh stage_files.sh stager|copy|bucket|dump|manifest|listing <tree>..., run by busybox sh in each container's image.
+# `room <free> <total> <allocatable> <need>` is the fit's rule, which db:load-dump runs as well.
+# Usage: sh stage_files.sh stager|copy|bucket|dump|manifest|room|listing <args>..., run by busybox sh in each container's image.
 set -u
 scratch=/scratch
 staging=/staging
@@ -125,6 +126,25 @@ file_lines() {
 listing() {
   files="$(file_lines "$@")" || exit 1
   [ -z "$files" ] || printf '%s\n' "$files" | LC_ALL=C sort
+}
+
+# room <free> <total> <allocatable> <need>, all in bytes but the allocatable, a Kubernetes quantity: the rule of every fit,
+# which the stager and db:load-dump share. The kubelet evicts pods once the node's filesystem has less free than its hard
+# threshold plus any reservation, which is total minus the node's allocatable ephemeral storage; a write of <need> bytes
+# fits when it leaves more than that free. Prints the margin; exits 0 when it fits, 1 when not and 2 when the allocatable
+# is no quantity it reads.
+room() {
+  awk -v free="$1" -v total="$2" -v allocatable="$3" -v need="$4" '
+    BEGIN {
+      if (allocatable !~ /^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|K|M|G|T|P)?$/) exit 2
+      factor["Ki"] = 1024; factor["Mi"] = 1024 ^ 2; factor["Gi"] = 1024 ^ 3; factor["Ti"] = 1024 ^ 4; factor["Pi"] = 1024 ^ 5
+      factor["K"] = 1000; factor["M"] = 1000 ^ 2; factor["G"] = 1000 ^ 3; factor["T"] = 1000 ^ 4; factor["P"] = 1000 ^ 5
+      number = allocatable; sub(/[A-Za-z]+$/, "", number); unit = substr(allocatable, length(number) + 1)
+      margin = total - number * (unit in factor ? factor[unit] : 1)
+      if (margin < 0) margin = 0
+      printf "%.0f\n", margin
+      exit (free - need > margin) ? 0 : 1
+    }'
 }
 
 # manifest: writes MANIFEST.tmp from the finished tree; refuses a name with a newline, which would split its line.
@@ -271,12 +291,18 @@ case "${1:-}" in
     trap - TERM
     manifest
     ;;
+  room)
+    # A signal must end it non-zero, never as a fit.
+    trap - TERM
+    shift
+    room "$@"
+    ;;
   listing)
     shift
     listing "$@"
     ;;
   *)
-    echo "usage: sh stage_files.sh stager|copy|bucket|dump|manifest|listing <tree>..." >&2
+    echo "usage: sh stage_files.sh stager|copy|bucket|dump|manifest|room|listing <args>..." >&2
     exit 2
     ;;
 esac

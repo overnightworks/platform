@@ -46,5 +46,5 @@ speech: {layers: [speech-runtime], paths: [tests/speech_runtime/*]}
 # The object store's cell drives Garage and its Job from client Pods in each app's Namespace, which holds no layer here;
 # it reads each app's directory for the web's env contract and credentials projection and for the other workloads, and
 # litellm's manifest for the client image.
-objectstore: {layers: [objectstore], paths: [apps/presentator/*, apps/songmaker/*, infrastructure/litellm/litellm.yaml, scripts/load_snapshot.*, tests/k3s/*, tests/objectstore/*, tests/pod-logs/kubelet_keeps_reopens_and_never_compresses_logs.sh, tests/postgres/interrupt_load.sh, tests/postgres/load_dump.sh, tests/secrets/bootstrap_secrets.sh]}
+objectstore: {layers: [objectstore], paths: [apps/presentator/*, apps/songmaker/*, infrastructure/litellm/litellm.yaml, infrastructure/postgres/backup/files/scripts/stage_files.sh, scripts/load_snapshot.*, tests/k3s/*, tests/objectstore/*, tests/pod-logs/kubelet_keeps_reopens_and_never_compresses_logs.sh, tests/postgres/interrupt_load.sh, tests/postgres/load_dump.sh, tests/secrets/bootstrap_secrets.sh]}
 ai-gateway-outage: {layers: [litellm, gatus, prometheus], nightly_only: true, paths: [tests/prometheus/*]}
