@@ -1086,7 +1086,7 @@ say "$namespace converged"
 '''
 
 [tasks."backup:fetch"]
-description = "Write the latest Postgres dump of a namespace's k8up repository to a new file, through the restore test's init container"
+description = "Write the latest Postgres dump of a namespace's k8up repository to a new file, with the restore test's own dump script in its restic container"
 usage = '''
 arg "<namespace>" help="The namespace whose repository the dump comes from"
 arg "<file>" help="A new file for the custom-format dump, mode 0600"
@@ -1109,27 +1109,22 @@ trap 'cleanup; rm -f -- "$file"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# The restore test's pod with its init container alone and a holder container, so the dump is what the monthly test
-# would restore: the same repository, credentials and restic.
-manifest="$(kubectl --namespace "$namespace" get cronjob restore-test --output json |
-  NAME="$pod" yq --output-format json \
-    '.spec.jobTemplate.spec.template.spec as $spec | $spec.initContainers[0] as $dump |
-     { "apiVersion": "v1", "kind": "Pod", "metadata": { "name": strenv(NAME) },
-       "spec": ($spec | .volumes |= map(select(.name == "restore")) | .containers = [{
-         "name": "holder", "image": $dump.image, "command": ["sleep", "3600"],
-         "securityContext": $dump.securityContext, "volumeMounts": [{ "name": "restore", "mountPath": "/restore" }] }]) }')" ||
+# The restore test's restic container alone, holding the pod open; the dump is written by the restore test's own script,
+# so it is what the monthly test would restore, from the same repository, credentials and restic.
+manifest="$(scripts/restic_dump_pod.sh "$namespace" "$pod" 'sleep 3600')" ||
   fail "cannot read the CronJob restore-test in $namespace; nothing fetched"
 kubectl --namespace "$namespace" create --filename - <<<"$manifest" >/dev/null ||
   fail "could not start the fetch pod in $namespace; nothing fetched"
 
 deadline=$((SECONDS + 900))
 until phase="$(kubectl --namespace "$namespace" get pod "$pod" --output jsonpath='{.status.phase}')" && [ "$phase" = Running ]; do
-  [ "$phase" != Failed ] || fail "the fetch pod $pod failed: restic could not read the latest snapshot of $namespace"
+  [ "$phase" != Failed ] || fail "the fetch pod $pod failed"
   [ "$SECONDS" -lt "$deadline" ] || fail "the fetch pod $pod is not running after 15 minutes"
   sleep 2
 done
-kubectl --namespace "$namespace" exec "$pod" --container holder -- cat /restore/dump >"$file" ||
-  fail "could not copy the dump out of the pod $pod"
+timeout 900 kubectl --namespace "$namespace" exec "$pod" --container restic -- \
+  sh -c 'eval "$RESTORE_TEST_DUMP_SCRIPT" && cat /restore/dump' >"$file" ||
+  fail "restic could not read the latest snapshot of $namespace, or the dump could not be copied out of the pod $pod"
 # restic names a format that holds no file as an error before here; this catches a file that is no dump.
 cmp --silent --bytes=5 "$file" <(printf 'PGDMP') 2>/dev/null || fail "$file holds no custom-format dump; it is deleted"
 trap - EXIT

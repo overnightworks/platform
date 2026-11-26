@@ -876,6 +876,11 @@ jobs:
           SONGMAKER_NAMESPACE: songmaker
           APP_MANIFEST: apps/songmaker/web.yaml
         run: tests/backup/bucket_refuses_what_it_cannot_stage_whole.sh
+      - name: P7d fetch cells
+        if: matrix.part == 'backup-4'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+        run: tests/backup/backup_fetch_writes_songmaker_s_dump_of_its_staging_snapshot.sh
       - name: P9f cells
         if: matrix.part == 'backup-1' || matrix.part == 'backup-3'
         env:
