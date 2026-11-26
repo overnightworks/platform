@@ -530,16 +530,23 @@ cell_dump_of_no_staging_snapshot_is_refused_before_the_suspension() {
 cell_unreadable_repository_is_refused_before_the_suspension() {
   cell=unreadable-repository-is-refused-before-the-suspension
   FAKE_CLAIM=audiofiles FAKE_SOURCE_UNREADABLE=1 run_loader x "$dump"
-  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] && grep -q db-load-source "$FAKE_DIR/deleted" ||
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"cannot read the staging snapshots"* ]] &&
+    [[ $output == *"nothing changed"* ]] && grep -q db-load-source "$FAKE_DIR/deleted" ||
     fail "a repository that cannot be read exited $status with '$output' after flux $flux_calls"
 }
 
-# The node's free bytes against the load's need and kubelet's margin, which the cluster cannot arrange.
+# The node's free bytes against the load's need and kubelet's margin, which the cluster cannot arrange. The fake's
+# 200 GB filesystem gives a margin of 30 GB (15 %); its bucket and claim need 67139836 bytes, so 30067139836 free bytes
+# leave exactly the margin.
 cell_node_without_room_for_the_load_is_refused_before_the_suspension() {
   cell=node-without-room-for-the-load-is-refused-before-the-suspension
-  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_FREE_BYTES=1000 run_loader x "$dump"
-  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"bytes free"* ]] && [[ $output == *"nothing changed"* ]] &&
-    [[ $output != *fake-node* ]] && [ ! -e "$FAKE_DIR/restored" ] || fail "a node without room exited $status with '$output' after flux $flux_calls"
+  local free
+  for free in 1000 30067139836; do
+    FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_FREE_BYTES="$free" run_loader x "$dump"
+    [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"bytes free"* ]] && [[ $output == *"nothing changed"* ]] &&
+      [[ $output != *fake-node* ]] && [ ! -e "$FAKE_DIR/restored" ] ||
+      fail "a node with $free free bytes exited $status with '$output' after flux $flux_calls"
+  done
 }
 
 cell_eviction_margin_that_cannot_be_read_is_refused_before_the_suspension() {

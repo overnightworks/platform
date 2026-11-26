@@ -21,6 +21,8 @@ cat >"$work_directory/bin/restic" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 args="$*"
+# FAKE_RESTIC_FAILS: the restic subcommand that fails.
+[[ " $args " != *" ${FAKE_RESTIC_FAILS:-no-such-command} "* ]] || exit 1
 case "$args" in
   *" snapshots "*) printf '[{"id":"older","time":"2026-11-20T03:00:00Z"},{"id":"newer","time":"2026-11-26T03:00:00Z"},{"id":"oldest-twin","time":"2026-11-10T03:00:00Z"},{"id":"newest-twin","time":"2026-11-23T03:00:00Z"}]' ;;
   *" dump oldest-twin "* | *" dump newest-twin "*) printf 'dump\ttwin-dump-sha\t10\nfile\t5\t1\tbucket/a\n' ;;
@@ -50,3 +52,11 @@ source_of newer-dump-sha
 source_of twin-dump-sha
 [ "$(awk '$1 == "snapshot" { print $2 }' <<<"$source_output")" = newest-twin ] || fail "a dump two snapshots hold was read as '$source_output'"
 echo "the source step picks the newest of the snapshots that hold the dump"
+
+# A repository that cannot be listed, and one whose every snapshot cannot be dumped, are unreadable (exit 2), never a
+# dump of no snapshot (exit 3).
+for failing_call in snapshots dump; do
+  FAKE_RESTIC_FAILS="$failing_call" source_of older-dump-sha
+  [ "$source_status" = 2 ] || fail "a repository whose restic $failing_call fails ended $source_status with '$source_output'"
+done
+echo "the source step ends 2 for a repository it cannot list and for snapshots it cannot dump"
