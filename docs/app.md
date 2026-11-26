@@ -23,9 +23,10 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
 - A host on Traefik's `web`, reached only through the platform's tunnel. A tunnel line changes in a pull request. The Service an Ingress routes
   to carries Traefik's sticky-cookie annotations, the same on every app's, so that the app can run several pods
   without a change of its own: a visitor's requests then reach one pod, by a host-only cookie that lives for the session.
-- Its own Namespace with Pod Security `restricted`, never pruned, and a NetworkPolicy naming its senders. The Namespace
-  is an entry in the platform's namespaces layer (`infrastructure/namespaces/namespaces.yaml`, prune disabled), added in
-  a pull request.
+- Its own Namespace with Pod Security `restricted` enforced, never pruned (presentator's enforces none, since its build
+  worker's init container holds `NET_ADMIN`: `apps/presentator/worker.yaml`, #589), and a NetworkPolicy naming its
+  senders. The Namespace is an entry in the platform's namespaces layer (`infrastructure/namespaces/namespaces.yaml`,
+  prune disabled), added in a pull request.
 - Secrets from `platform-secrets` (SOPS with age), mounted as files. An app with no Secret of its own has none.
 - Its own Postgres in its Namespace, from the base `infrastructure/postgres` that `apps/<app>/kustomization.yaml`
   includes, so the app's one Kustomization owns it and `db:load-dump` can suspend it with the app.
@@ -90,7 +91,8 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
   owner, named by `newName` or `name`, and moves each image to the new version with the variant suffix its tag
   carries (speech-runtime's two images of one repository, the second tagged `<version>-gpu`); a Component of images
   from two repositories stays an ordinary lane.
-- **Pod shape.** Each pod passes Pod Security `restricted` in its namespace and admission's image policy.
+- **Pod shape.** Each pod passes Pod Security `restricted` in its namespace and admission's image policy; presentator's
+  build worker passes `baseline`, and only its init container's `NET_ADMIN` exceeds it (#589).
 - **Readiness.** Each long-running process exposes a readiness check, an HTTP route or a command, that fails while it
   cannot serve. Flux reports a layer Ready only once its pods are, so a check that passes too early hides a broken start.
 - **Connections.** A Deployment that opens its Postgres declares the connections one pod may hold: the pool and overflow
@@ -113,7 +115,7 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 | Image ref is a full app ref at a release, verified by tag, attestation and signer; the image comes from quality's path | platform's `images` job (tag, attestation, signer commit on quality's main); [quality's release path](https://github.com/overnightworks/quality/blob/main/docs/release.md) in the app's own release |
 | Image form (listed vendor at a digest, or a full app ref) on every Pod create or change | admission policy `app-and-vendor-images` |
 | An app ref carries a provenance attestation signed by quality's release workflow for its own repository, on every Pod create or image change | Kyverno's policy `app-attestations`; platform's `cluster` job proves a refusal by server-side dry-run and every live app ref admitted |
-| Namespace enforces `restricted`; Deployment is `Recreate` or a `RollingUpdate` that never takes a pod away before its replacement is Ready, Available with all its replicas Ready, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
+| Namespace enforces `restricted` (presentator's warns and audits only); Deployment is `Recreate` or a `RollingUpdate` that never takes a pod away before its replacement is Ready, Available with all its replicas Ready, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
 | A Deployment's pods, with those still stopping in a rolling update, its surge and the backup, stay within its Postgres' `max_connections` | the `checks` job, by rendering the layers of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM |
 | A name a manifest under `apps/` hands under a `REALM_` key is a plain value, declared in `realm.yaml` as an object of that key's kind, and the layer's own app's or one of the fleet's; every key the realm file demands of the app is handed; no container there takes `envFrom` | the `checks` job, by rendering every layer under `apps/` that `clusters/pc/apps.yaml` names |
 | Every Service an Ingress routes to carries the same five sticky-cookie annotations | the `checks` job, by rendering every layer of `clusters/pc` |
