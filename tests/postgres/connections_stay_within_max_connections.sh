@@ -2,9 +2,10 @@
 # Usage: tests/postgres/connections_stay_within_max_connections.sh <layer directory>...
 # Needs kubectl and yq, and no cluster. Renders each layer directory (one namespace with its own Postgres) and judges
 # that what can hold a connection to that Postgres at once fits: the sum over its Deployments that mount or read the
-# Secret postgres of the pods they can have at once x connections per pod, plus the backup's dump, is at most
-# max_connections less superuser_reserved_connections, both read from the Postgres StatefulSet's arguments. A Recreate
-# Deployment has its replicas, since its old pods are gone before the new ones start. A RollingUpdate has 2 x replicas
+# Secret postgres of the pods they can have at once x connections per pod, plus the backup's dump and the connections
+# of the role reader (the key connections of the generated ConfigMap postgres-reader), is at most max_connections less
+# superuser_reserved_connections, both read from the Postgres StatefulSet's arguments. A Recreate Deployment has its
+# replicas, since its old pods are gone before the new ones start. A RollingUpdate has 2 x replicas
 # + the surge: a pod being stopped is no part of the surge and may hold its connections for as long as its stop takes,
 # so every old pod may still be stopping while the surge pods run. Each surge pod also runs its migrate before its own
 # pool opens, which adds 1 connection per surge pod where an init container mounts a volume that mounts the Secret
@@ -50,14 +51,24 @@ server_limit() {
     sed -n "s/^$2=//p"
 }
 
+# reader_connections <rendered>: the connections the generated ConfigMap postgres-reader gives the role reader.
+reader_connections() {
+  yq --no-doc 'select(.kind == "ConfigMap" and (.metadata.name | test("^postgres-reader-"))) | .data.connections' "$1"
+}
+
 # judge <rendered>: prints one problem line for each breach and, last, one summary line for the render's namespace.
 judge() {
-  local rendered="$1" max reserved total=0 name replicas strategy surge pool overflow declared opens migrates per_pod pods migrate_connections namespace rows value
+  local rendered="$1" max reserved reader total=0 name replicas strategy surge pool overflow declared opens migrates per_pod pods migrate_connections namespace rows value
   namespace="$(yq --no-doc 'select(.kind == "StatefulSet" and .metadata.name == "postgres") | .metadata.namespace' "$rendered")"
   max="$(server_limit "$rendered" max_connections)"
   reserved="$(server_limit "$rendered" superuser_reserved_connections)"
   if [ -z "$max" ] || [ -z "$reserved" ]; then
     echo "problem: $namespace: the Postgres StatefulSet gives no max_connections and superuser_reserved_connections"
+    return
+  fi
+  reader="$(reader_connections "$rendered")"
+  if ! [[ $reader =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "problem: $namespace: the ConfigMap postgres-reader gives '$reader' connections to the role reader, not a non-negative integer"
     return
   fi
   rows="$(deployments "$rendered")" || {
@@ -95,9 +106,9 @@ judge() {
     fi
     total=$((total + pods * per_pod + migrate_connections))
   done <<<"$rows"
-  total=$((total + backup_connections))
+  total=$((total + backup_connections + reader))
   if [ "$total" -gt $((max - reserved)) ]; then
-    echo "problem: $namespace: up to $total connections (the Deployments' pods, those still stopping and the surge's migrates included, and the backup) exceed max_connections $max less $reserved reserved"
+    echo "problem: $namespace: up to $total connections (the Deployments' pods, those still stopping and the surge's migrates included, the backup and the role reader) exceed max_connections $max less $reserved reserved"
   fi
   echo "$namespace: up to $total connections of $((max - reserved)) (max_connections $max, $reserved reserved)"
 }
@@ -126,12 +137,16 @@ mutant apps/personas "exceed max_connections" "($personas | .spec.strategy.rolli
 mutant apps/personas "exceed max_connections" "($personas | .spec.strategy.rollingUpdate.maxSurge) = \"300%\""
 mutant apps/personas "declares no connections per pod" "del($personas | .metadata.annotations)"
 mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^max_connections=\"))) = \"max_connections=96\""
-# The next two are max_connections values against personas' 157 connections: 100 leaves 97 slots, 60 short, and 159
-# leaves 156, one connection short, so only the 159 mutant sits one connection beyond the budget.
+# The next two are max_connections values against personas' 159 connections: 100 leaves 97 slots, 62 short, and 161
+# leaves 158, one connection short, so only the 161 mutant sits one connection beyond the budget.
 mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^max_connections=\"))) = \"max_connections=100\""
-mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^max_connections=\"))) = \"max_connections=159\""
+mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^max_connections=\"))) = \"max_connections=161\""
 mutant apps/personas "exceed max_connections" "($postgres | .args[] | select(test(\"^superuser_reserved_connections=\"))) = \"superuser_reserved_connections=50\""
 mutant apps/personas "gives no max_connections" "del($postgres | .args)"
+reader='select(.kind == "ConfigMap" and (.metadata.name | test("^postgres-reader-"))) | .data.connections'
+mutant apps/personas "exceed max_connections" "($reader) = \"60\""
+mutant apps/personas "not a non-negative integer" "($reader) = \"2x\""
+mutant apps/personas "not a non-negative integer" "del($reader)"
 mutant apps/songmaker "exceed max_connections" "($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_POOL_SIZE\") | .value) = \"250\""
 mutant apps/songmaker "declares no connections per pod" "del($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_MAX_OVERFLOW\"))"
 mutant apps/songmaker "not a non-negative integer" "($web | .spec.template.spec.containers[0].env[] | select(.name == \"DATABASE_POOL_SIZE\") | .value) = \"5x\""
