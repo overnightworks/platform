@@ -946,7 +946,8 @@ writers at 0: delete the Pod $loader in $namespace, then run flux resume kustomi
   flux resume kustomization "$namespace" --wait
 }
 resume() {
-  trap - EXIT TERM
+  trap - EXIT
+  trap 'drop_loader; exit 143' TERM
   trap '' INT
   wait_alone || {
     drop_loader
@@ -1059,7 +1060,7 @@ wait_alone || fail "the database $namespace still holds another session, or cann
 # Before the load, so a snapshot that cannot be restored, or a bucket that holds objects the load may not delete,
 # refuses with the database unchanged.
 if [ -n "$claim" ]; then
-  scripts/load_snapshot.sh start "$namespace" "$claim" "$scratch" || fail "the loader did not start; nothing loaded"
+  scripts/load_snapshot.sh start "$namespace" "$claim" "$scratch" "$bucket" || fail "the loader did not start; nothing loaded"
   if [ "$bucket" = true ]; then
     scripts/load_snapshot.sh restore-bucket "$namespace" "$snapshot" || fail "the snapshot's bucket copy is not restored; nothing loaded"
     held="$(scripts/load_snapshot.sh count "$namespace")" || fail "cannot count the objects of the bucket $namespace; nothing loaded"

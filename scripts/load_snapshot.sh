@@ -6,7 +6,7 @@
 # own goes to stderr, so that stdout holds only the result a caller reads.
 # Usage: scripts/load_snapshot.sh declares-bucket <namespace>                prints true or false
 #        scripts/load_snapshot.sh source <namespace> <dump sha256>           prints "<snapshot> <scratch bytes>"
-#        scripts/load_snapshot.sh start <namespace> <claim> <scratch bytes>
+#        scripts/load_snapshot.sh start <namespace> <claim> <scratch bytes> <true|false: declares-bucket's answer>
 #        scripts/load_snapshot.sh restore-bucket|restore-claim <namespace> <snapshot>
 #        scripts/load_snapshot.sh count <namespace>                          prints "<objects> <bytes>"
 #        scripts/load_snapshot.sh empty|copy <namespace>
@@ -129,11 +129,13 @@ bucket_container_of() {
   yq --input-format json --output-format json '[.spec.pod.spec.containers[] | select(.name == "bucket")] | .[0]' <<<"$1"
 }
 
+# declares <bucket container JSON>: true where the layer has a bucket container, else false.
+declares() { if [ "$1" = null ]; then echo false; else echo true; fi; }
+
 declares_bucket() {
-  local pre_pod container
+  local pre_pod
   pre_pod="$(pre_backup_pod "$1")" || fail "cannot read the PreBackupPod files in $1; nothing changed"
-  container="$(bucket_container_of "$pre_pod")"
-  if [ "$container" = null ]; then echo false; else echo true; fi
+  declares "$(bucket_container_of "$pre_pod")"
 }
 
 # create_pod <namespace> <pod> <manifest>: the Pod, once it is Ready.
@@ -204,14 +206,17 @@ source_step() {
   echo "$snapshot $scratch"
 }
 
-# start <namespace> <claim> <scratch bytes>: the loader Pod: the owner's Pod with restic's container at the reading uid
-# of the PreBackupPod, the claim writable, and where the layer declares a bucket the PreBackupPod's rclone container with
-# the app's key.
+# start <namespace> <claim> <scratch bytes> <bucket>: the loader Pod: the owner's Pod with restic's container at the
+# reading uid of the PreBackupPod, the claim writable, and where the layer declares a bucket the PreBackupPod's rclone
+# container with the app's key. <bucket> is declares-bucket's answer, which the caller's steps follow; a PreBackupPod
+# that disagrees with it fails.
 start() {
-  local namespace="$1" claim="$2" scratch="$3" pre_pod container manifest
+  local namespace="$1" claim="$2" scratch="$3" declared="$4" pre_pod container manifest
   stop "$namespace" || fail "cannot delete an earlier Pod $loader in $namespace"
   pre_pod="$(pre_backup_pod "$namespace")" || fail "cannot read the PreBackupPod files in $namespace"
   container="$(bucket_container_of "$pre_pod")"
+  [ "$declared" = "$(declares "$container")" ] ||
+    fail "the PreBackupPod files of $namespace changed its bucket container since the plan was made; nothing loaded"
   # shellcheck disable=SC2016 # $shape and $bucket are yq's variables
   manifest="$("$here/restic_dump_pod.sh" "$namespace" "$loader" "$(yq '.hold' "$shape")" |
     SHAPE="$shape" CLAIM="$claim" SCRATCH="$scratch" BUCKET_CONTAINER="$container" \
@@ -266,7 +271,7 @@ restored() {
 case "${1:-}" in
   declares-bucket) declares_bucket "$2" ;;
   source) source_step "$2" "$3" ;;
-  start) start "$2" "$3" "$4" ;;
+  start) start "$2" "$3" "$4" "$5" ;;
   restore-bucket) restored "$2" restore-bucket "$3" bucket "the restored bucket copy" ;;
   restore-claim) restored "$2" restore-claim "$3" files "the claim of $2" ;;
   count) in_loader "$2" count rclone "$count_script" ;;
