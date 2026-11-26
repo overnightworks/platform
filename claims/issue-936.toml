@@ -1,8 +1,0 @@
-claim_id = "ef55d315f20845deb3157ba38d82c82f"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "85b63ad0f3fc6db4fc4c9eb74298d03a391253bc"
-branch = "claude/issue-936-p3a-release-bump-yml-dry-runs-the-comput"
-scope = [".github/workflows/ci.yml", ".github/workflows/release-bump.yml", "docs/ARCHITECTURE.md", "tests/flux/parts.yaml", "tests/release_bump"]
-opened_commit = "6dd4ceba022d12d248afed7d2be7721ec1be2455"
-whole_reason = "One scheduled workflow and the cell that drives its job: the file, its step in ci.yml, its part entry and its sentence in the architecture cannot land apart."
