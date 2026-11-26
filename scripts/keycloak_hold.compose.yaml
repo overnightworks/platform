@@ -14,6 +14,10 @@ services:
         source: ${POSTGRES_PASSWORD_SOURCE:?}
         target: ${POSTGRES_PASSWORD_PATH:?}
         read_only: true
+      - type: bind
+        source: ${HOLD_ROLES_SOURCE:?}
+        target: ${POSTGRES_ROLES_DIR:?}
+        read_only: true
       - type: tmpfs
         target: ${POSTGRES_DATA_DIR:?}
     healthcheck:
