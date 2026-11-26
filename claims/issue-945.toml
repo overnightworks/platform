@@ -1,0 +1,8 @@
+claim_id = "b5faee17702447d68d40fb92820c0067"
+agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
+role = "builder"
+base = "f75d29cd178fdfa8a5d6bd7f6e0a07fb5a2e5f71"
+branch = "claude/issue-945-p2d-the-bootstrap-installs-docker-and-wr"
+scope = [".github/workflows/ci.yml", "docs/ARCHITECTURE.md", "docs/operations.md", "docs/runbooks/install-the-pc.md", "host/docker", "mise.toml", "tests/docker"]
+opened_commit = "6828175d977f6c12465a7c1a61cb77651c7295fb"
+whole_reason = "One host part whose package, config file, service, membership, cells and documents change together, about 6 production files and 90 lines."
