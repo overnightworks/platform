@@ -1,0 +1,8 @@
+claim_id = "be55bbe38ca647189298b5457d8d5a51"
+agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
+role = "builder"
+base = "cdd69a765b38ac01eaf0171d976811870148c173"
+branch = "claude/issue-982-bucket-first-copy-is-seeded"
+scope = [".github/workflows/ci.yml", "docs/app.md", "docs/operations.md", "docs/runbooks/restore-a-database.md", "infrastructure/postgres/backup/files/files.yaml", "infrastructure/postgres/backup/files/scripts/stage_files.sh", "mise.toml", "scripts/backup_now.sh", "scripts/load_snapshot.sh", "tests/backup/backup_now_ends_non_zero_naming_a_failed_backup_or_the_job_it_could_not_make.sh", "tests/backup/backup_now_seeds_a_first_copy_larger_than_one_pre_sync.sh", "tests/backup/bucket_refuses_what_it_cannot_stage_whole.sh", "tests/backup/bucket_sync_fails_whole_on_a_full_disk.sh", "tests/backup/staging_cell.sh", "tests/backup/staging_refuses_a_copy_that_would_cross_the_eviction_margin.sh", "tests/backup/staging_syncs_fail_whole_when_full_and_free_a_replaced_tree_first.sh", "tests/flux/parts.yaml", "tests/postgres/load_dump.sh"]
+opened_commit = "66a2aeb48cbaca28d8a5c4b806782dee93f5c9e4"
+whole_reason = "One coherent change: the seed runs the Backup's own pre-sync phase, the fit step guards both through the one rule db:load-dump shares, and docs/app.md's bound needs both; five production files, about 255 lines."
