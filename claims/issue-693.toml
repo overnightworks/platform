@@ -1,0 +1,7 @@
+claim_id = "bfb139a4dd714fc1adc77f86aae13422"
+agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
+role = "builder"
+base = "a9b50d1be9ffebb818d0e6117f78e1685b05b2d5"
+branch = "claude/issue-693-the-vision-and-app-md-say-what-589-ruled"
+scope = ["docs/VISION.md", "docs/app.md"]
+opened_commit = "3d506af983de8c6b190032dcc1943cfc0816a638"
