@@ -1,8 +1,0 @@
-claim_id = "60e081820f954476967ec5634286ed13"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "62613970560649b3d6eb9efb1d04deda010fb9ad"
-branch = "claude/issue-955-each-app-s-postgres-has-a-read-only-role"
-scope = [".github/workflows/ci.yml", "AGENTS.md", "docs/ARCHITECTURE.md", "docs/app.md", "docs/personal-data.md", "infrastructure/postgres/kustomization.yaml", "infrastructure/postgres/postgres.yaml", "infrastructure/postgres/scripts/reader_role.sh", "mise.toml", "tests/flux/parts.yaml", "tests/personas/migrate_pod.sh", "tests/personas/migrate_through_the_runners_policy_fills_the_key_tables.sh", "tests/postgres/connections_stay_within_max_connections.sh", "tests/postgres/every_postgres_reads_as_its_declared_reader.sh", "tests/postgres/loader_proof_setup.sh", "tests/postgres/reader_keep_gives_up_past_its_bound.sh", "tests/postgres/reader_refuses_the_listed_writes_and_returns_at_start.sh"]
-opened_commit = "a557e478e563e558ca8f05373a82ba56aca7bc2a"
-whole_reason = "One role and its one read command: the base declares it, db:read uses it, the cells prove both and the docs name it; a split would ship a role no command reads or a command with no role."
