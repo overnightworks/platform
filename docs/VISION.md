@@ -20,8 +20,9 @@
 - Apps reach AI models only through one shared gateway, which holds each app's and each person's budget. An admin's AI
   budget is unlimited, granted by one command per admin.
 - An app that wants video embeds a room of the fleet's one video app for the people it names and builds none.
-- A worker that runs code or models its app does not trust, in any app, has no network at all; what it needs it gets
-  beforehand.
+- A worker that runs code or models its app does not trust, in any app, can reach nothing but its own app: it has no
+  network link, or one that kernel filter rules and a NetworkPolicy limit to replies to that app's web. The one worker
+  with the link is presentator's build worker (ruled in #589); what the others need they get beforehand.
 - When something fails, or an access key nears its expiry, the operator gets one mail, and one more once it has
   recovered.
 - Every secret has one store, chosen by its owner, and none lives in this repository.
