@@ -27,7 +27,7 @@ original_backup_data="$(kubectl --namespace "$namespace" get secret "$bucket_sec
 original_backup_key="$(secret_value "$bucket_secret" credentials)"
 mask_secret "$(ini_value "$original_backup_key" aws_secret_access_key)"
 saved_prebackup="$(mktemp)"
-platform_secrets_suspended=0 layer_suspended=0
+platform_secrets_suspended=0
 
 # restore: the Secret as it was, the PreBackupPod as the layer declares it, and the Kustomizations running again.
 restore() {
@@ -38,10 +38,7 @@ restore() {
     flux resume kustomization platform-secrets --namespace flux-system || failed=1
     platform_secrets_suspended=0
   fi
-  if [ "$layer_suspended" = 1 ]; then
-    flux resume kustomization "$namespace" --namespace flux-system || failed=1
-    layer_suspended=0
-  fi
+  restore_pre_backup_pod || failed=1
   return "$failed"
 }
 cleanup() {
@@ -169,8 +166,7 @@ echo "a zero-byte key that ends in a slash was left out and the key under it sta
 
 # Row 21: the same Backup with the Component's patch withdrawn from the PreBackupPod leaves no bucket/ in the snapshot or
 # MANIFEST. The layer's Kustomization is suspended, so that Flux does not put the patch back; it resumes on every exit.
-flux suspend kustomization "$namespace" --namespace flux-system
-layer_suspended=1
+suspend_layer
 kubectl --namespace "$namespace" get prebackuppod files --output json >"$saved_prebackup"
 withdrawal="$(jq --compact-output '
   (.spec.pod.spec.containers | map(.name)) as $names |

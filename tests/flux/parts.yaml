@@ -26,12 +26,15 @@ load-3: {layers: [litellm], paths: [tests/postgres/*]}
 # namespace that no backup part applies fails the check of the checks job. The cell that makes LiteLLM's key runs where
 # litellm is, the Keycloak table check where keycloak is, songmaker's dump cell and personas' cells in the part that
 # applies their layer.
-backup-1: {layers: [backup, prometheus, keycloak, litellm, personas], paths: [tests/backup/*, tests/personas/*, tests/prometheus/*]}
+backup-1: {layers: [backup, prometheus, keycloak, litellm, personas], paths: [scripts/backup_now.sh, tests/backup/*, tests/personas/*, tests/prometheus/*]}
 # backup-2, backup-4 and backup-5 fill songmaker's bucket from a client Pod that the objectstore cell's helper builds from litellm's image.
 backup-2: {layers: [backup, songmaker], paths: [tests/backup/*, tests/disk/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
-backup-3: {layers: [backup, prometheus, hopin, presentator, skat, songmaker], paths: [tests/backup/*, tests/prometheus/*]}
+backup-3: {layers: [backup, prometheus, hopin, presentator, skat, songmaker], paths: [scripts/backup_now.sh, tests/backup/*, tests/prometheus/*]}
 # The Backups of songmaker's bucket that need one run each; the namespace songmaker is held by backup-2 and backup-3 too.
 backup-4: {layers: [backup, songmaker], paths: [tests/backup/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
+# The seed of songmaker's first copy and the fit that refuses a copy beyond the node's eviction margin patch the PreBackupPod
+# and run backup:now, which takes minutes on its own.
+backup-6: {layers: [backup, songmaker], paths: [scripts/backup_now.sh, tests/backup/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}
 # The load of songmaker's database, claim and bucket restores them after each of several refusals, kills and re-runs, which takes
 # a part's time on its own.
 backup-5: {layers: [backup, songmaker], paths: [scripts/load_snapshot.*, tests/backup/*, tests/objectstore/*, infrastructure/litellm/litellm.yaml]}

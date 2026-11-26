@@ -20,6 +20,38 @@ delete_backups() {
   done
 }
 
+# suspend_layer: suspends the layer's Kustomization, so that Flux leaves what the cell changes in the PreBackupPod; the cell
+# calls restore_pre_backup_pod from its exit trap, which also resumes it.
+layer_suspended=0
+saved_containers=
+suspend_layer() {
+  flux suspend kustomization "$namespace" --namespace flux-system
+  layer_suspended=1
+  saved_containers="$(kubectl --namespace "$namespace" get prebackuppod files --output json | jq --compact-output '.spec.pod.spec.containers')"
+}
+
+# set_env <container> <name> <value>: the PreBackupPod's container carries the variable with the value, whatever it held
+# before, a value from a field included; the layer's Kustomization is suspended.
+set_env() {
+  local patch
+  patch="$(kubectl --namespace "$namespace" get prebackuppod files --output json | CONTAINER="$1" NAME="$2" VALUE="$3" jq --compact-output '
+    (.spec.pod.spec.containers | map(.name) | index(env.CONTAINER)) as $c |
+    "/spec/pod/spec/containers/\($c)/env" as $path |
+    (.spec.pod.spec.containers[$c].env // [] | map(.name) | index(env.NAME)) as $e |
+    {name: env.NAME, value: env.VALUE} as $entry |
+    if $e != null then [{op: "replace", path: "\($path)/\($e)", value: $entry}] else [{op: "add", path: "\($path)/-", value: $entry}] end')"
+  kubectl --namespace "$namespace" patch prebackuppod files --type json --patch "$patch" >/dev/null
+}
+
+# restore_pre_backup_pod: the containers as suspend_layer saw them, and the layer's Kustomization running again.
+restore_pre_backup_pod() {
+  [ "$layer_suspended" = 1 ] || return 0
+  kubectl --namespace "$namespace" patch prebackuppod files --type json \
+    --patch "[{\"op\": \"replace\", \"path\": \"/spec/pod/spec/containers\", \"value\": $saved_containers}]" >/dev/null &&
+    flux resume kustomization "$namespace" --namespace flux-system &&
+    layer_suspended=0
+}
+
 # backup_pods: how many Pods of the namespace carry a backup command; backup_pod: the first one's name.
 backup_pods() {
   kubectl --namespace "$namespace" get pods --output json |

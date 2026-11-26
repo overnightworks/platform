@@ -911,6 +911,15 @@ jobs:
           SONGMAKER_NAMESPACE: songmaker
           APP_MANIFEST: apps/songmaker/web.yaml
         run: tests/backup/load_restores_dump_claim_and_bucket_of_one_snapshot.sh
+      # The cells change songmaker's PreBackupPod and its bucket, which no later step of this part reads.
+      - name: Seed and fit cells
+        if: matrix.part == 'backup-6'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          APP_MANIFEST: apps/songmaker/web.yaml
+        run: |
+          tests/backup/backup_now_seeds_a_first_copy_larger_than_one_pre_sync.sh
+          tests/backup/staging_refuses_a_copy_that_would_cross_the_eviction_margin.sh
       - name: P9f cells
         if: matrix.part == 'backup-1' || matrix.part == 'backup-3'
         env:
