@@ -91,7 +91,7 @@ request carries the caller's trace id at `mdc.traceId`, adopted from its `tracep
 access line holds no query string, since `%R` omits it, and no duration. (PD-10)
 The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung).
 
-## The read-only role (`infrastructure/postgres/scripts/reader_role.sh`)
+## The read-only role (`infrastructure/postgres/scripts/reader.sh`)
 
 A delegated agent reads an app's Postgres only through `mise run db:read <namespace>`, which runs the SQL on its stdin
 as the role `reader`, declared at every start of the Postgres container with no password and no right but

@@ -1,5 +1,5 @@
 #!/bin/sh
-# reader_role.sh keep | read: the role reader of this server's database, its one declaration and its one session.
+# reader.sh keep | read: the role reader of this server's database, its one declaration and its one session.
 #   keep  declares the role: no password, no right but pg_read_all_data's, so the server refuses it every write and
 #         every object. It runs at each start of the container and ends 0 whatever it finds, since a hook that fails
 #         or hangs keeps Postgres from running while a missing role harms no state; read then refuses.
@@ -8,7 +8,7 @@
 set -eu
 here="$(dirname "$0")"
 role=reader
-comment='declared by infrastructure/postgres/scripts/reader_role.sh'
+comment='declared by infrastructure/postgres/scripts/reader.sh'
 connections="$(cat "$here/connections")"
 wait_seconds=300
 
@@ -20,7 +20,7 @@ keep() {
   until pg_isready --host=127.0.0.1 --quiet; do
     attempts=$((attempts + 1))
     if [ "$attempts" -ge "$wait_seconds" ]; then
-      echo "reader_role.sh keep: no server answered on 127.0.0.1 within $wait_seconds seconds; the role $role is not declared" >&2
+      echo "reader.sh keep: no server answered on 127.0.0.1 within $wait_seconds seconds; the role $role is not declared" >&2
       return 0
     fi
     sleep 1
@@ -42,11 +42,11 @@ SELECT :'missing'::boolean OR :'ours'::boolean AS declared \gset
   GRANT pg_read_all_data TO :"role";
   REVOKE TEMPORARY ON DATABASE :"database" FROM PUBLIC;
 \else
-  \warn reader_role.sh keep: a role :role that this script did not declare exists; it is left as it is
+  \warn reader.sh keep: a role :role that this script did not declare exists; it is left as it is
 \endif
 SQL
   then
-    echo "reader_role.sh keep: declaring the role $role failed; read refuses until the next start declares it" >&2
+    echo "reader.sh keep: declaring the role $role failed; read refuses until the next start declares it" >&2
   fi
 }
 
@@ -61,7 +61,7 @@ WITH declared AS (SELECT * FROM pg_authid WHERE rolname = current_user)
 SELECT coalesce(string_agg(name, ', ') FILTER (WHERE NOT ok), '') AS failed
 FROM declared, LATERAL (VALUES
   (current_user = :'role', 'the session is not the role'),
-  (shobj_description(declared.oid, 'pg_authid') IS NOT DISTINCT FROM :'comment', 'the role carries no declaration of reader_role.sh'),
+  (shobj_description(declared.oid, 'pg_authid') IS NOT DISTINCT FROM :'comment', 'the role carries no declaration of reader.sh'),
   (rolcanlogin AND rolinherit AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication
     AND NOT rolbypassrls, 'the role has an attribute other than the declared ones'),
   (rolpassword IS NULL, 'the role has a password'),
@@ -82,7 +82,7 @@ SET LOCAL reader.failed = :'failed';
 DO $$
 BEGIN
   IF current_setting('reader.failed') <> '' THEN
-    RAISE EXCEPTION 'reader_role.sh read: the session is not the declared role: %', current_setting('reader.failed');
+    RAISE EXCEPTION 'reader.sh read: the session is not the declared role: %', current_setting('reader.failed');
   END IF;
 END
 $$;
@@ -95,5 +95,5 @@ SQL
 case "${1-}" in
   keep) keep ;;
   read) read_as_role ;;
-  *) echo "usage: reader_role.sh keep | read" >&2; exit 2 ;;
+  *) echo "usage: reader.sh keep | read" >&2; exit 2 ;;
 esac

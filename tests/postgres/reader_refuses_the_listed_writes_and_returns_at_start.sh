@@ -98,7 +98,7 @@ holder=$!
 holding() { [ "$(as_superuser "SELECT count(*) FROM pg_stat_activity WHERE application_name = '$lock_application' AND wait_event = 'PgSleep'")" = 1 ]; }
 until_true 60 "a session holds an uncommitted ALTER ROLE reader" holding
 keep || fail "keep ended non-zero while a session held a lock on the role"
-kubectl --namespace "$layer" logs postgres-0 --container postgres | grep -qF 'reader_role.sh keep: declaring the role reader failed' ||
+kubectl --namespace "$layer" logs postgres-0 --container postgres | grep -qF 'reader.sh keep: declaring the role reader failed' ||
   fail "the log of postgres-0 holds no line of the failed keep"
 kubectl --namespace "$layer" wait pod/postgres-0 --for=condition=Ready --timeout=1m
 as_superuser "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = '$lock_application'" >/dev/null
