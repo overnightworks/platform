@@ -52,6 +52,8 @@ case "$*" in
   *pg_stat_activity*)
     # FAKE_SESSION_STAYS: another session that never leaves.
     [ -z "${FAKE_SESSION_STAYS:-}" ] || { echo 1; exit 0; }
+    # FAKE_SESSION_AFTER_LOAD: another session that joins once the restore has run.
+    [ -z "${FAKE_SESSION_AFTER_LOAD:-}" ] || [ ! -e "$FAKE_DIR/restored" ] || { echo 1; exit 0; }
     # A lingering restore's backend: seen once, then its commit is done.
     if [ -e "$FAKE_DIR/committing" ]; then
       rm "$FAKE_DIR/committing"
@@ -84,6 +86,7 @@ case "$*" in
     : >"$FAKE_DIR/started-$name" ;;
   *"delete pod"*)
     echo "$*" >>"$FAKE_DIR/deleted"
+    [ ! -e "$FAKE_DIR/restored" ] || echo "$*" >>"$FAKE_DIR/deleted-after-load"
     [ -z "${FAKE_DELETE_FAILS:-}" ] || [ ! -e "$FAKE_DIR/started-db-load-snapshot" ] ;;
   *"get pods"*)
     # FAKE_PODS names a file holding the namespace's Pod list; without it the namespace has no Pod.
@@ -626,6 +629,14 @@ cell_failed_loader_delete_keeps_flux_suspended_and_says_so() {
     [[ $output == *"stays suspended"* ]] || fail "a loader that could not be deleted exited $status with '$output' after flux $flux_calls"
 }
 
+cell_database_that_stays_busy_after_the_load_deletes_the_loader_and_stays_suspended() {
+  cell=database-that-stays-busy-after-the-load-deletes-the-loader-and-stays-suspended
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_SESSION_AFTER_LOAD=1 DB_LOAD_DUMP_ALONE_SECONDS=2 run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"still holds another session"* ]] &&
+    grep -q db-load-snapshot "$FAKE_DIR/deleted-after-load" ||
+    fail "a claim load beside a session that joined after it exited $status with '$output' after flux $flux_calls"
+}
+
 cell_rerun_on_a_suspended_kustomization_runs_through() {
   cell=rerun-on-a-suspended-kustomization-runs-through
   FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_SUSPENDED=true run_loader x "$dump"
@@ -709,6 +720,7 @@ cells=(
   failed-copy-stays-suspended-naming-the-flag
   loader-cut-by-its-backstop-says-so-and-stays-suspended
   failed-loader-delete-keeps-flux-suspended-and-says-so
+  database-that-stays-busy-after-the-load-deletes-the-loader-and-stays-suspended
   rerun-on-a-suspended-kustomization-runs-through
   only-the-rclone-container-mounts-the-app-s-key-and-the-source-pod-no-secret
 )

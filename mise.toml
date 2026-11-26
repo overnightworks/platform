@@ -948,8 +948,11 @@ writers at 0: delete the Pod $loader in $namespace, then run flux resume kustomi
 resume() {
   trap - EXIT TERM
   trap '' INT
-  wait_alone || fail "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds; the \
+  wait_alone || {
+    drop_loader
+    fail "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds; the \
 Kustomization stays suspended and the writers at 0: $(way_back)"
+  }
   resume_flux
 }
 # The sha256 of the whole database as pg_dump writes it: schema, rows and sequence values. The fixed restrict key
