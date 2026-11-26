@@ -1,0 +1,7 @@
+claim_id = "a4e8cffdb6904f80aff0e4ffd0145ba7"
+agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
+role = "builder"
+base = "c3fc739599fccd81d5a247e7f086051ffab34580"
+branch = "fix/legal-dependency-paths"
+scope = [".aco/board.toml"]
+opened_commit = "51da714297b2eb3ba90bfda224bb6ad2cf07a130"
