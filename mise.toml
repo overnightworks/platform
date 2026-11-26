@@ -945,19 +945,13 @@ writers at 0: delete the Pod $loader in $namespace, then run flux resume kustomi
   fi
   flux resume kustomization "$namespace" --wait
 }
-stopped_while_waiting() {
-  drop_loader
-  echo "db:load-dump: stopped while waiting for the database $namespace to be alone; the Kustomization $namespace \
-stays suspended and its writers at 0: $(way_back)" >&2
-}
 resume() {
   trap - EXIT
-  trap 'stopped_while_waiting; exit 143' TERM
+  trap 'stay_suspended "stopped while waiting for the database $namespace to be alone"; exit 143' TERM
   trap '' INT
   wait_alone || {
-    drop_loader
-    fail "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds; the \
-Kustomization stays suspended and the writers at 0: $(way_back)"
+    stay_suspended "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds"
+    exit 1
   }
   resume_flux
 }
@@ -983,16 +977,15 @@ drop_loader() {
   [ -z "$claim" ] || scripts/load_snapshot.sh stop "$namespace" ||
     echo "db:load-dump: the loader $loader of $namespace could not be deleted; delete it before Flux resumes" >&2
 }
-unknown_outcome() {
+# Every exit that leaves the Kustomization suspended says why, then the way back.
+stay_suspended() {
   drop_loader
-  echo "db:load-dump: whether the load changed the data is unknown; the Kustomization $namespace stays suspended \
-and its writers at 0: $(way_back)" >&2
+  echo "db:load-dump: $1; the Kustomization $namespace stays suspended and its writers at 0: $(way_back)" >&2
 }
+unknown_outcome() { stay_suspended "whether the load changed the data is unknown"; }
 claim_unfinished() {
   trap '' INT
-  drop_loader
-  echo "db:load-dump: the load of $namespace with its claim did not finish or is not verified; the Kustomization \
-$namespace stays suspended and its writers at 0: $(way_back)" >&2
+  stay_suspended "the load of $namespace with its claim did not finish or is not verified"
 }
 # A non-zero status or a signal can follow a committed restore, and a client that died can leave its remote pg_restore
 # running, so the data counts as unchanged only once the database is alone, holds no relation the fingerprint leaves
@@ -1097,11 +1090,7 @@ kubectl --namespace "$namespace" exec --stdin "$pod" --container postgres -- \
   --role="$namespace" --single-transaction --exit-on-error --dbname="$namespace" <"$file" 2>"$log" || load_status=$?
 [ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log"
 # The data is committed: until it is verified, a signal or a failure leaves the writers stopped, not resumed on it.
-unverified() {
-  drop_loader
-  echo "db:load-dump: the loaded data is not verified against $file; the Kustomization $namespace stays suspended and \
-its writers at 0: $(way_back)" >&2
-}
+unverified() { stay_suspended "the loaded data is not verified against $file"; }
 trap unverified EXIT
 
 verified=true
