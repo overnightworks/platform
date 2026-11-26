@@ -118,7 +118,9 @@ grep -qF 'text search configuration' <<<"$output" || fail "keep did not name the
   fail "keep demoted $layer although it refused the switch"
 [ "$(over_the_pod_address "$layer" "$refused_port" "$layer" with)" = "$layer" ] ||
   fail "$layer does not log in over the Pod's address with the Secret's password after the refusal"
-if over_the_pod_address "$layer" "$refused_port" postgres without >/dev/null 2>&1; then
-  fail "postgres logged in over the Pod's address after the refusal"
-fi
+for password in with without; do
+  if over_the_pod_address "$layer" "$refused_port" postgres "$password" >/dev/null 2>&1; then
+    fail "postgres logged in over the Pod's address $password a password after the refusal"
+  fi
+done
 echo "keep refused a text search configuration, left $layer a superuser that logs in with the Secret's password, and wrote: ${output//$'\n'/ | }"
