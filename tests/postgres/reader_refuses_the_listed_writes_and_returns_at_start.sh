@@ -82,7 +82,7 @@ keep() { in_postgres "${hook[@]}"; }
 # logged_lines <text>: how many lines of the container's log hold the text.
 logged_lines() {
   local log
-  log="$(kubectl --namespace "$layer" logs postgres-0 --container postgres)"
+  log="$(kubectl --namespace "$layer" logs postgres-0 --container postgres)" || fail "kubectl logs of postgres-0 in $layer failed" >&2
   grep -cF "$1" <<<"$log" || true
 }
 refuses_naming() {
