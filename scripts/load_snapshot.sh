@@ -111,15 +111,18 @@ check_script="$size_function"$'\n'"$check_body"
 
 stop() { kubectl --namespace "$1" delete pod "$loader" "$source_pod" --ignore-not-found --wait >/dev/null; }
 
-# The PreBackupPod's container `bucket` as JSON, null where the layer has none.
-bucket_container() {
-  kubectl --namespace "$1" get prebackuppod.k8up.io files --output json |
-    yq --input-format json --output-format json '[.spec.pod.spec.containers[] | select(.name == "bucket")] | .[0]'
+# The PreBackupPod of the layer's claim as JSON.
+pre_backup_pod() { kubectl --namespace "$1" get prebackuppod.k8up.io files --output json; }
+
+# bucket_container_of <PreBackupPod JSON>: its container `bucket` as JSON, null where the layer has none.
+bucket_container_of() {
+  yq --input-format json --output-format json '[.spec.pod.spec.containers[] | select(.name == "bucket")] | .[0]' <<<"$1"
 }
 
 declares_bucket() {
-  local container
-  container="$(bucket_container "$1")" || fail "cannot read the PreBackupPod files in $1; nothing changed"
+  local pre_pod container
+  pre_pod="$(pre_backup_pod "$1")" || fail "cannot read the PreBackupPod files in $1; nothing changed"
+  container="$(bucket_container_of "$pre_pod")"
   if [ "$container" = null ]; then echo false; else echo true; fi
 }
 
@@ -197,9 +200,8 @@ source_step() {
 start() {
   local namespace="$1" claim="$2" scratch="$3" pre_pod container manifest
   stop "$namespace" || fail "cannot delete an earlier Pod $loader in $namespace"
-  pre_pod="$(kubectl --namespace "$namespace" get prebackuppod.k8up.io files --output json)" ||
-    fail "cannot read the PreBackupPod files in $namespace"
-  container="$(yq --input-format json --output-format json '[.spec.pod.spec.containers[] | select(.name == "bucket")] | .[0]' <<<"$pre_pod")"
+  pre_pod="$(pre_backup_pod "$namespace")" || fail "cannot read the PreBackupPod files in $namespace"
+  container="$(bucket_container_of "$pre_pod")"
   # shellcheck disable=SC2016 # $shape and $bucket are yq's variables
   manifest="$("$here/restic_dump_pod.sh" "$namespace" "$loader" "$(yq '.hold' "$shape")" |
     SHAPE="$shape" CLAIM="$claim" SCRATCH="$scratch" BUCKET_CONTAINER="$container" \
