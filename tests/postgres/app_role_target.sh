@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Sourced by the cells that judge the state app_role.sh keeps; defines functions only. Reads a Postgres container
 # postgres-0 of a namespace, whose server listens on the port the caller names: the Pod's own on 5432, a throwaway
-# one on another. Needs failure.sh sourced.
+# one on another. Needs failure.sh and loader_proof_setup.sh sourced.
 
 # The catalogs that name an owner, as "catalog|owner column|condition" of the rows of the app's database: a row above
 # the objects initdb made (oid 16384), outside the public schema, which pg_database_owner owns, outside the schemas
@@ -23,8 +23,7 @@ app_role_owner_catalogs=(
 server_psql() {
   local namespace="$1" port="$2" login="$3"
   shift 3
-  kubectl --namespace "$namespace" exec postgres-0 --container postgres -- env PGHOST=127.0.0.1 PGPORT="$port" \
-    psql --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --username="$login" "$@"
+  postgres_psql "$namespace" --host=127.0.0.1 --port="$port" --username="$login" "$@"
 }
 
 # over_the_pod_address <namespace> <port> <login> <with|without>: the login's current_user over the Pod's own address,
