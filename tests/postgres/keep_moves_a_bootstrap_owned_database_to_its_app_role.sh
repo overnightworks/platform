@@ -28,7 +28,7 @@ start_server() {
     initdb --pgdata="$1/$2/data" --username="$4" --pwfile=/run/secrets/postgres/password >/dev/null
     echo "host all all all scram-sha-256" >>"$1/$2/data/pg_hba.conf"
     pg_ctl --pgdata="$1/$2/data" --log="$1/$2/log" --wait --silent \
-      --options="-p $3 -c listen_addresses=* -c unix_socket_directories=$1/$2" start
+      --options="-p $3 -c listen_addresses=* -c unix_socket_directories=$1/$2 -c shared_buffers=16MB" start
     PGHOST=127.0.0.1 PGPORT="$3" createdb --username="$4" "$PGDATABASE"' sh "$work" "$1" "$2" "$3"
 }
 stop_servers() {
