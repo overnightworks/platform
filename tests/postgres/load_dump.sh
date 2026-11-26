@@ -172,6 +172,21 @@ run_loader() {
   output="$(mise run db:load-dump "$@" 2>&1)" || status=$?
   flux_calls="$(tr '\n' ' ' <"$FAKE_DIR/flux.log")"
 }
+# Starts mise run db:load-dump "$@" in a session of its own and returns once marker_test, a command that reads
+# $FAKE_DIR, succeeds; it sets FAKE_DIR and loader, and the shell's EXIT kills the session. The cell ends the loader and
+# waits for it.
+start_loader_in_background() {
+  local marker_test="$1" never_reached="$2"
+  shift 2
+  export FAKE_DIR="$work_directory/state-$cell"
+  mkdir -p "$FAKE_DIR"
+  : >"$FAKE_DIR/flux.log"
+  setsid mise run db:load-dump "$@" >"$FAKE_DIR/output" 2>&1 &
+  loader=$!
+  trap 'pkill -KILL --session "$loader" 2>/dev/null || true; wait "$loader" 2>/dev/null || true' EXIT
+  for _ in $(seq 150); do eval "$marker_test" && return; sleep 0.2; done
+  fail "the loader never reached $never_reached"
+}
 sql_for() {
   local name
   for name; do
@@ -237,14 +252,7 @@ cell_table_only_in_database_differs_and_stays_suspended() {
 
 cell_interrupt_during_verification_stays_suspended() {
   cell=interrupt-during-verification-stays-suspended
-  export FAKE_DIR="$work_directory/state-$cell"
-  mkdir -p "$FAKE_DIR"
-  : >"$FAKE_DIR/flux.log"
-  FAKE_VERIFY_HANGS=1 setsid mise run db:load-dump x "$dump" >"$FAKE_DIR/output" 2>&1 &
-  loader=$!
-  trap 'pkill -KILL --session "$loader" 2>/dev/null || true; wait "$loader" 2>/dev/null || true' EXIT
-  for _ in $(seq 150); do [ -e "$FAKE_DIR/verifying" ] && break; sleep 0.2; done
-  [ -e "$FAKE_DIR/verifying" ] || fail "the loader never reached its verification"
+  FAKE_VERIFY_HANGS=1 start_loader_in_background '[ -e "$FAKE_DIR/verifying" ]' "its verification" x "$dump"
   pkill -INT --session "$loader"
   status=0
   wait "$loader" || status=$?
@@ -344,14 +352,8 @@ cell_interrupt_after_commit_reports_unknown_to_the_operator_not_the_log() {
 
 cell_term_during_recovery_is_unknown_and_stays_suspended() {
   cell=term-during-recovery-is-unknown-and-stays-suspended
-  export FAKE_DIR="$work_directory/state-$cell"
-  mkdir -p "$FAKE_DIR"
-  : >"$FAKE_DIR/flux.log"
-  FAKE_RESTORE_FAILS=1 FAKE_PG_DUMP_BLOCKS_AT=2 setsid mise run db:load-dump x "$dump" >"$FAKE_DIR/output" 2>&1 &
-  loader=$!
-  trap 'pkill -KILL --session "$loader" 2>/dev/null || true; wait "$loader" 2>/dev/null || true' EXIT
-  for _ in $(seq 150); do [ -e "$FAKE_DIR/dumping" ] && break; sleep 0.2; done
-  [ -e "$FAKE_DIR/dumping" ] || fail "the loader never reached the fingerprint after its failed load"
+  FAKE_RESTORE_FAILS=1 FAKE_PG_DUMP_BLOCKS_AT=2 start_loader_in_background '[ -e "$FAKE_DIR/dumping" ]' \
+    "the fingerprint after its failed load" x "$dump"
   # Only the task's shell, mise's child, gets the TERM; the fingerprint it waits for then ends equal to the one before.
   kill -TERM "$(pgrep --parent "$loader")"
   : >"$FAKE_DIR/release"
@@ -648,15 +650,8 @@ cell_database_that_stays_busy_after_the_load_deletes_the_loader_and_stays_suspen
 
 cell_term_while_the_resume_waits_deletes_the_loader_and_stays_suspended() {
   cell=term-while-the-resume-waits-deletes-the-loader-and-stays-suspended
-  export FAKE_DIR="$work_directory/state-$cell"
-  mkdir -p "$FAKE_DIR"
-  : >"$FAKE_DIR/flux.log"
   FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_SESSION_AFTER_LOAD=1 DB_LOAD_DUMP_ALONE_SECONDS=600 \
-    setsid mise run db:load-dump x "$dump" >"$FAKE_DIR/output" 2>&1 &
-  loader=$!
-  trap 'pkill -KILL --session "$loader" 2>/dev/null || true; wait "$loader" 2>/dev/null || true' EXIT
-  for _ in $(seq 150); do grep -q 'verified; resuming the Kustomization x' "$FAKE_DIR/output" && break; sleep 0.2; done
-  grep -q 'verified; resuming the Kustomization x' "$FAKE_DIR/output" || fail "the loader never reached its resume"
+    start_loader_in_background 'grep -q "verified; resuming the Kustomization x" "$FAKE_DIR/output"' "its resume" x "$dump"
   # Only the task's shell, mise's child, gets the TERM, while the resume waits for the other session to leave.
   kill -TERM "$(pgrep --parent "$loader")"
   status=0
