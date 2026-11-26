@@ -81,13 +81,15 @@ held_back() { [ "$(suspended)" = true ] && writers_at_zero; }
 no_loader_pods() { [ -z "$(kubectl --namespace "$namespace" get pod db-load-snapshot db-load-source --ignore-not-found --output name)" ]; }
 # state: the three digests, one line each, of what the claim, the bucket and the database hold now.
 state() { printf 'claim %s\nbucket %s\ndatabase %s\n' "$(claim_digest | tr '\n' ' ')" "$(bucket_digest)" "$(sql 'SELECT value FROM load_marker')"; }
+# holds_no_marker: the output of the last run holds no file name, key, file content or row.
+holds_no_marker() { ! grep -qF "$marker" "$output" || fail "a run printed a file name, a key, a file's content or a row"; }
 # load <file> [flag]...: the load with --compare, bounded; its output is checked for the marker and printed.
 load() {
   local file="$1" status=0
   shift
   timeout -k 10 1200 mise run db:load-dump --compare "$@" "$namespace" "$file" >"$output" 2>&1 || status=$?
   cat "$output"
-  ! grep -qF "$marker" "$output" || fail "the load printed a file name, a key, a file's content or a row"
+  holds_no_marker
   return "$status"
 }
 # kill_during <tool> <pattern> <background>: starts the load of the dump with the flag with a wrapper of the tool that, at
@@ -182,8 +184,10 @@ for kill in "kubectl|rclone copy /restore/bucket|true|rclone's copy" "kubectl|re
   change_claim_and_database
   run_client plant-extra "$credentials_secret" put "$bucket_variable" "extra-$marker.bin"
   kill_during "$tool" "$pattern" "$background"
+  holds_no_marker
   held_back || fail "a kill during $description left Flux resumed or a writer running"
   if mise run db:load-dump --resume "$namespace" >"$output" 2>&1; then fail "--resume of a claim layer exited 0 after a kill during $description"; fi
+  holds_no_marker
   grep -qF 'same command again' "$output" || fail "--resume did not name the re-run after a kill during $description"
   load "$dump" --empty-bucket || fail "the re-run after a kill during $description exited non-zero"
   [ "$(state)" = "$snapshot_state" ] || fail "the re-run after a kill during $description did not make all three equal to the snapshot"

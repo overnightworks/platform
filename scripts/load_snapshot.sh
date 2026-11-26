@@ -27,19 +27,23 @@ margin_bytes=$((64 * 1024 * 1024))
 
 # The newest staging snapshot whose MANIFEST holds the dump's sha256 ($1), its trees' counts, bytes and directory
 # prefixes, and the scratch filesystem's free and total bytes; exit 3 when no snapshot holds the dump, 2 when the
-# repository cannot be read.
+# repository cannot be read or none of its snapshots can be dumped.
 read -r -d '' source_script <<'SCRIPT' || true
 staging=/data/backup-staging
 snapshots="$(restic --no-cache snapshots --json --path "$staging")" || exit 2
 ids="$(printf '%s' "$snapshots" | jq --raw-output 'sort_by(.time) | reverse | .[].id')" || exit 2
-found=
+found= tried=0 unread=0
 for id in $ids; do
-  restic --no-cache dump "$id" "$staging/MANIFEST" >/restore/MANIFEST 2>/dev/null || continue
+  tried=$((tried + 1))
+  restic --no-cache dump "$id" "$staging/MANIFEST" >/restore/MANIFEST 2>/dev/null || { unread=$((unread + 1)); continue; }
   [ "$(awk -F'\t' '$1 == "dump" { print $2; exit }' /restore/MANIFEST)" = "$1" ] || continue
   found="$id"
   break
 done
-[ -n "$found" ] || exit 3
+if [ -z "$found" ]; then
+  [ "$tried" = 0 ] || [ "$unread" -lt "$tried" ] || exit 2
+  exit 3
+fi
 echo "snapshot $found"
 awk -F'\t' '
   $1 == "file" {
@@ -67,10 +71,9 @@ snapshot="$1" tree="$2" staging=/data/backup-staging delete=
 if [ "$tree" = files ]; then root=/load delete=--delete; else root=/restore; fi
 restic --no-cache restore "$snapshot:$staging/$tree" --target "$root/$tree" $delete --verify >/dev/null 2>&1 || exit 1
 restic --no-cache dump "$snapshot" "$staging/MANIFEST" >/restore/MANIFEST 2>/dev/null || exit 1
-awk -F'\t' -v tree="$tree" '$1 == "file" && index($4, tree "/") == 1' /restore/MANIFEST |
-  LC_ALL=C sort >"/restore/$tree.expected"
+awk -F'\t' -v tree="$tree" '$1 == "file" && index($4, tree "/") == 1' /restore/MANIFEST >"/restore/$tree.expected"
 (cd "$root" && sh /etc/stage/stage_files.sh listing "$tree") >"/restore/$tree.actual" || exit 1
-differing="$(sort -m "/restore/$tree.expected" "/restore/$tree.actual" | uniq -u | wc -l)"
+differing="$(LC_ALL=C sort -m "/restore/$tree.expected" "/restore/$tree.actual" | uniq -u | wc -l)"
 awk -F'\t' -v differing="$differing" '{ bytes += $2 } END { printf "%.0f %.0f %.0f\n", NR, bytes, differing }' \
   "/restore/$tree.actual"
 rm -f /restore/MANIFEST "/restore/$tree.expected" "/restore/$tree.actual"
@@ -97,9 +100,16 @@ read -r -d '' copy_body <<'SCRIPT' || true
 rclone copy /restore/bucket ":s3:$BUCKET" >/dev/null 2>&1
 SCRIPT
 # The scratch against the bucket by content: every line of the combined list that does not start with "= " differs.
+# rclone exits 1 for differences and for some errors, 2 and above for the rest: only a list that names a difference
+# excuses a 1.
 read -r -d '' check_body <<'SCRIPT' || true
-rclone check /restore/bucket ":s3:$BUCKET" --download --combined /tmp/check >/dev/null 2>&1 || exit 1
-differing="$(grep -vc '^= ' /tmp/check || true)"
+rm -f /tmp/check
+checked=0
+rclone check /restore/bucket ":s3:$BUCKET" --download --combined /tmp/check >/dev/null 2>&1 || checked=$?
+[ "$checked" -le 1 ] || exit 1
+differing=0
+[ ! -f /tmp/check ] || differing="$(grep -vc '^= ' /tmp/check || true)"
+[ "$checked" = 0 ] || [ "$differing" != 0 ] || exit 1
 size="$(bucket_size)"
 [ -n "$size" ] || exit 1
 echo "${size%% *} ${size##* } $differing"

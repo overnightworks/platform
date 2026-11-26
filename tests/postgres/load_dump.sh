@@ -32,9 +32,8 @@ case "$*" in
         echo "bucket 2 1000 1"
         echo "claim 3 300 1"
         echo "filesystem ${FAKE_FREE_BYTES:-100000000000} 200000000000" ;;
-      restore-bucket | restore-claim) echo "3 300 $([ "${FAKE_DIFFERS:-}" = "$step" ] && echo 5 || echo 0)" ;;
+      restore-bucket | restore-claim | check) echo "3 300 $([ "${FAKE_DIFFERS:-}" = "$step" ] && echo 5 || echo 0)" ;;
       count) echo "${FAKE_BUCKET_OBJECTS:-0} ${FAKE_BUCKET_BYTES:-0}" ;;
-      check) echo "3 300 0" ;;
     esac ;;
   *"get cronjob"*) cat "$FAKE_CRONJOB" ;;
   *"get --raw"*)
@@ -608,6 +607,14 @@ cell_restored_claim_that_differs_stays_suspended_naming_the_rerun() {
     fail "a restored claim that differs exited $status with '$output' after flux $flux_calls"
 }
 
+cell_checked_bucket_that_differs_stays_suspended_naming_the_flag() {
+  cell=checked-bucket-that-differs-stays-suspended-naming-the-flag
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_DIFFERS=check run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"differs from the snapshot fake-snapshot in 5 entries"* ]] &&
+    [[ $output == *"same command again with --empty-bucket"* ]] && grep -q db-load-snapshot "$FAKE_DIR/deleted-after-load" ||
+    fail "a bucket that differs after the copy exited $status with '$output' after flux $flux_calls"
+}
+
 cell_failed_copy_stays_suspended_naming_the_flag() {
   cell=failed-copy-stays-suspended-naming-the-flag
   FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_STEP_FAILS=copy run_loader x "$dump"
@@ -717,6 +724,7 @@ cells=(
   claim-only-layer-restores-its-claim-and-touches-no-bucket
   restored-bucket-that-differs-refuses-with-nothing-loaded
   restored-claim-that-differs-stays-suspended-naming-the-rerun
+  checked-bucket-that-differs-stays-suspended-naming-the-flag
   failed-copy-stays-suspended-naming-the-flag
   loader-cut-by-its-backstop-says-so-and-stays-suspended
   failed-loader-delete-keeps-flux-suspended-and-says-so
