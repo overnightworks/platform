@@ -42,6 +42,7 @@ SELECT :'missing'::boolean OR :'ours'::boolean AS declared \gset
     CONNECTION LIMIT :connections;
   COMMENT ON ROLE :"role" IS :'comment';
   ALTER ROLE :"role" RESET ALL;
+  ALTER ROLE :"role" IN DATABASE :"database" RESET ALL;
   GRANT pg_read_all_data TO :"role";
   REVOKE TEMPORARY ON DATABASE :"database" FROM PUBLIC;
 \else

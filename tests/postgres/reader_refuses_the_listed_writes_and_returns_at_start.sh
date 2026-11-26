@@ -91,6 +91,8 @@ refuses_naming() {
 }
 read_sql "COMMIT; SET default_transaction_read_only = off; ALTER ROLE reader PASSWORD 'drifted'; ALTER ROLE reader SET search_path = ''" >/dev/null || true
 refuses_naming 'the role has a password'
+[ "$(sql "$layer" "SELECT count(*) FROM pg_db_role_setting WHERE setrole = 'reader'::regrole AND setconfig @> ARRAY['search_path=\"\"']")" = 1 ] ||
+  fail "the drift did not give the role its own search_path, so the cell would prove nothing about keep clearing it"
 keep
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after keep restored the role"
 [ "$(read_sql 'SELECT count(*) FROM reader_proof' | sed -n 3p | tr -d ' ')" = 3 ] ||
