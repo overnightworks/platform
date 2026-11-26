@@ -93,8 +93,6 @@ spec:
               value: https://presentator-talk.hallucinai.de
             - name: PRESENTATOR_OIDC_ISSUER
               value: https://auth.hallucinai.de/realms/hallucinai
-            - name: PRESENTATOR_OIDC_CLIENT_ID
-              value: presentator
             - name: PRESENTATOR_OIDC_CLIENT_SECRET_FILE
               value: /run/secrets/oidc_client_secret
             - name: PRESENTATOR_SECRET_KEY_FILE
