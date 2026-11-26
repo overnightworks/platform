@@ -882,6 +882,22 @@ applied_revision="$(read_object Kustomization "$source_name" '{.status.lastAppli
 echo "bootstrap:secrets: Kustomization $source_name Ready at $applied_revision"
 '''
 
+# The one way an agent reads a live Postgres: as the role reader, which infrastructure/postgres/scripts/reader_role.sh
+# declares, through the container's local trust, so no credential exists.
+[tasks."db:read"]
+description = "Read a namespace's Postgres as the role reader, which can only read: SQL on stdin"
+usage = '''
+long_about "Read only the rows and columns needed, never secrets, credentials, session data or user content, and give counts and identifiers as evidence. An error's line number counts the lines of the role's check before the SQL too. The role refuses a write, not a read: what is read and passed on stays the rule's. keycloak's and litellm's databases hold signing keys and hashed keys, so a read there counts rows and never selects *."
+arg "<namespace>" help="The namespace whose Postgres is read"
+'''
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+exec kubectl --namespace "${usage_namespace?}" exec --stdin postgres-0 --container postgres -- sh /etc/postgres-reader/reader_role.sh read
+'''
+
 # The platform's restore command. A dump holds keys and hashes, so every line it prints is a name, a count or an
 # outcome, never a row. A layer that declares a claim also restores the claim, and its bucket where it declares one, of
 # the staging snapshot that holds the dump (scripts/load_snapshot.sh), so that database, claim and bucket are one restore

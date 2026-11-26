@@ -68,6 +68,12 @@ spec:
           ports:
             - name: postgres
               containerPort: 5432
+          # The role reader, which scripts/reader_role.sh declares at every start; the hook never fails, so Postgres starts
+          # whatever the step finds.
+          lifecycle:
+            postStart:
+              exec:
+                command: [sh, -c, sh /etc/postgres-reader/reader_role.sh keep || true]
           readinessProbe:
             exec:
               command: [pg_isready]
@@ -90,6 +96,9 @@ spec:
             - name: checks
               mountPath: /etc/postgres-checks
               readOnly: true
+            - name: reader
+              mountPath: /etc/postgres-reader
+              readOnly: true
       volumes:
         - name: run
           emptyDir: {}
@@ -101,6 +110,10 @@ spec:
         - name: checks
           configMap:
             name: postgres
+        # The generated ConfigMap's hash changes with the script, so a changed declaration rolls the Pod.
+        - name: reader
+          configMap:
+            name: postgres-reader
   volumeClaimTemplates:
     - metadata:
         name: data

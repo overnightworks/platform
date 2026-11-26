@@ -142,6 +142,13 @@ Facts of today's boundaries, each held by a manifest or a cell:
 - No access token carries a person's name or e-mail address; the ID token and userinfo do.
 - A declared test person can sign in to hopin, skat, presentator and songmaker only during a run of `mise run live:check`: at rest it is disabled with no
   credential, and the boundary that keeps its password from a non-cooperative agent is the operator's account on the PC.
+- Each Postgres declares the role `reader` at every start (`infrastructure/postgres/scripts/reader_role.sh`), with no
+  password and no right but `pg_read_all_data`'s, and `mise run db:read <namespace>` runs an agent's SQL as it through
+  `kubectl exec`, in a read-only session whose timeouts it sets, after a check that the session is that role. It is a
+  tripwire, an aid for a cooperative agent that stops a mistaken write: its contract is the refusals
+  `tests/postgres/reader_refuses_the_listed_writes_and_returns_at_start.sh` lists, and the boundary against a
+  non-cooperative agent is the operator's account on the PC, whose cluster-admin kubeconfig reaches the superuser
+  through `kubectl exec`.
 - Flux reads two sources: this repository's default branch and `platform-secrets`.
 
 ### Proof strategy

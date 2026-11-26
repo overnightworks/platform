@@ -209,8 +209,11 @@ jobs:
       - name: Check that every pull layer mounts each app ref its app renders and every image volume of its Job, and that a missing ref and an unmounted volume fail
         run: mise exec -- tests/workloads/pull_layers_mount_every_app_ref_their_app_runs.sh
 
-      - name: Check that the Deployments of the namespaces of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM, a rollout's surge included, plus the backup stay within their Postgres' max_connections, and that a raised replica, surge or pool, a missing declaration and a lowered limit are each red
+      - name: Check that the Deployments of the namespaces of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM, a rollout's surge included, plus the backup and the role reader stay within their Postgres' max_connections, and that a raised replica, surge or pool, a missing declaration and a lowered limit are each red
         run: mise exec -- tests/postgres/connections_stay_within_max_connections.sh apps/hopin apps/songmaker apps/personas apps/skat apps/presentator infrastructure/keycloak infrastructure/litellm
+
+      - name: Check that reader_role.sh keep ends 0 with one line naming its bound when no server answers, and never reaches psql
+        run: mise exec -- tests/postgres/reader_keep_gives_up_past_its_bound.sh
 
   # The legs of cluster: core and the parts the run's changed paths select, which tests/flux/parts.yaml owns. cluster is
   # never skipped, since the gate reads a skipped mandatory job as red, so a scope that selects nothing but core still has a leg.
@@ -618,12 +621,23 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
+      - name: Check that mise run db:read passes the check of the declared role reader in every Postgres namespace, which holds the connection limit of its ConfigMap and counts the first key table as the superuser does
+        if: matrix.part == 'load-1'
+        run: tests/postgres/every_postgres_reads_as_its_declared_reader.sh
+
       - name: P7a foreign-session and interrupt cells
         if: matrix.part == 'load-3'
         env:
           # The layer whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
         run: tests/postgres/load_dump_refuses_a_foreign_session_and_suspension_and_survives_interrupts.sh
+
+      - name: Check that the role reader is refused the listed writes, objects, escapes and the statement past its timeout, reads what is made later, is refused after a drift, survives a lock in keep and returns at the next start
+        if: matrix.part == 'load-3'
+        env:
+          # The layer whose Postgres the cell reads.
+          PROOF_LAYER: litellm
+        run: tests/postgres/reader_refuses_the_listed_writes_and_returns_at_start.sh
 
       - name: Assert that songmaker's Postgres is Ready and non-root and closed to other namespaces
         if: matrix.part == 'load-1'
