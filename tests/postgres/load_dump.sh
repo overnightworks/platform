@@ -17,6 +17,32 @@ cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$*" in
+  # The loader's steps: sh -c <script> <step> <argument>..., one call each, answered by FAKE_* variables.
+  *" exec db-load-"*)
+    while [ "$1" != -- ]; do shift; done
+    shift 4
+    step="$1"
+    echo "$step" >>"$FAKE_DIR/steps"
+    [ "${FAKE_STEP_FAILS:-}" != "$step" ] || exit 1
+    case "$step" in
+      source)
+        [ -z "${FAKE_SOURCE_UNREADABLE:-}" ] || exit 2
+        [ -z "${FAKE_NO_SNAPSHOT:-}" ] || exit 3
+        echo "snapshot fake-snapshot"
+        echo "bucket 2 1000 1"
+        echo "claim 3 300 1"
+        echo "filesystem ${FAKE_FREE_BYTES:-100000000000} 200000000000" ;;
+      restore-bucket | restore-claim) echo "3 300 $([ "${FAKE_DIFFERS:-}" = "$step" ] && echo 5 || echo 0)" ;;
+      count) echo "${FAKE_BUCKET_OBJECTS:-0} ${FAKE_BUCKET_BYTES:-0}" ;;
+      check) echo "3 300 0" ;;
+    esac ;;
+  *"get cronjob"*) cat "$FAKE_CRONJOB" ;;
+  *"get --raw"*)
+    [ -z "${FAKE_CONFIGZ_FAILS:-}" ] || exit 1
+    default_configz='{"kubeletconfig":{"evictionHard":{"nodefs.available":"10%","imagefs.available":"15%"}}}'
+    echo "${FAKE_CONFIGZ:-$default_configz}" ;;
+  *"get pod "*nodeName*) echo fake-node ;;
+  *"get pod "*status.reason*) printf '%s' "${FAKE_POD_REASON:-}" ;;
   *"get kustomization"*"--output name"*)
     [ -z "${FAKE_NO_KUSTOMIZATION:-}" ] || exit 0
     echo "kustomization.kustomize.toolkit.fluxcd.io/x" ;;
@@ -46,9 +72,19 @@ case "$*" in
     [ -z "${FAKE_CLAIM_READ_FAILS:-}" ] || { echo "fake kubectl: the server is unreachable" >&2; exit 1; }
     printf '%s' "${FAKE_CLAIM:-}" ;;
   *"get prebackuppod"*)
-    echo '{"spec":{"pod":{"spec":{"securityContext":{"runAsUser":1000},"containers":[{"name":"copy","image":"rsync-image"}]}}}}' ;;
-  *" create "*) cat >/dev/null ;;
-  *"delete pod"*) echo "$*" >>"$FAKE_DIR/deleted" ;;
+    # FAKE_BUCKET: the layer's PreBackupPod has the container bucket, with the backup's key file.
+    bucket=
+    [ -z "${FAKE_BUCKET:-}" ] ||
+      bucket=',{"name":"bucket","image":"rclone-image","env":[{"name":"BUCKET","value":"x"},{"name":"AWS_SHARED_CREDENTIALS_FILE","value":"/backup/key"}],"securityContext":{"runAsGroup":1000}}'
+    echo '{"spec":{"pod":{"spec":{"securityContext":{"runAsUser":1000},"containers":[{"name":"copy","image":"rsync-image"}'"$bucket"']}}}}' ;;
+  *" create "*)
+    manifest="$(cat)"
+    name="$(yq --input-format json '.metadata.name' <<<"$manifest")"
+    printf '%s' "$manifest" >"$FAKE_DIR/pod-$name.json"
+    : >"$FAKE_DIR/started-$name" ;;
+  *"delete pod"*)
+    echo "$*" >>"$FAKE_DIR/deleted"
+    [ -z "${FAKE_DELETE_FAILS:-}" ] || [ ! -e "$FAKE_DIR/started-db-load-snapshot" ] ;;
   *"get pods"*)
     # FAKE_PODS names a file holding the namespace's Pod list; without it the namespace has no Pod.
     if [ -n "${FAKE_PODS:-}" ]; then cat "$FAKE_PODS"; else echo "items: []"; fi ;;
@@ -58,9 +94,6 @@ case "$*" in
     while [ "$1" != -- ]; do shift; done
     shift
     case "$*" in
-      df*)
-        echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
-        echo "claim 0 0 ${FAKE_FREE_KB:-1000000} 0% /target" ;;
       *check-key-tables.sh*)
         : >"$FAKE_DIR/verifying"
         [ -z "${FAKE_VERIFY_HANGS:-}" ] || sleep 60
@@ -113,16 +146,9 @@ cat >"$fake_bin/chmod" <<'FAKE'
 [ -z "${FAKE_DIR:-}" ] || echo "$(stat -c %a "$2")" >>"$FAKE_DIR/created-at"
 exec /bin/chmod "$@"
 FAKE
-# FAKE_RSYNC_DIFFERS: the checksum comparison finds a difference.
-cat >"$fake_bin/rsync" <<'FAKE'
-#!/usr/bin/env bash
-echo "$*" >>"$FAKE_DIR/rsync.log"
-case "$*" in
-  *--dry-run*) [ -z "${FAKE_RSYNC_DIFFERS:-}" ] || echo ">fc....... a-file" ;;
-esac
-FAKE
 chmod +x "$fake_bin"/*
-export FAKE_CHECKS="$work_directory/postgres-checks"
+export FAKE_CHECKS="$work_directory/postgres-checks" FAKE_CRONJOB="$work_directory/restore-test.json"
+yq --output-format json 'select(.kind == "CronJob")' "$repository_root/infrastructure/postgres/backup/backup.yaml" >"$FAKE_CRONJOB"
 mkdir "$FAKE_CHECKS"
 yq 'select(.kind == "ConfigMap") | .data."table-digests.sh"' "$repository_root/infrastructure/postgres/postgres.yaml" \
   >"$FAKE_CHECKS/table-digests.sh"
@@ -464,26 +490,11 @@ FAKE
     fail "interrupt_load.sh exited $never_status with '$never_output' for a restore that never blocked"
 }
 
-# make_tree <name>: a source tree <name> under the work directory, with one file.
-make_tree() {
-  tree="$work_directory/$1"
-  mkdir -p "$tree/nested"
-  printf 'audio' >"$tree/nested/first take.ogg"
-}
-
-cell_claim_layer_without_files_is_refused_and_flux_untouched() {
-  cell=claim-layer-without-files-is-refused-and-flux-untouched
-  FAKE_CLAIM=audiofiles run_loader x "$dump"
-  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"--files"* ]] ||
-    fail "a claim layer's load without --files exited $status with '$output' after flux $flux_calls"
-}
-
-cell_files_on_layer_without_claim_is_refused_and_flux_untouched() {
-  cell=files-on-layer-without-claim-is-refused-and-flux-untouched
-  make_tree $cell
-  run_loader --files "$tree" x "$dump"
-  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"declares no claim"* ]] ||
-    fail "--files on a layer with no claim exited $status with '$output' after flux $flux_calls"
+cell_claim_layer_refuses_a_resume_naming_the_rerun() {
+  cell=claim-layer-refuses-a-resume-naming-the-rerun
+  FAKE_CLAIM=audiofiles run_loader --resume x
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"same command again"* ]] ||
+    fail "--resume of a claim layer exited $status with '$output' after flux $flux_calls"
 }
 
 cell_unreadable_claim_declaration_is_refused_and_flux_untouched() {
@@ -492,80 +503,146 @@ cell_unreadable_claim_declaration_is_refused_and_flux_untouched() {
   [ "$status" != 0 ] && [ -z "$flux_calls" ] || fail "a load with an unreadable claim key exited $status after flux $flux_calls"
 }
 
-cell_resume_of_claim_layer_is_refused_naming_the_rerun() {
-  cell=resume-of-claim-layer-is-refused-naming-the-rerun
-  FAKE_CLAIM=audiofiles run_loader --resume x
-  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"same command again"* ]] ||
-    fail "--resume of a claim layer exited $status with '$output' after flux $flux_calls"
-}
-
-# Each source the load refuses, before any change and without a file name in the output.
-cell_unfit_source_is_refused_before_any_change() {
-  local kind
-  for kind in symlink fifo empty-tree unreadable newline-name; do
-    cell="unfit-source-$kind"
-    make_tree "$cell"
-    case "$kind" in
-      symlink) ln -s nested/ROW-MARKER "$tree/link" ;;
-      fifo) mkfifo "$tree/ROW-MARKER" ;;
-      empty-tree) rm -r "$tree/nested"; mkdir "$tree/ROW-MARKER" ;;
-      unreadable) : >"$tree/ROW-MARKER"; /bin/chmod 000 "$tree/ROW-MARKER" ;;
-      newline-name) : >"$tree/$(printf 'ROW-MARKER\nsplit')" ;;
-    esac
-    FAKE_CLAIM=audiofiles run_loader --files "$tree" x "$dump"
-    /bin/chmod -R u+rwX "$tree"
-    [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] && [[ $output != *ROW-MARKER* ]] ||
-      fail "a $kind source exited $status with '$output' after flux $flux_calls"
+cell_empty_bucket_on_a_layer_without_a_bucket_is_refused_before_any_change() {
+  cell=empty-bucket-on-a-layer-without-a-bucket-is-refused-before-any-change
+  local layer
+  for layer in "" audiofiles; do
+    FAKE_CLAIM="$layer" run_loader --empty-bucket x "$dump"
+    [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"declares no bucket"* ]] && [ ! -e "$FAKE_DIR/steps" ] ||
+      fail "--empty-bucket on a layer with claim '$layer' and no bucket exited $status with '$output' after flux $flux_calls"
   done
 }
 
-cell_source_larger_than_free_space_is_refused_and_flux_resumes() {
-  cell=source-larger-than-free-space-is-refused-and-flux-resumes
-  make_tree $cell
-  FAKE_CLAIM=audiofiles FAKE_FREE_KB=0 run_loader --files "$tree" x "$dump"
-  [ "$status" != 0 ] && [[ $flux_calls == *resume* ]] && [ ! -e "$FAKE_DIR/restored" ] && [[ $output == *"bytes free"* ]] ||
-    fail "a source larger than the free space exited $status with '$output' after flux $flux_calls"
+cell_dump_of_no_staging_snapshot_is_refused_before_the_suspension() {
+  cell=dump-of-no-staging-snapshot-is-refused-before-the-suspension
+  FAKE_CLAIM=audiofiles FAKE_NO_SNAPSHOT=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"no staging snapshot"* ]] && [[ $output == *"nothing changed"* ]] &&
+    grep -q db-load-source "$FAKE_DIR/deleted" && [ ! -e "$FAKE_DIR/restored" ] ||
+    fail "a dump of no staging snapshot exited $status with '$output' after flux $flux_calls"
 }
 
-cell_equal_files_load_resumes_flux_and_deletes_the_loader() {
-  cell=equal-files-load-resumes-flux-and-deletes-the-loader
-  make_tree $cell
-  mv "$tree/nested/first take.ogg" "$tree/nested/ROW-MARKER.ogg"
-  FAKE_CLAIM=audiofiles run_loader --files "$tree" x "$dump"
-  [ "$status" = 0 ] && [[ $flux_calls == "suspend resume " ]] && [[ $output == *"0 differing entries"* ]] &&
-    [[ $output != *ROW-MARKER* ]] && grep -q -- '--checksum --dry-run' "$FAKE_DIR/rsync.log" &&
-    [ "$(grep -c 'delete pod' "$FAKE_DIR/deleted")" -ge 2 ] || fail "an equal files load exited $status with '$output' after flux $flux_calls"
+cell_unreadable_repository_is_refused_before_the_suspension() {
+  cell=unreadable-repository-is-refused-before-the-suspension
+  FAKE_CLAIM=audiofiles FAKE_SOURCE_UNREADABLE=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] && grep -q db-load-source "$FAKE_DIR/deleted" ||
+    fail "a repository that cannot be read exited $status with '$output' after flux $flux_calls"
 }
 
-cell_files_load_that_differs_stays_suspended_naming_the_rerun() {
-  cell=files-load-that-differs-stays-suspended-naming-the-rerun
-  make_tree $cell
-  FAKE_CLAIM=audiofiles FAKE_RSYNC_DIFFERS=1 run_loader --files "$tree" x "$dump"
+# The node's free bytes against the load's need and kubelet's margin, which the cluster cannot arrange.
+cell_node_without_room_for_the_load_is_refused_before_the_suspension() {
+  cell=node-without-room-for-the-load-is-refused-before-the-suspension
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_FREE_BYTES=1000 run_loader x "$dump"
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"bytes free"* ]] && [[ $output == *"nothing changed"* ]] &&
+    [ ! -e "$FAKE_DIR/restored" ] || fail "a node without room exited $status with '$output' after flux $flux_calls"
+}
+
+cell_eviction_margin_that_cannot_be_read_is_refused_before_the_suspension() {
+  cell=eviction-margin-that-cannot-be-read-is-refused-before-the-suspension
+  local configz
+  FAKE_CLAIM=audiofiles FAKE_CONFIGZ_FAILS=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] ||
+    fail "a kubelet configuration that cannot be read exited $status with '$output' after flux $flux_calls"
+  for configz in '{"kubeletconfig":{"evictionHard":{"nodefs.available":"10%"}}}' \
+    '{"kubeletconfig":{"evictionHard":{"nodefs.available":"ten","imagefs.available":"15%"}}}'; do
+    FAKE_CLAIM=audiofiles FAKE_CONFIGZ="$configz" run_loader x "$dump"
+    [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] ||
+      fail "an eviction margin of '$configz' exited $status with '$output' after flux $flux_calls"
+  done
+}
+
+cell_non_empty_bucket_without_the_flag_is_refused_and_flux_resumes() {
+  cell=non-empty-bucket-without-the-flag-is-refused-and-flux-resumes
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_BUCKET_OBJECTS=3 run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls == "suspend resume " ]] && [[ $output == *"holds 3 objects"* ]] &&
+    [[ $output == *"nothing loaded"* ]] && [ ! -e "$FAKE_DIR/restored" ] && ! grep -qE '^(empty|copy|restore-claim)$' "$FAKE_DIR/steps" ||
+    fail "a non-empty bucket without the flag exited $status with '$output' after flux $flux_calls"
+}
+
+cell_non_empty_bucket_on_an_earlier_suspension_is_refused_naming_the_flag_and_stays_suspended() {
+  cell=non-empty-bucket-on-an-earlier-suspension-is-refused-naming-the-flag-and-stays-suspended
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_BUCKET_OBJECTS=3 FAKE_SUSPENDED=true run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"was suspended before this run"* ]] &&
+    [[ $output == *"with --empty-bucket"* ]] && [ ! -e "$FAKE_DIR/restored" ] && grep -q db-load-snapshot "$FAKE_DIR/deleted" ||
+    fail "a non-empty bucket on an earlier suspension exited $status with '$output' after flux $flux_calls"
+}
+
+# The loader's steps in the order the plan owes: the bucket is restored and counted before the database, the claim after.
+cell_bucket_load_runs_its_steps_in_order_deletes_the_loader_and_names_the_backup() {
+  cell=bucket-load-runs-its-steps-in-order-deletes-the-loader-and-names-the-backup
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_BUCKET_OBJECTS=3 run_loader --empty-bucket x "$dump"
+  [ "$status" = 0 ] && [[ $flux_calls == "suspend resume " ]] && [ -e "$FAKE_DIR/restored" ] &&
+    [ "$(tr '\n' ' ' <"$FAKE_DIR/steps")" = "source restore-bucket count restore-claim empty copy check " ] &&
+    [[ $output == *"0 differing"* ]] && [[ $output == *"mise run backup:now x"* ]] &&
+    [ "$(grep -c 'delete pod' "$FAKE_DIR/deleted")" -ge 3 ] || fail "a bucket load with the flag exited $status with '$output' after flux $flux_calls"
+}
+
+cell_load_into_an_empty_bucket_needs_no_flag_and_never_empties() {
+  cell=load-into-an-empty-bucket-needs-no-flag-and-never-empties
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 run_loader x "$dump"
+  [ "$status" = 0 ] && [ "$(tr '\n' ' ' <"$FAKE_DIR/steps")" = "source restore-bucket count restore-claim copy check " ] ||
+    fail "a load into an empty bucket exited $status with '$output'"
+}
+
+cell_claim_only_layer_restores_its_claim_and_touches_no_bucket() {
+  cell=claim-only-layer-restores-its-claim-and-touches-no-bucket
+  FAKE_CLAIM=audiofiles run_loader x "$dump"
+  [ "$status" = 0 ] && [ "$(tr '\n' ' ' <"$FAKE_DIR/steps")" = "source restore-claim " ] && [[ $output != *backup:now* ]] ||
+    fail "a claim layer without a bucket exited $status with '$output'"
+}
+
+cell_restored_bucket_that_differs_refuses_with_nothing_loaded() {
+  cell=restored-bucket-that-differs-refuses-with-nothing-loaded
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_DIFFERS=restore-bucket run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls == "suspend resume " ]] && [[ $output == *"nothing loaded"* ]] && [ ! -e "$FAKE_DIR/restored" ] ||
+    fail "a restored bucket copy that differs exited $status with '$output' after flux $flux_calls"
+}
+
+cell_restored_claim_that_differs_stays_suspended_naming_the_rerun() {
+  cell=restored-claim-that-differs-stays-suspended-naming-the-rerun
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_DIFFERS=restore-claim run_loader x "$dump"
   [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"same command again"* ]] &&
-    [[ $output != *a-file* ]] || fail "a differing files load exited $status with '$output' after flux $flux_calls"
+    [[ $output != *"with --empty-bucket"* ]] && ! grep -qE '^(empty|copy)$' "$FAKE_DIR/steps" && grep -q db-load-snapshot "$FAKE_DIR/deleted" ||
+    fail "a restored claim that differs exited $status with '$output' after flux $flux_calls"
 }
 
-cell_failed_restore_of_files_load_stays_suspended_naming_the_rerun() {
-  cell=failed-restore-of-files-load-stays-suspended-naming-the-rerun
-  make_tree $cell
-  FAKE_CLAIM=audiofiles FAKE_RESTORE_FAILS=1 run_loader --files "$tree" x "$dump"
-  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"same command again"* ]] &&
-    [ ! -e "$FAKE_DIR/rsync.log" ] || fail "a files load whose restore failed exited $status with '$output' after flux $flux_calls"
+cell_failed_copy_stays_suspended_naming_the_flag() {
+  cell=failed-copy-stays-suspended-naming-the-flag
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_STEP_FAILS=copy run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"same command again with --empty-bucket"* ]] &&
+    grep -q db-load-snapshot "$FAKE_DIR/deleted" || fail "a failed copy exited $status with '$output' after flux $flux_calls"
+}
+
+cell_loader_cut_by_its_backstop_says_so_and_stays_suspended() {
+  cell=loader-cut-by-its-backstop-says-so-and-stays-suspended
+  FAKE_CLAIM=audiofiles FAKE_STEP_FAILS=restore-claim FAKE_POD_REASON=DeadlineExceeded run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"backstop during restore-claim"* ]] &&
+    [[ $output == *"same command again"* ]] || fail "a loader cut by its backstop exited $status with '$output' after flux $flux_calls"
+}
+
+cell_failed_loader_delete_keeps_flux_suspended_and_says_so() {
+  cell=failed-loader-delete-keeps-flux-suspended-and-says-so
+  FAKE_CLAIM=audiofiles FAKE_DELETE_FAILS=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $flux_calls == "suspend " ]] && [[ $output == *"could not be deleted"* ]] &&
+    [[ $output == *"stays suspended"* ]] || fail "a loader that could not be deleted exited $status with '$output' after flux $flux_calls"
 }
 
 cell_rerun_on_a_suspended_kustomization_runs_through() {
   cell=rerun-on-a-suspended-kustomization-runs-through
-  make_tree $cell
-  FAKE_CLAIM=audiofiles FAKE_SUSPENDED=true run_loader --files "$tree" x "$dump"
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_SUSPENDED=true run_loader x "$dump"
   [ "$status" = 0 ] && [[ $flux_calls == *resume* ]] || fail "a re-run on a suspended Kustomization exited $status with '$output'"
 }
 
-cell_failing_rerun_on_a_suspended_kustomization_leaves_it_suspended() {
-  cell=failing-rerun-on-a-suspended-kustomization-leaves-it-suspended
-  make_tree $cell
-  FAKE_CLAIM=audiofiles FAKE_SUSPENDED=true FAKE_FREE_KB=0 run_loader --files "$tree" x "$dump"
-  [ "$status" != 0 ] && [[ $flux_calls != *resume* ]] && [[ $output == *"same command again"* ]] ||
-    fail "a failing re-run on a suspended Kustomization exited $status with '$output' after flux $flux_calls"
+# The key that may write reaches the loader's rclone container alone, and the Pod that finds the snapshot holds no Secret.
+cell_only_the_rclone_container_mounts_the_app_s_key_and_the_source_pod_no_secret() {
+  cell=only-the-rclone-container-mounts-the-app-s-key-and-the-source-pod-no-secret
+  FAKE_CLAIM=audiofiles FAKE_BUCKET=1 run_loader x "$dump"
+  local holders
+  holders="$(jq --raw-output '[.spec.volumes[] | select(.secret) | .name] as $secrets |
+    [.spec.containers[] | select(any(.volumeMounts[]?; .name | IN($secrets[]))) | .name] | join(" ")' \
+    "$FAKE_DIR/pod-db-load-snapshot.json")"
+  [ "$holders" = rclone ] || fail "the containers '$holders' of the loader mount a Secret, not rclone alone"
+  [ "$(jq '[.spec.volumes[] | select(.secret)] | length' "$FAKE_DIR/pod-db-load-source.json")" = 0 ] ||
+    fail "the Pod that finds the snapshot mounts a Secret"
 }
 
 cell_other_session_that_stays_ends_the_wait_after_the_seconds_set() {
@@ -615,17 +692,25 @@ cells=(
   failed-pod-with-a-running-container-is-waited-for
   term-during-recovery-is-unknown-and-stays-suspended
   interrupt-after-commit-reports-unknown-to-the-operator-not-the-log
-  claim-layer-without-files-is-refused-and-flux-untouched
-  files-on-layer-without-claim-is-refused-and-flux-untouched
+  claim-layer-refuses-a-resume-naming-the-rerun
   unreadable-claim-declaration-is-refused-and-flux-untouched
-  resume-of-claim-layer-is-refused-naming-the-rerun
-  unfit-source-is-refused-before-any-change
-  source-larger-than-free-space-is-refused-and-flux-resumes
-  equal-files-load-resumes-flux-and-deletes-the-loader
-  files-load-that-differs-stays-suspended-naming-the-rerun
-  failed-restore-of-files-load-stays-suspended-naming-the-rerun
+  empty-bucket-on-a-layer-without-a-bucket-is-refused-before-any-change
+  dump-of-no-staging-snapshot-is-refused-before-the-suspension
+  unreadable-repository-is-refused-before-the-suspension
+  node-without-room-for-the-load-is-refused-before-the-suspension
+  eviction-margin-that-cannot-be-read-is-refused-before-the-suspension
+  non-empty-bucket-without-the-flag-is-refused-and-flux-resumes
+  non-empty-bucket-on-an-earlier-suspension-is-refused-naming-the-flag-and-stays-suspended
+  bucket-load-runs-its-steps-in-order-deletes-the-loader-and-names-the-backup
+  load-into-an-empty-bucket-needs-no-flag-and-never-empties
+  claim-only-layer-restores-its-claim-and-touches-no-bucket
+  restored-bucket-that-differs-refuses-with-nothing-loaded
+  restored-claim-that-differs-stays-suspended-naming-the-rerun
+  failed-copy-stays-suspended-naming-the-flag
+  loader-cut-by-its-backstop-says-so-and-stays-suspended
+  failed-loader-delete-keeps-flux-suspended-and-says-so
   rerun-on-a-suspended-kustomization-runs-through
-  failing-rerun-on-a-suspended-kustomization-leaves-it-suspended
+  only-the-rclone-container-mounts-the-app-s-key-and-the-source-pod-no-secret
 )
 failed=()
 for name in "${cells[@]}"; do

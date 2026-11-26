@@ -10,7 +10,9 @@
 # /scratch/ready marks the finished tree, and the pod is Ready only on it. A failed step leaves no MANIFEST and no ready.
 # Nothing here prints a file name, a row or a credential: rsync's, rclone's and find's messages name files, so they are
 # dropped and a failed step names itself and its exit status.
-# Usage: sh stage_files.sh stager|copy|bucket|dump, run by busybox sh in each container's image.
+# `listing <tree>...` prints the file lines of the trees under the current directory, which db:load-dump's loader compares
+# with the lines MANIFEST holds for a restored tree.
+# Usage: sh stage_files.sh stager|copy|bucket|dump|listing <tree>..., run by busybox sh in each container's image.
 set -u
 scratch=/scratch
 staging=/staging
@@ -114,6 +116,17 @@ dump() {
     mv "$staging/postgres.dump.tmp" "$staging/postgres.dump"
 }
 
+# file_lines <tree>...: one MANIFEST line for each file under the trees, in the order find gives, from the current directory.
+file_lines() {
+  find "$@" -type f -exec stat -c "file$tab%s$tab%Y$tab%n" {} + 2>/dev/null
+}
+
+# listing <tree>...: the trees' file lines in MANIFEST's form, sorted, which a restore compares with MANIFEST's own.
+listing() {
+  files="$(file_lines "$@")" || exit 1
+  [ -z "$files" ] || printf '%s\n' "$files" | LC_ALL=C sort
+}
+
 # manifest: writes MANIFEST.tmp from the finished tree; refuses a name with a newline, which would split its line.
 manifest() {
   cd "$staging" || exit 1
@@ -128,7 +141,7 @@ manifest() {
   done
   dump_sha256="$(sha256sum postgres.dump)" || exit 1
   dump_size="$(stat -c %s postgres.dump)" || exit 1
-  files="$(find "$@" -type f -exec stat -c "file$tab%s$tab%Y$tab%n" {} + 2>/dev/null)" || exit 1
+  files="$(file_lines "$@")" || exit 1
   {
     printf 'dump\t%s\t%s\n' "${dump_sha256%% *}" "$dump_size"
     [ -z "$files" ] || printf '%s\n' "$files" | LC_ALL=C sort
@@ -258,8 +271,12 @@ case "${1:-}" in
     trap - TERM
     manifest
     ;;
+  listing)
+    shift
+    listing "$@"
+    ;;
   *)
-    echo "usage: sh stage_files.sh stager|copy|bucket|dump" >&2
+    echo "usage: sh stage_files.sh stager|copy|bucket|dump|manifest|listing <tree>..." >&2
     exit 2
     ;;
 esac

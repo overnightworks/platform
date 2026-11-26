@@ -1,0 +1,62 @@
+# The fixed shape of the Pod `db-load-snapshot`, which scripts/load_snapshot.sh merges into the Pod that
+# scripts/restic_dump_pod.sh prints: restic's image, environment and repository credentials stay that owner's. The
+# loader restores a staging snapshot's claim and bucket inside the namespace; the PreBackupPod's rclone container and
+# the claim's name and user are read live and set by the script, and the Garage grant in
+# infrastructure/objectstore/garage.yaml admits the label below.
+# The main process of each container only holds the Pod; every step is one process that kubectl exec starts.
+hold: trap 'exit 0' TERM; while :; do sleep 1; done
+pod:
+  metadata:
+    labels:
+      app.kubernetes.io/name: db-load-snapshot
+  spec:
+    # One fixed backstop: it only ends a loader that a SIGKILL of the load left behind, since every exit path of the
+    # load deletes the loader and the next load deletes an earlier one. The largest load expected holds about 50 GB;
+    # counted as if all of it lay in the bucket, four passes of 50 GB at a pessimistic 25 MB/s take 8000 seconds, and
+    # the database load and its compare add up to an hour, so 6 hours leave 2.4 times that.
+    activeDeadlineSeconds: 21600
+    automountServiceAccountToken: false
+    enableServiceLinks: false
+    shareProcessNamespace: false
+    terminationGracePeriodSeconds: 1
+restic:
+  container:
+    volumeMounts:
+      - name: claim
+        mountPath: /load/files
+      - name: stage
+        mountPath: /etc/stage
+        readOnly: true
+  volumes:
+    - name: claim
+      persistentVolumeClaim:
+        claimName: set-by-the-script
+    - name: stage
+      configMap:
+        name: backup-stage
+# Present only where the layer's PreBackupPod has a container `bucket`, whose image, security and environment this one
+# takes, with the app's own key in place of the backup's: the one place a platform pod holds a key that may write.
+rclone:
+  container:
+    name: rclone
+    volumeMounts:
+      - name: restore
+        mountPath: /restore
+        readOnly: true
+      - name: object-store
+        mountPath: /run/secrets/object-store
+        readOnly: true
+      - name: tmp
+        mountPath: /tmp
+  env:
+    - name: AWS_SHARED_CREDENTIALS_FILE
+      value: /run/secrets/object-store/credentials
+  volumes:
+    - name: object-store
+      secret:
+        secretName: object-store
+        items:
+          - key: credentials
+            path: credentials
+    - name: tmp
+      emptyDir: {}
