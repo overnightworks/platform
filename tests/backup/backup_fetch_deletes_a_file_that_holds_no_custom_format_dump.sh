@@ -13,7 +13,7 @@ trap 'rm -rf "$work_directory"' EXIT
 fake_bin="$work_directory/bin"
 mkdir "$fake_bin"
 
-# The fake answers what the task reads; FAKE_DUMP is what the holder container prints for the file the snapshot holds.
+# The fake answers what the task reads; FAKE_DUMP is what the restic container prints for the file the snapshot holds.
 cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail

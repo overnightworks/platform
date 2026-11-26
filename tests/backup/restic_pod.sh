@@ -15,7 +15,7 @@ delete_restic_objects() {
   done
 }
 
-# run_restic <namespace> <name> <shell script> [<directory>]: a Pod built from the restore test's own init container, so
+# run_restic <namespace> <name> <shell script> [<directory>]: a Pod built by scripts/restic_dump_pod.sh from the restore test's own init container, so
 # it holds the namespace's repository credentials as the test does and nothing more, and an emptyDir at the directory
 # when one is named (a path the script backs up, which restic records in its snapshot); runs the script, sets its output
 # (what it writes to stdout) and exit code. Its stderr goes to the container's termination message, since `kubectl logs` merges the two
@@ -24,13 +24,11 @@ delete_restic_objects() {
 # shellcheck disable=SC2034 # restic_output and restic_exit are this function's results for the cells below.
 run_restic() {
   local namespace="$1" name="$2" script="$3" directory="${4:-}" manifest
-  manifest="$(kubectl --namespace "$namespace" get cronjob restore-test --output json |
-    NAME="$name" SCRIPT="$script" DIRECTORY="$directory" yq --output-format json \
-      '.spec.jobTemplate.spec.template.spec as $spec | $spec.initContainers[0] as $dump |
-       { "apiVersion": "v1", "kind": "Pod", "metadata": { "name": strenv(NAME) }, "spec": ($spec | del(.initContainers) |
-           .volumes |= map(select(.name == "restore")) |
-           .containers = [$dump | .name = "restic" | .command = ["sh", "-c", "exec 2>/dev/termination-log\n" + strenv(SCRIPT)]]) } |
-       if strenv(DIRECTORY) == "" then . else
+  manifest="$("$(dirname "${BASH_SOURCE[0]}")/../../scripts/restic_dump_pod.sh" "$namespace" "$name" \
+    "exec 2>/dev/termination-log
+$script" |
+    DIRECTORY="$directory" yq --output-format json \
+      'if strenv(DIRECTORY) == "" then . else
          .spec.volumes += [{"name": "directory", "emptyDir": {}}] |
          .spec.containers[0].volumeMounts += [{"name": "directory", "mountPath": strenv(DIRECTORY)}] end')"
   restic_objects+=("$namespace pod $name")
