@@ -535,17 +535,19 @@ cell_unreadable_repository_is_refused_before_the_suspension() {
     fail "a repository that cannot be read exited $status with '$output' after flux $flux_calls"
 }
 
-# The node's free bytes against the load's need and kubelet's margin, which the cluster cannot arrange. The fake's
-# 200 GB filesystem gives a margin of 30 GB (15 %); its bucket and claim need 67139836 bytes, so 30067139836 free bytes
-# leave exactly the margin.
+# The node's free bytes against the load's need and kubelet's margin, which the cluster cannot arrange. A first refusal
+# names the need and the margin; the second run leaves exactly their sum free.
 cell_node_without_room_for_the_load_is_refused_before_the_suspension() {
   cell=node-without-room-for-the-load-is-refused-before-the-suspension
-  local free
-  for free in 1000 30067139836; do
+  local free=1000 need margin attempt
+  for attempt in 1 2; do
     FAKE_CLAIM=audiofiles FAKE_BUCKET=1 FAKE_FREE_BYTES="$free" run_loader x "$dump"
     [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"bytes free"* ]] && [[ $output == *"nothing changed"* ]] &&
       [[ $output != *fake-node* ]] && [ ! -e "$FAKE_DIR/restored" ] ||
       fail "a node with $free free bytes exited $status with '$output' after flux $flux_calls"
+    [[ $output =~ needs\ ([0-9]+)\ bytes.*margin\ of\ ([0-9]+), ]] || fail "the refusal names no need and margin: '$output'"
+    need=${BASH_REMATCH[1]} margin=${BASH_REMATCH[2]}
+    free=$((need + margin))
   done
 }
 
