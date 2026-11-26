@@ -103,6 +103,7 @@ expect_summary speech-runtime bump
 echo "a failure of one app leaves the others reporting, keeps their bumps and makes the run red"
 
 # The protective limits.
+[ "$(yq '.permissions | tag' "${workflow}")" = '!!map' ] || fail "the workflow's permissions are no map"
 [ "$(yq '.permissions | length' "${workflow}")" -eq 0 ] || fail "the workflow grants permissions to every job"
 [ "$(yq '.jobs | keys | length' "${workflow}")" -eq 1 ] || fail "the workflow holds more than the one job"
 [ "$(yq '.jobs.compute.permissions | tag' "${workflow}")" = '!!map' ] || fail "the job's permissions are no map of scopes"
