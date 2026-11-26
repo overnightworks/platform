@@ -1,8 +1,0 @@
-claim_id = "bd9a8cd1d4444cb98f97ab18187d6d7e"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "9161d8104c9f150d6807030d0b5ccb905574d2be"
-branch = "claude/issue-922-s3c-one-nightly-user-timer-runs-live-rep"
-scope = [".github/workflows/ci.yml", "docs/operations.md", "docs/runbooks/install-the-pc.md", "docs/runbooks/take-the-platform-offline.md", "infrastructure/prometheus/rules.yaml", "mise.toml", "scripts/live_check_report.sh", "scripts/loopback_forward.sh", "tests/failure.sh", "tests/journald/retention_drop_in_keeps_every_entry_under_30_days.sh", "tests/keycloak/live_report_pushes_each_result_and_opens_one_item_per_red.sh", "tests/live-check/nightly_timer_parses_in_utc_and_its_start_limit_stays_below_its_period.sh", "tests/prometheus/live_check_missed_test.yml", "tests/prometheus/rules_pass_promtool_and_their_tests.sh", "tests/prometheus/rules_test.yml"]
-opened_commit = "55640378d59b51d455aa3a4d85ca60f4269df354"
-whole_reason = "The timer without the rule that mails its missed night proves nothing, and the rule without the timer has nothing to watch; the unit, the nightly subcommand, the rule and their cells prove one sentence together."
