@@ -1,10 +1,19 @@
 # shellcheck shell=bash
-# Sourced by the scripts that prove the loader on the proof layer; defines functions only. prepare_loader_proof reads
-# $layer (the proof layer), $PROBE_IMAGE, $RUNNER_TEMP and tests/postgres/writers from the working directory, and sets
-# for its caller: layer_path, key_tables, key_table, dump, toc_dump, marker and output (and dump_dir, job_uid,
-# git_replicas, app_pods, which writers_ran and loaded use). Needs failure.sh sourced.
+# Sourced by the scripts that prove the loader on the proof layer and by the reader cells, which take its sql from it;
+# defines functions only.
+# prepare_loader_proof reads $layer (the proof layer), $PROBE_IMAGE, $RUNNER_TEMP and tests/postgres/writers from the
+# working directory, and sets for its caller: layer_path, key_tables, key_table, dump, toc_dump, marker and output
+# (and dump_dir, job_uid, git_replicas, app_pods, which writers_ran and loaded use). Needs failure.sh sourced.
 sql() { kubectl --namespace "$1" exec postgres-0 --container postgres -- psql --no-psqlrc --tuples-only \
   --no-align --set=ON_ERROR_STOP=1 --command="$2"; }
+# declared_reader_connections <namespace>: the connection limit the base declares for the role reader, read from the
+# ConfigMap its Pod mounts as the volume reader.
+declared_reader_connections() {
+  local reader_configmap
+  reader_configmap="$(kubectl --namespace "$1" get pod postgres-0 \
+    -o jsonpath='{.spec.volumes[?(@.name=="reader")].configMap.name}')"
+  kubectl --namespace "$1" get configmap "$reader_configmap" -o jsonpath='{.data.connections}'
+}
 
 # empty_database: the database as a fresh claim holds it, its public schema dropped with every table and view in it
 # and re-created as PostgreSQL creates it; fails when a relation outside the system schemas remains.

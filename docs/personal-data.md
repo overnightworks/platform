@@ -90,3 +90,14 @@ whose message holds the method, the path without the query and the status (`%m %
 request carries the caller's trace id at `mdc.traceId`, adopted from its `traceparent` header or made by Keycloak. The
 access line holds no query string, since `%R` omits it, and no duration. (PD-10)
 The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung).
+
+## The read-only role (`infrastructure/postgres/scripts/reader_role.sh`)
+
+A delegated agent reads an app's Postgres only through `mise run db:read <namespace>`, which runs the SQL on its stdin
+as the role `reader`, declared at every start of the Postgres container with no password and no right but
+`pg_read_all_data`'s, so only `kubectl exec` reaches it. The role reads every table of the database, Keycloak's signing
+keys and LiteLLM's hashed keys included, and is refused the writes, objects, switches to read-write, sequence steps,
+programs and shell escapes that `tests/postgres/reader_refuses_the_listed_writes_and_returns_at_start.sh` lists. What it
+reads and passes on is the operator's rule, which the role does not enforce: only the rows and columns needed, never
+secrets, credentials, session data or user content, and counts and identifiers as evidence. (PD-11)
+The promise: none.
