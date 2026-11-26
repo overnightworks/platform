@@ -80,7 +80,11 @@ echo "a schema and table made after the start are readable"
 # A drift makes the next read refuse before its SQL, naming the condition; keep, run as at a start, restores the role.
 keep() { in_postgres "${hook[@]}"; }
 # logged_lines <text>: how many lines of the container's log hold the text.
-logged_lines() { kubectl --namespace "$layer" logs postgres-0 --container postgres | grep -cF "$1" || true; }
+logged_lines() {
+  local log
+  log="$(kubectl --namespace "$layer" logs postgres-0 --container postgres)"
+  grep -cF "$1" <<<"$log" || true
+}
 refuses_naming() {
   local output
   if output="$(read_sql 'SELECT 1')"; then fail "db:read read as a drifted role: $1"; fi
@@ -94,8 +98,8 @@ sql "$layer" 'GRANT CREATE ON SCHEMA public TO reader'
 refuses_naming 'the role can create in a schema'
 sql "$layer" 'REVOKE CREATE ON SCHEMA public FROM reader'
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after the superuser reverted the grant"
-# With pg_read_all_data revoked the role reads no catalog and the check fails on its first query, so the role keeps a
-# right on pg_authid to reach the membership condition, which holds no row to compare.
+# With pg_read_all_data revoked the role cannot read pg_authid, so the check fails on its first query; the role keeps
+# SELECT on pg_authid to reach the membership condition, which then finds no membership.
 sql "$layer" 'GRANT SELECT ON pg_authid TO reader; REVOKE pg_read_all_data FROM reader'
 refuses_naming 'the role is not a member of pg_read_all_data alone'
 sql "$layer" 'REVOKE SELECT ON pg_authid FROM reader'
@@ -121,9 +125,7 @@ echo "keep ended 0 beside a lock on the role, wrote its line to the log of postg
 
 # A role reader that keep did not declare is left as it is, and db:read refuses it.
 sql "$layer" 'DROP ROLE reader'
-reader_configmap="$(kubectl --namespace "$layer" get pod postgres-0 \
-  -o jsonpath='{.spec.volumes[?(@.name=="reader")].configMap.name}')"
-declared_connections="$(kubectl --namespace "$layer" get configmap "$reader_configmap" -o jsonpath='{.data.connections}')"
+declared_connections="$(declared_reader_connections "$layer")"
 sql "$layer" "CREATE ROLE reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT
   CONNECTION LIMIT $declared_connections; GRANT pg_read_all_data TO reader"
 keep

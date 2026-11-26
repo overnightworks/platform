@@ -23,11 +23,9 @@ for namespace in $POSTGRES_NAMESPACES; do
   superuser_count="$(sql "$namespace" "$count_query")"
   [ -n "$read_count" ] && [ "$read_count" = "$superuser_count" ] ||
     fail "db:read counts '$read_count' rows of $first_table in $namespace, the superuser '$superuser_count'"
-  reader_configmap="$(kubectl --namespace "$namespace" get pod postgres-0 \
-    -o jsonpath='{.spec.volumes[?(@.name=="reader")].configMap.name}')"
-  declared_connections="$(kubectl --namespace "$namespace" get configmap "$reader_configmap" -o jsonpath='{.data.connections}')"
+  declared_connections="$(declared_reader_connections "$namespace")"
   connection_limit="$(sql "$namespace" "SELECT rolconnlimit FROM pg_roles WHERE rolname = 'reader'")"
   [ "$connection_limit" = "$declared_connections" ] ||
-    fail "the role reader in $namespace holds the connection limit $connection_limit, not $declared_connections of $reader_configmap"
+    fail "the role reader in $namespace holds the connection limit $connection_limit, not the declared $declared_connections"
   echo "db:read passed the check in $namespace as the role reader with $connection_limit connections and counted $read_count rows of $first_table, as the superuser does"
 done
