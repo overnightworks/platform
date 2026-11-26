@@ -209,7 +209,7 @@ jobs:
       - name: Check that the Deployments of the namespaces of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM, a rollout's surge included, plus the backup and the role reader stay within their Postgres' max_connections, and that a raised replica, surge or pool, a missing declaration and a lowered limit are each red
         run: mise exec -- tests/postgres/connections_stay_within_max_connections.sh apps/hopin apps/songmaker apps/personas apps/skat apps/presentator infrastructure/keycloak infrastructure/litellm
 
-      - name: Check that reader.sh keep ends 0 with one line naming its bound when no server answers, and never reaches psql
+      - name: Check that reader_role.sh keep ends 0 with one line naming its bound when no server answers, and never reaches psql
         run: mise exec -- tests/postgres/reader_keep_gives_up_past_its_bound.sh
 
   # The legs of cluster: core and the parts the run's changed paths select, which tests/flux/parts.yaml owns. cluster is

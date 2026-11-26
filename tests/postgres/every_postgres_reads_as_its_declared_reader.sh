@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Proves docs/personal-data.md PD-11: that in each namespace of POSTGRES_NAMESPACES mise run db:read passes reader.sh's
+# Proves docs/personal-data.md PD-11: that in each namespace of POSTGRES_NAMESPACES mise run db:read passes reader_role.sh's
 # check of the declared role, that the role holds the connection limit the ConfigMap postgres-reader declares, and that
 # it counts the first key table as the namespace's superuser does. Needs POSTGRES_NAMESPACES, which the cluster job
 # sets, and each Postgres Ready with its app's migration run.

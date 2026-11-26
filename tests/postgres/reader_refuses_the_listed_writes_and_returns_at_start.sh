@@ -108,7 +108,7 @@ in_postgres env PGAPPNAME="$lock_application" psql --no-psqlrc --command='BEGIN;
 holder=$!
 holding() { [ "$(sql "$layer" "SELECT count(*) FROM pg_stat_activity WHERE application_name = '$lock_application' AND wait_event = 'PgSleep'")" = 1 ]; }
 until_true 60 "a session holds an uncommitted ALTER ROLE reader" holding
-failed_keep_line='reader.sh keep: declaring the role reader failed'
+failed_keep_line='reader_role.sh keep: declaring the role reader failed'
 failed_keeps_before="$(logged_lines "$failed_keep_line")"
 keep || fail "keep ended non-zero while a session held a lock on the role"
 [ "$(logged_lines "$failed_keep_line")" -gt "$failed_keeps_before" ] ||

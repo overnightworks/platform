@@ -882,7 +882,7 @@ applied_revision="$(read_object Kustomization "$source_name" '{.status.lastAppli
 echo "bootstrap:secrets: Kustomization $source_name Ready at $applied_revision"
 '''
 
-# The one way an agent reads a live Postgres: as the role reader, which infrastructure/postgres/scripts/reader.sh
+# The one way an agent reads a live Postgres: as the role reader, which infrastructure/postgres/scripts/reader_role.sh
 # declares, through the container's local trust, so no credential exists.
 [tasks."db:read"]
 description = "Read a namespace's Postgres as the role reader, which can only read: SQL on stdin"
@@ -895,7 +895,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-exec kubectl --namespace "${usage_namespace?}" exec --stdin postgres-0 --container postgres -- sh /etc/postgres-reader/reader.sh read
+exec kubectl --namespace "${usage_namespace?}" exec --stdin postgres-0 --container postgres -- sh /etc/postgres-reader/reader_role.sh read
 '''
 
 # The platform's restore command. A dump holds keys and hashes, so every line it prints is a name, a count or an

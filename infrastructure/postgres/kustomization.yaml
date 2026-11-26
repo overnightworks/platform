@@ -9,6 +9,6 @@ configMapGenerator:
   # counts against max_connections.
   - name: postgres-reader
     files:
-      - scripts/reader.sh
+      - scripts/reader_role.sh
     literals:
       - connections=2

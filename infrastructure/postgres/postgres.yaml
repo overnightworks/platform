@@ -68,12 +68,12 @@ spec:
           ports:
             - name: postgres
               containerPort: 5432
-          # The role reader, which scripts/reader.sh declares at every start; the hook never fails, so Postgres starts
+          # The role reader, which scripts/reader_role.sh declares at every start; the hook never fails, so Postgres starts
           # whatever the step finds.
           lifecycle:
             postStart:
               exec:
-                command: [sh, -c, sh /etc/postgres-reader/reader.sh keep || true]
+                command: [sh, -c, sh /etc/postgres-reader/reader_role.sh keep || true]
           readinessProbe:
             exec:
               command: [pg_isready]
