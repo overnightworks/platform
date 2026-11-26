@@ -4,7 +4,7 @@
 # unfinished release waits; a refusal is a warning with the run green and the other apps still report; a failure of one
 # app leaves the others reporting and their bumps kept, and then makes the run red, its summary row holding the failure
 # line's pipes escaped. The cell also holds the protective limits: the permissions are no more than contents and
-# packages read, no environment and no secret, only the schedule (every 5 minutes) and the dispatch start it, the
+# packages read, no environment and no secret, only the schedule (at least every 5 minutes) and the dispatch start it, the
 # artifact is named release-bump, its concurrency never cancels and the registry token reaches docker only through
 # stdin. The cell runs only the checkout action and the artifact upload, the latter as a copy of its path, and takes
 # over the tool installer, since the world holds the tools.
