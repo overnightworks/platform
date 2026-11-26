@@ -56,7 +56,11 @@ read_as_role() {
   export PGOPTIONS
   key="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
   {
+    # Without pg_read_all_data the role cannot read pg_authid, so that case is named before the query that needs it.
     cat <<'SQL'
+\set membership_failed 'the role is not a member of pg_read_all_data alone'
+SELECT pg_has_role(current_user, 'pg_read_all_data', 'MEMBER') AS member \gset
+\if :member
 WITH declared AS (SELECT * FROM pg_authid WHERE rolname = current_user)
 SELECT coalesce(string_agg(name, ', ') FILTER (WHERE ok IS NOT TRUE), '') AS failed
 FROM declared, LATERAL (VALUES
@@ -67,12 +71,15 @@ FROM declared, LATERAL (VALUES
   (rolpassword IS NULL, 'the role has a password'),
   (rolconnlimit = :connections, 'the role has another connection limit'),
   ((SELECT array_agg(DISTINCT roleid::regrole::text) FROM pg_auth_members WHERE member = declared.oid)
-    = ARRAY['pg_read_all_data'], 'the role is not a member of pg_read_all_data alone'),
+    = ARRAY['pg_read_all_data'], :'membership_failed'),
   (current_setting('transaction_read_only') = 'on', 'the transaction is not read-only'),
   (NOT EXISTS (SELECT FROM pg_namespace WHERE has_schema_privilege(oid, 'CREATE')), 'the role can create in a schema'),
   (NOT has_database_privilege(current_database(), 'CREATE') AND NOT has_database_privilege(current_database(), 'TEMPORARY'),
     'the role can create in the database or use temporary objects')
 ) AS condition (ok, name) \gset
+\else
+\set failed :membership_failed
+\endif
 SQL
     # From here the session runs no meta-command of the SQL until its key is given, which only this script knows: \!
     # and \copy would run a shell in this container, where local trust reaches the superuser.

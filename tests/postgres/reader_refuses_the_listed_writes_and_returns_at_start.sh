@@ -31,7 +31,6 @@ cleanup() {
   sql "$layer" 'DROP TABLE IF EXISTS reader_proof, created_by_reader; DROP SEQUENCE IF EXISTS reader_proof_sequence;
     DROP SCHEMA IF EXISTS reader_later CASCADE' >/dev/null || true
   sql "$layer" 'REVOKE CREATE ON SCHEMA public FROM reader' >/dev/null || true
-  sql "$layer" 'REVOKE SELECT ON pg_authid FROM reader' >/dev/null || true
   in_postgres rm -f "$escape_file" || true
 }
 trap cleanup EXIT
@@ -98,11 +97,8 @@ sql "$layer" 'GRANT CREATE ON SCHEMA public TO reader'
 refuses_naming 'the role can create in a schema'
 sql "$layer" 'REVOKE CREATE ON SCHEMA public FROM reader'
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after the superuser reverted the grant"
-# With pg_read_all_data revoked the role cannot read pg_authid, so the check fails on its first query; the role keeps
-# SELECT on pg_authid to reach the membership condition, which then finds no membership.
-sql "$layer" 'GRANT SELECT ON pg_authid TO reader; REVOKE pg_read_all_data FROM reader'
+sql "$layer" 'REVOKE pg_read_all_data FROM reader'
 refuses_naming 'the role is not a member of pg_read_all_data alone'
-sql "$layer" 'REVOKE SELECT ON pg_authid FROM reader'
 keep
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after keep restored the membership"
 echo "a password the role set, a CREATE the superuser granted and a membership the superuser revoked each made db:read refuse naming the condition, and each was undone"
@@ -115,7 +111,8 @@ until_true 60 "a session holds an uncommitted ALTER ROLE reader" holding
 failed_keep_line='reader_role.sh keep: declaring the role reader failed'
 failed_keeps_before="$(logged_lines "$failed_keep_line")"
 keep || fail "keep ended non-zero while a session held a lock on the role"
-[ "$(logged_lines "$failed_keep_line")" -gt "$failed_keeps_before" ] ||
+failed_keeps_after="$(logged_lines "$failed_keep_line")"
+[ "$failed_keeps_after" -gt "$failed_keeps_before" ] ||
   fail "the log of postgres-0 holds no new line of the failed keep"
 kubectl --namespace "$layer" wait pod/postgres-0 --for=condition=Ready --timeout=1m
 sql "$layer" "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = '$lock_application'" >/dev/null
