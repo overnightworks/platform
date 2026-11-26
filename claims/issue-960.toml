@@ -3,6 +3,6 @@ agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
 role = "builder"
 base = "88f6b4c14eec1688de3a72fb3baa92bf3481bfec"
 branch = "claude/issue-960-app-roles-own-their-database"
-scope = [".github/workflows/ci.yml", "docs/ARCHITECTURE.md", "docs/app.md", "docs/personal-data.md", "infrastructure/postgres/kustomization.yaml", "infrastructure/postgres/postgres.yaml", "infrastructure/postgres/scripts", "mise.toml", "tests/backup", "tests/postgres"]
+scope = [".github/workflows/ci.yml", "docs/ARCHITECTURE.md", "docs/app.md", "docs/personal-data.md", "infrastructure/postgres/kustomization.yaml", "infrastructure/postgres/postgres.yaml", "infrastructure/postgres/scripts", "mise.toml", "scripts/keycloak_hold.compose.yaml", "scripts/keycloak_hold.sh", "tests/backup", "tests/postgres"]
 opened_commit = "a399994997a0f317e05f0e71be9ad38765d7bc6b"
 whole_reason = "One base change: the role declaration, the superuser's call sites, the cells that prove the fresh and the live path and the docs move together, because the landing is the live switch of every server."
