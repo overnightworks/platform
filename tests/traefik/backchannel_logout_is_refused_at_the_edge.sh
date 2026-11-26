@@ -14,8 +14,8 @@ backchannel_path=/auth/backchannel-logout
 # entrypoint refuses because they carry an encoded slash or backslash. The groups print one line each.
 cleaned_paths=("$backchannel_path" "$backchannel_path/" "$backchannel_path?logout_token=x" "$backchannel_path/?logout_token=x"
   /AUTH/Backchannel-Logout "/$backchannel_path" /auth//backchannel-logout /x/../auth/backchannel-logout
-  /./auth/backchannel-logout /%61uth/backchannel-logout /x/..;y/auth/backchannel-logout /.;y/auth/backchannel-logout
-  /;y/auth/backchannel-logout)
+  /./auth/backchannel-logout /%61uth/backchannel-logout "/x/..;y$backchannel_path" "/.;y$backchannel_path"
+  "/;y$backchannel_path")
 ended_paths=("$backchannel_path%0A" "$backchannel_path%0D%0A" "$backchannel_path%0D" "$backchannel_path%20" "$backchannel_path%09"
   "$backchannel_path%0B" "$backchannel_path%0C" "$backchannel_path%0A/x" "${backchannel_path^^}%0A" "$backchannel_path/%0A")
 parameter_paths=("$backchannel_path;a=b" "$backchannel_path;" "$backchannel_path;a=b?x=1")
