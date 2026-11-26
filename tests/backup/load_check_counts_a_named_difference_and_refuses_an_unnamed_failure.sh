@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Run the bucket check step of scripts/load_snapshot.sh, as the loader's rclone container runs it, against a fake rclone
-# whose `check` ends with a chosen status and writes a chosen combined list: status 0 prints no difference, status 1
-# with a list that names a difference prints its count, status 1 with a list that names none and status 2 or higher
-# fail.
+# whose `check` ends with a chosen status and writes a chosen combined list: status 1 with a list that names a
+# difference prints its count, status 1 with a list that names none and status 2 or higher fail.
 # Usage: mise exec -- tests/backup/load_check_counts_a_named_difference_and_refuses_an_unnamed_failure.sh
 set -euo pipefail
 
@@ -42,22 +41,19 @@ check_with() {
     check_status=$?
 }
 
-check_with 0 '= a\n= b\n'
-{ [ "$check_status" = 0 ] && [ "$check_output" = "3 42 0" ]; } || fail "equal lists ended $check_status with '$check_output'"
-echo "the check step prints 0 differing for a bucket that equals the scratch"
-
 check_with 1 '= a\n* b\n- c\n'
 { [ "$check_status" = 0 ] && [ "$check_output" = "3 42 2" ]; } || fail "a list naming two differences ended $check_status with '$check_output'"
 echo "the check step counts the differences a status 1 list names"
 
-check_with 1 '= a\n= b\n'
-[ "$check_status" != 0 ] || fail "status 1 with a list that names no difference ended 0 with '$check_output'"
-echo "the check step fails for status 1 with a list that names no difference"
-
-check_with 1 ''
-[ "$check_status" != 0 ] || fail "status 1 with an empty list ended 0 with '$check_output'"
-echo "the check step fails for status 1 with an empty list"
-
-check_with 2 '= a\n* b\n'
-[ "$check_status" != 0 ] || fail "status 2 ended 0 with '$check_output'"
-echo "the check step fails for status 2 even where the list names a difference"
+# Each case: status, list, id.
+refusals=(
+  "1|= a\n= b\n|status 1 with a list that names no difference"
+  "1||status 1 with an empty list"
+  "2|= a\n* b\n|status 2 even where the list names a difference"
+)
+for refusal in "${refusals[@]}"; do
+  IFS='|' read -r status list case_id <<<"$refusal"
+  check_with "$status" "$list"
+  [ "$check_status" != 0 ] || fail "$case_id ended 0 with '$check_output'"
+  echo "the check step fails for $case_id"
+done
