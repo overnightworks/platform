@@ -1,0 +1,8 @@
+claim_id = "117bd00f227d404399ae42ba6973a47c"
+agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
+role = "builder"
+base = "65d0952bf0cab3b1a426d1d86374c30891e9ff14"
+branch = "release/hopin"
+scope = ["apps/hopin/release/kustomization.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/hopin", "infrastructure/legal/built"]
+opened_commit = "3b95d2e80353cca77e50b7e11c0ac315f265eace"
+whole_reason = "A release bump moves the ref and, if its legal pages changed, their copies, their entries and the built pages together, since the legal check compares them at the ref."
