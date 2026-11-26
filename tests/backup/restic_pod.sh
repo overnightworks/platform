@@ -15,12 +15,12 @@ delete_restic_objects() {
   done
 }
 
-# run_restic <namespace> <name> <shell script> [<directory>]: a Pod built by scripts/restic_dump_pod.sh from the restore test's own init container, so
-# it holds the namespace's repository credentials as the test does and nothing more, and an emptyDir at the directory
-# when one is named (a path the script backs up, which restic records in its snapshot); runs the script, sets its output
-# (what it writes to stdout) and exit code. Its stderr goes to the container's termination message, since `kubectl logs` merges the two
-# streams, and reaches this script's stderr when the script fails; a script that wants an error text in its output
-# redirects 2>&1 itself.
+# run_restic <namespace> <name> <shell script> [<directory>]: a Pod built by scripts/restic_dump_pod.sh from the
+# restore test's restic container, so it holds the namespace's repository credentials as the test does and nothing
+# more, and an emptyDir at the directory when one is named (a path the script backs up, which restic records in its
+# snapshot); runs the script, sets its output (what it writes to stdout) and exit code. Its stderr goes to the
+# container's termination message, since `kubectl logs` merges the two streams, and reaches this script's stderr when
+# the script fails; a script that wants an error text in its output redirects 2>&1 itself.
 # shellcheck disable=SC2034 # restic_output and restic_exit are this function's results for the cells below.
 run_restic() {
   local namespace="$1" name="$2" script="$3" directory="${4:-}" manifest

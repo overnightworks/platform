@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Usage: scripts/restic_dump_pod.sh <namespace> <pod name> <shell script>
-# Prints the manifest of a Pod that runs the shell script in the restic container of the namespace's CronJob restore-test
-# (its image at its digest, its environment with the repository credentials, its securityContext and its restore volume),
-# and holds no init container and no other volume. The restore test's own dump script, which writes the latest dump to
-# /restore/dump, is in the container's environment as RESTORE_TEST_DUMP_SCRIPT, for a script that runs it. The one owner of that Pod: `backup:fetch` and the cells under
-# tests/backup/ start it, so the task and the cells read a repository the way the monthly restore test does.
+# Prints the manifest of a Pod that runs the shell script in the restic container of the namespace's CronJob
+# restore-test (its image at its digest, its environment with the repository credentials, its securityContext and its
+# restore volume), and holds no init container and no other volume. The restore test's own dump script, which writes
+# the latest dump to /restore/dump, is in the container's environment as RESTORE_TEST_DUMP_SCRIPT, for a script that
+# runs it. The one owner of that Pod: `backup:fetch` and the cells under tests/backup/ start it, so the task and the
+# cells read a repository the way the monthly restore test does.
 set -euo pipefail
 namespace="${1?}" name="${2?}" script="${3?}"
 

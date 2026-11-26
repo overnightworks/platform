@@ -1086,7 +1086,7 @@ say "$namespace converged"
 '''
 
 [tasks."backup:fetch"]
-description = "Write the latest Postgres dump of a namespace's k8up repository to a new file, through the restore test's init container"
+description = "Write the latest Postgres dump of a namespace's k8up repository to a new file, with the restore test's own dump script in its restic container"
 usage = '''
 arg "<namespace>" help="The namespace whose repository the dump comes from"
 arg "<file>" help="A new file for the custom-format dump, mode 0600"
@@ -1122,7 +1122,7 @@ until phase="$(kubectl --namespace "$namespace" get pod "$pod" --output jsonpath
   [ "$SECONDS" -lt "$deadline" ] || fail "the fetch pod $pod is not running after 15 minutes"
   sleep 2
 done
-kubectl --namespace "$namespace" exec "$pod" --container restic -- \
+timeout 900 kubectl --namespace "$namespace" exec "$pod" --container restic -- \
   sh -c 'eval "$RESTORE_TEST_DUMP_SCRIPT" && cat /restore/dump' >"$file" ||
   fail "restic could not read the latest snapshot of $namespace, or the dump could not be copied out of the pod $pod"
 # restic names a format that holds no file as an error before here; this catches a file that is no dump.
