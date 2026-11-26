@@ -945,9 +945,14 @@ writers at 0: delete the Pod $loader in $namespace, then run flux resume kustomi
   fi
   flux resume kustomization "$namespace" --wait
 }
+stopped_while_waiting() {
+  drop_loader
+  echo "db:load-dump: stopped while waiting for the database $namespace to be alone; the Kustomization $namespace \
+stays suspended and its writers at 0: $(way_back)" >&2
+}
 resume() {
   trap - EXIT
-  trap 'drop_loader; exit 143' TERM
+  trap 'stopped_while_waiting; exit 143' TERM
   trap '' INT
   wait_alone || {
     drop_loader

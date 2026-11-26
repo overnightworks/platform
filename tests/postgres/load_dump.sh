@@ -73,9 +73,11 @@ case "$*" in
     [ -z "${FAKE_CLAIM_READ_FAILS:-}" ] || { echo "fake kubectl: the server is unreachable" >&2; exit 1; }
     printf '%s' "${FAKE_CLAIM:-}" ;;
   *"get prebackuppod"*)
-    # FAKE_BUCKET: the layer's PreBackupPod has the container bucket, with the backup's key file.
+    # FAKE_BUCKET: the layer's PreBackupPod has the container bucket, with the backup's key file; FAKE_BUCKET_APPEARS:
+    # it has it only from the second read on.
     bucket=
-    [ -z "${FAKE_BUCKET:-}" ] ||
+    echo >>"$FAKE_DIR/prebackuppod-reads"
+    [ -z "${FAKE_BUCKET:-}" ] && { [ -z "${FAKE_BUCKET_APPEARS:-}" ] || [ "$(wc -l <"$FAKE_DIR/prebackuppod-reads")" -lt 2 ]; } ||
       bucket=',{"name":"bucket","image":"rclone-image","env":[{"name":"BUCKET","value":"x"},{"name":"AWS_SHARED_CREDENTIALS_FILE","value":"/backup/key"}],"securityContext":{"runAsGroup":1000}}'
     echo '{"spec":{"pod":{"spec":{"securityContext":{"runAsUser":1000},"containers":[{"name":"copy","image":"rsync-image"}'"$bucket"']}}}}' ;;
   *" create "*)
@@ -659,8 +661,17 @@ cell_term_while_the_resume_waits_deletes_the_loader_and_stays_suspended() {
   kill -TERM "$(pgrep --parent "$loader")"
   status=0
   wait "$loader" || status=$?
-  [ "$status" != 0 ] && ! grep -q resume "$FAKE_DIR/flux.log" && grep -q db-load-snapshot "$FAKE_DIR/deleted-after-load" ||
+  [ "$status" != 0 ] && ! grep -q resume "$FAKE_DIR/flux.log" && grep -q db-load-snapshot "$FAKE_DIR/deleted-after-load" &&
+    grep -q "stays suspended" "$FAKE_DIR/output" ||
     fail "a TERM while the resume waited exited $status after flux $(tr '\n' ' ' <"$FAKE_DIR/flux.log")"
+}
+
+cell_bucket_container_that_appears_after_the_plan_refuses_with_nothing_loaded() {
+  cell=bucket-container-that-appears-after-the-plan-refuses-with-nothing-loaded
+  FAKE_CLAIM=audiofiles FAKE_BUCKET_APPEARS=1 run_loader x "$dump"
+  [ "$status" != 0 ] && [[ $output == *"changed its bucket container since the plan was made; nothing loaded"* ]] &&
+    [ ! -e "$FAKE_DIR/started-db-load-snapshot" ] && [[ $flux_calls == *resume* ]] ||
+    fail "a bucket container that appeared after the plan exited $status with '$output' after flux $flux_calls"
 }
 
 cell_rerun_on_a_suspended_kustomization_runs_through() {
@@ -749,6 +760,7 @@ cells=(
   failed-loader-delete-keeps-flux-suspended-and-says-so
   database-that-stays-busy-after-the-load-deletes-the-loader-and-stays-suspended
   term-while-the-resume-waits-deletes-the-loader-and-stays-suspended
+  bucket-container-that-appears-after-the-plan-refuses-with-nothing-loaded
   rerun-on-a-suspended-kustomization-runs-through
   only-the-rclone-container-mounts-the-app-s-key-and-the-source-pod-no-secret
 )
