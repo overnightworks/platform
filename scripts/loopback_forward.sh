@@ -3,9 +3,13 @@
 # task page:forward, scripts/live_check_report.sh and scripts/litellm_keys.sh): the one reader of what kubectl says and
 # the one starter of a background forward.
 
-# service_port <service>: the first port of the Service, which sits in the namespace of its own name.
+# The longest a read of the cluster runs before it is cut, so one stuck call holds no task for long.
+read_timeout_seconds=20
+
+# service_port <service>: the first port of the Service, which sits in the namespace of its own name; nothing and a
+# non-zero status when the read fails or outlasts read_timeout_seconds.
 service_port() {
-  kubectl --namespace "$1" get service "$1" -o jsonpath='{.spec.ports[0].port}'
+  timeout --foreground "$read_timeout_seconds" kubectl --namespace "$1" get service "$1" -o jsonpath='{.spec.ports[0].port}'
 }
 
 # forwarded_port <line>: the local port that kubectl's `Forwarding from 127.0.0.1:<port> -> <port>` line names, and

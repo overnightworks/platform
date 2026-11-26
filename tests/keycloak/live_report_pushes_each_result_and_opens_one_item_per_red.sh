@@ -7,8 +7,11 @@
 # false with the codes and opens one item at the app, naming the step and whose side the cause is on, unless one is
 # open; that a skipped twice pushes nothing; that the command's lock (exit 4) is waited for and never pushed red; that
 # the report's own lock serializes with a bound; that an offline platform pushes and opens nothing, also when it goes
-# offline between the steps; that a failed push or item does not hide the other and fails the run; and that the token
-# stands in no argument, environment or output.
+# offline between the steps; that a failed push or item does not hide the other and fails the run; that `nightly` waits for
+# the Deployment keycloak to be Available up to its bound, runs the sign-in for every app as `sign-in` does and does
+# nothing while offline, also when the platform turns offline during the wait; that a TERM to the whole process group
+# during a rerun ends the report with 143, a push of false and an item for no one and a forward for no one; and that the
+# token stands in no argument, environment or output.
 # Usage: tests/keycloak/live_report_pushes_each_result_and_opens_one_item_per_red.sh
 set -euo pipefail
 
@@ -36,7 +39,7 @@ scan_arguments_and_environment() {
 FAKE
 
 # mise: `run live:check <app>` pops the app's next scripted attempt from mise-<app>, whose lines read
-# `<exit>|<stdout line>|<stderr line>`.
+# `<exit>|<stdout line>|<stderr line>`; the exit `hang` runs until a signal ends it.
 cat >"$fake_bin/mise" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -48,14 +51,21 @@ log_event "mise: live:check $app"
 [ -s "$FAKE_STATE/mise-$app" ] || { violate "mise: no scripted attempt left for $app"; exit 1; }
 IFS='|' read -r exit_code standard_line error_line <"$FAKE_STATE/mise-$app"
 sed -i 1d "$FAKE_STATE/mise-$app"
+if [ "$exit_code" = hang ]; then
+  echo $$ >"$FAKE_STATE/hang-pid"
+  log_event "mise: hanging"
+  exec "$(command -p -v sleep)" 600
+fi
 [ -z "$standard_line" ] || echo "$standard_line"
 [ -z "$error_line" ] || echo "$error_line" >&2
 exit "$exit_code"
 FAKE
 
 # kubectl: the Secret's header on stdout, the forward line, the Service's port and the `tunnel` Kustomization's suspend,
-# which is read from tunnel-reads, one line per read, the last one for every later read (`unreadable` fails the read).
-# FAKE_FORWARD_FAILS ends the forward with no line.
+# which is read from tunnel-reads, one line per read, the last one for every later read (`unreadable` fails the read), and
+# the Available condition of the Deployment keycloak, read the same way from keycloak-reads.
+# FAKE_FORWARD_FAILS ends the forward with no line, FAKE_SERVICE_HANGS makes the read of the Service gatus run until a
+# signal ends it.
 cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -68,7 +78,15 @@ case " $* " in
     log_event "kubectl: tunnel read $value"
     [ "$value" != unreadable ] || { echo "error: the server is unreachable" >&2; exit 1; }
     printf '%s' "$value" ;;
-  *" get service gatus "*) echo 8080 ;;
+  *" get deployment keycloak "*)
+    value="$(head -n 1 "$FAKE_STATE/keycloak-reads")"
+    [ "$(wc -l <"$FAKE_STATE/keycloak-reads")" -le 1 ] || sed -i 1d "$FAKE_STATE/keycloak-reads"
+    log_event "kubectl: keycloak read $value"
+    [ "$value" != unreadable ] || { echo "error: the server is unreachable" >&2; exit 1; }
+    printf '%s' "$value" ;;
+  *" get service gatus "*)
+    [ -z "${FAKE_SERVICE_HANGS:-}" ] || { log_event "kubectl: service read hangs"; exec "$(command -p -v sleep)" 600; }
+    echo 8080 ;;
   *" get secret gatus-push "*)
     log_event "kubectl: secret read"
     printf 'Authorization: Bearer %s\n' "$(<"$FAKE_STATE/token")" ;;
@@ -116,7 +134,8 @@ echo "${key%/external} success=$success error=$error" >>"$FAKE_STATE/pushes"
 FAKE
 
 # gh: the open items of each repository are the lines of items-<app>, newest first; a search returns those whose title
-# holds the searched title, the way GitHub's does, and at most 30. FAKE_GH_FAILS=list or create fails that call with 7.
+# holds the searched title, the way GitHub's does, and at most 30. FAKE_GH_FAILS=list or create fails that call with 7,
+# hang-list or hang-create makes it run until a signal ends it.
 cat >"$fake_bin/gh" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -126,6 +145,7 @@ action="$2"
 repository="$4"
 app="${repository#overnightworks/}"
 log_event "gh: $action $repository"
+[ "$FAKE_GH_FAILS" != "hang-$action" ] || exec "$(command -p -v sleep)" 600
 [ "$FAKE_GH_FAILS" != "$action" ] || { echo "gh: keyring locked" >&2; exit 7; }
 case "$action" in
   list)
@@ -160,6 +180,7 @@ prepare_case() {
   echo "$token" >"$state/token"
   : >"$state/log" && : >"$state/violation" && : >"$state/sleeps" && : >"$state/pushes" && : >"$state/forward-pids"
   echo false >"$state/tunnel-reads"
+  echo True >"$state/keycloak-reads"
   echo 0 >"$state/push-failures"
   local app
   for app in "${apps[@]}"; do
@@ -180,15 +201,19 @@ red_attempt() { echo "1|live:check: $1 red (start=303 login-page=500) step=${2:-
 own_session_remains() { echo "live:check: may remain: the person's $1 session; run again to clean up"; }
 other_name_remains() { echo "live:check: may remain: the person's $1 session; the person's Keycloak sessions; run again to clean up"; }
 skipped_attempt() { echo "3|live:check: $1 skipped|live:check: the Deployment $1 is not Available"; }
+# report_command <argument>...: the report in the cell's environment, in the launcher's session when one is set.
+report_command() {
+  (cd "$repository_root" && exec env PATH="$fake_bin:$PATH" XDG_RUNTIME_DIR="$runtime" TMPDIR="$work_directory" FAKE_STATE="$state" \
+    FAKE_LIB="$work_directory/fake_lib.sh" FAKE_GH_FAILS="${FAKE_GH_FAILS:-}" KUBECONFIG=/nonexistent MISE_DISABLE_TOOLS=kubectl \
+    "${extra_environment[@]}" "${launcher[@]}" scripts/live_check_report.sh "$@")
+}
 run_report() {
-  local name="$1"
   shift
   status=0
-  (cd "$repository_root" && env PATH="$fake_bin:$PATH" XDG_RUNTIME_DIR="$runtime" TMPDIR="$work_directory" FAKE_STATE="$state" \
-    FAKE_LIB="$work_directory/fake_lib.sh" FAKE_GH_FAILS="${FAKE_GH_FAILS:-}" KUBECONFIG=/nonexistent MISE_DISABLE_TOOLS=kubectl \
-    "${extra_environment[@]}" scripts/live_check_report.sh "$@") >"$output_file" 2>&1 || status=$?
+  report_command "$@" >"$output_file" 2>&1 || status=$?
 }
 extra_environment=()
+launcher=()
 show_output() { sed 's/^/  /' "$output_file" >&2; }
 refuse() { show_output; fail "$1"; }
 sleeps_are() { [ "$(paste -sd' ' "$state/sleeps")" = "$1" ]; }
@@ -491,13 +516,157 @@ for failing_call in list create; do
   echo "a gh that fails on $failing_call leaves the red push, opens nothing, prints no body and fails the run"
 done
 
+# ----------------------------------------------------------------------------------------------------------- nightly
+keycloak_reads() { grep -c '^kubectl: keycloak read' "$state/log" || true; }
+skipped_offline_lines() { grep -c ' skipped reason=offline' "$output_file" || true; }
+
+prepare_case sign-in-does-not-wait
+echo False >"$state/keycloak-reads"
+script hopin "$(green_attempt hopin)"
+run_report sign-in-does-not-wait sign-in hopin
+expect_status sign-in-does-not-wait 0
+[ "$(keycloak_reads)" = 0 ] && sleeps_are "" || refuse "sign-in-does-not-wait: sign-in read or waited for Keycloak"
+kept_clean sign-in-does-not-wait
+echo "sign-in does not wait for Keycloak"
+
+prepare_case nightly-keycloak-available
+for app in "${apps[@]}"; do script "$app" "$(green_attempt "$app")"; done
+run_report nightly-keycloak-available nightly
+expect_status nightly-keycloak-available 0
+[ "$(grep -c ' success=true ' "$state/pushes")" = 4 ] && no_gh_call && sleeps_are "" || refuse "nightly-keycloak-available: not four pushes of true with no wait"
+for app in "${apps[@]}"; do grep -q "^live-check_$app-sign-in " "$state/pushes" || refuse "nightly-keycloak-available: no push for $app"; done
+[ "$(keycloak_reads)" = 1 ] || refuse "nightly-keycloak-available: Keycloak was read $(keycloak_reads) times"
+kept_clean nightly-keycloak-available
+echo "nightly runs the sign-in for every app and pushes as sign-in does, with no wait when Keycloak is Available"
+
+prepare_case nightly-waits-for-keycloak
+printf '%s\n' False False True >"$state/keycloak-reads"
+for app in "${apps[@]}"; do script "$app" "$(green_attempt "$app")"; done
+run_report nightly-waits-for-keycloak nightly
+expect_status nightly-waits-for-keycloak 0
+sleeps_are "30 30" || refuse "nightly-waits-for-keycloak: waits '$(paste -sd' ' "$state/sleeps")'"
+[ "$(grep -n -m1 '^mise:' "$state/log" | cut -d: -f1)" -gt "$(grep -n '^kubectl: keycloak read' "$state/log" | tail -n 1 | cut -d: -f1)" ] ||
+  refuse "nightly-waits-for-keycloak: an attempt ran before Keycloak was Available"
+[ "$(grep -c ' success=true ' "$state/pushes")" = 4 ] || refuse "nightly-waits-for-keycloak: not four pushes of true"
+kept_clean nightly-waits-for-keycloak
+echo "nightly polls every 30 seconds for Keycloak and runs every app once it is Available"
+
+prepare_case nightly-keycloak-never-available
+echo False >"$state/keycloak-reads"
+for app in "${apps[@]}"; do script "$app" "$(green_attempt "$app")"; done
+extra_environment=(LIVE_REPORT_KEYCLOAK_WAIT_SECONDS=90)
+run_report nightly-keycloak-never-available nightly
+extra_environment=()
+expect_status nightly-keycloak-never-available 0
+sleeps_are "30 30 30" || refuse "nightly-keycloak-never-available: waits '$(paste -sd' ' "$state/sleeps")'"
+[ "$(mise_calls)" = 4 ] && [ "$(grep -c ' success=true ' "$state/pushes")" = 4 ] || refuse "nightly-keycloak-never-available: the apps did not run at the bound"
+kept_clean nightly-keycloak-never-available
+echo "nightly runs every app anyway once the wait's bound passes"
+
+prepare_case nightly-keycloak-unreadable
+printf '%s\n' unreadable unreadable True >"$state/keycloak-reads"
+for app in "${apps[@]}"; do script "$app" "$(green_attempt "$app")"; done
+run_report nightly-keycloak-unreadable nightly
+expect_status nightly-keycloak-unreadable 0
+sleeps_are "30 30" && [ "$(mise_calls)" = 4 ] || refuse "nightly-keycloak-unreadable: a failed read did not count as not Available"
+kept_clean nightly-keycloak-unreadable
+echo "a Keycloak read that fails counts as not Available"
+
+prepare_case nightly-offline
+echo true >"$state/tunnel-reads"
+echo False >"$state/keycloak-reads"
+run_report nightly-offline nightly
+expect_status nightly-offline 0
+[ "$(skipped_offline_lines)" = 4 ] || refuse "nightly-offline: not every app skipped for the platform being offline"
+[ "$(keycloak_reads)" = 0 ] && sleeps_are "" && [ "$(mise_calls)" = 0 ] && pushes_are "" && no_gh_call || refuse "nightly-offline: something read, waited, ran or pushed"
+kept_clean nightly-offline
+echo "nightly while offline skips every app with no wait, attempt, push or item"
+
+prepare_case nightly-offline-during-the-wait
+printf '%s\n' false true >"$state/tunnel-reads"
+echo False >"$state/keycloak-reads"
+run_report nightly-offline-during-the-wait nightly
+expect_status nightly-offline-during-the-wait 0
+[ "$(skipped_offline_lines)" = 4 ] && sleeps_are "30" || refuse "nightly-offline-during-the-wait: the wait did not end when the platform went offline"
+[ "$(mise_calls)" = 0 ] && pushes_are "" && no_gh_call || refuse "nightly-offline-during-the-wait: something ran, pushed or opened"
+kept_clean nightly-offline-during-the-wait
+echo "an offline that starts during the wait ends it and skips every app"
+
+prepare_case nightly-reports-a-red
+script hopin "$(red_attempt hopin)" "$(red_attempt hopin)"
+for app in skat presentator songmaker; do script "$app" "$(green_attempt "$app")"; done
+run_report nightly-reports-a-red nightly
+expect_status nightly-reports-a-red 0
+[ "$(grep -c ' success=false ' "$state/pushes")" = 1 ] && [ "$(grep -c ' success=true ' "$state/pushes")" = 3 ] || refuse "nightly-reports-a-red: not one push of false and three of true"
+grep -q '^gh: create overnightworks/hopin$' "$state/log" && [ "$(grep -c '^gh: create ' "$state/log")" = 1 ] || refuse "nightly-reports-a-red: not one item, at hopin"
+sleeps_are 600 || refuse "nightly-reports-a-red: the rerun did not wait 10 minutes"
+kept_clean nightly-reports-a-red
+echo "a red after its rerun in nightly gets its push and its item, beside the green apps' pushes"
+
+prepare_case nightly-report-lock
+mkdir -m 700 "$runtime/live-check"
+exec {lock_descriptor}>"$runtime/live-check/report.lock"
+flock --nonblock "$lock_descriptor"
+extra_environment=(LIVE_REPORT_LOCK_WAIT_SECONDS=1)
+run_report nightly-report-lock nightly
+exec {lock_descriptor}>&-
+extra_environment=()
+expect_status nightly-report-lock 4
+[ "$(mise_calls)" = 0 ] && pushes_are "" && no_gh_call || refuse "nightly-report-lock: something ran while another report held the lock"
+echo "nightly takes the report's lock and exits 4 when another report holds it past the bound"
+
+# systemd's stop sends TERM to every process of the unit's group: the fake run of attempt 2 hangs until it comes.
+prepare_case term-during-the-rerun
+script hopin "$(red_attempt hopin)" "hang||"
+# The launcher names its pid, which is the report's process group once it has called setsid.
+launcher=(bash -c 'echo $$ >"$FAKE_STATE/runner-pid" && exec setsid "$@"' _)
+report_command nightly >"$output_file" 2>&1 &
+background_pid=$!
+launcher=()
+for _ in $(seq 100); do grep -q '^mise: hanging' "$state/log" 2>/dev/null && break; command sleep 0.1; done
+runner_pid="$(<"$state/runner-pid")"
+grep -q '^mise: hanging' "$state/log" || { kill -TERM -- "-$runner_pid" 2>/dev/null || true; refuse "term-during-the-rerun: attempt 2 never started"; }
+kill -TERM -- "-$runner_pid"
+status=0
+wait "$background_pid" || status=$?
+expect_status term-during-the-rerun 143
+pushes_are "" && no_gh_call || refuse "term-during-the-rerun: a push or an item followed the TERM"
+! kill -0 "$(<"$state/hang-pid")" 2>/dev/null || refuse "term-during-the-rerun: the attempt still runs"
+kept_clean term-during-the-rerun
+echo "a TERM to the whole group during attempt 2 ends the report with 143, with no push of false, no item and no forward left"
+
+# A call that hangs is cut after its bound, so one stuck read cannot hold a night until the cap; the cases set the bound to
+# one second where the report's own is 20.
+prepare_case gh-hangs
+script hopin "$(red_attempt hopin)" "$(red_attempt hopin)"
+extra_environment=(LIVE_REPORT_READ_TIMEOUT_SECONDS=1)
+FAKE_GH_FAILS=hang-list run_report gh-hangs sign-in hopin
+extra_environment=()
+expect_status gh-hangs 1
+grep -q 'hopin item failed (gh exit 124)' "$output_file" || refuse "gh-hangs: the hung lookup was not cut after its bound"
+grep -q 'success=false' "$state/pushes" || refuse "gh-hangs: the red push is gone"
+kept_clean gh-hangs
+echo "a gh call that hangs is cut by its bound and fails the item, not the night"
+
+prepare_case service-read-hangs
+script hopin "$(green_attempt hopin)"
+extra_environment=(LIVE_REPORT_READ_TIMEOUT_SECONDS=1 FAKE_SERVICE_HANGS=1)
+run_report service-read-hangs sign-in hopin
+extra_environment=()
+expect_status service-read-hangs 1
+[ "$(grep -c '^kubectl: service read hangs' "$state/log")" = 3 ] || refuse "service-read-hangs: not three cut reads, one per try"
+grep -q 'hopin push failed' "$output_file" || refuse "service-read-hangs: the failed push is not named"
+pushes_are "" && no_item && ! grep -q '^kubectl: forward started' "$state/log" || refuse "service-read-hangs: a push, an item or a forward followed the hung read"
+kept_clean service-read-hangs
+echo "a read of the Service port that hangs is cut by its bound and fails the push after its tries, with no false red"
+
 # ------------------------------------------------------------------------------------------------------- usage
-for usage_arguments in "" "journeys" "sign-in nosuchapp"; do
+for usage_arguments in "" "journeys" "sign-in nosuchapp" "nightly hopin"; do
   prepare_case "usage-${usage_arguments// /-}"
   # shellcheck disable=SC2086 # the words are the arguments
   run_report "usage-${usage_arguments// /-}" $usage_arguments
   expect_status "usage-${usage_arguments// /-}" 1
-  [ "$(sed -n 1p "$output_file")" = 'usage: mise run live:report sign-in [<app>]' ] || refuse "usage-$usage_arguments: not the plain usage"
+  [ "$(sed -n 1p "$output_file")" = 'usage: mise run live:report sign-in [<app>] | nightly' ] || refuse "usage-$usage_arguments: not the plain usage"
   [ ! -s "$state/log" ] || refuse "usage-$usage_arguments: a call was made"
 done
-echo "a missing or unknown check and an unknown app print the usage with no call"
+echo "a missing or unknown check, an unknown app and an app after nightly print the usage with no call"

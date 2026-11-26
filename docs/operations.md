@@ -259,7 +259,8 @@ the person's session row in that app until its own session lifetime; the person 
 person's account row in each app's database is that app's own data and stays. (OPS-21)
 
 `mise run live:report sign-in [<app>]` (`scripts/live_check_report.sh`) is the way a result reaches anyone, for every
-app of the command's table when none is named. It takes `$XDG_RUNTIME_DIR/live-check/report.lock`, waiting up to 60
+app of the command's table when none is named; `mise run live:report nightly` is the timer's run, which takes no app,
+waits as OPS-24 says and then reports every app the same way. It takes `$XDG_RUNTIME_DIR/live-check/report.lock`, waiting up to 60
 minutes, and exits 4 with `refused: another live:report is running; nothing ran` when it is still held. For each app it
 runs `mise run live:check <app>`; exit 4 of the command is its lock being held, which the report polls for up to 30
 minutes per app and never pushes red (an app whose lock is held that long is reported `skipped reason=command-busy`,
@@ -275,7 +276,8 @@ and then prints `<app> skipped reason=offline`; a suspend it cannot read counts 
 through a loopback forward to the Service `gatus` (the one `gatus:open` uses), three tries over two minutes, with the
 token of the Secret `gatus-push` on curl's stdin only; the item is opened with the operator's `gh` login on the PC and
 does not depend on the push. A failed push or item prints its name and, for gh, its exit code, never the body, and makes
-the report exit 1. (OPS-22)
+the report exit 1. Every kubectl and gh call except the forward is cut after 20 seconds. A TERM ends the report with 143
+and pushes no red, opens no item and leaves no forward for the apps not finished. (OPS-22)
 
 Each app of the table has a Gatus row of the group `live-check`, named `<app> sign-in`, which takes a push with the token
 (a wrong token answers 401, an unknown row 404) and shows its first result after its first push. `LiveCheckRed` fires for a
@@ -284,3 +286,23 @@ it. Its alerts, and those of `LiveCheckMissed`, take the route that groups by al
 one mail listing each row and a red that joins them, or a row that turns green, gives one more at the next group interval;
 the mail's text lists the rows still red under `firing:` and those that turned green under `resolved:`, one per line, as it
 does for every other alert. (OPS-23)
+
+The PC's user manager runs the nightly report: the timer `dev.mise.live-check-nightly` starts the service
+`dev.mise.live-check`, which runs `mise run live:report nightly` in `~/git/platform`, every day at 01:30 UTC (02:30 CET,
+03:30 CEST, before `litellm-expire` at 04:00 UTC); `persistent` runs a night the PC missed at its next boot or resume. A
+PC that is off or asleep reports nothing, since Gatus, Prometheus and Alertmanager run on it. Before it takes the report
+lock, `nightly` waits up to 20 minutes, polling every 30 seconds, for the Deployment `keycloak/keycloak` to be Available
+(a read that fails counts as not Available, and an offline ends the wait), and then runs every app whatever it found; an
+app not yet Available is skipped by `live:check` and rerun. The service ends a run after 6 hours, a limit that only stops
+a stuck run well before the next night; the TERM leaves no false red, no item and no forward, the unit shows as failed
+and the keys the run did not reach mail through `LiveCheckMissed`. `systemctl --user --failed` lists a failed run and
+`journalctl --user -u dev.mise.live-check` holds its result and push lines. `LiveCheckMissed` fires one alert per key of
+the group `live-check` whose counter `gatus_results_total` has not risen in 36 hours, after an hour of `for`, with the
+summary `No live:check result for <row> in 36 hours`; the Gatus row keeps its last result and its time, which the mail
+reports. A key whose series is new within the window counts as fresh (its first push, the first push of a `success`
+value it never had and the first push after a restart of Gatus, which drops every series), and a gap of Prometheus'
+samples shorter than 3 hours changes nothing. A key seen under a Gatus that started within 39 hours counts as pushed, so
+a restart neither mails nor hides a miss, whenever the next push comes; a key pushed only in the first 3 hours after a
+Gatus start mails up to 3 hours late. The rule is silent while `tunnel` is suspended and for 36 hours after
+`mise run online`, so an offline raises nothing, and a key with no push in 30 days leaves it. Gatus' heartbeat for these
+rows stays off, because its misses would count in the same counter. (OPS-24)

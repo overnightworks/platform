@@ -24,6 +24,9 @@ until_true() {
   done
 }
 
+# seconds_of_timespan <systemd time span>: the whole seconds `systemd-analyze timespan` reads it as.
+seconds_of_timespan() { systemd-analyze timespan "$1" | awk '/^ *[^ ]+s: /{ print int($2 / 1000000) }'; }
+
 # A cell's exit trap deletes its objects with delete_object, which attempts every deletion and names the one that fails;
 # end_deletions then keeps the cell's own failure status and else fails when a deletion did.
 deletion_failures=0

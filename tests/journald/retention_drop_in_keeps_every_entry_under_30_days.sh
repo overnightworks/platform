@@ -17,13 +17,12 @@ cp "$source_file" "$root$target"
 config="$(systemd-analyze cat-config --root="$root" systemd/journald.conf)"
 grep -qxF "# $root$target" <<<"$config" || fail "cat-config does not list $target: $config"
 value_of() { sed -n "s/^$1=//p" <<<"$config" | tail -n 1; }
-seconds_of() { systemd-analyze timespan "$1" | awk '/^ *[^ ]+s: /{ print int($2 / 1000000) }'; }
 retention_value="$(value_of MaxRetentionSec)"
 [ -n "$retention_value" ] || fail "cat-config shows no MaxRetentionSec"
 file_value="$(value_of MaxFileSec)"
 [ -n "$file_value" ] || fail "cat-config shows no MaxFileSec"
-retention_seconds="$(seconds_of "$retention_value")"
-file_seconds="$(seconds_of "$file_value")"
+retention_seconds="$(seconds_of_timespan "$retention_value")"
+file_seconds="$(seconds_of_timespan "$file_value")"
 
 # journald deletes a file once its oldest entry passes the retention, and a file spans MaxFileSec, so no entry
 # is older than both limits together when it goes.

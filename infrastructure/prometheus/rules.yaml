@@ -1,4 +1,4 @@
-# The platform's alert rules, which Prometheus reads from /etc/rules; tests/prometheus/rules_test.yml proves their
+# The platform's alert rules, which Prometheus reads from /etc/rules; the *_test.yml files in tests/prometheus prove their
 # durations, firing and resolving with promtool.
 apiVersion: v1
 kind: ConfigMap
@@ -94,6 +94,30 @@ data:
             for: 5m
             annotations:
               summary: 'live:check {{ $labels.name }} is red after a rerun; gatus:open shows its codes'
+          # The nightly report pushes every key once a night with the Gatus heartbeat off, so a key whose counter has not risen
+          # in 36 hours missed a night: the longest gap between two pushes is 24 hours plus the run's spread of up to 6, and
+          # one missed night leaves at least 48. A series seen within the window but not in the 3 hours before it is a key's
+          # first push, the first push of a success value it never had or the first push after a Gatus restart, which drops
+          # every series; it counts as pushed, since its first sample adds nothing to increase(), and a gap shorter than 3
+          # hours in Prometheus' samples there does not make every series look new. A key seen under a Gatus that started
+          # within 39 hours counts as pushed too, read from process_start_time_seconds through the recording rule, so a
+          # restart neither mails nor hides a miss, whenever the next push comes; a key pushed only in the first 3 hours after
+          # a Gatus start mails up to 3 hours late. An offline, and the 36 hours after it, is not judged. The heartbeat stays
+          # off because its misses count in the same counter.
+          - record: key:gatus_process_start_time_seconds:live_check
+            expr: group by (key) (gatus_results_total{group="live-check"}) * on() group_left() max(process_start_time_seconds{job="gatus"})
+          - alert: LiveCheckMissed
+            expr: >-
+              group by (group, key, name) (last_over_time(gatus_results_total{group="live-check", key=~"live-check_.+-sign-in"}[30d]))
+              unless on(key) (
+                sum by (key) (increase(gatus_results_total{group="live-check"}[36h])) > 0
+                or group by (key) (last_over_time(gatus_results_total{group="live-check"}[36h]) unless last_over_time(gatus_results_total{group="live-check"}[3h] offset 36h))
+                or group by (key) (max_over_time(key:gatus_process_start_time_seconds:live_check[36h]) > time() - 39 * 3600)
+              )
+              unless on() max_over_time(gotk_resource_info{customresource_kind="Kustomization", name="tunnel", suspended="true"}[36h]) == 1
+            for: 1h
+            annotations:
+              summary: 'No live:check result for {{ $labels.name }} in 36 hours'
           # songmaker's web exports the series at 0 with no worker, and a Deployment at 0 replicas wants none, so the guard
           # keeps the rule quiet there. A worker that is not Ready is DeploymentUnavailable's, so this rule is the
           # Ready-and-unregistered case.
