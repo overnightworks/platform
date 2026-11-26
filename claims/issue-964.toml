@@ -1,7 +1,0 @@
-claim_id = "1d273a4a90fa494391a60e10d7cca8aa"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
-role = "builder"
-base = "47599e5b7036504100c5fe875e5fd653eee0fa11"
-branch = "claude/issue-964-postgres-runs-17-12"
-scope = ["infrastructure/postgres/postgres.yaml"]
-opened_commit = "2f3cd8901eafea69a929de6a1139900d57c2ce3a"
