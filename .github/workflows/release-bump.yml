@@ -57,17 +57,18 @@ jobs:
             echo "$log"
             echo "::endgroup::"
             last_line="$(tail -n 1 <<<"$log")"
+            summary_line="${last_line//|/\\|}"
             case "$status" in
               0)
                 result="$(cat "$output/$app/outcome")"
                 [ "$result" != bump ] || bumps=true
                 ;;
               1)
-                result="refused: $last_line"
+                result="refused: $summary_line"
                 echo "::warning title=release-bump $app refused::$last_line"
                 ;;
               *)
-                result="failed: $last_line"
+                result="failed: $summary_line"
                 failed=true
                 echo "::error title=release-bump $app failed::$last_line"
                 ;;

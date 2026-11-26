@@ -152,9 +152,9 @@ to k3d and runs its cells; `bootstrap` runs the host step on a bare Ubuntu image
 `images` renders the tree as Flux does and judges every image and Flux source; `keycloak-hold` and `app-garage` prove
 the two entries an app's own CI calls; `release-bump-scope` judges every `release/*` pull request of this repository with
 the base's `scripts/release_bump_scope.sh`, run on the merge commit read as data, so that a bump changes only one app's
-release Component, legal copies and their entries, and passes every other run; `release-bump.yml` computes each
-app's bump on a schedule without a write credential and publishes nothing yet; `quality` is the shared gate. A cell is
-a script under `tests/<area>/` named for what it proves.
+release Component, legal copies and their entries, and passes every other run; `quality` is the shared gate. A cell is
+a script under `tests/<area>/` named for what it proves. `release-bump.yml` computes each app's bump on its schedule or
+on dispatch, without a write credential, and publishes nothing yet.
 
 ### Persistence and backup
 
