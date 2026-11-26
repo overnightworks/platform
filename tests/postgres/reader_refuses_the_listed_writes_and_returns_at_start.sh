@@ -30,6 +30,7 @@ cleanup() {
   as_superuser 'DROP TABLE IF EXISTS reader_proof, created_by_reader; DROP SEQUENCE IF EXISTS reader_proof_sequence;
     DROP SCHEMA IF EXISTS reader_later CASCADE' >/dev/null || true
   as_superuser 'REVOKE CREATE ON SCHEMA public FROM reader' >/dev/null || true
+  as_superuser 'REVOKE SELECT ON pg_authid FROM reader' >/dev/null || true
   in_postgres rm -f "$escape_file" || true
 }
 trap cleanup EXIT
@@ -90,7 +91,14 @@ as_superuser 'GRANT CREATE ON SCHEMA public TO reader'
 refuses_naming 'the role can create in a schema'
 as_superuser 'REVOKE CREATE ON SCHEMA public FROM reader'
 read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after the superuser reverted the grant"
-echo "a password the role set and a CREATE the superuser granted each made db:read refuse naming the condition, and each was undone"
+# With pg_read_all_data revoked the role reads no catalog and the check fails on its first query, so the role keeps a
+# right on pg_authid to reach the membership condition, which holds no row to compare.
+as_superuser 'GRANT SELECT ON pg_authid TO reader; REVOKE pg_read_all_data FROM reader'
+refuses_naming 'the role is not a member of pg_read_all_data alone'
+as_superuser 'REVOKE SELECT ON pg_authid FROM reader'
+keep
+read_sql 'SELECT 1' >/dev/null || fail "db:read still refuses after keep restored the membership"
+echo "a password the role set, a CREATE the superuser granted and a membership the superuser revoked each made db:read refuse naming the condition, and each was undone"
 
 # keep fails softly while a session holds a lock on the role: it ends 0, Postgres stays Ready, its line is in the log.
 in_postgres env PGAPPNAME="$lock_application" psql --no-psqlrc --command='BEGIN; ALTER ROLE reader CONNECTION LIMIT 9; SELECT pg_sleep(120)' >/dev/null 2>&1 &

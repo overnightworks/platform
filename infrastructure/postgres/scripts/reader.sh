@@ -58,7 +58,7 @@ read_as_role() {
   {
     cat <<'SQL'
 WITH declared AS (SELECT * FROM pg_authid WHERE rolname = current_user)
-SELECT coalesce(string_agg(name, ', ') FILTER (WHERE NOT ok), '') AS failed
+SELECT coalesce(string_agg(name, ', ') FILTER (WHERE ok IS NOT TRUE), '') AS failed
 FROM declared, LATERAL (VALUES
   (current_user = :'role', 'the session is not the role'),
   (shobj_description(declared.oid, 'pg_authid') IS NOT DISTINCT FROM :'comment', 'the role carries no declaration of reader.sh'),
