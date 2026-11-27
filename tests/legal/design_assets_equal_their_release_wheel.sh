@@ -5,8 +5,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 
 # design's release wheel is the source of the static files under infrastructure/design/design-<version>;
 # a new release moves the URL and the digest here with the files.
-wheel_url="https://github.com/overnightworks/design/releases/download/v0.39.0/overnightworks_design-0.39.0-py3-none-any.whl"
-wheel_digest="de2e100e20df244f558ed72a443003e56088a145ded626dddb164440914ecbe3"
+wheel_url="https://github.com/overnightworks/design/releases/download/v0.43.0/overnightworks_design-0.43.0-py3-none-any.whl"
+wheel_digest="53ea26d10a2339fd287c9572352261013139fd533a0b6ae3f027081d45f8a32a"
 wheel_file="${wheel_url##*/}"
 design_version="$(sed -n 's/^overnightworks_design-\([^-]*\)-.*\.whl$/\1/p' <<<"$wheel_file")"
 [ -n "$design_version" ] || fail "the wheel file name '$wheel_file' holds no version"

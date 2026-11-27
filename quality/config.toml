@@ -6,15 +6,3 @@ legacy = "fail"
 entry = "host/"
 reason = "the files the bootstrap writes onto the host, ruled Q9 on platform#1"
 ends = "#997"
-
-[[layout.allow]]
-path = "infrastructure/design/design-0.39.0/fonts/open-sans-LICENSE"
-rule = "file-suffix"
-reason = "the names are the wheel's and hal's, which the served tree and the equality cell keep byte for byte, so a rename is counterproductive"
-ends = "#996"
-
-[[layout.allow]]
-path = "infrastructure/design/design-0.39.0/fonts/oswald-LICENSE"
-rule = "file-suffix"
-reason = "the names are the wheel's and hal's, which the served tree and the equality cell keep byte for byte, so a rename is counterproductive"
-ends = "#996"
