@@ -1,0 +1,8 @@
+claim_id = "609d29b49929404eaaef93ed337c8792"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
+role = "builder"
+base = "08a1fe497ae6788da2e2bcaf21d87bf69c899e60"
+branch = "claude/issue-988-journeys-handoff"
+scope = [".github/workflows/ci.yml", "docs/ARCHITECTURE.md", "docs/app.md", "docs/operations.md", "mise.toml", "scripts/live_check.sh", "scripts/live_check_apps.sh", "scripts/live_check_journeys.sh", "scripts/live_check_report.sh", "tests/keycloak/live_check_fakes.sh", "tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh", "tests/live-check"]
+opened_commit = "2ef930b223e9a4b6722e64e95e744cce9e583fa4"
+whole_reason = "One handoff: the gate, the state file, the scope, the drive and its cleanup only prove together that a journey gets a session that dies at sign-out and never a password; about 260 production lines in six files plus three docs."
