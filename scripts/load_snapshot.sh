@@ -145,32 +145,13 @@ create_pod() {
     { echo "db:load-dump: the Pod $2 is not Ready after 5 minutes" >&2; return 1; }
 }
 
-# The larger of kubelet's hard thresholds for the node and the image filesystem, in bytes of a filesystem of $2 bytes,
-# from the kubelet's own configuration ($1, JSON); fails when either is missing or in a form this does not read.
-eviction_margin() {
-  yq --input-format json '.kubeletconfig.evictionHard | [.["nodefs.available"], .["imagefs.available"]] | .[]' <<<"$1" |
-    awk -v total="$2" '
-      function bytes(text,   number, unit) {
-        if (text ~ /^[0-9]+(\.[0-9]+)?%$/) return total * substr(text, 1, length(text) - 1) / 100
-        if (text !~ /^[0-9]+(Ki|Mi|Gi|Ti|Pi|K|M|G|T|P)?$/) return -1
-        number = text; sub(/[A-Za-z]+$/, "", number); unit = substr(text, length(number) + 1)
-        return number * (unit in factor ? factor[unit] : 1)
-      }
-      BEGIN {
-        factor["Ki"] = 1024; factor["Mi"] = 1024 ^ 2; factor["Gi"] = 1024 ^ 3; factor["Ti"] = 1024 ^ 4; factor["Pi"] = 1024 ^ 5
-        factor["K"] = 1000; factor["M"] = 1000 ^ 2; factor["G"] = 1000 ^ 3; factor["T"] = 1000 ^ 4; factor["P"] = 1000 ^ 5
-      }
-      { value = bytes($1); if (value < 0) bad = 1; else if (value > margin) margin = value }
-      END { if (bad || NR != 2) exit 1; printf "%.0f\n", margin }'
-}
-
 # field <output> <key> <position>: the position'th word of the output's line that starts with the key.
 field() { awk -v key="$2" -v position="$3" '$1 == key { print $position }' <<<"$1"; }
 
 # source <namespace> <dump sha256>: starts the Pod that reads the repository with the credentials of the restore test
 # and no key of the object store, finds the snapshot and refuses a load the node cannot hold, with nothing changed.
 source_step() {
-  local namespace="$1" dump_sha256="$2" manifest output status=0 node configz margin
+  local namespace="$1" dump_sha256="$2" manifest output status=0 node allocatable margin
   local snapshot bucket_objects bucket_bytes bucket_prefixes claim_files claim_bytes claim_prefixes free total scratch need
   stop "$namespace" || fail "cannot delete an earlier Pod $source_pod or $loader in $namespace; nothing changed"
   trap "stop '$namespace' || true" EXIT
@@ -191,17 +172,21 @@ source_step() {
   say "the dump is of the staging snapshot $snapshot: the claim holds $claim_files files, $claim_bytes bytes; the bucket holds $bucket_objects objects, $bucket_bytes bytes"
   node="$(kubectl --namespace "$namespace" get pod "$source_pod" --output jsonpath='{.spec.nodeName}')" ||
     fail "cannot read the node of the Pod $source_pod; nothing changed"
-  configz="$(kubectl get --raw "/api/v1/nodes/$node/proxy/configz")" || fail "cannot read the kubelet's configuration of the node; nothing changed"
-  margin="$(eviction_margin "$configz" "$total")" ||
-    fail "the kubelet's eviction thresholds of the node are missing or unreadable; nothing changed"
+  allocatable="$(kubectl get node "$node" --output jsonpath='{.status.allocatable.ephemeral-storage}')" ||
+    fail "cannot read the allocatable storage of the node; nothing changed"
   # The scratch holds the bucket's files and one block for each of its files and directories, beside restic's working
   # files. Garage's new blocks (the bucket's bytes again) and the claim's new files, counted beside its old ones, since
   # the delete frees them only late, add to what the node must hold.
   scratch=$((bucket_bytes + (bucket_objects + bucket_prefixes) * block_bytes + margin_bytes))
   need=$((scratch + bucket_bytes + claim_bytes + (claim_files + claim_prefixes) * block_bytes))
-  if [ $((free - need)) -le "$margin" ]; then
-    fail "the load needs $need bytes beside the kubelet's eviction margin of $margin, and the node has $free of $total bytes free; nothing changed"
-  fi
+  status=0
+  margin="$(sh "$here/../infrastructure/postgres/backup/files/scripts/stage_files.sh" room "$free" "$total" "$allocatable" "$need")" ||
+    status=$?
+  case "$status" in
+    0) ;;
+    1) fail "the load needs $need bytes beside the kubelet's eviction margin of $margin, and the node has $free of $total bytes free; nothing changed" ;;
+    *) fail "the allocatable storage of the node is missing or unreadable; nothing changed" ;;
+  esac
   say "the node has $free of $total bytes free for a load of $need bytes beside an eviction margin of $margin"
   echo "$snapshot $scratch"
 }

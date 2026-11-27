@@ -36,10 +36,10 @@ case "$*" in
       count) echo "${FAKE_BUCKET_OBJECTS:-0} ${FAKE_BUCKET_BYTES:-0}" ;;
     esac ;;
   *"get cronjob"*) cat "$FAKE_CRONJOB" ;;
-  *"get --raw"*)
-    [ -z "${FAKE_CONFIGZ_FAILS:-}" ] || exit 1
-    default_configz='{"kubeletconfig":{"evictionHard":{"nodefs.available":"10%","imagefs.available":"15%"}}}'
-    echo "${FAKE_CONFIGZ:-$default_configz}" ;;
+  *"get node "*)
+    # The node's allocatable ephemeral storage; the filesystem of the fake source Pod holds 200000000000 bytes.
+    [ -z "${FAKE_NODE_FAILS:-}" ] || exit 1
+    printf '%s' "${FAKE_ALLOCATABLE-170000000000}" ;;
   *"get pod "*nodeName*) echo fake-node ;;
   *"get pod "*status.reason*) printf '%s' "${FAKE_POD_REASON:-}" ;;
   *"get kustomization"*"--output name"*)
@@ -553,15 +553,14 @@ cell_node_without_room_for_the_load_is_refused_before_the_suspension() {
 
 cell_eviction_margin_that_cannot_be_read_is_refused_before_the_suspension() {
   cell=eviction-margin-that-cannot-be-read-is-refused-before-the-suspension
-  local configz
-  FAKE_CLAIM=audiofiles FAKE_CONFIGZ_FAILS=1 run_loader x "$dump"
+  local allocatable
+  FAKE_CLAIM=audiofiles FAKE_NODE_FAILS=1 run_loader x "$dump"
   [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] && [[ $output != *fake-node* ]] ||
     fail "a kubelet configuration that cannot be read exited $status with '$output' after flux $flux_calls"
-  for configz in '{"kubeletconfig":{"evictionHard":{"nodefs.available":"10%"}}}' \
-    '{"kubeletconfig":{"evictionHard":{"nodefs.available":"ten","imagefs.available":"15%"}}}'; do
-    FAKE_CLAIM=audiofiles FAKE_CONFIGZ="$configz" run_loader x "$dump"
+  for allocatable in ten ''; do
+    FAKE_CLAIM=audiofiles FAKE_ALLOCATABLE="$allocatable" run_loader x "$dump"
     [ "$status" != 0 ] && [ -z "$flux_calls" ] && [[ $output == *"nothing changed"* ]] && [[ $output != *fake-node* ]] ||
-      fail "an eviction margin of '$configz' exited $status with '$output' after flux $flux_calls"
+      fail "an allocatable of '$allocatable' exited $status with '$output' after flux $flux_calls"
   done
 }
 
