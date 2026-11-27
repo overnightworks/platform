@@ -113,14 +113,52 @@ state = "running"
 enabled = false
 on_change = "restart"
 
-# hal's two enabled root units, stopped and disabled while their files still exist.
-[bootstrap.services."cloudflared.service"]
-state = "stopped"
-enabled = false
+# The root files hal's tunnel and journal setup left on the PC: its units, their drop-ins, its polkit rules and the
+# tunnel's directory. A directory goes once its files do.
+[bootstrap.files."/etc/systemd/system/cloudflared.service"]
+state = "absent"
 
-[bootstrap.services."hal-journal-retention.timer"]
-state = "stopped"
-enabled = false
+[bootstrap.files."/etc/systemd/system/cloudflared.service.d/20-nonroot.conf"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/cloudflared.service.d/30-edge-global-stop.conf"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/cloudflared.service.d/30-hal-global-stop.conf"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/hal-journal-retention.service"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/hal-journal-retention.timer"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/cloudflared-update.service"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/cloudflared-update.timer"]
+state = "absent"
+
+[bootstrap.files."/etc/polkit-1/rules.d/10-edge-cloudflared-stop.rules"]
+state = "absent"
+
+[bootstrap.files."/etc/polkit-1/rules.d/10-hal-cloudflared-stop.rules"]
+state = "absent"
+
+[bootstrap.files."/etc/cloudflared/config.yml"]
+state = "absent"
+
+[bootstrap.files."/etc/cloudflared/cert.pem"]
+state = "absent"
+
+[bootstrap.files."/etc/cloudflared/a903516a-2660-4507-90a5-5a27d20c82c4.json"]
+state = "absent"
+
+[bootstrap.directories."/etc/systemd/system/cloudflared.service.d"]
+state = "absent"
+
+[bootstrap.directories."/etc/cloudflared"]
+state = "absent"
 
 # The disk's bounds run in the operator's own user manager, with no sudo: Docuum keeps Docker's images within 100 GB, a
 # weekly clean empties uv's cache, a daily tmpfiles clean deletes Codex sessions after 30 days and a daily gtrash
@@ -133,12 +171,12 @@ mode = "copy"
 # The global commit hook: one template under both names git calls, in a directory of platform's own, so a quality bump
 # needs no change of the files. bootstrap:hook installs quality and sets core.hooksPath once these exist.
 [dotfiles."~/.local/share/platform/git-hooks/pre-commit"]
-source = "host/git-hooks/git_hook"
+source = "host/git-hooks/scripts/git_hook"
 mode = "copy"
 permissions = "0755"
 
 [dotfiles."~/.local/share/platform/git-hooks/pre-merge-commit"]
-source = "host/git-hooks/git_hook"
+source = "host/git-hooks/scripts/git_hook"
 mode = "copy"
 permissions = "0755"
 
@@ -674,7 +712,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 workflow=.github/workflows/ci.yml
-template=host/git-hooks/git_hook
+template=host/git-hooks/scripts/git_hook
 hooks_directory="$HOME/.local/share/platform/git-hooks"
 quality_repository=https://github.com/overnightworks/quality
 fail() { echo "bootstrap:hook: $1" >&2; exit 1; }
@@ -1200,7 +1238,7 @@ say "wrote the latest dump of $namespace to $file ($(stat --format=%s "$file") b
 '''
 
 [tasks."backup:now"]
-description = "Take one Backup of a namespace's k8up Schedule now and run its restore test on it, so a backup is proven the same hour"
+description = "Seed a claim layer's first copy of its claim and bucket, take one Backup of a namespace's k8up Schedule now and run its restore test on it, so a backup is proven the same hour"
 usage = '''
 arg "<namespace>" help="The namespace with a k8up Schedule and the CronJob restore-test"
 '''

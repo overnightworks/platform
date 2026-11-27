@@ -2,8 +2,10 @@
 # Drive scripts/backup_now.sh, the script `mise run backup:now` runs, against a fake kubectl, for the outcome the cluster
 # cannot arrange: a Backup that ends in a reason other than Succeeded, or does not complete within the wait, ends the task
 # non-zero, names the Backup and its reason, and makes no restore test Job; and a Backup that succeeded followed by a Job
-# that cannot be made names both; a Job that ends Failed after a Backup that Succeeded names both; and a namespace without
-# exactly one Schedule named backup or postgres, or without the CronJob restore-test, is refused with no object made.
+# that cannot be made names both; a Job that ends Failed after a Backup that Succeeded names both; a namespace without
+# exactly one Schedule named backup or postgres, or without the CronJob restore-test, is refused with no object made; and
+# where the layer has the PreBackupPod files, every end of the seed Pod that the cluster cannot arrange on demand names its
+# sentence and makes no Backup.
 # Usage: mise exec -- tests/backup/backup_now_ends_non_zero_naming_a_failed_backup_or_the_job_it_could_not_make.sh
 set -euo pipefail
 
@@ -18,7 +20,14 @@ calls="$work_directory/calls"
 
 # The fake answers what the task reads and records every call; FAKE_WAIT_STATUS, FAKE_REASON and FAKE_JOB_STATUS choose the
 # outcome of the wait, the Backup's final reason and the creation of the Job, FAKE_SCHEDULES the names of the Schedules,
-# FAKE_CRONJOB what the CronJob read prints and FAKE_JOB_STATE the conditions the made Job reports.
+# FAKE_CRONJOB what the CronJob read prints and FAKE_JOB_STATE the conditions the made Job reports. Without FAKE_PREBACKUP
+# the layer has no PreBackupPod. Otherwise the first read of the Pod backup-seed prints FAKE_EARLIER (nothing: none) and the
+# n'th later one the file $FAKE_POLLS/<n>.json, the last file once they run out; FAKE_CREATE_POD_STATUS and
+# FAKE_DELETE_STATUS are the exit statuses of the creation and the deletion of that Pod.
+cat >"$fake_bin/sleep" <<'FAKE'
+#!/bin/sh
+FAKE
+chmod +x "$fake_bin/sleep"
 cat >"$fake_bin/kubectl" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -34,7 +43,29 @@ case "$*" in
     printf ']}' ;;
   *"get cronjob restore-test"*) printf '%s' "$FAKE_CRONJOB" ;;
   *"get job "*) printf '%s' "$FAKE_JOB_STATE" ;;
-  *"create --filename -"*) cat >/dev/null; echo backup.k8up.io/backup-now-fake ;;
+  *"get prebackuppods.k8up.io"*)
+    [ -z "${FAKE_PREBACKUP:-}" ] ||
+      echo '{"spec":{"pod":{"spec":{"containers":[{"name":"postgres"},{"name":"stager"}],"volumes":[{"name":"password"},{"name":"scratch"}]}}}}' ;;
+  *"get pod backup-seed"*)
+    echo >>"$FAKE_COUNT"
+    reads="$(wc -l <"$FAKE_COUNT")"
+    if [ "$reads" = 1 ]; then
+      printf '%s' "${FAKE_EARLIER:-}"
+    else
+      poll="$FAKE_POLLS/$((reads - 1)).json"
+      [ -e "$poll" ] || poll="$(find "$FAKE_POLLS" -name '*.json' | sort -V | tail -n 1)"
+      cat "$poll"
+    fi ;;
+  *"delete pod backup-seed"*) exit "${FAKE_DELETE_STATUS:-0}" ;;
+  *"create --filename -"*)
+    manifest="$(cat)"
+    if [[ $manifest == *'"kind": "Pod"'* ]]; then
+      [[ $manifest != *'"name": "postgres"'* && $manifest != *'"name": "password"'* && $manifest == *STAGE_SEED* ]] || exit 3
+      echo "create-pod" >>"$FAKE_CALLS"
+      exit "${FAKE_CREATE_POD_STATUS:-0}"
+    fi
+    echo "create-backup" >>"$FAKE_CALLS"
+    echo backup.k8up.io/backup-now-fake ;;
   *" wait backup/"*) exit "$FAKE_WAIT_STATUS" ;;
   *"get backup backup-now-fake"*) printf '%s' "$FAKE_REASON" ;;
   *"create job"*) exit "$FAKE_JOB_STATUS" ;;
@@ -51,7 +82,9 @@ task_output=
 drive() {
   : >"$calls"
   task_status=0
+  : >"$work_directory/count"
   task_output="$(cd "$repository_root" && PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl KUBECONFIG=/nonexistent FAKE_CALLS="$calls" \
+    FAKE_COUNT="$work_directory/count" FAKE_POLLS="$work_directory/polls" \
     FAKE_SCHEDULES="${FAKE_SCHEDULES-backup}" FAKE_CRONJOB="${FAKE_CRONJOB-cronjob.batch/restore-test}" FAKE_JOB_STATE="${FAKE_JOB_STATE:-Complete}" \
     FAKE_WAIT_STATUS="$1" FAKE_REASON="$2" FAKE_JOB_STATUS="$3" scripts/backup_now.sh somewhere 2>&1)" || task_status=$?
 }
@@ -96,3 +129,105 @@ FAKE_SCHEDULES="other" drive 0 Succeeded 0
 refuses_with "somewhere holds 0 k8up Schedules named backup or postgres" "a namespace whose only Schedule has another name"
 FAKE_CRONJOB= drive 0 Succeeded 0
 refuses_with "somewhere holds no CronJob restore-test" "a namespace without the CronJob restore-test"
+
+# The seed Pod. poll <n> <phase> <reason> <stager> <copy> <age seconds> writes the n'th answer of the Pod read, where a
+# container is "none", "running", "waiting" or "terminated:<exit>:<message>", and the Pod is <age> seconds old.
+mkdir "$work_directory/polls"
+container_status() {
+  case "$2" in
+    none) return 0 ;;
+    running) printf '{"name":"%s","state":{"running":{}}}' "$1" ;;
+    waiting) printf '{"name":"%s","state":{"waiting":{}}}' "$1" ;;
+    terminated:*) IFS=: read -r _ code message <<<"$2"
+      printf '{"name":"%s","state":{"terminated":{"exitCode":%s,"message":"%s"}}}' "$1" "$code" "$message" ;;
+  esac
+}
+pod_json() {
+  local statuses
+  statuses="$(container_status stager "$3"),$(container_status copy "$4")"
+  printf '{"metadata":{"creationTimestamp":"%s"},"status":{"phase":"%s","reason":"%s","containerStatuses":[%s]}}' \
+    "$(date -u --date "$5 seconds ago" +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$(sed 's/^,//; s/,$//' <<<"$statuses")"
+}
+poll() { pod_json "${@:2}" >"$work_directory/polls/$1.json"; }
+seeded=terminated:0:seeded
+
+# seed_row <label> <sentence>: the seed ended the task 1 with the sentence, after the seed Pod was made and deleted, and no
+# Backup was made.
+seed_row() {
+  { [ "$task_status" = 1 ] && [[ $task_output == *"$2"* ]] && [[ $task_output == *"no Backup was made"* ]]; } ||
+    fail "$1 ended $task_status with '$task_output'"
+  ! grep -q create-backup "$calls" || fail "$1 still made a Backup"
+  grep -q create-pod "$calls" || fail "$1 made no seed Pod"
+  echo "$1 ends the task non-zero with '$2' and makes no Backup"
+}
+export FAKE_PREBACKUP=1
+
+rm -f "$work_directory"/polls/*.json
+poll 1 Failed DeadlineExceeded "terminated:0:" running 100
+drive 0 Succeeded 0
+seed_row "a seed Pod cut by its backstop" "reached its 1-hour backstop before the copies were staged"
+
+poll 1 Failed "" terminated:3:refused-room\ 10\ 20\ 30\ 5 none 100
+drive 0 Succeeded 0
+seed_row "a seed that refused for room" "the seed of somewhere refused: the copies need 10 bytes beside the kubelet's eviction margin of 5, and the staging volume has 20 of 30 bytes free; free disk space first (mise run disk shows what holds it)"
+poll 1 Failed "" terminated:4:refused-held\ 2 none 100
+drive 0 Succeeded 0
+seed_row "a seed that the guard refused" "the seed of somewhere refused: 2 other pods mount the staging claim; wait until they end, then run it again"
+poll 1 Failed Evicted running none 100
+drive 0 Succeeded 0
+seed_row "an evicted seed Pod" "ended Failed with reason Evicted"
+poll 1 Failed "" terminated:1:failed\ pre-sync\ 23 none 100
+drive 0 Succeeded 0
+seed_row "a seed whose step failed with an exit" "the seed of somewhere failed at pre-sync with exit 23"
+poll 1 Failed "" terminated:1:failed\ fit\ - none 100
+drive 0 Succeeded 0
+seed_row "a seed whose step failed without an exit" "the seed of somewhere failed at fit; no Backup"
+poll 1 Succeeded "" terminated:0: none 100
+drive 0 Succeeded 0
+seed_row "a seed whose outcome is unreadable" "the seed's stager of somewhere ended with exit 0 and no outcome backup:now reads"
+poll 1 Running "" running terminated:1: 100
+drive 0 Succeeded 0
+seed_row "a seed whose copy container ended non-zero" "the seed's copy container of somewhere ended with exit 1 before its step reported"
+poll 1 Pending "" waiting none 301
+drive 0 Succeeded 0
+seed_row "a seed Pod whose stager never started" "did not start within 5 minutes"
+poll 1 Running "" running none 4300
+drive 0 Succeeded 0
+seed_row "a seed Pod that does not end in its backstop and ten minutes" "did not end within 1 hours"
+FAKE_CREATE_POD_STATUS=1 drive 0 Succeeded 0
+{ [ "$task_status" = 1 ] && [[ $task_output == *"could not create the seed Pod backup-seed in somewhere; no Backup was made"* ]]; } &&
+  ! grep -q create-backup "$calls" || fail "a seed Pod that could not be made ended $task_status with '$task_output'"
+echo "a seed Pod that cannot be made ends the task non-zero naming it and makes no Backup"
+
+# A copy container that ended 0 ends nothing; the stager's own outcome does, and then the Backup is made and proven.
+poll 1 Running "" running terminated:0: 10
+poll 2 Succeeded "" $seeded terminated:0: 20
+drive 0 Succeeded 0
+{ [ "$task_status" = 0 ] && [[ $task_output == *"the seed of somewhere staged its copies"* ]] && grep -q create-backup "$calls" &&
+  grep -q "delete pod backup-seed" "$calls"; } ||
+  fail "a seed that ended 0 beside a copy container that ended 0 exited $task_status with '$task_output'"
+echo "a copy container that ended 0 ends nothing: the stager's seeded does, the seed Pod is deleted and the Backup is made"
+
+# An earlier seed Pod: one that ended, or never started, is deleted and the run goes on; one that lives refuses.
+# first_call_line <text>: the number of the first recorded call that holds the text.
+first_call_line() { grep -n -m1 -F -- "$1" "$calls" | cut -d: -f1; }
+ended_sentence="the earlier seed Pod backup-seed of somewhere had ended; it was deleted"
+for earlier in "Succeeded 100 $ended_sentence" "Failed 100 $ended_sentence" \
+  "Pending 301 the earlier seed Pod backup-seed of somewhere never started within 5 minutes; it was deleted"; do
+  poll 1 Succeeded "" $seeded none 10
+  read -r earlier_phase earlier_age sentence <<<"$earlier"
+  FAKE_EARLIER="$(pod_json "$earlier_phase" "" none none "$earlier_age")" drive 0 Succeeded 0
+  { [ "$task_status" = 0 ] && [[ $task_output == *"$sentence"* ]] && grep -q create-backup "$calls"; } ||
+    fail "an earlier seed Pod $earlier_phase of $earlier_age seconds exited $task_status with '$task_output'"
+  [ "$(first_call_line "delete pod backup-seed")" -lt "$(first_call_line create-pod)" ] ||
+    fail "the earlier seed Pod $earlier_phase of $earlier_age seconds was not deleted before the seed Pod was made"
+  echo "an earlier seed Pod ($earlier_phase, $earlier_age seconds old) is deleted before the next seed, with '$sentence', and the run goes on to its seed and Backup"
+done
+FAKE_EARLIER="$(pod_json Running "" running none 100)" drive 0 Succeeded 0
+{ [ "$task_status" = 1 ] && [[ $task_output == *"another run's seed Pod backup-seed of somewhere is still running"* ]] && [[ $task_output == *"nothing was made"* ]] &&
+  ! grep -q "create\|delete" "$calls"; } || fail "a live seed Pod exited $task_status with '$task_output'"
+echo "a live seed Pod of another run refuses, deleting and making nothing"
+FAKE_DELETE_STATUS=1 FAKE_EARLIER="$(pod_json Failed "" none none 100)" drive 0 Succeeded 0
+{ [ "$task_status" = 1 ] && [[ $task_output == *"did not go within 2 minutes; nothing was made"* ]] && ! grep -q "create" "$calls"; } ||
+  fail "an earlier seed Pod that does not go exited $task_status with '$task_output'"
+echo "an earlier seed Pod that does not go refuses, making nothing"

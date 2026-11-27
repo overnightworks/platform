@@ -32,7 +32,10 @@ login, on any commit and without writing state (exit 0 no change, 2 changes, 1 f
 `--apply` applies that run's own plan, only from a clean `origin/main`. (GH-4)
 
 A plan with a `delete` action, a replacement included, fails with exit 1 on both runs, names each address and applies
-nothing; a deliberate removal is a `removed` block with `lifecycle { destroy = false }`, which plans a forget. (GH-5)
+nothing; a deliberate removal is a `removed` block with `lifecycle { destroy = false }`, which plans a forget. A
+repository leaves `managed` and that forget is applied before the repository is archived, since GitHub refuses the
+refresh of an archived repository's objects. A `for_each` key is forgotten by the resource's own `destroy = false`
+lifecycle, because OpenTofu rejects a `removed` block for one instance. (GH-5)
 
 An imported object's state carries no `skip_destroy` until an apply writes it, so removing a block can plan a delete;
 the command refuses any such plan, which closes it for every object of the root. (GH-6)

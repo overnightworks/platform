@@ -27,7 +27,7 @@ original_backup_data="$(kubectl --namespace "$namespace" get secret "$bucket_sec
 original_backup_key="$(secret_value "$bucket_secret" credentials)"
 mask_secret "$(ini_value "$original_backup_key" aws_secret_access_key)"
 saved_prebackup="$(mktemp)"
-platform_secrets_suspended=0 layer_suspended=0
+platform_secrets_suspended=0
 
 # restore: the Secret as it was, the PreBackupPod as the layer declares it, and the Kustomizations running again.
 restore() {
@@ -38,20 +38,14 @@ restore() {
     flux resume kustomization platform-secrets --namespace flux-system || failed=1
     platform_secrets_suspended=0
   fi
-  if [ "$layer_suspended" = 1 ]; then
-    flux resume kustomization "$namespace" --namespace flux-system || failed=1
-    layer_suspended=0
-  fi
+  restore_pre_backup_pod || failed=1
   return "$failed"
 }
 cleanup() {
   local cell_status=$?
   restore || cell_status=1
   delete_backups
-  (run_client clear-planted-objects "$credentials_secret" clear "$bucket_variable") ||
-    { delete_object --namespace "$namespace" delete pod clear-planted-objects --ignore-not-found --wait --timeout=2m; deletion_failures=$((deletion_failures + 1)); }
-  delete_object --namespace "$namespace" delete pod --selector cell=object-store --ignore-not-found --wait --timeout=2m
-  delete_object --namespace "$namespace" delete configmap object-store-client --ignore-not-found
+  remove_client
   rm -f -- "$saved_prebackup"
   delete_restic_objects
   end_deletions "$cell_status"
@@ -77,8 +71,7 @@ snapshot_facts() {
       sed "s|^$staging/||" | grep -v / | LC_ALL=C sort | tr "\n" " ")"
     echo "bucket-files $(restic --no-cache ls --json --recursive --path "$staging" latest "$staging" |
       jq --raw-output "select(.type == \"file\") | .path" | grep -c "^$staging/bucket/" || true)"
-    echo "manifest-bucket $(restic --no-cache dump --path "$staging" latest "$staging/MANIFEST" | grep -c "^file$tab[0-9]*$tab[0-9]*${tab}bucket/" || true)"
-    '"$snapshot_bucket_digests"
+    '"$snapshot_manifest_bucket_count$snapshot_bucket_digests"
   [ "$restic_exit" = 0 ] || fail "the staging snapshot of $namespace cannot be read after the Backup $1 (exit $restic_exit)"
 }
 
@@ -152,11 +145,11 @@ flux suspend kustomization platform-secrets --namespace flux-system
 platform_secrets_suspended=1
 kubectl --namespace "$namespace" patch secret "$bucket_secret" --type merge \
   --patch "{\"data\": {\"credentials\": \"$(printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$wrong_id" "$wrong_secret" | base64 --wrap=0)\"}}"
-refused_backup bucket-row-14 "$step_failure"
+refused_backup bucket-row-14 '^stage: bucket-size failed with exit [0-9]+$'
 ! staged_file_exists /staging/MANIFEST || fail "a wrong key: the staging claim holds a MANIFEST"
 end_backup bucket-row-14
 restore
-echo "a wrong key failed the step bucket-pre-sync, naming it and its exit, and left no MANIFEST; the Secret $bucket_secret and platform-secrets are as they were"
+echo "a wrong key failed the step bucket-size, naming it and its exit, and left no MANIFEST; the Secret $bucket_secret and platform-secrets are as they were"
 
 # Row 7a: a zero-byte key that ends in a slash is a directory marker, not staged; the key under it is.
 plant marker
@@ -169,8 +162,7 @@ echo "a zero-byte key that ends in a slash was left out and the key under it sta
 
 # Row 21: the same Backup with the Component's patch withdrawn from the PreBackupPod leaves no bucket/ in the snapshot or
 # MANIFEST. The layer's Kustomization is suspended, so that Flux does not put the patch back; it resumes on every exit.
-flux suspend kustomization "$namespace" --namespace flux-system
-layer_suspended=1
+suspend_layer
 kubectl --namespace "$namespace" get prebackuppod files --output json >"$saved_prebackup"
 withdrawal="$(jq --compact-output '
   (.spec.pod.spec.containers | map(.name)) as $names |
@@ -183,9 +175,7 @@ without_bucket="${expected_top/bucket /}"
 [ "$(value top)" = "$without_bucket" ] || fail "the snapshot without the bucket patch holds '$(value top)', not '$without_bucket'"
 [ "$(value manifest-bucket)" = 0 ] || fail "the MANIFEST of the snapshot without the bucket patch lists bucket/ lines"
 restore
-[ "$(kubectl --namespace "$namespace" get prebackuppod files --output json | jq '[.spec.pod.spec.containers[].name] | index("bucket") != null')" = true ] ||
-  fail "the layer's Kustomization did not put the container bucket back into the PreBackupPod"
-echo "a Backup with the bucket patch withdrawn left no bucket/ and no bucket line in MANIFEST; the layer put the container back"
+echo "a Backup with the bucket patch withdrawn left no bucket/ and no bucket line in MANIFEST"
 
 # No log of the PreBackupPod's containers or k8up's Jobs names a planted key or a credential.
 job_logs="$(kubectl --namespace "$namespace" logs --selector k8upjob=true --all-pods --tail=-1)" || fail "cannot read k8up's Job logs in $namespace"

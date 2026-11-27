@@ -35,11 +35,8 @@ cleanup() {
   local cell_status=$?
   [ -z "$loader_pid" ] || pkill -KILL --session "$loader_pid" 2>/dev/null || true
   on_claim "rm -rf '/claim/$cell_directory'" || deletion_failures=$((deletion_failures + 1))
-  (run_client clear-planted-objects "$credentials_secret" clear "$bucket_variable") ||
-    { delete_object --namespace "$namespace" delete pod clear-planted-objects --ignore-not-found --wait --timeout=2m; deletion_failures=$((deletion_failures + 1)); }
+  remove_client
   delete_object --namespace "$namespace" delete pod "$holder" db-load-snapshot db-load-source --ignore-not-found --wait --timeout=2m
-  delete_object --namespace "$namespace" delete pod --selector cell=object-store --ignore-not-found --wait --timeout=2m
-  delete_object --namespace "$namespace" delete configmap object-store-client --ignore-not-found
   flux resume kustomization "$namespace" >/dev/null || deletion_failures=$((deletion_failures + 1))
   sql 'DROP TABLE IF EXISTS load_marker' >/dev/null || deletion_failures=$((deletion_failures + 1))
   delete_backups
