@@ -379,6 +379,10 @@ jobs:
         if: matrix.part == 'backup-2'
         run: tests/backup/room_role_ends_non_zero_on_a_term_and_never_reads_as_a_fit.sh
 
+      - name: Check that the bucket role frees a replaced tree before it writes, against an S3 source
+        if: matrix.part == 'backup-2'
+        run: tests/backup/bucket_role_frees_a_replaced_tree_before_it_writes.sh
+
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
       - name: Compare the generated files with a fresh regeneration
         if: matrix.part == 'core'
