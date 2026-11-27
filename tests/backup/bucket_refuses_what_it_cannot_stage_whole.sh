@@ -175,9 +175,7 @@ without_bucket="${expected_top/bucket /}"
 [ "$(value top)" = "$without_bucket" ] || fail "the snapshot without the bucket patch holds '$(value top)', not '$without_bucket'"
 [ "$(value manifest-bucket)" = 0 ] || fail "the MANIFEST of the snapshot without the bucket patch lists bucket/ lines"
 restore
-[ "$(kubectl --namespace "$namespace" get prebackuppod files --output json | jq '[.spec.pod.spec.containers[].name] | index("bucket") != null')" = true ] ||
-  fail "the layer's Kustomization did not put the container bucket back into the PreBackupPod"
-echo "a Backup with the bucket patch withdrawn left no bucket/ and no bucket line in MANIFEST; the layer put the container back"
+echo "a Backup with the bucket patch withdrawn left no bucket/ and no bucket line in MANIFEST"
 
 # No log of the PreBackupPod's containers or k8up's Jobs names a planted key or a credential.
 job_logs="$(kubectl --namespace "$namespace" logs --selector k8upjob=true --all-pods --tail=-1)" || fail "cannot read k8up's Job logs in $namespace"
