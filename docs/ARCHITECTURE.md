@@ -141,7 +141,9 @@ Facts of today's boundaries, each held by a manifest or a cell:
   none of them. Only the realm `hallucinai`, its localization and its static resources are routed.
 - No access token carries a person's name or e-mail address; the ID token and userinfo do.
 - A declared test person can sign in to hopin, skat, presentator and songmaker only during a run of `mise run live:check`: at rest it is disabled with no
-  credential, and the boundary that keeps its password from a non-cooperative agent is the operator's account on the PC.
+  credential, and the boundary that keeps its password from a non-cooperative agent is the operator's account on the PC;
+  an app's live journeys get only that app's session cookies of the run, in a file deleted on exit and valid until the run
+  signs out; the boundary that keeps a copy from a non-cooperative journey is the operator's account, as for the password.
 - Each Postgres declares the role `reader` at every start (`infrastructure/postgres/scripts/reader_role.sh`), with no
   password and no right but `pg_read_all_data`'s, and `mise run db:read <namespace>` runs an agent's SQL as it through
   `kubectl exec`, in a read-only session whose timeouts it sets, after a check that the session is that role. It is a

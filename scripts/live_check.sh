@@ -79,9 +79,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/live_check_apps.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/live_check_journeys.sh"
 app="${1:-}"
 tier="${2:-sign-in}"
+# shellcheck disable=SC2034 # live_check_journeys.sh reads checkout and live_check_command.
 checkout="${3:-}"
 # The fourth argument is the gate's own call of the command for the journeys tier.
 inside_gate="${4:-}"
+# shellcheck disable=SC2034 # read by live_check_journeys.sh.
 live_check_command="$(realpath -- "$0")"
 if [ -z "$(app_row "$app")" ] || ! tier_arguments_agree; then
   echo "usage: mise run live:check <app> [--tier journeys --checkout <dir>]" >&2

@@ -166,6 +166,30 @@ the app's Gatus row and opens the item at the app for a red after the rerun; exi
 running, and the head runs it again after that run ends. A red whose line names another app's leftover goes to platform's
 head.
 
+## Live journeys
+
+An app where a person signs in may ship journeys that platform runs on the operator's PC against the public names, never
+from CI: `mise run live:check <app> --tier journeys --checkout <dir>` (`docs/operations.md`, OPS-25). Platform owns the
+calling side; the app owns its journeys and declares one mise task, `live:journeys`, in its repository. Platform runs it
+as `mise -C <checkout> run live:journeys --origin <origin> --storage-state <file>`.
+
+- **Origin and file.** `<origin>` is the app client's `baseUrl` in `infrastructure/keycloak/realm.yaml` without its trailing
+  slash. `<file>` is a Playwright storage state, `{"cookies": [...], "origins": []}`, holding the app host's cookies of the
+  run's sign-in only; session cookies have `expires: -1` and `sameSite` is `Lax`.
+- **Exit codes.** 0 means every journey passed, 1 one failed, and 3 skipped for a precondition the app names. Any other
+  exit is red. Platform reads only the exit code; a report stays the app's own, in its checkout.
+- **Without the file.** The task fails loud, with a non-zero exit and no journey run, when `--storage-state` is missing or
+  names no readable file: CI never has that file.
+- **Output.** Its stdout and stderr go to `/dev/null`. It still prints codes and counts only, since its report is what an
+  agent reads.
+- **Copies.** The app keeps no copy of the file, and no trace, video or report that holds a cookie, outside a git-ignored
+  directory of its checkout.
+- **Environment.** The task gets `HOME`, a `PATH` of `/usr/bin:/bin` and `LANG`, and nothing else: no password, no
+  `KUBECONFIG`, no runtime directory and no platform or mise variable. The app's mise supplies its own tools, and the
+  caller prepares the checkout, which the command never changes.
+- **Limits.** The task runs in a systemd user scope of its own inside probe-run's cap, which ends it and every process it
+  started.
+
 ## The GPU
 
 The platform's node offers its one card to Kubernetes as `nvidia.com/gpu: 1`, through the RuntimeClass `nvidia` and

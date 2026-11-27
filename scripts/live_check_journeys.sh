@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2154 # app, origin, checkout, cookie_jar, lock_directory, lock_descriptor, call_seconds, codes, skipped, sign_in_step and fail belong to live_check.sh.
+# shellcheck disable=SC2154,SC2034 # app, origin, checkout, cookie_jar, lock_directory, lock_descriptor, call_seconds, codes and fail belong to live_check.sh, which reads skipped and sign_in_step.
 # Sourced by live_check.sh: the journeys tier of `mise run live:check <app> --tier journeys --checkout <dir>`. The command
 # calls probe-run once for the whole run (its one load wait comes before the lock and the first write; the sign-in, the
 # drive and the trapped cleanup run inside its cap), signs the test person in as the sign-in tier does, hands the app's
