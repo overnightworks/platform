@@ -4,7 +4,13 @@
 # model of the realm's test person, and a fake curl, which models each app's sign-in routes and Keycloak's login form. The
 # caller sets repository_root, sources tests/failure.sh and runs its cases with prepare_case and run_command.
 work_directory="$(mktemp -d)"
-trap 'rm -rf "$work_directory"' EXIT
+# end_the_fakes: ends the processes the fakes left (a held scope, the drive's straggler) and removes the run's files.
+end_the_fakes() {
+  jobs -p | xargs -r kill 2>/dev/null || true
+  cat "$work_directory"/state-*/straggler 2>/dev/null | xargs -r kill 2>/dev/null || true
+  rm -rf "$work_directory"
+}
+trap end_the_fakes EXIT
 fake_bin="$work_directory/bin"
 mkdir "$fake_bin"
 realm_file="$repository_root/infrastructure/keycloak/realm.yaml"
@@ -46,6 +52,11 @@ scan_arguments_and_environment() {
   [ ! -s "$FAKE_STATE/password" ] || known="$(<"$FAKE_STATE/password")"
   if [[ " $* " =~ $shape ]] || { [ -n "$known" ] && [[ "$*" == *"$known"* ]]; }; then violate "$name: a password in an argument"; fi
   if env | grep -Eq "$shape" || { [ -n "$known" ] && env | grep -qF -- "$known"; }; then violate "$name: a password in the environment"; fi
+  if [ -s "$FAKE_STATE/cookie-values" ]; then
+    while read -r known; do
+      [[ " $* " != *"$known"* ]] || violate "$name: a cookie value in an argument"
+    done <"$FAKE_STATE/cookie-values"
+  fi
 }
 FAKE
 
@@ -134,7 +145,8 @@ FAKE
 # The apps' routes (the lines of FAKE_APPS) and Keycloak's login form. The form accepts the password the realm model
 # recorded and only for an enabled person with a credential and no required action; FAKE_SIGNIN=refused makes it answer
 # the page again; FAKE_LOGOUT_STATUS sets an app's sign-out answer, which ends the session only when it is 200 unless
-# FAKE_LOGOUT_ENDS_SESSION is set; FAKE_TRANSPORT_FAILS=start makes the request to an app's start fail the way curl's
+# FAKE_LOGOUT_ENDS_SESSION is set and never when FAKE_LOGOUT_KEEPS_SESSION is (the app clears its cookie only);
+# FAKE_JAR_GARBAGE=true adds a jar line of the app's host that no cookie format reads; FAKE_TRANSPORT_FAILS=start makes the request to an app's start fail the way curl's
 # timeout does (exit 28); FAKE_TERM_AT=login-page sends TERM to the command's own process, through the timeout that runs
 # it, while this request is open.
 cat >"$fake_bin/curl" <<'FAKE'
@@ -142,11 +154,12 @@ cat >"$fake_bin/curl" <<'FAKE'
 set -euo pipefail
 source "$FAKE_LIB"
 scan_arguments_and_environment curl "$@"
-format="" jar="" url="" origin_header="" data_given=false password_stdin=false
+format="" jar="" cookie_file="" url="" origin_header="" data_given=false password_stdin=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --silent | --show-error) ;;
-    --max-time | --output | --cookie) shift ;;
+    --max-time | --output) shift ;;
+    --cookie) cookie_file="$2"; shift ;;
     --write-out) format="$2"; shift ;;
     --cookie-jar) jar="$2"; shift ;;
     --config) url="$(sed -n 's/^url = "\(.*\)"$/\1/p' "$2")"; shift ;;
@@ -158,7 +171,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 code="" redirect="" body=""
-jar_has_session() { [ -s "$jar" ] && grep -q "$FAKE_COOKIE_VALUE" "$jar"; }
+jar_has_session() { [ -s "$cookie_file" ] && grep -q "$FAKE_COOKIE_VALUE" "$cookie_file"; }
 # terminate_command: TERM to the command's own process, the topmost ancestor below the timeout that caps it (the
 # ancestors between are the command's subshells).
 terminate_command() {
@@ -186,16 +199,19 @@ if [ "$app_matched" = true ]; then
     "$app_callback?"*)
       log_event "curl: callback"
       touch "$FAKE_STATE/session-$app_name"
-      printf '%s\n' "$(printf '%s\tFALSE\t/\tTRUE\t0\tsession\t%s' "$app_name" "$FAKE_COOKIE_VALUE")" >>"$jar"
+      printf '#HttpOnly_%s\tFALSE\t/\tTRUE\t0\tsession\t%s\n%s\tFALSE\t/\tFALSE\t4102444800\ttheme\tdark\n' "${app_origin#*//}" "$FAKE_COOKIE_VALUE" "${app_origin#*//}" >>"$jar"
+      [ "${FAKE_JAR_GARBAGE:-}" != true ] || printf '#HttpOnly_%s\tFALSE\t/\tTRUE\t0\tsession\t%s\textra\n' "${app_origin#*//}" "$FAKE_COOKIE_VALUE" >>"$jar"
       code=303 redirect="$app_origin/" ;;
     "$app_origin$app_account")
       log_event "curl: account"
       if [ -e "$FAKE_STATE/session-$app_name" ] && jar_has_session; then code=200; else code=401; fi ;;
     "$app_origin$app_logout")
+      if [ -n "$jar" ]; then log_event "curl: logout writable"; else log_event "curl: logout read-only"; fi
       log_event "curl: logout"
       [ "$origin_header" = "Origin: $app_origin" ] || violate "curl: a sign-out without $app_name's own Origin"
       code="${FAKE_LOGOUT_STATUS:-200}"
-      if [ "$code" = 200 ] || [ -n "${FAKE_LOGOUT_ENDS_SESSION:-}" ]; then rm -f "$FAKE_STATE/session-$app_name"; : >"$jar"; fi ;;
+      if { [ "$code" = 200 ] || [ -n "${FAKE_LOGOUT_ENDS_SESSION:-}" ]; } && [ -z "${FAKE_LOGOUT_KEEPS_SESSION:-}" ]; then rm -f "$FAKE_STATE/session-$app_name"; fi
+      if [ "$code" = 200 ] && [ -n "$jar" ]; then : >"$jar"; fi ;;
     "$app_origin$app_decoy") code=200 ;;
     *) echo "fake curl: unexpected request" >&2; exit 1 ;;
   esac
@@ -214,6 +230,7 @@ else
       if [ "$posted" = "$(<"$FAKE_STATE/password")" ] && [ "$(<"$FAKE_STATE/enabled")" = true ] && [ -s "$FAKE_STATE/credentials" ] &&
         [ "$(<"$FAKE_STATE/required")" = '[]' ] && [ "${FAKE_SIGNIN:-}" != refused ]; then
         touch "$FAKE_STATE/password-on-curl-stdin" "$FAKE_STATE/keycloak-session"
+        printf '%s\tFALSE\t/realms/\tTRUE\t0\tKEYCLOAK_SESSION\t%s\n' "${FAKE_KEYCLOAK_ORIGIN#*//}" "$FAKE_KEYCLOAK_COOKIE_VALUE" >>"$jar"
         code=302 redirect="$FAKE_CALLBACK_URL?code=FAKECODE2&state=fake-state"
       fi ;;
     *) echo "fake curl: unexpected request" >&2; exit 1 ;;
@@ -222,10 +239,159 @@ fi
 format="${format//'%{http_code}'/$code}"
 printf '%s%s' "$body" "${format//'%{redirect_url}'/$redirect}"
 FAKE
-chmod +x "$fake_bin/kubectl" "$fake_bin/curl"
+# The gate and the scope. probe-run runs the command it wraps (its arguments after -k K CAP) and passes a TERM on to it
+# once, or, with FAKE_GATE_STATUS, answers that status without running it. systemd-run keeps scope-<unit> (the pid of the
+# command it runs) while the command lives; systemctl's stop ends that command and returns when the scope is gone;
+# FAKE_FAIL=scope makes the trial scope fail.
+cat >"$fake_bin/probe-run" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+source "$FAKE_LIB"
+scan_arguments_and_environment probe-run "$@"
+log_event "probe-run: $*"
+[ -z "${FAKE_GATE_STATUS:-}" ] || exit "$FAKE_GATE_STATUS"
+[ "$1" = -k ] || { violate "probe-run: no -k K CAP before the command"; exit 2; }
+shift 3
+status=0
+"$@" &
+command_pid=$!
+trap 'log_event "probe-run: term"; kill -TERM "$command_pid" 2>/dev/null || true' TERM INT
+wait "$command_pid" || status=$?
+while kill -0 "$command_pid" 2>/dev/null; do wait "$command_pid" && status=0 || status=$?; done
+exit "$status"
+FAKE
+cat >"$fake_bin/systemd-run" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+source "$FAKE_LIB"
+scan_arguments_and_environment systemd-run "$@"
+unit="" property=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --user | --scope | --quiet | --collect) ;;
+    --unit) unit="$2"; shift ;;
+    --property) property="$2"; shift ;;
+    --) shift; break ;;
+    *) violate "systemd-run: unexpected argument"; exit 2 ;;
+  esac
+  shift
+done
+if [ -z "$unit" ]; then
+  log_event "systemd-run: trial"
+  [ "${FAKE_FAIL:-}" != scope ] || exit 1
+  exec "$@"
+fi
+log_event "systemd-run: scope $unit $property"
+trap 'rm -f "$FAKE_STATE/scope-$unit"' EXIT
+status=0
+"$@" &
+echo $! >"$FAKE_STATE/scope-$unit"
+wait $! || status=$?
+# The command has ended and the scope lives while any process is in it, which a watcher outlives this call to say.
+if [ -e "$FAKE_STATE/straggler" ] && kill -0 "$(<"$FAKE_STATE/straggler")" 2>/dev/null; then
+  trap - EXIT
+  (
+    while kill -0 "$(<"$FAKE_STATE/straggler")" 2>/dev/null; do sleep 0.05; done
+    rm -f "$FAKE_STATE/scope-$unit"
+  ) >/dev/null 2>&1 &
+fi
+exit "$status"
+FAKE
+cat >"$fake_bin/systemctl" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+source "$FAKE_LIB"
+[ "$1" = --user ] || { violate "systemctl: not the user manager"; exit 1; }
+unit="${*: -1}"
+unit="${unit%.scope}"
+case "$2" in
+  is-active) [ -e "$FAKE_STATE/scope-$unit" ] ;;
+  stop)
+    file=absent
+    ! compgen -G "$XDG_RUNTIME_DIR/live-check/storage-state-*" >/dev/null || file=present
+    log_event "systemctl: stop $unit file=$file"
+    if [ -e "$FAKE_STATE/scope-$unit" ]; then
+      kill -TERM "$(<"$FAKE_STATE/scope-$unit")" 2>/dev/null || true
+      [ ! -e "$FAKE_STATE/straggler" ] || kill -TERM "$(<"$FAKE_STATE/straggler")" 2>/dev/null || true
+      for _ in $(seq 200); do [ -e "$FAKE_STATE/scope-$unit" ] || break; sleep 0.05; done
+    fi ;;
+  *) violate "systemctl: unexpected $2"; exit 1 ;;
+esac
+FAKE
+# mise: `mise -C <checkout> ...` is the app's own mise, run by the command under env -i, which holds no FAKE_ variable,
+# so it finds the case through the state-current link. `tasks ls` lists the checkout's mise.toml; `run live:journeys`
+# is the drive, which records what it received, leaves one process behind in its scope and then ends as the case's drive-mode file says: exit:<n>, or
+# signal:<name>:<outer|inner>, which sends that signal to the outermost or innermost live_check.sh above it and holds
+# until the scope's stop ends it. Every other call is the real mise's.
+cat >"$fake_bin/mise" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "${1:-}" = -C ] || exec "__REAL_MISE__" "$@"
+export FAKE_STATE
+FAKE_STATE="$(readlink -f "__WORK__/state-current")"
+source "__WORK__/fake_lib.sh"
+checkout="$2"
+shift 2
+for name in KUBECONFIG XDG_RUNTIME_DIR; do
+  [ -z "${!name:-}" ] || violate "mise: $name reaches the app's command"
+done
+if env | grep -q '^MISE_'; then violate "mise: a mise variable reaches the app's command"; fi
+case "$*" in
+  "tasks ls --name-only")
+    log_event "mise: tasks of the checkout"
+    "__YQ__" -p toml '.tasks // {} | keys | .[]' "$checkout/mise.toml" ;;
+  "run live:journeys --origin "*" --storage-state "*)
+    scan_arguments_and_environment drive "$@"
+    origin="$4" state_file="$6"
+    log_event "drive: started"
+    # What the app's command prints stays out of the command's output.
+    echo "the drive printed this"; echo "the drive printed this" >&2
+    password="$(<"$FAKE_STATE/password")"
+    ! grep -rqF -- "$password" "${state_file%/*}" || violate "drive: the password stands in a file of the run"
+    {
+      echo "origin $origin"
+      echo "checkout $checkout"
+      echo "environment $(tr '\0' '\n' </proc/$$/environ | cut -d= -f1 | sort | paste -sd' ' -)"
+      echo "path $PATH"
+      echo "mode $(stat -c %a "$state_file")"
+      echo "cookies $("__YQ__" -p json '.cookies[] | [.name, .domain, .path, .expires, .httpOnly, .secure, .sameSite] | join(",")' "$state_file" | paste -sd' ' -)"
+      echo "origins $("__YQ__" -p json '.origins | length' "$state_file")"
+      echo "jar $(cut -f1 "${state_file%/*}"/cookies-* | paste -sd' ' -)"
+      for descriptor in /proc/$$/fd/*; do
+        [ "$(readlink "$descriptor")" != "${state_file%/*}/lock" ] || echo "lock inherited"
+      done
+    } >"$FAKE_STATE/drive-record"
+    # A process the drive leaves behind in its scope, as a browser would.
+    sleep 600 >/dev/null 2>&1 &
+    echo $! >"$FAKE_STATE/straggler"
+    mode="$(<"$FAKE_STATE/drive-mode")"
+    case "$mode" in
+      exit:*) exit "${mode#exit:}" ;;
+    esac
+    pid=$PPID outer="" inner=""
+    while [ "$pid" -gt 1 ]; do
+      arguments="$(ps -o args= -p "$pid")"
+      if [[ "$arguments" =~ ^[^\ ]*bash\ [^\ ]*live_check\.sh\  ]]; then
+        if [[ "$arguments" == *" inside-gate" ]]; then inner="$pid"; else outer="$pid"; fi
+      fi
+      pid="$(ps -o ppid= -p "$pid" | tr -d ' ')"
+    done
+    sleep 600 &
+    sleeper=$!
+    trap 'kill "$sleeper" 2>/dev/null; log_event "drive: terminated"; exit 143' TERM
+    case "$mode" in
+      signal:*:outer) IFS=: read -r _ signal _ <<<"$mode"; kill -"$signal" "$outer" ;;
+      signal:*:inner) IFS=: read -r _ signal _ <<<"$mode"; kill -"$signal" "$inner" ;;
+    esac
+    wait "$sleeper" ;;
+  *) violate "mise: unexpected call $*"; exit 1 ;;
+esac
+FAKE
+sed -i "s|__WORK__|$work_directory|g; s|__REAL_MISE__|$(command -v mise)|; s|__YQ__|$(command -v yq)|g" "$fake_bin/mise"
+chmod +x "$fake_bin"/*
 # mise puts its own kubectl before PATH and the command falls back to the PC's kubeconfig, so neither may be reachable.
 export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux,flux2 KUBECONFIG=/nonexistent
-for tool in kubectl curl; do
+for tool in kubectl curl probe-run systemd-run systemctl mise; do
   [ "$(command -v "$tool")" = "$fake_bin/$tool" ] || fail "$tool on PATH is not the fake"
 done
 
@@ -243,6 +409,9 @@ prepare_case() {
   : >"$state/credentials"
   : >"$state/password"
   : >"$state/log"
+  printf '%s\n%s\n' "$cookie_value" "$keycloak_cookie_value" >"$state/cookie-values"
+  echo exit:0 >"$state/drive-mode"
+  ln -sfn "$state" "$work_directory/state-current"
   PERSON="$person" yq --output-format json --indent 0 '[(.users[] | select(.username == strenv(PERSON)) | .groups[]) | {"path": .}]' \
     "$realm_file" >"$state/groups"
   case "${2:-}" in
@@ -252,13 +421,18 @@ prepare_case() {
       touch "$state/keycloak-session" "$state/session-$checked_app" ;;
     jar:*)
       mkdir -m 700 "$runtime/live-check"
-      printf '%s\tFALSE\t/\tTRUE\t0\tsession\t%s\n' "${2#jar:}" "$cookie_value" >"$runtime/live-check/cookies-${2#jar:}"
+      printf '#HttpOnly_%s\tFALSE\t/\tTRUE\t0\tsession\t%s\n' "$(app_host "${2#jar:}")" "$cookie_value" >"$runtime/live-check/cookies-${2#jar:}"
       touch "$state/session-${2#jar:}" ;;
   esac
 }
 cookie_value=SECRETCOOKIEVALUE
+keycloak_cookie_value=KEYCLOAKCOOKIEVALUE
+# app_host <app>: the host of the app's origin, which is the domain of its cookies.
+app_host() { awk -v wanted="$1" '$1 == wanted { sub(/^https?:\/\//, "", $2); print $2 }' "$apps_file"; }
 # The app the command checks, its argument; empty is no argument.
 checked_app=hopin
+# The arguments after the app: --tier and --checkout for a journeys run.
+live_check_arguments=()
 # run_command <name> <environment assignment>...: runs the command for checked_app; sets status.
 run_command() {
   local name="$1" callback deployment
@@ -269,13 +443,13 @@ run_command() {
   (cd "$repository_root" && env XDG_RUNTIME_DIR="$runtime" TMPDIR="$work_directory/tmp-$name" FAKE_STATE="$state" \
     FAKE_LIB="$work_directory/fake_lib.sh" FAKE_PERSON="$person" FAKE_REALM="$realm" FAKE_APPS="$apps_file" \
     FAKE_CALLBACK_URL="$callback" FAKE_DEPLOYMENT_REF="$deployment" FAKE_KEYCLOAK_ORIGIN="$keycloak_origin" \
-    FAKE_COOKIE_VALUE="$cookie_value" "$@" \
-    mise run live:check ${checked_app:+"$checked_app"}) >"$output_file" 2>&1 || status=$?
+    FAKE_COOKIE_VALUE="$cookie_value" FAKE_KEYCLOAK_COOKIE_VALUE="$keycloak_cookie_value" "$@" \
+    mise run live:check ${checked_app:+"$checked_app"} "${live_check_arguments[@]}") >"$output_file" 2>&1 || status=$?
 }
 show_output() { sed 's/^/  /' "$output_file" >&2; }
 refuse() { show_output; fail "$1"; }
 # event_line <pattern>: the line number of the first event that matches.
-event_line() { grep -n -m 1 -- "$1" "$state/log" | cut -d: -f1; }
+event_line() { grep -n -m 1 -- "$1" "$state/log" | cut -d: -f1 || true; }
 # no_event <pattern>: the log holds no matching event.
 no_event() { ! grep -q -- "$1" "$state/log"; }
 # in_order <case> <pattern>...: the first event of each pattern comes after the one before.
@@ -298,7 +472,7 @@ kept_secret() {
     ! grep -rqF -- "$password" "$output_file" "$runtime" "$work_directory/tmp-$name" || refuse "$name: the password is in an output or a file of the run"
     [ "${#password}" = 48 ] || refuse "$name: the password is not 48 hex digits"
   fi
-  ! grep -qE "$cookie_value|FAKECODE" "$output_file" || refuse "$name: a cookie or code is in the output"
+  ! grep -qE "$cookie_value|$keycloak_cookie_value|FAKECODE" "$output_file" || refuse "$name: a cookie or code is in the output"
   ! grep -q "Logging into" "$output_file" || refuse "$name: kcadm's sign-in notice is in the output"
 }
 # left_clean <case> [credential]: the person is disabled with no session and, unless a credential is named, no
@@ -310,6 +484,9 @@ left_clean() {
   { [ "${2:-}" = credential ] || [ ! -s "$state/credentials" ]; } || refuse "$name: a credential remains"
   [ ! -e "$state/signed-in" ] || refuse "$name: kcadm's sign-in file remains"
   ! compgen -G "$runtime/live-check/cookies-*" >/dev/null || refuse "$name: a cookie jar remains"
+  ! compgen -G "$runtime/live-check/storage-state-*" >/dev/null || refuse "$name: a storage state remains"
+  ! compgen -G "$runtime/live-check/handed-over-*" >/dev/null || refuse "$name: a handed-over marker remains"
+  ! compgen -G "$state/scope-*" >/dev/null || refuse "$name: a scope remains"
   [ "$(tail -n 1 "$state/log")" = "kubectl: config-removed" ] || refuse "$name: the sign-in file was not removed last"
 }
 expect_result() {

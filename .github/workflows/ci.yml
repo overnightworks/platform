@@ -188,6 +188,9 @@ jobs:
       - name: Check that live:check signs the test person in with its password on stdin only, leaves it signed out and disabled on every exit it can trap, names what a failed step may leave, cleans up an earlier run's leftovers first and refuses or skips with no write
         run: mise exec -- tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh
 
+      - name: Check that live:check --tier journeys hands the app's command its origin and a 0600 storage state of the app's own cookies, never the password or a Keycloak cookie, in a minimal environment with its output kept out of the command's, stops the scope before deleting the file and reads the handed-over session back on every exit it can trap, maps the app's exit 0, 1 and 3 and the gate's statuses, passes a TERM or INT on once, heals what a killed run left, and refuses a checkout of another repository or without the task with no write
+        run: mise exec -- tests/live-check/journeys_get_the_apps_cookies_in_a_file_deleted_on_every_exit.sh
+
       - name: Check that live:report pushes each final green or red once, reruns a red or skipped app once, opens one item at the app for a red after the rerun and names the step and the side of the cause, waits for the command's lock without pushing red, serializes on its own lock, pushes and opens nothing while offline, and keeps the token off every argument, environment and output
         run: mise exec -- tests/keycloak/live_report_pushes_each_result_and_opens_one_item_per_red.sh
 

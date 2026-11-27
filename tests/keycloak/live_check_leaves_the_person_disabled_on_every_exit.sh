@@ -229,7 +229,7 @@ for unusable in "" nosuchapp; do
   prepare_case "usage-${unusable:-no-argument}"
   run_command "usage-${unusable:-no-argument}"
   [ "$status" = 1 ] || refuse "usage-${unusable:-no-argument}: exit $status, not 1"
-  [ "$(sed -n 1p "$output_file")" = 'usage: mise run live:check <app>' ] || refuse "usage-${unusable:-no-argument}: not the plain usage"
+  [ "$(sed -n 1p "$output_file")" = 'usage: mise run live:check <app> [--tier journeys --checkout <dir>]' ] || refuse "usage-${unusable:-no-argument}: not the plain usage"
   ! grep -q '^live:check: ' "$output_file" || refuse "usage-${unusable:-no-argument}: a result line"
   for contract in "${contracts[@]}"; do
     grep -q "^apps: .*\b${contract%% *}\b" "$output_file" || refuse "usage-${unusable:-no-argument}: the apps do not name ${contract%% *}"
