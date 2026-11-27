@@ -312,15 +312,7 @@ echo "the second Backup read from its parent: 2 new, 4 changed and $((claim_coun
 # Cell 8: the stager refuses to stage while another pod mounts the staging claim; the tree and MANIFEST stay.
 staging_digests='cd /staging && echo "tree $(find . -exec stat -c "%n %s %Y" {} + | LC_ALL=C sort | sha256sum | cut -c1-64)" &&
   echo "manifest $(sha256sum <MANIFEST | cut -c1-64)"'
-NAME="$holder" IMAGE="$PROBE_IMAGE" USER_ID="$reading_uid" yq --null-input --output-format json '
-  {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(NAME)},
-   "spec": {"restartPolicy": "Never", "automountServiceAccountToken": false, "enableServiceLinks": false,
-     "securityContext": {"runAsNonRoot": true, "runAsUser": env(USER_ID), "seccompProfile": {"type": "RuntimeDefault"}},
-     "containers": [{"name": "holder", "image": strenv(IMAGE), "command": ["sleep", "3600"],
-       "securityContext": {"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": {"drop": ["ALL"]}},
-       "volumeMounts": [{"name": "staging", "mountPath": "/staging", "readOnly": true}]}],
-     "volumes": [{"name": "staging", "persistentVolumeClaim": {"claimName": "backup-staging", "readOnly": true}}]}}' |
-  kubectl --namespace "$namespace" create --filename - >/dev/null
+staging_pod "$holder" '["sleep", "3600"]'
 kubectl --namespace "$namespace" wait "pod/$holder" --for=condition=Ready --timeout=5m >/dev/null
 held_before="$(kubectl --namespace "$namespace" exec "$holder" -- sh -c "$staging_digests")"
 refused_backup staging-held '^stage: refused: [0-9]+ other pods mount the staging claim$'

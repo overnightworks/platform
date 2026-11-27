@@ -71,8 +71,7 @@ snapshot_facts() {
       sed "s|^$staging/||" | grep -v / | LC_ALL=C sort | tr "\n" " ")"
     echo "bucket-files $(restic --no-cache ls --json --recursive --path "$staging" latest "$staging" |
       jq --raw-output "select(.type == \"file\") | .path" | grep -c "^$staging/bucket/" || true)"
-    echo "manifest-bucket $(restic --no-cache dump --path "$staging" latest "$staging/MANIFEST" | grep -c "^file$tab[0-9]*$tab[0-9]*${tab}bucket/" || true)"
-    '"$snapshot_bucket_digests"
+    '"$snapshot_manifest_bucket_count$snapshot_bucket_digests"
   [ "$restic_exit" = 0 ] || fail "the staging snapshot of $namespace cannot be read after the Backup $1 (exit $restic_exit)"
 }
 

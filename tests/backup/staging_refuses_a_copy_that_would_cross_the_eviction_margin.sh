@@ -61,7 +61,6 @@ staged_keys="$(kubectl --namespace "$namespace" exec "$refused_pod" --container 
 [ "$staged_keys" = "$(cut -f3 <<<"$bucket_before" | LC_ALL=C sort)" ] || fail "the staged bucket/ is not the set it held before the refused Backup"
 end_backup fit-refused
 echo "a Backup refused before any sync, left no MANIFEST and no ready, and the staged bucket/ holds the same files as before and no planted object"
-backup_names() { kubectl --namespace "$namespace" get backups.k8up.io --output name | sort; }
 backups_before="$(backup_names)"
 status=0
 scripts/backup_now.sh "$namespace" >"$work/now" 2>&1 || status=$?

@@ -45,7 +45,6 @@ install_client
 backup_now() { scripts/backup_now.sh "$namespace" >"$1" 2>&1; }
 # seed_runs: the Pod backup-seed runs its containers.
 seed_runs() { [ "$(kubectl --namespace "$namespace" get pod "$seed_pod" --ignore-not-found --output jsonpath='{.status.phase}')" = Running ]; }
-backup_names() { kubectl --namespace "$namespace" get backups.k8up.io --output name | sort; }
 snapshot_count() {
   run_restic "$namespace" "$1" "restic --no-cache snapshots --json --path $staging | jq length"
   [ "$restic_exit" = 0 ] || fail "the staging snapshots of $namespace cannot be read (exit $restic_exit)"
@@ -97,8 +96,7 @@ run_restic "$namespace" snapshot-bucket '
   set -e
   tab="$(printf "\t")"
   staging='"$staging"'
-  echo "manifest-bucket $(restic --no-cache dump --path "$staging" latest "$staging/MANIFEST" | grep -c "^file$tab[0-9]*$tab[0-9]*${tab}bucket/" || true)"
-  '"$snapshot_bucket_digests"
+  '"$snapshot_manifest_bucket_count$snapshot_bucket_digests"
 [ "$restic_exit" = 0 ] || fail "the newest staging snapshot of $namespace cannot be read (exit $restic_exit)"
 [ "$(value bucket)" = "$(bucket_listing "$bucket_before")" ] || fail "the newest snapshot's bucket/ differs by key, size or bytes from the bucket"
 [ "$(value manifest-bucket)" = "$objects" ] || fail "MANIFEST lists $(value manifest-bucket) bucket files, not $objects"
@@ -119,18 +117,6 @@ background_pid=
 echo "a backup:now sent TERM while it seeded left no seed Pod and made no Backup"
 
 # An ended Pod named backup-seed is deleted before the next seed, which a pod on the staging claim then refuses.
-# staging_pod <name> <command as a JSON array>: a Pod at the reading uid that mounts the staging claim read-only and runs the command.
-staging_pod() {
-  NAME="$1" COMMAND="$2" IMAGE="$PROBE_IMAGE" USER_ID="$reading_uid" yq --null-input --output-format json '
-    {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(NAME)},
-     "spec": {"restartPolicy": "Never", "automountServiceAccountToken": false, "enableServiceLinks": false,
-       "securityContext": {"runAsNonRoot": true, "runAsUser": env(USER_ID), "seccompProfile": {"type": "RuntimeDefault"}},
-       "containers": [{"name": "holder", "image": strenv(IMAGE), "command": env(COMMAND),
-         "securityContext": {"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": {"drop": ["ALL"]}},
-         "volumeMounts": [{"name": "staging", "mountPath": "/staging", "readOnly": true}]}],
-       "volumes": [{"name": "staging", "persistentVolumeClaim": {"claimName": "backup-staging", "readOnly": true}}]}}' |
-    kubectl --namespace "$namespace" create --filename - >/dev/null
-}
 staging_pod "$seed_pod" '["true"]'
 kubectl --namespace "$namespace" wait "pod/$seed_pod" --for=jsonpath='{.status.phase}'=Succeeded --timeout=5m >/dev/null
 staging_pod "$holder" '["sleep", "3600"]'
