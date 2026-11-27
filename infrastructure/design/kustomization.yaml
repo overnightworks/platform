@@ -5,14 +5,14 @@ kind: Kustomization
 configMapGenerator:
   - name: design
     files:
-      - design-0.39.0__design.css=design-0.39.0/design.css
-      - design-0.39.0__fonts__open-sans-LICENSE=design-0.39.0/fonts/open-sans-LICENSE
-      - design-0.39.0__fonts__open-sans-latin-400-normal.woff2=design-0.39.0/fonts/open-sans-latin-400-normal.woff2
-      - design-0.39.0__fonts__open-sans-latin-600-normal.woff2=design-0.39.0/fonts/open-sans-latin-600-normal.woff2
-      - design-0.39.0__fonts__open-sans-latin-ext-400-normal.woff2=design-0.39.0/fonts/open-sans-latin-ext-400-normal.woff2
-      - design-0.39.0__fonts__open-sans-latin-ext-600-normal.woff2=design-0.39.0/fonts/open-sans-latin-ext-600-normal.woff2
-      - design-0.39.0__fonts__oswald-LICENSE=design-0.39.0/fonts/oswald-LICENSE
-      - design-0.39.0__fonts__oswald-latin-400-normal.woff2=design-0.39.0/fonts/oswald-latin-400-normal.woff2
-      - design-0.39.0__fonts__oswald-latin-700-normal.woff2=design-0.39.0/fonts/oswald-latin-700-normal.woff2
-      - design-0.39.0__fonts__oswald-latin-ext-400-normal.woff2=design-0.39.0/fonts/oswald-latin-ext-400-normal.woff2
-      - design-0.39.0__fonts__oswald-latin-ext-700-normal.woff2=design-0.39.0/fonts/oswald-latin-ext-700-normal.woff2
+      - design-0.43.0__design.css=design-0.43.0/design.css
+      - design-0.43.0__fonts__open-sans-LICENSE.txt=design-0.43.0/fonts/open-sans-LICENSE.txt
+      - design-0.43.0__fonts__open-sans-latin-400-normal.woff2=design-0.43.0/fonts/open-sans-latin-400-normal.woff2
+      - design-0.43.0__fonts__open-sans-latin-600-normal.woff2=design-0.43.0/fonts/open-sans-latin-600-normal.woff2
+      - design-0.43.0__fonts__open-sans-latin-ext-400-normal.woff2=design-0.43.0/fonts/open-sans-latin-ext-400-normal.woff2
+      - design-0.43.0__fonts__open-sans-latin-ext-600-normal.woff2=design-0.43.0/fonts/open-sans-latin-ext-600-normal.woff2
+      - design-0.43.0__fonts__oswald-LICENSE.txt=design-0.43.0/fonts/oswald-LICENSE.txt
+      - design-0.43.0__fonts__oswald-latin-400-normal.woff2=design-0.43.0/fonts/oswald-latin-400-normal.woff2
+      - design-0.43.0__fonts__oswald-latin-700-normal.woff2=design-0.43.0/fonts/oswald-latin-700-normal.woff2
+      - design-0.43.0__fonts__oswald-latin-ext-400-normal.woff2=design-0.43.0/fonts/oswald-latin-ext-400-normal.woff2
+      - design-0.43.0__fonts__oswald-latin-ext-700-normal.woff2=design-0.43.0/fonts/oswald-latin-ext-700-normal.woff2
