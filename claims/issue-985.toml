@@ -3,5 +3,6 @@ agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
 role = "builder"
 base = "728095f853d532c689b3ba724b6c0ad4814ab78d"
 branch = "claude/issue-985-restore-test-prints-its-reason"
-scope = ["tests/backup/restic_pod.sh", "tests/backup/songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh"]
+scope = ["tests/backup/backup_restores_keeps_repositories_apart_and_prunes_by_the_rule.sh", "tests/backup/restic_pod.sh", "tests/backup/songmaker_dump_comes_from_the_pre_backup_pod_and_every_restore_test_reads_it_by_path.sh", "tests/backup/staging_snapshot_holds_the_files_the_bucket_and_the_dump_of_one_run.sh"]
 opened_commit = "548497ac84384059dc7690078e9b1a7fac6b12be"
+whole_reason = "One shared helper and its three callers that require a passed restore test change together, so no cell prints the reason on its own."
