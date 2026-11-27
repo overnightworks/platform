@@ -1,8 +1,0 @@
-claim_id = "44e9ca86e29641dea1226f0030eee8a9"
-agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
-role = "builder"
-base = "119a668d5341e34219fd4def2146796a0ceaf332"
-branch = "claude/issue-996-design-0-43-0"
-scope = ["infrastructure/design", "infrastructure/keycloak/keycloak.yaml", "infrastructure/keycloak/themes/hallucinai", "infrastructure/legal/built", "infrastructure/legal/frame", "infrastructure/legal/legal.yaml", "quality/config.toml", "tests/legal/design_assets_equal_their_release_wheel.sh"]
-opened_commit = "3b67b37ff90743d1c7be69fb23dd8ff421f79ce4"
-whole_reason = "One vendoring: the served tree, its three consumers and the two entries change together, because the equality cell and the manifests read the same file names."
