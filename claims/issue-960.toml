@@ -1,5 +1,5 @@
 claim_id = "b837f59868834c4fa410423f03595b89"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
 role = "builder"
 base = "88f6b4c14eec1688de3a72fb3baa92bf3481bfec"
 branch = "claude/issue-960-app-roles-own-their-database"
