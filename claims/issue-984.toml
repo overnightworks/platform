@@ -1,8 +1,0 @@
-claim_id = "817982571fe240e19d8d31f780974d4e"
-agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
-role = "builder"
-base = "08a1fe497ae6788da2e2bcaf21d87bf69c899e60"
-branch = "claude/issue-984-ready-step-names-its-stall"
-scope = [".github/workflows/ci.yml", "tests/flux/print_flux_state.sh", "tests/flux/print_flux_state_names_what_each_not_ready_pod_waits_on.sh", "tests/flux/print_ready_times.sh", "tests/flux/scoped_layers_reconcile_the_candidate.sh", "tests/flux/scoped_layers_reconcile_the_candidate_prints_the_peaks_on_every_exit.sh"]
-opened_commit = "d73e80febedd213a08cb6e48677ecdc13c373ca3"
-whole_reason = "Three report scripts, their new cell and the checks job's line that calls it prove together that a timeout names its cause."
