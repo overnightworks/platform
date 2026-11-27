@@ -38,7 +38,7 @@ sync_into() {
 
 # copy_into <staging megabytes> <old megabytes> <requests>: the copy role in seed mode, after the shell commands <requests> have
 # written to /scratch, with a claim whose file lies beside the directory of the old file; prints "role <its exit status>"
-# (not 137, the status of a role that timeout killed after 15 seconds: it ended by itself), "exit <pre-sync's exit status>", "final", "previous" and "partial" as sync_into does.
+# (not 137, the status of a role that timeout killed after 15 seconds: it ended by itself), "exit <pre-sync's exit status>", "final" and "previous" as sync_into does.
 copy_into() {
   docker run --rm --network none --read-only --user 65534 --cap-drop ALL --security-opt no-new-privileges \
     --tmpfs "/staging:rw,size=$1m,mode=1777" --tmpfs /scratch:rw,mode=1777 --tmpfs /source:rw,size=8m,mode=1777 \
@@ -53,8 +53,7 @@ copy_into() {
     echo "role $status"
     echo "exit $(cat /scratch/pre-sync.exit 2>/dev/null || echo none)"
     if [ -e /staging/files/a/object ]; then echo "final yes"; else echo "final no"; fi
-    if [ -e /staging/files/z/previous ]; then echo "previous yes"; else echo "previous no"; fi
-    echo "partial 0"'
+    if [ -e /staging/files/z/previous ]; then echo "previous yes"; else echo "previous no"; fi'
 }
 
 # line <output> <key>: the line's value.
