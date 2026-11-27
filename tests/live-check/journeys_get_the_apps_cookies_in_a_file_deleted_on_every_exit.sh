@@ -38,15 +38,19 @@ make_checkout() {
 }
 # fingerprint <directory>: every path, mode and content of the tree, its git state included.
 fingerprint() { (cd "$1" && { find . -printf '%p %m\n' | sort; find . -type f -exec sha256sum {} + | sort; }) | sha256sum; }
-# prepare_journeys_case <name> <drive mode> [person's state]: a case for the journeys tier of checked_app with a fresh
-# checkout of its repository; sets checkout. A case whose run never reaches the drive names any mode.
-prepare_journeys_case() {
+# prepare_checked_out_case <name> <drive mode> [person's state]: a case for the journeys tier of checked_app on the
+# checkout already set. A case whose run never reaches the drive names any mode.
+prepare_checked_out_case() {
   local name="$1" mode="$2"
   prepare_case "$name" ${3:+"$3"}
   echo "$mode" >"$state/drive-mode"
-  make_checkout "$name" "overnightworks/$checked_app"
   live_check_arguments=(--tier journeys --checkout "$checkout")
   checkout_before="$(fingerprint "$checkout")"
+}
+# prepare_journeys_case <name> <drive mode> [person's state]: that case with a fresh checkout of the app's repository.
+prepare_journeys_case() {
+  make_checkout "$1" "overnightworks/$checked_app"
+  prepare_checked_out_case "$@"
 }
 # journeys_run <name> <drive mode> [environment assignment]...: runs that case; sets status.
 journeys_run() {
@@ -252,12 +256,19 @@ no_event 'drive' || refuse "manager-unreachable: the drive ran: $(paste -sd'|' "
 [ "$(<"$state/enabled")" = false ] || refuse "manager-unreachable: a person was written"
 echo "a user manager that cannot be read leaves the scopes unproven gone, so the run is red and names a scope"
 
+journeys_run scope-stays exit:0 FAKE_FAIL=scope-stays
+expect_result scope-stays 1 red
+grep -q 'may remain: .*a journeys scope' "$output_file" || refuse "scope-stays: the output names no journeys scope"
+in_order scope-stays 'drive: started' 'systemctl: stop live-check-journeys-hopin'
+kept_secret scope-stays
+[ "$(<"$state/enabled")" = false ] || refuse "scope-stays: the person is enabled"
+echo "a scope still deactivating after its stop is a scope that may remain, while an inactive or a failed one is gone"
+
 # ----------------------------------------------------------------------------------------------------- the checkout
+# refused_checkout <case>: runs the journeys tier on the checkout set beforehand and expects the refusal.
 refused_checkout() {
   local name="$1"
-  prepare_case "$name"
-  live_check_arguments=(--tier journeys --checkout "$checkout")
-  checkout_before="$(fingerprint "$checkout")"
+  prepare_checked_out_case "$name" exit:0
   run_command "$name"
   live_check_arguments=()
   expect_result "$name" 1 red

@@ -243,7 +243,8 @@ FAKE
 # once, or, with FAKE_GATE_STATUS, answers that status without running it. systemd-run keeps scope-<unit> (the pid of the
 # command it runs) while the command lives; systemctl's stop ends that command and returns when the scope is gone;
 # FAKE_FAIL=scope makes the trial scope fail and FAKE_FAIL=manager makes the user manager unreachable. systemctl lists the
-# scopes that live and stops the units it is given.
+# scopes that live as active, an earlier inactive and an earlier failed one, and stops the units it is given;
+# FAKE_FAIL=scope-stays leaves each stopped scope listed as deactivating.
 cat >"$fake_bin/probe-run" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -310,7 +311,13 @@ case "$2" in
     for scope_file in "$FAKE_STATE"/scope-live-check-journeys-*; do
       [ -e "$scope_file" ] || continue
       printf '%s.scope loaded active running Scope\n' "${scope_file##*/scope-}"
-    done ;;
+    done
+    for stuck_file in "$FAKE_STATE"/stuck-live-check-journeys-*; do
+      [ -e "$stuck_file" ] || continue
+      printf '%s.scope loaded deactivating stop-sigterm Scope\n' "${stuck_file##*/stuck-}"
+    done
+    printf 'live-check-journeys-earlier.scope loaded inactive dead Scope\n'
+    printf 'live-check-journeys-failed.scope loaded failed failed Scope\n' ;;
   stop)
     for unit in "${@:3}"; do
       unit="${unit%.scope}"
@@ -321,6 +328,7 @@ case "$2" in
         kill -TERM "$(<"$FAKE_STATE/scope-$unit")" 2>/dev/null || true
         [ ! -e "$FAKE_STATE/straggler" ] || kill -TERM "$(<"$FAKE_STATE/straggler")" 2>/dev/null || true
         for _ in $(seq 200); do [ -e "$FAKE_STATE/scope-$unit" ] || break; sleep 0.05; done
+        [ "${FAKE_FAIL:-}" != scope-stays ] || touch "$FAKE_STATE/stuck-$unit"
       fi
     done ;;
   *) violate "systemctl: unexpected $2"; exit 1 ;;
