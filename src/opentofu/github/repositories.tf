@@ -5,7 +5,6 @@ locals {
     "agents",
     "design",
     "figure",
-    "hal",
     "hopin",
     "logline",
     "marketplace",

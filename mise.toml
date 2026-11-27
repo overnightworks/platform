@@ -133,12 +133,12 @@ mode = "copy"
 # The global commit hook: one template under both names git calls, in a directory of platform's own, so a quality bump
 # needs no change of the files. bootstrap:hook installs quality and sets core.hooksPath once these exist.
 [dotfiles."~/.local/share/platform/git-hooks/pre-commit"]
-source = "host/git-hooks/git_hook"
+source = "host/git-hooks/scripts/git_hook"
 mode = "copy"
 permissions = "0755"
 
 [dotfiles."~/.local/share/platform/git-hooks/pre-merge-commit"]
-source = "host/git-hooks/git_hook"
+source = "host/git-hooks/scripts/git_hook"
 mode = "copy"
 permissions = "0755"
 
@@ -674,7 +674,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 workflow=.github/workflows/ci.yml
-template=host/git-hooks/git_hook
+template=host/git-hooks/scripts/git_hook
 hooks_directory="$HOME/.local/share/platform/git-hooks"
 quality_repository=https://github.com/overnightworks/quality
 fail() { echo "bootstrap:hook: $1" >&2; exit 1; }
