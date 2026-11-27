@@ -51,18 +51,10 @@ spec:
               value: /etc/speech-runtime/speech.toml
             - name: SPEECH_HOST
               value: 0.0.0.0
-            - name: SPEECH_DEVICE
-              value: cpu
-            - name: SPEECH_VOICE_CACHE
-              value: /opt/voices
-            - name: SPEECH_HUGGINGFACE_CACHE
-              value: /opt/hearing
-            - name: SPEECH_HEARING_MODEL
-              value: small
             - name: SPEECH_LIVE_SILENCE_SECONDS
               value: "0.2"
-          # Four Piper voices and the small hearing model peak at 1.7 to 1.9 GB, and the memory-backed /tmp counts too: the
-          # request holds that peak, and the limit leaves room above it.
+          # With the sound model loaded the image peaks at 1876 MiB (cgroup memory.peak), and the memory-backed /tmp counts
+          # up to its 64Mi limit: the request holds that sum, and the limit leaves room above it.
           resources:
             requests:
               memory: 2Gi
