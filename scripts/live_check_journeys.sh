@@ -60,15 +60,15 @@ drive_processes() {
   listing="$(timeout --foreground "$call_seconds" ps -e -o pgid=,stat=)" || return 1
   awk -v group="$drive_group" '$1 == group && $2 !~ /^Z/' <<<"$listing"
 }
-# wait_until_the_drive_is_gone <seconds>: polls for at most that long; fails when processes of the drive are left or
-# the listing cannot be read, which proves none gone.
+# wait_until_the_drive_is_gone <seconds>: every listing starts before that long has passed; fails when processes of
+# the drive are left or the listing cannot be read, which proves none gone.
 wait_until_the_drive_is_gone() {
   local deadline=$((SECONDS + $1)) remaining
   while :; do
     remaining="$(drive_processes)" || return 1
     [ -n "$remaining" ] || return 0
-    [ "$((SECONDS + 1))" -le "$deadline" ] || return 1
     sleep 1
+    [ "$SECONDS" -lt "$deadline" ] || return 1
   done
 }
 # stop_the_drive: TERM to the drive's group, KILL to what stays, and a read-back that nothing is left.
