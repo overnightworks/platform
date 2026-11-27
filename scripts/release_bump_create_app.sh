@@ -12,7 +12,10 @@ environment=release-bump
 secret=RELEASE_BUMP_APP_PRIVATE_KEY
 # Below the hour for which GitHub keeps the code the redirect carries.
 deadline_seconds=1800
-listener_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_bump_create_app_listener.py"
+scripts_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+listener_script="${scripts_directory}/release_bump_create_app_listener.py"
+# shellcheck source=gh_login_environment.sh
+source "${scripts_directory}/gh_login_environment.sh"
 
 fail() {
   echo "release_bump_create_app: $1" >&2
@@ -26,14 +29,10 @@ name="$1"
 settings_page="https://github.com/organizations/${repository%/*}/settings/apps/${name}"
 installation_page="https://github.com/apps/${name}/installations/new"
 
-# The reads and the store run as the keyring's login alone, so a GH_TOKEN of the caller's shell cannot pass the checks
-# below and leave the store to another login.
-gh_login=(env -i "PATH=${PATH}" "HOME=${HOME}" "LANG=${LANG:-C.UTF-8}")
-for variable in XDG_CONFIG_HOME GH_CONFIG_DIR; do
-  if [ -n "${!variable:-}" ]; then
-    gh_login+=("${variable}=${!variable}")
-  fi
-done
+# The reads, the listener and with it the store run as the keyring's login alone, so a GH_TOKEN of the caller's shell
+# cannot pass the checks below and leave the store to another login.
+gh_login=("${clean_environment[@]}")
+append_gh_login_variables gh_login
 environment_path="repos/${repository}/environments/${environment}"
 environment_json="$("${gh_login[@]}" gh api "${environment_path}")" || fail "the environment ${environment} of ${repository} is unreadable"
 [ "$(yq --input-format json '.deployment_branch_policy.custom_branch_policies == true and .deployment_branch_policy.protected_branches == false' <<<"${environment_json}")" = true ] ||
@@ -53,7 +52,7 @@ recover() {
   echo "if it exists, delete it and rerun with a new name" >&2
 }
 
-coproc listener { exec python3 -I "${listener_script}" "${name}" "${deadline_seconds}" "${repository}" "${environment}" "${secret}"; }
+coproc listener { exec "${gh_login[@]}" python3 -I "${listener_script}" "${name}" "${deadline_seconds}" "${repository}" "${environment}" "${secret}"; }
 # bash unsets listener_PID once the listener has exited, which a refusal does at once.
 listener_pid=$!
 IFS= read -r -u "${listener[0]}" page_url || fail "the listener did not serve a page"

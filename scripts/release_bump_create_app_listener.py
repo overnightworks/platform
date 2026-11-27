@@ -8,8 +8,8 @@ holds no value of the code or of GitHub's answer.
 
 The temporary code in the redirect converts into the key, client_secret and webhook_secret for an hour, so only this
 process holds it: it reaches curl on stdin, never an argument, and the answer returns on a pipe from which only the key
-goes on, to gh's stdin. Both children run under an allowlist of PATH, HOME and gh's configuration directory, so no
-debug switch, proxy or token of the caller's shell can print the answer.
+goes on, to gh's stdin. The script starts this process under scripts/gh_login_environment.sh's allowlist and both
+children inherit it, so no debug switch, proxy or token of the caller's shell can print the answer.
 """
 
 import argparse
@@ -18,7 +18,6 @@ import hmac
 import html
 import http.server
 import json
-import os
 import re
 import resource
 import secrets
@@ -30,7 +29,6 @@ from dataclasses import dataclass
 
 PERMISSIONS = {"contents": "write", "pull_requests": "write", "metadata": "read"}
 CODE_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,100}")
-CHILD_VARIABLES = ("PATH", "HOME", "LANG", "XDG_CONFIG_HOME", "GH_CONFIG_DIR")
 PR_SET_DUMPABLE = 4
 
 
@@ -47,13 +45,9 @@ class Refusal(Exception):
     """A check that stops the run; its text names the check and never a value of GitHub's answer."""
 
 
-def child_environment() -> dict[str, str]:
-    return {name: os.environ[name] for name in CHILD_VARIABLES if name in os.environ}
-
-
 def run_child(command: list[str], standard_input: bytes) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(  # noqa: S603 - the commands are built from fixed names and the arguments of the script
-        command, input=standard_input, capture_output=True, env=child_environment(), check=False
+        command, input=standard_input, capture_output=True, check=False
     )
 
 
