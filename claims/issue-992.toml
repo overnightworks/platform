@@ -1,7 +1,0 @@
-claim_id = "ce778b82df39413cacc4543648de0748"
-agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
-role = "builder"
-base = "728095f853d532c689b3ba724b6c0ad4814ab78d"
-branch = "claude/issue-992-github-forgets-archived-hal"
-scope = ["docs/github-settings.md", "src/opentofu/github/repositories.tf", "src/opentofu/github/tests/repository_listing.tftest.hcl"]
-opened_commit = "b2b8d4af068f33086dcc553c921de6fc342ce180"
