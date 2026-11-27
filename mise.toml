@@ -1238,7 +1238,7 @@ say "wrote the latest dump of $namespace to $file ($(stat --format=%s "$file") b
 '''
 
 [tasks."backup:now"]
-description = "Take one Backup of a namespace's k8up Schedule now and run its restore test on it, so a backup is proven the same hour"
+description = "Seed a claim layer's first copy of its claim and bucket, take one Backup of a namespace's k8up Schedule now and run its restore test on it, so a backup is proven the same hour"
 usage = '''
 arg "<namespace>" help="The namespace with a k8up Schedule and the CronJob restore-test"
 '''

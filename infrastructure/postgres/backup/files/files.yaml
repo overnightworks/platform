@@ -85,9 +85,11 @@ subjects:
 ---
 # k8up starts this pod at the start of a Backup, waits for it to turn Ready, streams the backup command's output from
 # its first container and backs up the staging claim, then removes it. Its three containers, a fourth (bucket) where the
-# layer includes ./bucket, run scripts/stage_files.sh: the stager guards, removes the old MANIFEST, has copy sync the
-# declared claim, bucket sync the bucket and postgres dump the database, and writes MANIFEST and ready; the readiness
-# probe reads ready. The pod runs as the reading uid, which the including layer sets
+# layer includes ./bucket, run scripts/stage_files.sh: the stager guards, removes the old MANIFEST, has copy and bucket
+# measure what they sync and refuses a copy that would leave the node less free than its eviction margin, then has copy
+# sync the declared claim, bucket sync the bucket and postgres dump the database, and writes MANIFEST and ready; the
+# readiness probe reads ready. `mise run backup:now` runs the same pre-sync phase first as the Pod backup-seed, with
+# STAGE_SEED set and no deadline, for a first copy that one pre-sync cannot stage. The pod runs as the reading uid, which the including layer sets
 # by a replacement from the app's own pod, so copy reads the app's files and k8up's Job pods read the copy.
 apiVersion: k8up.io/v1
 kind: PreBackupPod
@@ -195,6 +197,13 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            # The stager sets no ephemeral-storage limit, so Kubernetes fills this with the node's allocatable, which the
+            # fit step subtracts from the staging volume's size to find the kubelet's eviction margin. No right on the
+            # node object is needed.
+            - name: NODE_ALLOCATABLE_STORAGE
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.ephemeral-storage
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

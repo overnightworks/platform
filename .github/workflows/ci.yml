@@ -363,13 +363,25 @@ jobs:
         if: matrix.part == 'backup-2'
         run: tests/disk/docuum_deletes_the_least_recently_used_unprotected_image.sh
 
-      - name: Check that the bucket Component's rclone fails whole on a full disk and leaves no file at its final name and no partial
+      - name: Check that the staging syncs fail whole on a full disk, leaving no file at its final name and no partial, and free a replaced tree before they write
         if: matrix.part == 'backup-2'
-        run: tests/backup/bucket_sync_fails_whole_on_a_full_disk.sh
+        run: tests/backup/staging_syncs_fail_whole_when_full_and_free_a_replaced_tree_first.sh
+
+      - name: Check that the stager's fit refuses a copy by the bytes it still writes beside the eviction margin and counts a staged copy as written
+        if: matrix.part == 'backup-2'
+        run: tests/backup/stager_fit_refuses_a_copy_by_what_it_still_writes_beside_the_eviction_margin.sh
 
       - name: Check that the bucket step fails when a key written during its sync stands in for a key the copy dropped
         if: matrix.part == 'backup-2'
         run: tests/backup/bucket_count_cannot_hide_a_key_the_copy_dropped.sh
+
+      - name: Check that the role room ends non-zero on a TERM, never as a fit
+        if: matrix.part == 'backup-2'
+        run: tests/backup/room_role_ends_non_zero_on_a_term_and_never_reads_as_a_fit.sh
+
+      - name: Check that the bucket role frees a replaced tree before it writes, against an S3 source
+        if: matrix.part == 'backup-2'
+        run: tests/backup/bucket_role_frees_a_replaced_tree_before_it_writes.sh
 
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
       - name: Compare the generated files with a fresh regeneration
@@ -911,6 +923,15 @@ jobs:
           SONGMAKER_NAMESPACE: songmaker
           APP_MANIFEST: apps/songmaker/web.yaml
         run: tests/backup/load_restores_dump_claim_and_bucket_of_one_snapshot.sh
+      # The cells change songmaker's PreBackupPod and its bucket, which no later step of this part reads.
+      - name: Seed and fit cells
+        if: matrix.part == 'backup-6'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          APP_MANIFEST: apps/songmaker/web.yaml
+        run: |
+          tests/backup/backup_now_seeds_a_first_copy_larger_than_one_pre_sync.sh
+          tests/backup/staging_refuses_a_copy_that_would_cross_the_eviction_margin.sh
       - name: P9f cells
         if: matrix.part == 'backup-1' || matrix.part == 'backup-3'
         env:

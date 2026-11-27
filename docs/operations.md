@@ -130,6 +130,13 @@ one. (OPS-11)
 
 Claude's sessions, Docker's volumes and its build cache (hal's) are never cleaned here. (OPS-12)
 
+A Backup or a seed of a claim layer's copies (`backup:now`, docs/app.md) refuses, before any sync, a copy that would leave
+the staging volume less free than the kubelet's eviction line, which is the volume's size minus the node's allocatable
+ephemeral storage: the kubelet's hard nodefs threshold plus any storage reservation, 5 % on the PC. It names the counts
+and bytes in the stager's `stage: fit:` line and counts beside the `WARNING` of `mise run disk` at 85 %, which tells of
+disk pressure in general. Since the line is the nodefs threshold, an imagefs threshold set above it in `host/k3s/config.yaml`
+is not seen; a change of that file meets this sentence.
+
 ## AI budgets (`scripts/litellm_keys.sh`)
 
 `keys.yaml` is the table of the person budget and each app's budget, parallel limit and optional `prompt_caching`; the

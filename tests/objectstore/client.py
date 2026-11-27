@@ -31,6 +31,9 @@ from botocore.exceptions import ClientError
 MEBIBYTE = 1024 * 1024
 SEED_BODY = b"read by the backup"
 LARGE_KEY = "multipart.bin"
+# The set `large`: this many objects of random bytes, 240 MiB together, which a bandwidth-limited copy stages in minutes.
+LARGE_OBJECTS = 6
+LARGE_OBJECT_BYTES = 40 * MEBIBYTE
 # The objects of each set, key to body. `base` is what a Backup copies byte for byte; `change` rewrites one of them to
 # the same size, deletes one and adds one; the others are the keys a copy cannot hold whole.
 SETS = {
@@ -41,6 +44,7 @@ SETS = {
         "deleted.bin": b"deleted",
     },
     "change": {"rewritten.bin": b"9876543210", "added.bin": b"added"},
+    "large": {},
     "clash": {"refused-clash": b"file", "refused-clash/b": b"under"},
     "marker": {"refused-marker/": b"", "refused-marker/x": b"under the marker"},
     "marker-with-bytes": {"refused-bytes/": b"bytes"},
@@ -118,7 +122,10 @@ def plant(client, bucket: str, name: str) -> None:
         multipart_put(client, bucket, LARGE_KEY)
     if name == "change":
         exact_request("DELETE", bucket, "deleted.bin")
-    print(f"ok: planted the set {name}: {len(SETS[name]) + (name == 'base')} objects")
+    if name == "large":
+        for index in range(LARGE_OBJECTS):
+            client.put_object(Bucket=bucket, Key=f"large-object-{index}.bin", Body=os.urandom(LARGE_OBJECT_BYTES))
+    print(f"ok: planted the set {name}: {len(SETS[name]) + (name == 'base') + (LARGE_OBJECTS if name == 'large' else 0)} objects")
 
 
 def clear(client, bucket: str) -> None:
