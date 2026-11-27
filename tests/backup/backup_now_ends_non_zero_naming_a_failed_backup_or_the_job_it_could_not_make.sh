@@ -209,13 +209,19 @@ drive 0 Succeeded 0
 echo "a copy container that ended 0 ends nothing: the stager's seeded does, the seed Pod is deleted and the Backup is made"
 
 # An earlier seed Pod: one that ended, or never started, is deleted and the run goes on; one that lives refuses.
-for earlier in "Succeeded 100" "Failed 100" "Pending 301"; do
+# first_call_line <text>: the number of the first recorded call that holds the text.
+first_call_line() { grep -n -m1 -F -- "$1" "$calls" | cut -d: -f1; }
+ended_sentence="the earlier seed Pod backup-seed of somewhere had ended; it was deleted"
+for earlier in "Succeeded 100 $ended_sentence" "Failed 100 $ended_sentence" \
+  "Pending 301 the earlier seed Pod backup-seed of somewhere never started within 5 minutes; it was deleted"; do
   poll 1 Succeeded "" $seeded none 10
-  read -r earlier_phase earlier_age <<<"$earlier"
+  read -r earlier_phase earlier_age sentence <<<"$earlier"
   FAKE_EARLIER="$(pod_json "$earlier_phase" "" none none "$earlier_age")" drive 0 Succeeded 0
-  { [ "$task_status" = 0 ] && [[ $task_output == *"the earlier seed Pod backup-seed of somewhere "* ]] && grep -q create-backup "$calls"; } ||
-    fail "an earlier seed Pod $earlier exited $task_status with '$task_output'"
-  echo "an earlier seed Pod ($earlier) is deleted with its sentence and the run goes on to its seed and Backup"
+  { [ "$task_status" = 0 ] && [[ $task_output == *"$sentence"* ]] && grep -q create-backup "$calls"; } ||
+    fail "an earlier seed Pod $earlier_phase of $earlier_age seconds exited $task_status with '$task_output'"
+  [ "$(first_call_line "delete pod backup-seed")" -lt "$(first_call_line create-pod)" ] ||
+    fail "the earlier seed Pod $earlier_phase of $earlier_age seconds was not deleted before the seed Pod was made"
+  echo "an earlier seed Pod ($earlier_phase, $earlier_age seconds old) is deleted before the next seed, with '$sentence', and the run goes on to its seed and Backup"
 done
 FAKE_EARLIER="$(pod_json Running "" running none 100)" drive 0 Succeeded 0
 { [ "$task_status" = 1 ] && [[ $task_output == *"another run's seed Pod backup-seed of somewhere is still running"* ]] && [[ $task_output == *"nothing was made"* ]] &&
