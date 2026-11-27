@@ -5,6 +5,20 @@ set -euo pipefail
 # shellcheck source=../failure.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 step_started_at="$(date +%s)"
+# What the runner does during the wait, in every part: a stall of the node shows as run queue, I/O wait, steal or swap.
+runner_samples="$RUNNER_TEMP/runner-vmstat.log"
+LC_ALL=C vmstat -n -t -w 10 >"$runner_samples" &
+sampler_pid=$!
+ready_times_printed=false
+# Prints once, on the first of: the end of the waits or any exit, so a timed-out early wait still reports its stall.
+print_ready_times_once() {
+  "$ready_times_printed" && return 0
+  ready_times_printed=true
+  kill "$sampler_pid" 2>/dev/null || true
+  wait "$sampler_pid" 2>/dev/null || true
+  "$(dirname "${BASH_SOURCE[0]}")/print_ready_times.sh" "$step_started_at" "$runner_samples"
+}
+trap print_ready_times_once EXIT
 kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=3m
 kubectl -n flux-system wait kustomization/flux-system --for=condition=Ready --timeout=5m
 wait_status=0
@@ -12,7 +26,7 @@ wait_status=0
 # up to 333 s on main, so 6 minutes left too little margin.
 kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=10m ||
   wait_status=$?
-"$(dirname "${BASH_SOURCE[0]}")/print_ready_times.sh" "$step_started_at"
+print_ready_times_once
 [ "$wait_status" -eq 0 ] || exit "$wait_status"
 kubectl -n flux-system get gitrepository flux-system -o yaml
 
