@@ -1,0 +1,7 @@
+claim_id = "3f281f0b278a416098822e2d518eb5cb"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
+role = "builder"
+base = "8f2f5b3b915db336b154934666e83040885f18ee"
+branch = "release/hopin"
+scope = ["apps/hopin/release/kustomization.yaml"]
+opened_commit = "82e135cbcdf12e70b454a36f6a4a4dccf79dd222"
