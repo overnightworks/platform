@@ -1,5 +1,5 @@
 claim_id = "b5faee17702447d68d40fb92820c0067"
-agent = "Claude 3c5d92db-2bf0-4202-a995-a5eb049396c3"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
 role = "builder"
 base = "f75d29cd178fdfa8a5d6bd7f6e0a07fb5a2e5f71"
 branch = "claude/issue-945-p2d-the-bootstrap-installs-docker-and-wr"
