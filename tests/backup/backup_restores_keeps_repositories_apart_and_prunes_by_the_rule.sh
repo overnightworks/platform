@@ -155,7 +155,7 @@ for namespace in $BACKUP_NAMESPACES; do
 
   # The restore test passes on the snapshot.
   run_restore_test "$namespace" restore-test-run
-  [ "$status" = passed ] || fail "the restore test of $namespace failed on its snapshot"
+  require_restore_passed "the restore test of $namespace failed on its snapshot"
   echo "the restore test of $namespace passes on its snapshot"
 
   # The prune keeps exactly the rule the component declares: k8up adds a daily rule to a Prune that sets none, so the Job's

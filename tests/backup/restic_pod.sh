@@ -119,3 +119,14 @@ run_restore_test() {
   kubectl --namespace "$namespace" delete job "$job" --cascade=foreground --wait --timeout=2m >/dev/null
 }
 
+# require_restore_passed <description>: the last run_restore_test passed; else prints its container exits and what its
+# containers printed to stderr, ahead of the failure that names the description, so a failed cell carries the Job's reason.
+require_restore_passed() {
+  [ "$status" = passed ] && return 0
+  {
+    echo "restore test exits: $restore_exits"
+    echo "restore test pod log:"
+    echo "$restore_pod_log"
+  } >&2
+  fail "$1"
+}
