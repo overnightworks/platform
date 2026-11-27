@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Drive `mise run live:check <app> --tier journeys --checkout <dir>` against the fakes of tests/keycloak/live_check_fakes.sh
-# (kubectl, curl, probe-run, systemd-run, systemctl and the app's own mise) and a real temporary git repository as the
+# (kubectl, curl, probe-run, ps and the app's own mise) and a real temporary git repository as the
 # checkout, for what the live stack cannot arrange: that the app's command gets the origin and a 0600 storage state of
 # the app's own cookies, never a Keycloak cookie or the password, in a minimal environment with no lock descriptor and
-# no output of its own in the command's; that on every exit the command can trap the scope is stopped before the file is
+# no output of its own in the command's; that on every exit the command can trap the drive's group is stopped before the file is
 # deleted and the handed-over session is signed out and read back with the very cookies handed over; that exit 0, 1 and
 # 3 of the app are green, red and skipped and each status of the gate is mapped; that a TERM or INT reaches the gate once;
 # that what a run killed untrapped left is cleaned up by the next run of any app; and that a checkout outside the app's
@@ -18,7 +18,7 @@ source "$repository_root/tests/failure.sh"
 source "$repository_root/tests/keycloak/live_check_fakes.sh"
 
 call_seconds="$(sed -n 's/^call_seconds=//p' "$repository_root/scripts/live_check.sh")"
-scope_reads="$(sed -n 's/^scope_reads=//p' "$repository_root/scripts/live_check_journeys.sh")"
+drive_stop_seconds="$(sed -n 's/^drive_stop_seconds=//p' "$repository_root/scripts/live_check_journeys.sh")"
 cleanup_seconds="$(call_seconds="$call_seconds" bash -c 'source "$1"; echo "$cleanup_seconds"' _ "$repository_root/scripts/live_check_journeys.sh")"
 gate_bound_seconds=1830
 
@@ -63,13 +63,8 @@ journeys_run() {
 checkout_unchanged() { [ "$(fingerprint "$checkout")" = "$checkout_before" ] || refuse "$1: the checkout changed"; }
 # record_line <key>: the drive's record of what it received.
 record_line() { sed -n "s/^$1 //p" "$state/drive-record"; }
-# leave_scope_of <app>: a scope of an earlier run that is still alive.
-leave_scope_of() {
-  FAKE_STATE="$state" FAKE_LIB="$work_directory/fake_lib.sh" XDG_RUNTIME_DIR="$runtime" systemd-run --user --scope --unit "live-check-journeys-$1" -- sleep 600 &
-  until [ -e "$state/scope-live-check-journeys-$1" ]; do sleep 0.05; done
-}
 # leave_handed_over_run <app>: what a run killed during its drive leaves: the person enabled with a credential and
-# sessions, the app's jar with its marker, the storage state and the scope.
+# sessions, the app's jar with its marker and the storage state.
 leave_handed_over_run() {
   local left_app="$1" directory
   prepare_case "$2" enabled
@@ -79,10 +74,9 @@ leave_handed_over_run() {
   : >"$directory/handed-over-$left_app"
   echo '{"cookies": [], "origins": []}' >"$directory/storage-state-$left_app.json"
   touch "$state/session-$left_app"
-  leave_scope_of "$left_app"
 }
-# stopped_before_deleting <case> <app>: the scope was stopped while the storage state still stood.
-stopped_before_deleting() { in_order "$1" "systemctl: stop live-check-journeys-$2 file=present"; }
+# stopped_before_deleting <case>: the drive's group was stopped while the storage state still stood.
+stopped_before_deleting() { in_order "$1" 'drive: stopped file=present'; }
 
 checked_app=hopin
 
@@ -106,11 +100,9 @@ host="$(app_host "$checked_app")"
 ! grep -q '^lock inherited' "$state/drive-record" || refuse "green: the drive inherited the lock descriptor"
 ! grep -q 'the drive printed this' "$output_file" || refuse "green: the drive's output reached the command's"
 grep -q 'account=200 journeys=0 sign-out=200 account-after=401' "$output_file" || refuse "green: the result line holds not the codes"
-in_order green 'systemd-run: trial' 'kubectl: kcadm-signed-in' 'write enabled=true' 'systemd-run: scope live-check-journeys-hopin' \
-  'drive: started' 'systemctl: stop live-check-journeys-hopin' 'curl: logout' 'keycloak-logout' 'write enabled=false' 'config-removed'
-stopped_before_deleting green hopin
-stop_seconds="$(sed -n 's/^systemd-run: scope live-check-journeys-hopin TimeoutStopSec=\([0-9][0-9]*\)$/\1/p' "$state/log")"
-[ -n "$stop_seconds" ] || refuse "green: the scope sets no TimeoutStopSec"
+in_order green 'kubectl: kcadm-signed-in' 'write enabled=true' 'drive: started' 'drive: stopped' 'curl: logout' 'keycloak-logout' \
+  'write enabled=false' 'config-removed'
+stopped_before_deleting green
 grep -q 'curl: logout read-only' "$state/log" || refuse "green: the handed-over jar was rewritten by the sign-out"
 [ "$(grep -c '^probe-run: ' "$state/log")" = 1 ] || refuse "green: not exactly one call of the gate: $(paste -sd'|' "$state/log")"
 gate_line="$(grep '^probe-run: ' "$state/log")"
@@ -118,10 +110,8 @@ gate_line="$(grep '^probe-run: ' "$state/log")"
 gate_kill="${BASH_REMATCH[1]}" gate_cap="${BASH_REMATCH[2]}"
 [ $((gate_kill + gate_cap)) -le "$gate_bound_seconds" ] || refuse "green: K $gate_kill and CAP $gate_cap pass probe-run's bound of $gate_bound_seconds"
 [ "$gate_kill" -ge "$cleanup_seconds" ] || refuse "green: K $gate_kill is below the cleanup's $cleanup_seconds seconds"
-[ "$cleanup_seconds" -gt "$stop_seconds" ] || refuse "green: the cleanup's $cleanup_seconds seconds do not cover the scope's stop of $stop_seconds"
-[ "$(sed -n '/^drive: started/,$p' "$state/log" | grep -c '^systemctl: list')" -le "$scope_reads" ] ||
-  refuse "green: the cleanup read the user manager more than $scope_reads times: $(paste -sd'|' "$state/log")"
-echo "a green journeys run hands the app its origin and a 0600 storage state of its own cookies in a minimal environment, stops the scope, signs out with the handed-over cookies and deletes the file"
+[ "$cleanup_seconds" -gt "$drive_stop_seconds" ] || refuse "green: the cleanup's $cleanup_seconds seconds do not cover the drive's stop of $drive_stop_seconds"
+echo "a green journeys run hands the app its origin and a 0600 storage state of its own cookies in a minimal environment, stops the drive's group, signs out with the handed-over cookies and deletes the file"
 
 # ------------------------------------------------------------------------------------------- the drive's own exit codes
 declare -A drive_result=([exit:1]="1 red journeys=1" [exit:7]="1 red journeys=7" [exit:3]="3 skipped journeys=3")
@@ -138,7 +128,7 @@ for mode in exit:1 exit:7 exit:3; do
   fi
   kept_secret "$case_name"
   left_clean "$case_name"
-  stopped_before_deleting "$case_name" hopin
+  stopped_before_deleting "$case_name"
   checkout_unchanged "$case_name"
   echo "the app's exit ${mode#exit:} is $expected_result, and the person is signed out and disabled with the file deleted"
 done
@@ -172,7 +162,7 @@ for signal in TERM INT; do
   grep -q 'drive: terminated' "$state/log" || refuse "$case_name: the drive did not end"
   kept_secret "$case_name"
   left_clean "$case_name"
-  stopped_before_deleting "$case_name" hopin
+  stopped_before_deleting "$case_name"
   checkout_unchanged "$case_name"
   echo "a $signal to the command is passed to the gate once, and the command returns after the inner run's result line, with the person disabled"
 done
@@ -180,7 +170,6 @@ done
 journeys_run kill-inner signal:KILL:inner
 expect_result kill-inner 1 red
 grep '^live:check: hopin ' "$output_file" | tail -n 1 | grep -qE '^live:check: hopin red \(gate=137\)$' || refuse "kill-inner: the last line is not the gate's red"
-[ ! -e "$state/scope-live-check-journeys-hopin" ] || refuse "kill-inner: the outer command left the scope"
 [ "$(<"$state/enabled")" = true ] && [ -e "$runtime/live-check/cookies-hopin" ] && [ -e "$runtime/live-check/storage-state-hopin.json" ] ||
   refuse "kill-inner: the killed run left no person, jar and file for the heal"
 checked_app=skat
@@ -192,19 +181,19 @@ grep -q 'curl: logout read-only' "$state/log" || refuse "kill-inner: the heal re
 kept_secret kill-inner
 left_clean kill-inner
 checked_app=hopin
-echo "a drive killed untrapped is stopped by the outer command, and the next run of another app signs the jar out and deletes the file"
+echo "a run killed untrapped leaves the person, the jar and the file, and the next run of another app signs the jar out and deletes the file"
 
 # -------------------------------------------------------------------------------------- what an earlier run left behind
-leave_handed_over_run hopin leftover-scope
+leave_handed_over_run hopin leftover-run
 checked_app=skat
-run_command leftover-scope
-expect_result leftover-scope 0 green
-grep -q "leftovers were cleaned up first" "$output_file" || refuse "leftover-scope: the output says nothing of the heal"
-in_order leftover-scope 'systemctl: stop live-check-journeys-hopin file=present' 'curl: logout read-only' 'write enabled=false' 'brute-force-cleared'
-kept_secret leftover-scope
-left_clean leftover-scope
+run_command leftover-run
+expect_result leftover-run 0 green
+grep -q "leftovers were cleaned up first" "$output_file" || refuse "leftover-run: the output says nothing of the heal"
+in_order leftover-run 'curl: logout read-only' 'write enabled=false' 'brute-force-cleared'
+kept_secret leftover-run
+left_clean leftover-run
 checked_app=hopin
-echo "a scope, a storage state and a handed-over jar of an earlier run are stopped, deleted and signed out first"
+echo "a storage state and a handed-over jar of an earlier run are deleted and signed out first"
 
 leave_handed_over_run hopin leftover-keeps-session
 run_command leftover-keeps-session FAKE_LOGOUT_KEEPS_SESSION=true
@@ -238,31 +227,29 @@ live_check_arguments=()
 exec {lock_descriptor}>&-
 expect_result lock-held 4 refused
 ! grep -q 'gate=' "$output_file" || refuse "lock-held: the gate added a line to the inner run's refusal"
-no_event 'kubectl\|systemd-run\|drive' || refuse "lock-held: the stack or the scope was called: $(paste -sd'|' "$state/log")"
+no_event 'kubectl\|drive' || refuse "lock-held: the stack or the drive was called: $(paste -sd'|' "$state/log")"
 [ "$(<"$state/enabled")" = true ] || refuse "lock-held: a person was written"
 echo "a held lock gives the inner run's refused with exit 4 and nothing of the gate's"
 
-journeys_run scope-trial-fails exit:0 FAKE_FAIL=scope
-expect_result scope-trial-fails 1 red
-grep -qE '^live:check: hopin red .*step=scope$' "$output_file" || refuse "scope-trial-fails: the result line names not the step scope"
-no_event 'kubectl\|drive' || refuse "scope-trial-fails: the stack was called: $(paste -sd'|' "$state/log")"
-[ "$(<"$state/enabled")" = false ] || refuse "scope-trial-fails: a person was written"
-echo "a scope that cannot start is red at platform before anything is written"
+journeys_run listing-unreadable exit:0 FAKE_FAIL=listing
+expect_result listing-unreadable 1 red
+grep -q 'may remain: .*the processes of the journeys drive' "$output_file" || refuse "listing-unreadable: the output names no process of the drive"
+in_order listing-unreadable 'drive: started' 'drive: stopped'
+kept_secret listing-unreadable
+[ "$(<"$state/enabled")" = false ] || refuse "listing-unreadable: the person is enabled"
+echo "a process listing that cannot be read leaves the drive's processes unproven gone, so the run is red and names them, with the person disabled"
 
-journeys_run manager-unreachable exit:0 FAKE_FAIL=manager
-expect_result manager-unreachable 1 red
-grep -q 'may remain: .*a journeys scope' "$output_file" || refuse "manager-unreachable: the output names no journeys scope"
-no_event 'drive' || refuse "manager-unreachable: the drive ran: $(paste -sd'|' "$state/log")"
-[ "$(<"$state/enabled")" = false ] || refuse "manager-unreachable: a person was written"
-echo "a user manager that cannot be read leaves the scopes unproven gone, so the run is red and names a scope"
-
-journeys_run scope-stays exit:0 FAKE_FAIL=scope-stays
-expect_result scope-stays 1 red
-grep -q 'may remain: .*a journeys scope' "$output_file" || refuse "scope-stays: the output names no journeys scope"
-in_order scope-stays 'drive: started' 'systemctl: stop live-check-journeys-hopin'
-kept_secret scope-stays
-[ "$(<"$state/enabled")" = false ] || refuse "scope-stays: the person is enabled"
-echo "a scope still deactivating after its stop is a scope that may remain, while an inactive or a failed one is gone"
+prepare_journeys_case ignores-term exit:0
+echo ignores-term >"$state/straggler-mode"
+started_at=$SECONDS
+run_command ignores-term
+expect_result ignores-term 0 green
+[ $((SECONDS - started_at)) -ge "$drive_stop_seconds" ] || refuse "ignores-term: the process ignoring TERM was not given $drive_stop_seconds seconds"
+no_event 'drive: stopped' || refuse "ignores-term: the process that ignores TERM was stopped by it"
+kept_secret ignores-term
+left_clean ignores-term
+live_check_arguments=()
+echo "a process of the drive that ignores TERM is killed after the stop's seconds and the run is green"
 
 # ----------------------------------------------------------------------------------------------------- the checkout
 # refused_checkout <case>: runs the journeys tier on the checkout set beforehand and expects the refusal.
@@ -321,6 +308,6 @@ live_check_arguments=(--tier sign-in)
 run_command sign-in-tier
 live_check_arguments=()
 expect_result sign-in-tier 0 green
-no_event 'probe-run\|systemd-run' || refuse "sign-in-tier: the gate or a scope was used: $(paste -sd'|' "$state/log")"
+no_event 'probe-run\|drive' || refuse "sign-in-tier: the gate or the drive was used: $(paste -sd'|' "$state/log")"
 left_clean sign-in-tier
-echo "the sign-in tier runs with no gate and no scope"
+echo "the sign-in tier runs with no gate and no drive"

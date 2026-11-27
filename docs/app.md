@@ -193,7 +193,7 @@ as `mise -C <checkout> run live:journeys --origin <origin> --storage-state <file
 - **Environment.** The task gets `HOME`, a `PATH` of `/usr/bin:/bin` and `LANG`, and nothing else: no password, no
   `KUBECONFIG`, no runtime directory and no platform or mise variable. The app's mise supplies its own tools, and the
   caller prepares the checkout, which the command never changes.
-- **Limits.** The task runs in a systemd user scope of its own inside probe-run's cap, which ends it and every process it
+- **Limits.** The task runs in a session of its own inside probe-run's cap, which ends it and every process it
   started.
 
 ## The GPU

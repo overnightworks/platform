@@ -24,10 +24,10 @@ export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 task_name=live:check
 person=live-check
 # Each call of the cluster or the app ends past this bound, as a hung one would hold the cleanup, which mise.toml's
-# timeout -k covers with its calls: 15 at most (kcadm's file lost, one credential), the two reads of the journeys scopes
-# and their one stop, which is cleanup_seconds (live_check_journeys.sh), the whole budget of one pass. A cleanup pass
-# meets at most one cookie jar, of hopin, skat, presentator or songmaker: a run makes its own only after a heal that
-# deleted every leftover, and a heal with leftovers ends the run.
+# timeout -k covers with its calls: 15 at most (kcadm's file lost, one credential), the two listings of the journeys
+# drive's processes and their stop, which is cleanup_seconds (live_check_journeys.sh), the whole budget of one pass. A
+# cleanup pass meets at most one cookie jar, of hopin, skat, presentator or songmaker: a run makes its own only after a
+# heal that deleted every leftover, and a heal with leftovers ends the run.
 call_seconds=20
 
 cleaning=false
@@ -155,7 +155,6 @@ if ! flock --nonblock "$lock_descriptor"; then
   exit 4
 fi
 holds_lock=true
-[ "$tier" != journeys ] || the_scope_can_start
 
 # ------------------------------------------------------------------------------------------ the person's state
 person_json() { kcadm get "users/$person_id" --target-realm "$realm"; }
@@ -271,7 +270,7 @@ delete_cookie_jar() {
 }
 clean_up_person() {
   local name
-  attempt "$journeys_scopes_name" stop_journeys_scopes
+  attempt "$journeys_drive_name" stop_the_drive
   attempt "kcadm's sign-in to Keycloak" sign_in_kcadm_again
   for name in $(app_names); do
     attempt "the person's $name session" sign_out_of_app "$name"

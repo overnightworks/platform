@@ -4,7 +4,7 @@
 # model of the realm's test person, and a fake curl, which models each app's sign-in routes and Keycloak's login form. The
 # caller sets repository_root, sources tests/failure.sh and runs its cases with prepare_case and run_command.
 work_directory="$(mktemp -d)"
-# end_the_fakes: ends the processes the fakes left (a held scope, the drive's straggler) and removes the run's files.
+# end_the_fakes: ends the processes the fakes left (the drive's straggler) and removes the run's files.
 end_the_fakes() {
   jobs -p | xargs -r kill 2>/dev/null || true
   cat "$work_directory"/state-*/straggler 2>/dev/null | xargs -r kill 2>/dev/null || true
@@ -239,12 +239,10 @@ fi
 format="${format//'%{http_code}'/$code}"
 printf '%s%s' "$body" "${format//'%{redirect_url}'/$redirect}"
 FAKE
-# The gate and the scope. probe-run runs the command it wraps (its arguments after -k K CAP) and passes a TERM on to it
-# once, or, with FAKE_GATE_STATUS, answers that status without running it. systemd-run keeps scope-<unit> (the pid of the
-# command it runs) while the command lives; systemctl's stop ends that command and returns when the scope is gone;
-# FAKE_FAIL=scope makes the trial scope fail and FAKE_FAIL=manager makes the user manager unreachable. systemctl lists the
-# scopes that live as active, an earlier inactive and an earlier failed one, and stops the units it is given;
-# FAKE_FAIL=scope-stays leaves each stopped scope listed as deactivating.
+# The gate and the process listing. probe-run runs the command it wraps (its arguments after -k K CAP) and passes a TERM on
+# to it once, or, with FAKE_GATE_STATUS, answers that status without running it; when the command has ended it ends the
+# drive's group too, as the end of the real probe-run's namespace does. ps is the real one, except that
+# FAKE_FAIL=listing makes the listing of every process fail.
 cat >"$fake_bin/probe-run" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -260,85 +258,20 @@ command_pid=$!
 trap 'log_event "probe-run: term"; kill -TERM "$command_pid" 2>/dev/null || true' TERM INT
 wait "$command_pid" || status=$?
 while kill -0 "$command_pid" 2>/dev/null; do wait "$command_pid" && status=0 || status=$?; done
+[ ! -e "$FAKE_STATE/drive-group" ] || kill -KILL -- "-$(<"$FAKE_STATE/drive-group")" 2>/dev/null || true
 exit "$status"
 FAKE
-cat >"$fake_bin/systemd-run" <<'FAKE'
+cat >"$fake_bin/ps" <<'FAKE'
 #!/usr/bin/env bash
-set -euo pipefail
-source "$FAKE_LIB"
-scan_arguments_and_environment systemd-run "$@"
-unit="" property=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --user | --scope | --quiet | --collect) ;;
-    --unit) unit="$2"; shift ;;
-    --property) property="$2"; shift ;;
-    --) shift; break ;;
-    *) violate "systemd-run: unexpected argument"; exit 2 ;;
-  esac
-  shift
-done
-if [ -z "$unit" ]; then
-  log_event "systemd-run: trial"
-  [ "${FAKE_FAIL:-}" != scope ] || exit 1
-  exec "$@"
-fi
-log_event "systemd-run: scope $unit $property"
-trap 'rm -f "$FAKE_STATE/scope-$unit"' EXIT
-status=0
-"$@" &
-echo $! >"$FAKE_STATE/scope-$unit"
-wait $! || status=$?
-# The command has ended and the scope lives while any process is in it, which a watcher outlives this call to say.
-if [ -e "$FAKE_STATE/straggler" ] && kill -0 "$(<"$FAKE_STATE/straggler")" 2>/dev/null; then
-  trap - EXIT
-  (
-    while kill -0 "$(<"$FAKE_STATE/straggler")" 2>/dev/null; do sleep 0.05; done
-    rm -f "$FAKE_STATE/scope-$unit"
-  ) >/dev/null 2>&1 &
-fi
-exit "$status"
-FAKE
-cat >"$fake_bin/systemctl" <<'FAKE'
-#!/usr/bin/env bash
-set -euo pipefail
-source "$FAKE_LIB"
-[ "$1" = --user ] || { violate "systemctl: not the user manager"; exit 1; }
-case "$2" in
-  list-units)
-    log_event "systemctl: list"
-    [ "${FAKE_FAIL:-}" != manager ] || { echo "Failed to connect to user scope bus" >&2; exit 1; }
-    for scope_file in "$FAKE_STATE"/scope-live-check-journeys-*; do
-      [ -e "$scope_file" ] || continue
-      printf '%s.scope loaded active running Scope\n' "${scope_file##*/scope-}"
-    done
-    for stuck_file in "$FAKE_STATE"/stuck-live-check-journeys-*; do
-      [ -e "$stuck_file" ] || continue
-      printf '%s.scope loaded deactivating stop-sigterm Scope\n' "${stuck_file##*/stuck-}"
-    done
-    printf 'live-check-journeys-earlier.scope loaded inactive dead Scope\n'
-    printf 'live-check-journeys-failed.scope loaded failed failed Scope\n' ;;
-  stop)
-    for unit in "${@:3}"; do
-      unit="${unit%.scope}"
-      file=absent
-      ! compgen -G "$XDG_RUNTIME_DIR/live-check/storage-state-*" >/dev/null || file=present
-      log_event "systemctl: stop $unit file=$file"
-      if [ -e "$FAKE_STATE/scope-$unit" ]; then
-        kill -TERM "$(<"$FAKE_STATE/scope-$unit")" 2>/dev/null || true
-        [ ! -e "$FAKE_STATE/straggler" ] || kill -TERM "$(<"$FAKE_STATE/straggler")" 2>/dev/null || true
-        for _ in $(seq 200); do [ -e "$FAKE_STATE/scope-$unit" ] || break; sleep 0.05; done
-        [ "${FAKE_FAIL:-}" != scope-stays ] || touch "$FAKE_STATE/stuck-$unit"
-      fi
-    done ;;
-  *) violate "systemctl: unexpected $2"; exit 1 ;;
-esac
+[ "$*" != "-e -o pgid=,stat=" ] || [ "${FAKE_FAIL:-}" != listing ] || exit 1
+exec "__REAL_PS__" "$@"
 FAKE
 # mise: `mise -C <checkout> ...` is the app's own mise, run by the command under env -i, which holds no FAKE_ variable,
 # so it finds the case through the state-current link. `tasks ls` lists the checkout's mise.toml; `run live:journeys`
-# is the drive, which records what it received, leaves one process behind in its scope and then ends as the case's drive-mode file says: exit:<n>, or
+# is the drive, which records what it received, leaves one process behind in its group (one that ignores TERM when the case's
+# straggler-mode file says ignores-term) and then ends as the case's drive-mode file says: exit:<n>, or
 # signal:<name>:<outer|inner>, which sends that signal to the outermost or innermost live_check.sh above it and holds
-# until the scope's stop ends it. Every other call is the real mise's.
+# until the drive's stop ends it. Every other call is the real mise's.
 cat >"$fake_bin/mise" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -360,6 +293,7 @@ case "$*" in
     scan_arguments_and_environment drive "$@"
     origin="$4" state_file="$6"
     log_event "drive: started"
+    echo $$ >"$FAKE_STATE/drive-group"
     # What the app's command prints stays out of the command's output.
     echo "the drive printed this"; echo "the drive printed this" >&2
     password="$(<"$FAKE_STATE/password")"
@@ -377,9 +311,19 @@ case "$*" in
         [ "$(readlink "$descriptor")" != "${state_file%/*}/lock" ] || echo "lock inherited"
       done
     } >"$FAKE_STATE/drive-record"
-    # A process the drive leaves behind in its scope, as a browser would.
-    sleep 600 >/dev/null 2>&1 &
+    # A process the drive leaves behind in its group, as a browser would; on TERM it says whether the storage state still stood.
+    (
+      set +e
+      if [ "$(cat "$FAKE_STATE/straggler-mode" 2>/dev/null)" = ignores-term ]; then
+        trap '' TERM
+      else
+        trap 'compgen -G "${state_file%/*}/storage-state-*" >/dev/null && file=present || file=absent; log_event "drive: stopped file=$file"; exit 0' TERM
+      fi
+      : >"$FAKE_STATE/straggler-ready"
+      while :; do sleep 0.05; done
+    ) >/dev/null 2>&1 &
     echo $! >"$FAKE_STATE/straggler"
+    until [ -e "$FAKE_STATE/straggler-ready" ]; do sleep 0.01; done
     mode="$(<"$FAKE_STATE/drive-mode")"
     case "$mode" in
       exit:*) exit "${mode#exit:}" ;;
@@ -392,9 +336,10 @@ case "$*" in
       fi
       pid="$(ps -o ppid= -p "$pid" | tr -d ' ')"
     done
-    sleep 600 &
+    # The group's TERM reaches the leader's own wait only through its trap, so what it waits for ignores TERM.
+    (trap '' TERM; exec sleep 600) &
     sleeper=$!
-    trap 'kill "$sleeper" 2>/dev/null; log_event "drive: terminated"; exit 143' TERM
+    trap 'kill -KILL "$sleeper" 2>/dev/null; log_event "drive: terminated"; exit 143' TERM
     case "$mode" in
       signal:*:outer) IFS=: read -r _ signal _ <<<"$mode"; kill -"$signal" "$outer" ;;
       signal:*:inner) IFS=: read -r _ signal _ <<<"$mode"; kill -"$signal" "$inner" ;;
@@ -404,10 +349,11 @@ case "$*" in
 esac
 FAKE
 sed -i "s|__WORK__|$work_directory|g; s|__REAL_MISE__|$(command -v mise)|; s|__YQ__|$(command -v yq)|g" "$fake_bin/mise"
+sed -i "s|__REAL_PS__|$(command -v ps)|" "$fake_bin/ps"
 chmod +x "$fake_bin"/*
 # mise puts its own kubectl before PATH and the command falls back to the PC's kubeconfig, so neither may be reachable.
 export PATH="$fake_bin:$PATH" MISE_DISABLE_TOOLS=kubectl,flux,flux2 KUBECONFIG=/nonexistent
-for tool in kubectl curl probe-run systemd-run systemctl mise; do
+for tool in kubectl curl probe-run ps mise; do
   [ "$(command -v "$tool")" = "$fake_bin/$tool" ] || fail "$tool on PATH is not the fake"
 done
 
@@ -491,6 +437,8 @@ kept_secret() {
   ! grep -qE "$cookie_value|$keycloak_cookie_value|FAKECODE" "$output_file" || refuse "$name: a cookie or code is in the output"
   ! grep -q "Logging into" "$output_file" || refuse "$name: kcadm's sign-in notice is in the output"
 }
+# process_alive <pid>: the process lives and is no zombie.
+process_alive() { [[ "$(ps -o stat= -p "$1" 2>/dev/null)" =~ ^[^Z] ]]; }
 # left_clean <case> [credential]: the person is disabled with no session and, unless a credential is named, no
 # credential; the sign-in file is gone, no app's jar is left and the last event is its removal.
 left_clean() {
@@ -502,7 +450,7 @@ left_clean() {
   ! compgen -G "$runtime/live-check/cookies-*" >/dev/null || refuse "$name: a cookie jar remains"
   ! compgen -G "$runtime/live-check/storage-state-*" >/dev/null || refuse "$name: a storage state remains"
   ! compgen -G "$runtime/live-check/handed-over-*" >/dev/null || refuse "$name: a handed-over marker remains"
-  ! compgen -G "$state/scope-*" >/dev/null || refuse "$name: a scope remains"
+  ! process_alive "$(cat "$state/straggler" 2>/dev/null || echo 0)" || refuse "$name: a process of the drive remains"
   [ "$(tail -n 1 "$state/log")" = "kubectl: config-removed" ] || refuse "$name: the sign-in file was not removed last"
 }
 expect_result() {
