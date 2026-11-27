@@ -294,7 +294,7 @@ done
 # The listener alone: with no redirect it stores nothing and, once its deadline passes, exits non-zero.
 scenario="the-deadline-passes-without-a-redirect"
 new_run "${scenario}"
-coproc serving { in_world python3 -I "${listener}" "${app_name}" 2 overnightworks/platform release-bump RELEASE_BUMP_APP_PRIVATE_KEY 2>"${run}/err"; }
+coproc serving { in_world timeout 60 python3 -I "${listener}" "${app_name}" 2 overnightworks/platform release-bump RELEASE_BUMP_APP_PRIVATE_KEY 2>"${run}/err"; }
 serving_pid=$!
 IFS= read -r -u "${serving[0]}" page_url
 grep -qE '^http://127\.0\.0\.1:[0-9]+/$' <<<"${page_url}" || fail "${scenario}: the listener printed no address"
