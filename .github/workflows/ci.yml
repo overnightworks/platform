@@ -367,6 +367,10 @@ jobs:
         if: matrix.part == 'backup-2'
         run: tests/backup/staging_syncs_fail_whole_when_full_and_free_a_replaced_tree_first.sh
 
+      - name: Check that the stager's fit refuses a copy by the bytes it still writes beside the eviction margin and counts a staged copy as written
+        if: matrix.part == 'backup-2'
+        run: tests/backup/stager_fit_refuses_a_copy_by_what_it_still_writes_beside_the_eviction_margin.sh
+
       - name: Check that the bucket step fails when a key written during its sync stands in for a key the copy dropped
         if: matrix.part == 'backup-2'
         run: tests/backup/bucket_count_cannot_hide_a_key_the_copy_dropped.sh
