@@ -123,7 +123,7 @@ seed="${work}/seed"
 mkdir "${seed}"
 (cd "${repository_root}" && git ls-files -z -- mise.toml mise.lock src/legal/pyproject.toml src/legal/uv.lock src/legal/src \
   infrastructure/legal apps/hopin/release | xargs -0 cp --parents --target-directory "${seed}" &&
-  cp --parents scripts/release_bump_*.sh "${seed}")
+  cp --parents scripts/release_bump_* "${seed}")
 # The release main runs in the fixture: newer than the cells' "older" releases (2026.11.01.1, 2020.01.01.1) and older
 # than every release they bump to, whatever release the shipped Component names.
 fixture_main_release=2026.11.22.1
