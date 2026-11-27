@@ -72,6 +72,9 @@ jobs:
       - name: Check that the failure report names what each Pod that is not Ready waits on and the node's state, and reads no Secret
         run: mise exec -- tests/flux/print_flux_state_names_what_each_not_ready_pod_waits_on.sh
 
+      - name: Check that the Ready step of a part prints the peaks of the runner's wait on every exit, a failed wait included, and leaves no sampler
+        run: mise exec -- tests/flux/scoped_layers_reconcile_the_candidate_prints_the_peaks_on_every_exit.sh
+
       - name: Check that the parts a run executes are core alone for a docs-only diff, those a changed layer or glob selects, and every part but the nightly-only ones for an unknown path, a zero base or a failing diff
         run: mise exec -- tests/flux/parts_for_paths_selects_by_changed_paths.sh
 
