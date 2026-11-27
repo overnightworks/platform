@@ -375,6 +375,10 @@ jobs:
         if: matrix.part == 'backup-2'
         run: tests/backup/bucket_count_cannot_hide_a_key_the_copy_dropped.sh
 
+      - name: Check that the role room ends non-zero on a TERM, never as a fit
+        if: matrix.part == 'backup-2'
+        run: tests/backup/room_role_ends_non_zero_on_a_term_and_never_reads_as_a_fit.sh
+
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
       - name: Compare the generated files with a fresh regeneration
         if: matrix.part == 'core'
