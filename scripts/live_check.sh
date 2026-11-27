@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # person_id and unreadable are set by keycloak_kcadm.sh.
-# The command behind `mise run live:check <app> [--tier journeys --checkout <dir>]`: signs the one test person of realm.yaml in to the app through the
-# app's own page on the live stack, the way a browser does, and leaves the person disabled. Exit 0 is green, 1 red
-# (a failed sign-in, an unreadable stack, a refusal, or a step of the cleanup that may have left something), 3 skipped
-# (the app's Deployment is not Available, or for the journeys tier the load gate's timeout or the app's exit 3), 4 refused (another run holds the lock; nothing was read or written). Output is
-# the app, the result and HTTP codes or counts, never a password, a cookie, a code or a page.
+# The command behind `mise run live:check <app> [--tier journeys --checkout <dir>]`: signs the one test person of
+# realm.yaml in to the app through the app's own page on the live stack, the way a browser does, and leaves the person
+# disabled; the journeys tier (live_check_journeys.sh) also runs the app's live journeys in the middle. Exit 0 is green,
+# 1 red (a failed sign-in, an unreadable stack, a refusal, or a step of the cleanup that may have left something), 3
+# skipped (the app's Deployment is not Available, or for the journeys tier the load gate's timeout or the app's exit 3),
+# 4 refused (another run holds the lock; nothing was read or written). Output is the app, the result and HTTP codes or
+# counts, never a password, a cookie, a code or a page.
 #
 # The password is made per run, lives in this process's memory and reaches Keycloak and the sign-in form on stdin only.
 # On every exit the command can trap (success, error, TERM, INT) one EXIT trap signs out at every app whose cookie jar
@@ -23,8 +25,9 @@ task_name=live:check
 person=live-check
 # Each call of the cluster or the app ends past this bound, as a hung one would hold the cleanup, which mise.toml's
 # timeout -k covers with its calls: 15 at most (kcadm's file lost, one credential), which is 300 seconds, and the
-# journeys tier's K adds the scope's stop (live_check_journeys.sh). A cleanup pass meets at most one cookie jar, of hopin, skat, presentator or songmaker: a run makes its own only after a
-# heal that deleted every leftover, and a heal with leftovers ends the run.
+# journeys tier's K adds the scope's stop (live_check_journeys.sh). A cleanup pass meets at most one cookie jar, of
+# hopin, skat, presentator or songmaker: a run makes its own only after a heal that deleted every leftover, and a heal
+# with leftovers ends the run.
 call_seconds=20
 
 cleaning=false
@@ -229,7 +232,8 @@ delete_stranded_config_files() {
   stranded_config_files=("${remaining[@]}")
 }
 # sign_out_of_app <app>: with the app's jar, its own sign-out route and Origin, read back by its account route answering
-# 401; for a jar whose cookies were handed over, that proves the session ended at the app, not that the jar was cleared. The codes of a jar that is not this run's own, or of the first cleanup's, carry the app's name, so the result line
+# 401; for a jar whose cookies were handed over, that proves the session ended at the app, not that the jar was cleared.
+# The codes of a jar that is not this run's own, or of the first cleanup's, carry the app's name, so the result line
 # holds no key twice.
 sign_out_of_app() {
   local name="$1" code_prefix="" logout_status account_status
