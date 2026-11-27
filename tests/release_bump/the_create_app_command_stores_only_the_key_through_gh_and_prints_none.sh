@@ -27,11 +27,13 @@ pem_digest="$(printf '%s' "${pem}" | sha256sum | cut -d' ' -f1)"
 
 # The fakes carry their record paths and their answers' directory in their text, so they read no variable of the caller's.
 # gh answers the environment's reads and the one secret set from the run's fixture files; curl answers the conversion
-# whose code its stdin configuration names; xdg-open records the page and, for the local page, plays the browser: the
-# script of $work/browser.py runs to its end before xdg-open returns.
+# whose code its stdin configuration names, and on failure writes that code to stderr, where a listener that passed curl's
+# stderr on would show it; xdg-open records the page and, for the local page, plays the browser: the script of
+# $work/browser.py runs to its end before xdg-open returns.
 cat >"${work}/browser.py" <<'BROWSER'
 import html.parser
 import http.client
+import json
 import pathlib
 import sys
 import urllib.error
@@ -53,9 +55,9 @@ class Form(html.parser.HTMLParser):
             self.manifest = attributes["value"]
 
 
-def get(path):
+def get(url):
     try:
-        with urllib.request.urlopen(page_url + path, timeout=10) as response:
+        with urllib.request.urlopen(url, timeout=10) as response:
             return response.status, response.read().decode()
     except urllib.error.HTTPError as error:
         return error.code, ""
@@ -64,15 +66,17 @@ def get(path):
 
 
 form = Form()
-form.feed(get("")[1])
+form.feed(get(page_url)[1])
 (run / "manifest.json").write_text(form.manifest)
+redirect_url = json.loads(form.manifest)["redirect_url"]
 (fixture / "form-action").write_text(form.action)
 state = urllib.parse.parse_qs(urllib.parse.urlparse(form.action).query)["state"][0]
-other_states = [urllib.parse.quote(state[::-1]), urllib.parse.quote("é")]
-(run / "wrong-state-status").write_text("\n".join(str(get(f"created?code={code}&state={other}")[0]) for other in other_states) + "\n")
+# The redirect goes where the manifest sent it, as GitHub does: a request with another state, with a non-ASCII state and with none.
+other_requests = [f"state={urllib.parse.quote(state[::-1])}", f"state={urllib.parse.quote('é')}", ""]
+(run / "wrong-state-status").write_text("\n".join(str(get(f"{redirect_url}?code={code}&{other}")[0]) for other in other_requests) + "\n")
 if mode == "ok":
-    (run / "redirect-status").write_text(str(get(f"created?code={code}&state={state}")[0]))
-    (run / "second-redirect-status").write_text(str(get(f"created?code={code}&state={state}")[0]))
+    (run / "redirect-status").write_text(str(get(f"{redirect_url}?code={code}&state={state}")[0]))
+    (run / "second-redirect-status").write_text(str(get(f"{redirect_url}?code={code}&state={state}")[0]))
 BROWSER
 
 make_fakes() { # <run directory> <fixture directory>
@@ -104,8 +108,9 @@ echo "curl $*" >>"${run}/curl-calls"
 { echo "--- curl"; env; } >>"${run}/env-records"
 [ "$*" = "-q --config -" ] || { echo "the fake curl has no answer for: $*" >&2; exit 97; }
 sent="$(sed -n 's|^url = "https://api.github.com/app-manifests/\([^/"]*\)/conversions"$|\1|p')"
-[ ! -f "${fixture}/curl-fails" ] || exit 22
-[ "${sent}" = "$(cat "${fixture}/code")" ] || exit 22
+fail_with_the_code() { echo "curl: (22) the conversion of ${sent} failed" >&2; exit 22; }
+[ ! -f "${fixture}/curl-fails" ] || fail_with_the_code
+[ "${sent}" = "$(cat "${fixture}/code")" ] || fail_with_the_code
 cat "${fixture}/conversion"
 FAKE
   cat >"${run}/bin/xdg-open" <<'FAKE'
@@ -150,10 +155,11 @@ in_world() {
     CURL_CA_BUNDLE=/nonexistent HTTPS_PROXY=http://127.0.0.1:9 "$@"
 }
 
-# drive <name>: the command in the checkout, its output and status kept in the run.
+# drive <name>: the command in the checkout, its output and status kept in the run. A listener that waits for a redirect
+# that never arrives ends at the cap, so the scenario fails instead of waiting for the listener's own deadline.
 drive() {
   status=0
-  (cd "${checkout}" && in_world mise run release:create-app "$@") >"${run}/out" 2>"${run}/err" || status=$?
+  (cd "${checkout}" && in_world timeout 120 mise run release:create-app "$@") >"${run}/out" 2>"${run}/err" || status=$?
 }
 
 # leaks <value>: the run, the gh login directory and the checkout hold the value anywhere.
@@ -194,7 +200,7 @@ for scenario in stores-the-key stores-the-key-again; do
     fail "${scenario}: the key went to another secret, environment or repository"
   [ "$(cat "${run}/stored-digest")" = "${pem_digest}" ] || fail "${scenario}: gh secret set's stdin was not exactly the key"
   [ "$(calls "${run}/curl-calls" .)" -eq 1 ] || fail "${scenario}: curl ran $(calls "${run}/curl-calls" .) times"
-  [ "$(cat "${run}/wrong-state-status")" = $'400\n400' ] || fail "${scenario}: a redirect with another state was not refused"
+  [ "$(cat "${run}/wrong-state-status")" = $'400\n400\n400' ] || fail "${scenario}: a redirect with another or no state was not refused"
   [ "$(cat "${run}/redirect-status")" = 200 ] || fail "${scenario}: the matching redirect got $(cat "${run}/redirect-status")"
   [ "$(cat "${run}/second-redirect-status")" != 200 ] || fail "${scenario}: a second matching redirect was served"
   grep -qxF "${installation_page}" "${run}/opened" || fail "${scenario}: the installation page of the answer's slug was not opened"
@@ -297,7 +303,7 @@ python3 -I "${work}/browser.py" "${page_url}" "$(cat "${fixture}/browser-mode")"
 status=0
 wait "${serving_PID}" || status=$?
 [ "${status}" -ne 0 ] || fail "${scenario}: the listener exited 0 without a matching redirect"
-[ "$(cat "${run}/wrong-state-status")" = $'400\n400' ] || fail "${scenario}: another state was not refused"
+[ "$(cat "${run}/wrong-state-status")" = $'400\n400\n400' ] || fail "${scenario}: another state was not refused"
 [ "$(calls "${run}/curl-calls" .)" -eq 0 ] && [ "$(secret_sets)" -eq 0 ] || fail "${scenario}: the listener converted a code or stored a key"
 no_leak
 echo "${scenario}: another state gets 400 and the deadline stores nothing"
