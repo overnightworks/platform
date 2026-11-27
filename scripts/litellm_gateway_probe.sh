@@ -870,6 +870,7 @@ probe_command() {
 
 # alone_command <number> [--model <name>]...: one question with only its setup, on the --model names where it takes them.
 alone_command() {
+  [ $# -gt 0 ] || fail "$usage_hint"
   local routes models_from calibration number="$1" given_models=()
   local -A seen_models=()
   shift
@@ -903,7 +904,7 @@ remove_command() {
 usage_hint="usage: scripts/litellm_gateway_probe.sh | --question <number> [--model <name>]... | --remove"
 case "$#:${1-}" in
   0:) probe_command ;;
-  [2-9]*:--question) alone_command "${@:2}" ;;
+  *:--question) alone_command "${@:2}" ;;
   1:--remove) remove_command ;;
   *) fail "$usage_hint" ;;
 esac
