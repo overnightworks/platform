@@ -1,0 +1,7 @@
+claim_id = "ddfc514bcd0b4df2986e0bd2842f8002"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
+role = "builder"
+base = "728095f853d532c689b3ba724b6c0ad4814ab78d"
+branch = "claude/issue-980-speech-cpu-image-owns-its-paths"
+scope = ["apps/speech-runtime/speech-runtime.yaml"]
+opened_commit = "76d427e980252cce91e5fbb9d3efe1218ccca9a2"
