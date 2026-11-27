@@ -1,0 +1,7 @@
+claim_id = "f56630b10c70484893eb21a4b9b88f7d"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
+role = "builder"
+base = "30dccf903c3618c56dd990cde3b2168bafa213fe"
+branch = "claude/issue-1015-probe-takes-four-models"
+scope = ["scripts/litellm_gateway_probe.sh", "tests/litellm/gateway_probe_answers_on_both_routes_and_removes_its_keys.sh"]
+opened_commit = "6f857c31388b57be713047357a73cab3314680db"
