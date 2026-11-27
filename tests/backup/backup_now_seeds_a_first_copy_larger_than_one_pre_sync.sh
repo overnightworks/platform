@@ -45,8 +45,10 @@ install_client
 backup_now() { scripts/backup_now.sh "$namespace" >"$1" 2>&1; }
 # seed_runs: the Pod backup-seed runs its containers.
 seed_runs() { [ "$(kubectl --namespace "$namespace" get pod "$seed_pod" --ignore-not-found --output jsonpath='{.status.phase}')" = Running ]; }
+# snapshot_count <pod name>: the number of staging snapshots in the namespace's repository; run_restic's own wait prints to
+# stdout, which a command substitution of this function would capture.
 snapshot_count() {
-  run_restic "$namespace" "$1" "restic --no-cache snapshots --json --path $staging | jq length"
+  run_restic "$namespace" "$1" "restic --no-cache snapshots --json --path $staging | jq length" >/dev/null
   [ "$restic_exit" = 0 ] || fail "the staging snapshots of $namespace cannot be read (exit $restic_exit)"
   echo "$restic_output"
 }
