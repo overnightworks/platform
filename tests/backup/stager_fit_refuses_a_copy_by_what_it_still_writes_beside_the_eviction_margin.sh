@@ -9,7 +9,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # naming a need above the copy's bytes, and a first copy of 20 MiB is staged; with a margin of 30 MiB a copy of 30 MiB
 # that is already staged needs next to nothing and passes. The same holds for a bucket of 30 MiB beside a claim of nothing:
 # refused when it is not staged and passed when it is, and the counts of files, directories, objects and prefixes each add
-# their blocks. The image is the one the restore test reads the repository with.
+# their blocks. The stager writes /scratch/end when it ends, after a refusal as after a seed. The image is the one the restore test reads the repository with.
 # It prints exit statuses, sizes and words, never a name.
 export PATH="$HOME/.local/bin:$PATH"
 image="$(mise exec -- yq 'select(.kind == "CronJob" and .metadata.name == "restore-test") | .spec.jobTemplate.spec.template.spec.initContainers[] | select(.name == "restic-dump") | .image' infrastructure/postgres/backup/backup.yaml)"
@@ -21,7 +21,7 @@ mebibyte=1048576
 # allocatable storage, the claim's size answered and <staged MiB> of the claim's file already staged; with a bucket MiB the
 # stager stages a bucket as well, answered likewise. claim_counts and bucket_counts, "<files> <directories>" and
 # "<objects> <prefixes>", default to one file and no directory. Prints "exit <status>", "need <bytes>" from its fit line,
-# "message <termination message>" and "block <bytes>" of the volume.
+# "message <termination message>", "end <yes|no>" for /scratch/end and "block <bytes>" of the volume.
 seed_fit() {
   docker run --rm --network none --user 0 --cap-drop ALL --security-opt no-new-privileges \
     --tmpfs "/staging:rw,size=64m,mode=1777" --tmpfs /scratch:rw,mode=1777 --volume "$stage_scripts:/etc/stage:ro" \
@@ -53,6 +53,7 @@ FAKE
     PATH=/fake:$PATH sh /etc/stage/stage_files.sh stager >/scratch/output 2>&1 || status=$?
     echo "exit $status"
     sed -n "s/.*need \([0-9]*\);.*/need \1/p" /scratch/output
+    if [ -e /scratch/end ]; then echo "end yes"; else echo "end no"; fi
     echo "block $(stat -f -c %S /staging)"
     echo "message $(cat /dev/termination-log 2>/dev/null)"'
 }
@@ -67,12 +68,16 @@ refused="$(seed_fit 24Mi 30 0)"
 [ "$(line "$refused" need)" -gt $((30 * mebibyte)) ] && [ "$(line "$refused" need)" -lt $((31 * mebibyte)) ] ||
   fail "the need of a first copy of 30 MiB is $(line "$refused" need) bytes, not more than 30 MiB, a block for its file included"
 echo "a first copy of 30 MiB beside a margin of 40 MiB in a volume of 64 MiB was refused with exit 3 and a need of $(line "$refused" need) bytes"
+[ "$(line "$refused" end)" = yes ] || fail "the seed's stager did not write /scratch/end when it refused the copy"
+echo "the seed's stager wrote /scratch/end when it refused the copy"
 passes="$(seed_fit 24Mi 20 0)"
 [ "$(line "$passes" exit)" = 0 ] && [ "$(line "$passes" message)" = seeded ] ||
   fail "a first copy of 20 MiB beside a margin of 40 MiB in a volume of 64 MiB was not staged: '$(tr '\n' ' ' <<<"$passes")'"
 [ "$(line "$passes" need)" -gt $((20 * mebibyte)) ] && [ "$(line "$passes" need)" -lt $((21 * mebibyte)) ] ||
   fail "the need of a first copy of 20 MiB is $(line "$passes" need) bytes, not more than 20 MiB, a block for its file included"
 echo "a first copy of 20 MiB beside the same margin passed the fit with a need of $(line "$passes" need) bytes"
+[ "$(line "$passes" end)" = yes ] || fail "the seed's stager did not write /scratch/end when it seeded the copy"
+echo "the seed's stager wrote /scratch/end when it seeded the copy"
 
 # A margin of 30 MiB: the allocatable is 34 MiB. The copy is staged already, so the sync writes next to nothing.
 staged="$(seed_fit 34Mi 30 30)"

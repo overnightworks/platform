@@ -10,8 +10,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/../failure.sh"
 # lists with the newline shown as the symbol U+240A and writes as a file whose name holds the newline, matches no listed
 # line: the step ends 0 so the manifest refuses it with its own message, while two equal lines of a key that is no file
 # with a newline end the step with an error. A listed key that left the bucket while the sync ran, which the second
-# listing no longer holds, does not fail the step; when that second listing fails, the step fails. The image is the
-# Component's own, read from its patch. It prints exit statuses, never a name.
+# listing no longer holds, does not fail the step; when that second listing fails, the step fails. In a seed the role ends
+# with exit 0, unasked, once the stager has written /scratch/end. The image is the Component's own, read from its patch. It prints exit statuses, never a name.
 component=infrastructure/postgres/backup/files/bucket/kustomization.yaml
 script="$PWD/infrastructure/postgres/backup/files/scripts/stage_files.sh"
 export PATH="$HOME/.local/bin:$PATH"
@@ -89,3 +89,17 @@ echo "a key deleted from the bucket during the sync ended with exit 0"
 relisting="$(step_exit no listing-fails)"
 [ -n "$relisting" ] && [ "$relisting" != 0 ] || fail "a failed second listing ended with exit '${relisting:-none}'"
 echo "a missing key and a failed second listing ended with exit $relisting"
+
+# seed_role_status: the bucket role in seed mode, with /scratch/end written and no request; prints its exit status, which is
+# not 137, the status of a role that timeout killed after 15 seconds.
+seed_role_status() {
+  docker run --rm --network none --read-only --user 65534 --cap-drop ALL --security-opt no-new-privileges \
+    --tmpfs /scratch:rw,mode=1777 --tmpfs /staging:rw,mode=1777 --volume "$script:/stage_files.sh:ro" \
+    --env STAGE_SEED=1 --env BUCKET=stand-in --entrypoint sh "$image" -c '
+    : >/scratch/end
+    status=0
+    timeout -s KILL 15 sh /stage_files.sh bucket || status=$?
+    echo "$status"'
+}
+[ "$(seed_role_status)" = 0 ] || fail "the bucket role of a seed did not end with exit 0, unasked, once the stager had written /scratch/end"
+echo "the bucket role of a seed ended with exit 0, without syncing, once the stager had written /scratch/end"
