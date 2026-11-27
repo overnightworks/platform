@@ -168,6 +168,7 @@ start_probe alone_unknown "" 0 --question 3
 # Question 4 alone, on the models it is given: the answered pair, a refusing model, a default pair, an unlisted name, a name
 # that is no text name, a model argument for a question that takes none, and a failed run.
 start_probe models_given "" 0 --question 4 --model text/sonnet --model text/haiku-low
+start_probe models_four "" 0 --question 4 --model text/sonnet --model text/sonnet-low --model text/haiku --model text/haiku-low
 start_probe models_repeated "" 0 --question 4 --model text/sonnet --model text/sonnet
 start_probe models_refused "defer_refused" 0 --question 4 --model text/sonnet-low --model text/haiku-low
 start_probe models_default "" 0 --question 4
@@ -322,6 +323,14 @@ count_of models_given '^litellm:gateway-probe: the probe key gateway-probe-[0-9]
 lacks models_given 'unbound variable'
 has models_given 'Q4 \[[A-Z0-9 ]+\] chat text/sonnet: yes;.*no skill tools [0-9]{4,}'
 echo "question 4 alone asks the deferral question of the models it is given and of no others"
+
+# Four models make ten arguments, and the run still reaches every one of them.
+run_probe models_four
+[ "$status" = 0 ] || fail "models_four: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly models_four
+lacks models_four '^usage:'
+for model in text/sonnet text/sonnet-low text/haiku text/haiku-low; do count_of models_four "Q4 \[[A-Z0-9 ]+\] chat $model: " 1; done
+echo "question 4 alone asks four models"
 
 # A model named twice is asked once.
 run_probe models_repeated
