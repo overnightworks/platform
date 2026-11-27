@@ -166,50 +166,50 @@ spec:
               - configMap:
                   name: design
                   items:
-                    - key: design-0.39.0__design.css
-                      path: login/resources/design-0.39.0/design.css
-                    - key: design-0.39.0__fonts__open-sans-LICENSE
-                      path: login/resources/design-0.39.0/fonts/open-sans-LICENSE
-                    - key: design-0.39.0__fonts__open-sans-latin-400-normal.woff2
-                      path: login/resources/design-0.39.0/fonts/open-sans-latin-400-normal.woff2
-                    - key: design-0.39.0__fonts__open-sans-latin-600-normal.woff2
-                      path: login/resources/design-0.39.0/fonts/open-sans-latin-600-normal.woff2
-                    - key: design-0.39.0__fonts__open-sans-latin-ext-400-normal.woff2
-                      path: login/resources/design-0.39.0/fonts/open-sans-latin-ext-400-normal.woff2
-                    - key: design-0.39.0__fonts__open-sans-latin-ext-600-normal.woff2
-                      path: login/resources/design-0.39.0/fonts/open-sans-latin-ext-600-normal.woff2
-                    - key: design-0.39.0__fonts__oswald-LICENSE
-                      path: login/resources/design-0.39.0/fonts/oswald-LICENSE
-                    - key: design-0.39.0__fonts__oswald-latin-400-normal.woff2
-                      path: login/resources/design-0.39.0/fonts/oswald-latin-400-normal.woff2
-                    - key: design-0.39.0__fonts__oswald-latin-700-normal.woff2
-                      path: login/resources/design-0.39.0/fonts/oswald-latin-700-normal.woff2
-                    - key: design-0.39.0__fonts__oswald-latin-ext-400-normal.woff2
-                      path: login/resources/design-0.39.0/fonts/oswald-latin-ext-400-normal.woff2
-                    - key: design-0.39.0__fonts__oswald-latin-ext-700-normal.woff2
-                      path: login/resources/design-0.39.0/fonts/oswald-latin-ext-700-normal.woff2
-                    - key: design-0.39.0__design.css
-                      path: account/resources/design-0.39.0/design.css
-                    - key: design-0.39.0__fonts__open-sans-LICENSE
-                      path: account/resources/design-0.39.0/fonts/open-sans-LICENSE
-                    - key: design-0.39.0__fonts__open-sans-latin-400-normal.woff2
-                      path: account/resources/design-0.39.0/fonts/open-sans-latin-400-normal.woff2
-                    - key: design-0.39.0__fonts__open-sans-latin-600-normal.woff2
-                      path: account/resources/design-0.39.0/fonts/open-sans-latin-600-normal.woff2
-                    - key: design-0.39.0__fonts__open-sans-latin-ext-400-normal.woff2
-                      path: account/resources/design-0.39.0/fonts/open-sans-latin-ext-400-normal.woff2
-                    - key: design-0.39.0__fonts__open-sans-latin-ext-600-normal.woff2
-                      path: account/resources/design-0.39.0/fonts/open-sans-latin-ext-600-normal.woff2
-                    - key: design-0.39.0__fonts__oswald-LICENSE
-                      path: account/resources/design-0.39.0/fonts/oswald-LICENSE
-                    - key: design-0.39.0__fonts__oswald-latin-400-normal.woff2
-                      path: account/resources/design-0.39.0/fonts/oswald-latin-400-normal.woff2
-                    - key: design-0.39.0__fonts__oswald-latin-700-normal.woff2
-                      path: account/resources/design-0.39.0/fonts/oswald-latin-700-normal.woff2
-                    - key: design-0.39.0__fonts__oswald-latin-ext-400-normal.woff2
-                      path: account/resources/design-0.39.0/fonts/oswald-latin-ext-400-normal.woff2
-                    - key: design-0.39.0__fonts__oswald-latin-ext-700-normal.woff2
-                      path: account/resources/design-0.39.0/fonts/oswald-latin-ext-700-normal.woff2
+                    - key: design-0.43.0__design.css
+                      path: login/resources/design-0.43.0/design.css
+                    - key: design-0.43.0__fonts__open-sans-LICENSE.txt
+                      path: login/resources/design-0.43.0/fonts/open-sans-LICENSE.txt
+                    - key: design-0.43.0__fonts__open-sans-latin-400-normal.woff2
+                      path: login/resources/design-0.43.0/fonts/open-sans-latin-400-normal.woff2
+                    - key: design-0.43.0__fonts__open-sans-latin-600-normal.woff2
+                      path: login/resources/design-0.43.0/fonts/open-sans-latin-600-normal.woff2
+                    - key: design-0.43.0__fonts__open-sans-latin-ext-400-normal.woff2
+                      path: login/resources/design-0.43.0/fonts/open-sans-latin-ext-400-normal.woff2
+                    - key: design-0.43.0__fonts__open-sans-latin-ext-600-normal.woff2
+                      path: login/resources/design-0.43.0/fonts/open-sans-latin-ext-600-normal.woff2
+                    - key: design-0.43.0__fonts__oswald-LICENSE.txt
+                      path: login/resources/design-0.43.0/fonts/oswald-LICENSE.txt
+                    - key: design-0.43.0__fonts__oswald-latin-400-normal.woff2
+                      path: login/resources/design-0.43.0/fonts/oswald-latin-400-normal.woff2
+                    - key: design-0.43.0__fonts__oswald-latin-700-normal.woff2
+                      path: login/resources/design-0.43.0/fonts/oswald-latin-700-normal.woff2
+                    - key: design-0.43.0__fonts__oswald-latin-ext-400-normal.woff2
+                      path: login/resources/design-0.43.0/fonts/oswald-latin-ext-400-normal.woff2
+                    - key: design-0.43.0__fonts__oswald-latin-ext-700-normal.woff2
+                      path: login/resources/design-0.43.0/fonts/oswald-latin-ext-700-normal.woff2
+                    - key: design-0.43.0__design.css
+                      path: account/resources/design-0.43.0/design.css
+                    - key: design-0.43.0__fonts__open-sans-LICENSE.txt
+                      path: account/resources/design-0.43.0/fonts/open-sans-LICENSE.txt
+                    - key: design-0.43.0__fonts__open-sans-latin-400-normal.woff2
+                      path: account/resources/design-0.43.0/fonts/open-sans-latin-400-normal.woff2
+                    - key: design-0.43.0__fonts__open-sans-latin-600-normal.woff2
+                      path: account/resources/design-0.43.0/fonts/open-sans-latin-600-normal.woff2
+                    - key: design-0.43.0__fonts__open-sans-latin-ext-400-normal.woff2
+                      path: account/resources/design-0.43.0/fonts/open-sans-latin-ext-400-normal.woff2
+                    - key: design-0.43.0__fonts__open-sans-latin-ext-600-normal.woff2
+                      path: account/resources/design-0.43.0/fonts/open-sans-latin-ext-600-normal.woff2
+                    - key: design-0.43.0__fonts__oswald-LICENSE.txt
+                      path: account/resources/design-0.43.0/fonts/oswald-LICENSE.txt
+                    - key: design-0.43.0__fonts__oswald-latin-400-normal.woff2
+                      path: account/resources/design-0.43.0/fonts/oswald-latin-400-normal.woff2
+                    - key: design-0.43.0__fonts__oswald-latin-700-normal.woff2
+                      path: account/resources/design-0.43.0/fonts/oswald-latin-700-normal.woff2
+                    - key: design-0.43.0__fonts__oswald-latin-ext-400-normal.woff2
+                      path: account/resources/design-0.43.0/fonts/oswald-latin-ext-400-normal.woff2
+                    - key: design-0.43.0__fonts__oswald-latin-ext-700-normal.woff2
+                      path: account/resources/design-0.43.0/fonts/oswald-latin-ext-700-normal.woff2
 ---
 apiVersion: v1
 kind: Service
