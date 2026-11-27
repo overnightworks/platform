@@ -182,6 +182,9 @@ jobs:
       - name: Check that release-bump.yml's compute job gives each app's outcome, keeps the output of a bump, keeps a refusal a warning with the run green, lets one app's failure leave the others reporting before it makes the run red, and holds no more than contents and packages read, no environment, no secret and no cancelling group
         run: mise exec -- tests/release_bump/the_dry_run_computes_every_component_and_holds_no_write_credential.sh
 
+      - name: Check that mise run release:create-app refuses a missing or unrestricted environment and a name that is no slug before it serves a page, stores only the key on release-bump of platform through gh's stdin, takes only the redirect with its state, names the App to delete after a mismatch or a failure, and leaves the code, the key, client_secret and webhook_secret in no argument, output, environment or file
+        run: mise exec -- tests/release_bump/the_create_app_command_stores_only_the_key_through_gh_and_prints_none.sh
+
       - name: Check that the design kit under infrastructure/design equals its release wheel and holds nothing else, and that infrastructure/legal/assets holds nothing else than legal-2.css
         run: tests/legal/design_assets_equal_their_release_wheel.sh
 
