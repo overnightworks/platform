@@ -3,6 +3,6 @@ agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
 role = "builder"
 base = "119a668d5341e34219fd4def2146796a0ceaf332"
 branch = "claude/issue-1007-release-app-environment"
-scope = [".github/workflows/ci.yml", "docs/ARCHITECTURE.md", "docs/github-settings.md", "docs/runbooks/create-or-replace-the-release-app.md", "mise.toml", "scripts/release_bump_create_app.sh", "scripts/release_bump_create_app_listener.py", "src/opentofu/github", "tests/release_bump"]
+scope = [".github/workflows/ci.yml", "docs/ARCHITECTURE.md", "docs/github-settings.md", "docs/runbooks/create-or-replace-the-release-app.md", "mise.toml", "scripts/apply_opentofu.sh", "scripts/gh_login_environment.sh", "scripts/release_bump_create_app.sh", "scripts/release_bump_create_app_listener.py", "src/opentofu/github", "tests/flux/parts.yaml", "tests/opentofu/plan_with_a_delete_is_refused.sh", "tests/release_bump"]
 opened_commit = "763555802de177f1f3b6a490963b7d1a3b5a3a82"
 whole_reason = "The key's home and the one command that fills it must arrive together: an environment without the command holds nothing, and the command without the declared environment has nowhere safe to put the key."
