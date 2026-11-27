@@ -45,10 +45,7 @@ cleanup() {
   local cell_status=$?
   restore || cell_status=1
   delete_backups
-  (run_client clear-planted-objects "$credentials_secret" clear "$bucket_variable") ||
-    { delete_object --namespace "$namespace" delete pod clear-planted-objects --ignore-not-found --wait --timeout=2m; deletion_failures=$((deletion_failures + 1)); }
-  delete_object --namespace "$namespace" delete pod --selector cell=object-store --ignore-not-found --wait --timeout=2m
-  delete_object --namespace "$namespace" delete configmap object-store-client --ignore-not-found
+  remove_client
   rm -f -- "$saved_prebackup"
   delete_restic_objects
   end_deletions "$cell_status"

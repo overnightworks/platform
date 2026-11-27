@@ -21,13 +21,19 @@ delete_backups() {
 }
 
 # suspend_layer: suspends the layer's Kustomization, so that Flux leaves what the cell changes in the PreBackupPod; the cell
-# calls restore_pre_backup_pod from its exit trap, which also resumes it.
+# calls restore_pre_backup_pod from its exit trap, which also resumes it. The containers are read first, so that a failed
+# read leaves the layer running.
 layer_suspended=0
 saved_containers=
 suspend_layer() {
+  saved_containers="$(kubectl --namespace "$namespace" get prebackuppod files --output json | jq --compact-output '.spec.pod.spec.containers')"
   flux suspend kustomization "$namespace" --namespace flux-system
   layer_suspended=1
-  saved_containers="$(kubectl --namespace "$namespace" get prebackuppod files --output json | jq --compact-output '.spec.pod.spec.containers')"
+}
+
+# resume_layer: the layer's Kustomization runs again and reconciles the PreBackupPod to what the layer declares.
+resume_layer() {
+  flux resume kustomization "$namespace" --namespace flux-system && layer_suspended=0
 }
 
 # set_env <container> <name> <value>: the PreBackupPod's container carries the variable with the value, whatever it held
@@ -43,13 +49,15 @@ set_env() {
   kubectl --namespace "$namespace" patch prebackuppod files --type json --patch "$patch" >/dev/null
 }
 
-# restore_pre_backup_pod: the containers as suspend_layer saw them, and the layer's Kustomization running again.
+# restore_pre_backup_pod: the containers as suspend_layer saw them, and the layer's Kustomization running again, which is
+# resumed even when the patch fails; either failure fails it.
 restore_pre_backup_pod() {
   [ "$layer_suspended" = 1 ] || return 0
+  local patched=0
   kubectl --namespace "$namespace" patch prebackuppod files --type json \
-    --patch "[{\"op\": \"replace\", \"path\": \"/spec/pod/spec/containers\", \"value\": $saved_containers}]" >/dev/null &&
-    flux resume kustomization "$namespace" --namespace flux-system &&
-    layer_suspended=0
+    --patch "[{\"op\": \"replace\", \"path\": \"/spec/pod/spec/containers\", \"value\": $saved_containers}]" >/dev/null || patched=1
+  resume_layer || return 1
+  return "$patched"
 }
 
 # backup_pods: how many Pods of the namespace carry a backup command; backup_pod: the first one's name.
@@ -61,6 +69,9 @@ backup_pod() {
   kubectl --namespace "$namespace" get pods --output json |
     jq --raw-output '[.items[] | select(.metadata.annotations["k8up.io/backupcommand"] != null) | .metadata.name] | .[0] // ""'
 }
+
+# backup_names: the Backups of the namespace, sorted.
+backup_names() { kubectl --namespace "$namespace" get backups.k8up.io --output name | sort; }
 
 # create_backup <name>: one Backup, as the Schedule would start it.
 create_backup() {
@@ -179,6 +190,20 @@ end_backup() {
   done
 }
 
+# staging_pod <name> <command as a JSON array>: a Pod at $reading_uid that mounts the staging claim read-only and runs the
+# command, in the image $PROBE_IMAGE; it is no writer of the claim, but the guard counts it as a mounting pod.
+staging_pod() {
+  NAME="$1" COMMAND="$2" IMAGE="$PROBE_IMAGE" USER_ID="$reading_uid" yq --null-input --output-format json '
+    {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(NAME)},
+     "spec": {"restartPolicy": "Never", "automountServiceAccountToken": false, "enableServiceLinks": false,
+       "securityContext": {"runAsNonRoot": true, "runAsUser": env(USER_ID), "seccompProfile": {"type": "RuntimeDefault"}},
+       "containers": [{"name": "holder", "image": strenv(IMAGE), "command": env(COMMAND),
+         "securityContext": {"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": {"drop": ["ALL"]}},
+         "volumeMounts": [{"name": "staging", "mountPath": "/staging", "readOnly": true}]}],
+       "volumes": [{"name": "staging", "persistentVolumeClaim": {"claimName": "backup-staging", "readOnly": true}}]}}' |
+    kubectl --namespace "$namespace" create --filename - >/dev/null
+}
+
 # staged_file_exists <path>: whether the refused pod's stager sees the path under /staging or /scratch.
 staged_file_exists() { kubectl --namespace "$namespace" exec "$refused_pod" --container stager -- test -e "$1"; }
 
@@ -203,6 +228,12 @@ snapshot_bucket_digests='
     echo "$size$tab$(restic --no-cache dump --path "$staging" latest "$path" | sha256sum | cut -c1-64)$tab${path#"$staging/bucket/"}"
   done | LC_ALL=C sort)"
   echo "bucket $(printf "%s\n" "$bucket_digests" | sha256sum | cut -c1-64) $(printf "%s\n" "$bucket_digests" | grep -c .)"
+'
+
+# What the restic Pod prints for the bucket lines of the newest staging snapshot's MANIFEST: "manifest-bucket <count>". It
+# needs tab and staging from the script that holds it.
+snapshot_manifest_bucket_count='
+  echo "manifest-bucket $(restic --no-cache dump --path "$staging" latest "$staging/MANIFEST" | grep -c "^file$tab[0-9]*$tab[0-9]*${tab}bucket/" || true)"
 '
 
 # declared_top <layer file>: the top level of a staging snapshot as value reads it, sorted: MANIFEST and the dump, and
