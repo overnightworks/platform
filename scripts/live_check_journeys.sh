@@ -10,14 +10,21 @@
 
 # The drive's whole environment: the app's own mise supplies its tools.
 journey_environment=(HOME="${HOME:?}" PATH=/usr/bin:/bin LANG="${LANG:-C.UTF-8}")
-# The scope's stop: systemd ends what is left of the drive after this long.
+# The scope's stop: systemd ends what is left of the drive after this long; systemctl waits ten seconds longer, so that
+# its own cap never cuts the stop short of systemd's KILL.
 scope_stop_seconds=30
-# probe-run bounds a run by CAP + K (its own rule). K is the scope's stop plus the cleanup's calls (15 of call_seconds,
-# live_check.sh); CAP is what remains.
-gate_bound_seconds=1830
+scope_stop_wait_seconds=$((scope_stop_seconds + 10))
+# What one pass of the cleanup spends: its calls of call_seconds (15 at most: kcadm's file lost, one credential), the two
+# reads of the scopes and the one stop of every scope found, however many. Every tier runs it, so mise.toml's timeout -k
+# for the sign-in tier and the nightly unit's stop delay follow cleanup_seconds.
 cleanup_calls=15
-gate_kill_seconds=$((scope_stop_seconds + cleanup_calls * call_seconds))
+scope_reads=2
+cleanup_seconds=$(((cleanup_calls + scope_reads) * call_seconds + scope_stop_wait_seconds))
+# probe-run bounds a run by CAP + K (its own rule). K is the cleanup's seconds; CAP is what remains.
+gate_bound_seconds=1830
+gate_kill_seconds=$cleanup_seconds
 gate_cap_seconds=$((gate_bound_seconds - gate_kill_seconds))
+journeys_scopes_name="a journeys scope (live-check-journeys-<app>.scope)"
 
 # tier_arguments_agree: the tier is known and the checkout comes with the journeys tier only.
 tier_arguments_agree() {
@@ -33,25 +40,36 @@ storage_state_of() { printf '%s/storage-state-%s.json' "$lock_directory" "$1"; }
 # The marker beside the jar says its cookies were handed over, so its sign-out leaves the jar as it is.
 handed_over_of() { printf '%s/handed-over-%s' "$lock_directory" "$1"; }
 journeys_unit_of() { printf 'live-check-journeys-%s' "$1"; }
-scope_is_active() { timeout --foreground "$call_seconds" systemctl --user is-active --quiet "$(journeys_unit_of "$1").scope"; }
-# stop_journeys_scope <app>: stops the scope, which ends every process in it, and reads back that it is gone.
-stop_journeys_scope() {
-  scope_is_active "$1" || return 0
-  timeout --foreground "$scope_stop_seconds" systemctl --user stop "$(journeys_unit_of "$1").scope" || true
-  ! scope_is_active "$1"
+# journeys_scopes_present: prints the journeys scopes that are not inactive or failed, one a line, from one read; returns 1
+# when the user manager cannot be read or the read ends past call_seconds, which no caller takes for no scope.
+journeys_scopes_present() {
+  local listing
+  listing="$(timeout --foreground "$call_seconds" systemctl --user list-units --all --plain --no-legend 'live-check-journeys-*.scope')" ||
+    return 1
+  awk 'NF && $3 != "inactive" && $3 != "failed" { print $1 }' <<<"$listing"
+}
+# stop_journeys_scopes: stops every journeys scope, which ends every process in it, and reads back that none is left.
+stop_journeys_scopes() {
+  local scopes names
+  scopes="$(journeys_scopes_present)" || return 1
+  [ -n "$scopes" ] || return 0
+  mapfile -t names <<<"$scopes"
+  timeout --foreground "$scope_stop_wait_seconds" systemctl --user stop "${names[@]}" || true
+  scopes="$(journeys_scopes_present)" || return 1
+  [ -z "$scopes" ]
 }
 delete_storage_state() {
   rm -f -- "$(storage_state_of "$1")"
   [ ! -e "$(storage_state_of "$1")" ]
 }
-# a_journeys_run_left_something: an earlier run's storage state or scope, of any app.
+# a_journeys_run_left_something: an earlier run's storage state or scope, of any app; a manager that cannot be read counts.
 a_journeys_run_left_something() {
-  local name
+  local name scopes
   for name in $(app_names); do
     [ ! -e "$(storage_state_of "$name")" ] || return 0
-    ! scope_is_active "$name" || return 0
   done
-  return 1
+  scopes="$(journeys_scopes_present)" || return 0
+  [ -n "$scopes" ]
 }
 
 # ----------------------------------------------------------------------------------------------- before the gate
@@ -105,8 +123,8 @@ run_the_gate() {
       echo "live:check: $app skipped reason=load"
       exit 3 ;;
   esac
-  if [ "$gate_status" = 137 ] && ! stop_journeys_scope "$app"; then
-    echo "live:check: may remain: the scope $(journeys_unit_of "$app").scope; run again to clean up" >&2
+  if [ "$gate_status" = 137 ] && ! stop_journeys_scopes; then
+    echo "live:check: may remain: $journeys_scopes_name; run again to clean up" >&2
   fi
   echo "live:check: $app red (gate=$gate_status)"
   exit 1

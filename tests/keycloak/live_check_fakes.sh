@@ -242,7 +242,8 @@ FAKE
 # The gate and the scope. probe-run runs the command it wraps (its arguments after -k K CAP) and passes a TERM on to it
 # once, or, with FAKE_GATE_STATUS, answers that status without running it. systemd-run keeps scope-<unit> (the pid of the
 # command it runs) while the command lives; systemctl's stop ends that command and returns when the scope is gone;
-# FAKE_FAIL=scope makes the trial scope fail.
+# FAKE_FAIL=scope makes the trial scope fail and FAKE_FAIL=manager makes the user manager unreachable. systemctl lists the
+# scopes that live and stops the units it is given.
 cat >"$fake_bin/probe-run" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -302,19 +303,26 @@ cat >"$fake_bin/systemctl" <<'FAKE'
 set -euo pipefail
 source "$FAKE_LIB"
 [ "$1" = --user ] || { violate "systemctl: not the user manager"; exit 1; }
-unit="${*: -1}"
-unit="${unit%.scope}"
 case "$2" in
-  is-active) [ -e "$FAKE_STATE/scope-$unit" ] ;;
+  list-units)
+    log_event "systemctl: list"
+    [ "${FAKE_FAIL:-}" != manager ] || { echo "Failed to connect to user scope bus" >&2; exit 1; }
+    for scope_file in "$FAKE_STATE"/scope-live-check-journeys-*; do
+      [ -e "$scope_file" ] || continue
+      printf '%s.scope loaded active running Scope\n' "${scope_file##*/scope-}"
+    done ;;
   stop)
-    file=absent
-    ! compgen -G "$XDG_RUNTIME_DIR/live-check/storage-state-*" >/dev/null || file=present
-    log_event "systemctl: stop $unit file=$file"
-    if [ -e "$FAKE_STATE/scope-$unit" ]; then
-      kill -TERM "$(<"$FAKE_STATE/scope-$unit")" 2>/dev/null || true
-      [ ! -e "$FAKE_STATE/straggler" ] || kill -TERM "$(<"$FAKE_STATE/straggler")" 2>/dev/null || true
-      for _ in $(seq 200); do [ -e "$FAKE_STATE/scope-$unit" ] || break; sleep 0.05; done
-    fi ;;
+    for unit in "${@:3}"; do
+      unit="${unit%.scope}"
+      file=absent
+      ! compgen -G "$XDG_RUNTIME_DIR/live-check/storage-state-*" >/dev/null || file=present
+      log_event "systemctl: stop $unit file=$file"
+      if [ -e "$FAKE_STATE/scope-$unit" ]; then
+        kill -TERM "$(<"$FAKE_STATE/scope-$unit")" 2>/dev/null || true
+        [ ! -e "$FAKE_STATE/straggler" ] || kill -TERM "$(<"$FAKE_STATE/straggler")" 2>/dev/null || true
+        for _ in $(seq 200); do [ -e "$FAKE_STATE/scope-$unit" ] || break; sleep 0.05; done
+      fi
+    done ;;
   *) violate "systemctl: unexpected $2"; exit 1 ;;
 esac
 FAKE

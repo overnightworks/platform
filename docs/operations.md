@@ -314,12 +314,12 @@ with `step=checkout`, exit 1 and no write, a directory that is not the top of a 
 table's `app_repository`, and one whose mise, under the drive's environment, lists no task `live:journeys`; an unknown
 tier, a checkout with the sign-in tier and the journeys tier without one print the usage. The sign-in, the drive and the
 trapped cleanup are the live check's drive under probe-run, since nothing is built or installed: the command calls itself
-once as `probe-run -k 330 1500 scripts/live_check.sh <app> journeys <checkout> inside-gate`, so probe-run's own load wait
-is the only wait and comes before the lock, the heal and the first write; K is the scope's stop (30 seconds) plus the
-cleanup's 15 calls of 20 seconds, CAP is 1830 − K. The fourth argument is an aid for cooperative callers. Inside, after
-the lock, a trial scope (`systemd-run --user --scope`) that fails is red with `step=scope` before anything is written; the
-heal also stops a leftover scope `live-check-journeys-<app>` of any app, deletes a leftover `storage-state-<app>.json` and
-signs out a jar whose marker `handed-over-<app>` remains as below; then comes OPS-19's sign-in. The jar is rewritten to the
+once as `probe-run -k 380 1450 scripts/live_check.sh <app> journeys <checkout> inside-gate`, so probe-run's own load wait
+is the only wait and comes before the lock, the heal and the first write; K is the cleanup's 380 seconds (15 calls of
+20 seconds, two reads of the journeys scopes of 20 seconds and one stop of 40), CAP is 1830 − K. The fourth argument is
+an aid for cooperative callers. Inside, after the lock, a trial scope (`systemd-run --user --scope`) that fails is red
+with `step=scope` before anything is written; the heal also stops a leftover scope `live-check-journeys-<app>` of any
+app, deletes a leftover `storage-state-<app>.json` and signs out a jar whose marker `handed-over-<app>` remains as below; then comes OPS-19's sign-in. The jar is rewritten to the
 cookies of the app's host, so no Keycloak cookie stands in a file of the run during the drive, and the same cookies are
 written as Playwright's storage state, 0600 in the 0700 `$XDG_RUNTIME_DIR/live-check`, with the marker beside the jar; a
 jar line the conversion cannot read is red with `step=storage-state`. The app's task runs as `mise -C <checkout> run
@@ -328,8 +328,9 @@ live:journeys --origin <origin> --storage-state <file>` in the systemd user scop
 `/dev/null` and the lock closed for it, so no output of the app reaches the command's, Gatus or an item. The scope, the
 minimal environment and the jar without Keycloak's cookies are aids for cooperative code; the boundary is the operator's
 account, as for OPS-18. The storage-state file holds only the app's own cookies of this run and is valid only until the run
-signs out; the same boundary as the password's holds it. On every exit it can trap, the cleanup stops the scope and reads
-back that it is gone, signs out at the app with the jar as it is (a jar with its marker is only read, never rewritten) and
+signs out; the same boundary as the password's holds it. On every exit it can trap, the cleanup stops every journeys scope
+in one stop and reads back that none is left (a user manager it cannot read, or a scope that is not inactive or failed,
+is a scope that may remain), signs out at the app with the jar as it is (a jar with its marker is only read, never rewritten) and
 reads the account route with the very cookies handed over, which must answer 401, and then deletes the file whatever the
 sign-out answered. That read-back proves the end of the session handed over; a session the app rotated during the journey
 ends through Keycloak's back-channel sign-out, which nothing reads back. An app that clears the cookie and keeps its

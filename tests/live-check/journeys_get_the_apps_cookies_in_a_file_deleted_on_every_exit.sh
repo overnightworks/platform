@@ -18,6 +18,8 @@ source "$repository_root/tests/failure.sh"
 source "$repository_root/tests/keycloak/live_check_fakes.sh"
 
 call_seconds="$(sed -n 's/^call_seconds=//p' "$repository_root/scripts/live_check.sh")"
+scope_reads="$(sed -n 's/^scope_reads=//p' "$repository_root/scripts/live_check_journeys.sh")"
+cleanup_seconds="$(call_seconds="$call_seconds" bash -c 'source "$1"; echo "$cleanup_seconds"' _ "$repository_root/scripts/live_check_journeys.sh")"
 gate_bound_seconds=1830
 
 # make_checkout <name> <repository> [tasks]: a git work tree whose origin names the GitHub repository and whose mise.toml
@@ -105,7 +107,10 @@ gate_line="$(grep '^probe-run: ' "$state/log")"
 [[ "$gate_line" =~ ^probe-run:\ -k\ ([0-9]+)\ ([0-9]+)\  ]] || refuse "green: the gate is not called as probe-run -k K CAP: $gate_line"
 gate_kill="${BASH_REMATCH[1]}" gate_cap="${BASH_REMATCH[2]}"
 [ $((gate_kill + gate_cap)) -le "$gate_bound_seconds" ] || refuse "green: K $gate_kill and CAP $gate_cap pass probe-run's bound of $gate_bound_seconds"
-[ "$gate_kill" -ge $((stop_seconds + 15 * call_seconds)) ] || refuse "green: K $gate_kill is below the scope's stop and the cleanup's calls"
+[ "$gate_kill" -ge "$cleanup_seconds" ] || refuse "green: K $gate_kill is below the cleanup's $cleanup_seconds seconds"
+[ "$cleanup_seconds" -gt "$stop_seconds" ] || refuse "green: the cleanup's $cleanup_seconds seconds do not cover the scope's stop of $stop_seconds"
+[ "$(sed -n '/^drive: started/,$p' "$state/log" | grep -c '^systemctl: list')" -le "$scope_reads" ] ||
+  refuse "green: the cleanup read the user manager more than $scope_reads times: $(paste -sd'|' "$state/log")"
 echo "a green journeys run hands the app its origin and a 0600 storage state of its own cookies in a minimal environment, stops the scope, signs out with the handed-over cookies and deletes the file"
 
 # ------------------------------------------------------------------------------------------- the drive's own exit codes
@@ -243,6 +248,13 @@ grep -qE '^live:check: hopin red .*step=scope$' "$output_file" || refuse "scope-
 no_event 'kubectl\|drive' || refuse "scope-trial-fails: the stack was called: $(paste -sd'|' "$state/log")"
 [ "$(<"$state/enabled")" = false ] || refuse "scope-trial-fails: a person was written"
 echo "a scope that cannot start is red at platform before anything is written"
+
+journeys_run manager-unreachable exit:0 FAKE_FAIL=manager
+expect_result manager-unreachable 1 red
+grep -q 'may remain: .*a journeys scope' "$output_file" || refuse "manager-unreachable: the output names no journeys scope"
+no_event 'drive' || refuse "manager-unreachable: the drive ran: $(paste -sd'|' "$state/log")"
+[ "$(<"$state/enabled")" = false ] || refuse "manager-unreachable: a person was written"
+echo "a user manager that cannot be read leaves the scopes unproven gone, so the run is red and names a scope"
 
 # ----------------------------------------------------------------------------------------------------- the checkout
 refused_checkout() {
