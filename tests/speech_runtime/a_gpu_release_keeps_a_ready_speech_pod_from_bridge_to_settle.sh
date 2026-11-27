@@ -3,7 +3,8 @@
 #   tests/speech_runtime/a_gpu_release_keeps_a_ready_speech_pod_from_bridge_to_settle.sh
 # Run after the candidate was reconciled and served by tests/flux/serve_the_candidate_commit.sh, and last of its part. k3d
 # has no card, so the cell commits a stand-in: the GPU Deployment without its runtime class and card, with the small
-# image's environment and memory, read from speech-runtime.yaml, at speech's previous CPU release. It then sets the card to
+# image's environment and memory, read from speech-runtime.yaml as that previous release stood in the history, at speech's
+# previous CPU release. It then sets the card to
 # speech (the stand-in at one pod, the small image at none) and commits a GPU release, the stand-in's ref moved to speech's
 # current CPU release. The cell proves the order from timestamps: the small pod turns Ready before the old GPU pod is killed,
 # and the new GPU pod turns Ready before the small pod is killed; a sample of the Service's endpoints each second never
@@ -28,7 +29,6 @@ gpu=speech-runtime-gpu
 phase_seconds=300
 layer=speech-runtime
 bridge_layer=speech-runtime-bridge
-small_manifest="$tree/apps/speech-runtime/speech-runtime.yaml"
 gpu_manifest="$tree/apps/speech-runtime/speech-runtime-gpu.yaml"
 release_component="$tree/apps/speech-runtime/release/kustomization.yaml"
 
@@ -59,22 +59,26 @@ trap cleanup EXIT
 # release_of <placeholder>: "<tag> <digest>" of the entry of the release Component in the tree.
 release_of() { NAME="$1" yq '.images[] | select(.name == strenv(NAME)) | .newTag + " " + .digest' "$release_component"; }
 
-# previous_cpu_release: "<tag> <digest>" of the newest CPU release that the history of apps/speech-runtime removed and the
-# release no longer holds, whether it stood in an image line or in the release Component.
+# previous_cpu_release: "<tag> <digest> <commit>" of the newest CPU release that the history of apps/speech-runtime removed and
+# the release no longer holds, whether it stood in an image line or in the release Component, and the commit that removed it.
 previous_cpu_release() {
   local current_digest
   current_digest="${1#* }"
-  git -C "$tree" log -p -U0 --format= "$CANDIDATE_REVISION" -- apps/speech-runtime |
-    awk '/^-[[:space:]]+image: ghcr.io\/overnightworks\/speech:/ { split($3, ref, "[:@]"); print ref[2], ref[3] ":" ref[4] }
-         /^-[[:space:]]+newTag: /{tag=$3} /^-[[:space:]]+digest: sha256:/{print tag, $3}' |
+  git -C "$tree" log -p -U0 --format=commit:%H "$CANDIDATE_REVISION" -- apps/speech-runtime |
+    awk '/^commit:/ { commit = substr($0, 8) }
+         /^-[[:space:]]+image: ghcr.io\/overnightworks\/speech:/ { split($3, ref, "[:@]"); print ref[2], ref[3] ":" ref[4], commit }
+         /^-[[:space:]]+newTag: /{tag=$3} /^-[[:space:]]+digest: sha256:/{print tag, $3, commit}' |
     { grep -v -F -e '-gpu ' -e " $current_digest" || true; } | sed -n 1p
 }
 
-# stand_in: the GPU Deployment as a CPU Deployment of the small image's environment and memory, both read from the manifest of
-# the small image, so that k3d, which has no card, runs it.
+# stand_in <commit>: the GPU Deployment as a CPU Deployment of the small image's environment and memory, both read from the
+# manifest of the small image in the parent of the commit that removed the release it runs, so that each release runs with its
+# own Deployment's environment and k3d, which has no card, runs it.
 stand_in() {
-  yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env' "$small_manifest" >"$RUNNER_TEMP/stand-in-env.yaml"
-  yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].resources' "$small_manifest" >"$RUNNER_TEMP/stand-in-resources.yaml"
+  local previous_manifest
+  previous_manifest="$(git -C "$tree" show "$1^:apps/speech-runtime/speech-runtime.yaml")"
+  yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env' <<<"$previous_manifest" >"$RUNNER_TEMP/stand-in-env.yaml"
+  yq 'select(.kind == "Deployment") | .spec.template.spec.containers[0].resources' <<<"$previous_manifest" >"$RUNNER_TEMP/stand-in-resources.yaml"
   yq --inplace '.spec.template.spec |= (del(.runtimeClassName) | .containers[0].env = load(strenv(STAND_IN_ENV)) | .containers[0].resources = load(strenv(STAND_IN_RESOURCES)))' \
     "$gpu_manifest"
 }
@@ -135,12 +139,12 @@ sample_endpoints() {
 
 previous="$(previous_cpu_release "$(release_of speech-cpu)")"
 [ -n "$previous" ] || fail "the history of apps/speech-runtime holds no CPU release other than the current one"
-read -r previous_tag previous_digest <<<"$previous"
+read -r previous_tag previous_digest previous_removal <<<"$previous"
 read -r current_tag current_digest <<<"$(release_of speech-cpu)"
 echo "the stand-in starts at the previous CPU release $previous_tag and the GPU release moves it to $current_tag"
 
 # The stand-in at the previous release, with the card given to speech: it at one pod, the small image at none.
-stand_in
+stand_in "$previous_removal"
 move_gpu_ref "$previous_tag" "$previous_digest"
 # The overlay that serves the stand-in drops the count patch of the layer speech-runtime and points the source at the new
 # commit in one apply. A layer whose spec changed reconciles at once at the revision it holds, which would give the old GPU
