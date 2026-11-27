@@ -8,11 +8,16 @@ step_started_at="$(date +%s)"
 kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=3m
 kubectl -n flux-system wait kustomization/flux-system --for=condition=Ready --timeout=5m
 wait_status=0
+# What the runner does during the wait, in every part: a stall of the node shows as run queue, I/O wait, steal or swap.
+runner_samples="$RUNNER_TEMP/runner-vmstat.log"
+LC_ALL=C vmstat -n -t -w 10 >"$runner_samples" &
+sampler_pid=$!
 # songmaker's scoring worker pulls a 4 GB image while the other legs pull from GHCR at the same time; its layer took
 # up to 333 s on main, so 6 minutes left too little margin.
 kubectl wait kustomizations.kustomize.toolkit.fluxcd.io --all --all-namespaces --for=condition=Ready --timeout=10m ||
   wait_status=$?
-"$(dirname "${BASH_SOURCE[0]}")/print_ready_times.sh" "$step_started_at"
+kill "$sampler_pid"
+"$(dirname "${BASH_SOURCE[0]}")/print_ready_times.sh" "$step_started_at" "$runner_samples"
 [ "$wait_status" -eq 0 ] || exit "$wait_status"
 kubectl -n flux-system get gitrepository flux-system -o yaml
 
