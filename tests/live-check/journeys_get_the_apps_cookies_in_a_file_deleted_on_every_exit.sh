@@ -22,13 +22,13 @@ scope_reads="$(sed -n 's/^scope_reads=//p' "$repository_root/scripts/live_check_
 cleanup_seconds="$(call_seconds="$call_seconds" bash -c 'source "$1"; echo "$cleanup_seconds"' _ "$repository_root/scripts/live_check_journeys.sh")"
 gate_bound_seconds=1830
 
-# make_checkout <name> <repository> [tasks]: a git work tree whose origin names the GitHub repository and whose mise.toml
-# declares live:journeys unless tasks is none; sets checkout.
+# make_checkout <name> <repository> [tasks]: a git work tree whose origin (checkout_origin, else the https form) names the
+# GitHub repository and whose mise.toml declares live:journeys unless tasks is none; sets checkout.
 make_checkout() {
   checkout="$work_directory/checkout-$1"
   mkdir "$checkout"
   git -C "$checkout" init --quiet
-  git -C "$checkout" remote add origin "https://github.com/$2.git"
+  git -C "$checkout" remote add origin "${checkout_origin:-https://github.com/$2.git}"
   if [ "${3:-}" != none ]; then
     printf '[tasks."live:journeys"]\nrun = "true"\n' >"$checkout/mise.toml"
   else
@@ -38,16 +38,21 @@ make_checkout() {
 }
 # fingerprint <directory>: every path, mode and content of the tree, its git state included.
 fingerprint() { (cd "$1" && { find . -printf '%p %m\n' | sort; find . -type f -exec sha256sum {} + | sort; }) | sha256sum; }
-# journeys_run <name> <drive mode> [environment assignment]...: runs the journeys tier for checked_app against a fresh
-# checkout of its repository; sets checkout and, afterwards, status.
-journeys_run() {
+# prepare_journeys_case <name> <drive mode> [person's state]: a case for the journeys tier of checked_app with a fresh
+# checkout of its repository; sets checkout. A case whose run never reaches the drive names any mode.
+prepare_journeys_case() {
   local name="$1" mode="$2"
-  shift 2
-  prepare_case "$name"
+  prepare_case "$name" ${3:+"$3"}
   echo "$mode" >"$state/drive-mode"
   make_checkout "$name" "overnightworks/$checked_app"
   live_check_arguments=(--tier journeys --checkout "$checkout")
   checkout_before="$(fingerprint "$checkout")"
+}
+# journeys_run <name> <drive mode> [environment assignment]...: runs that case; sets status.
+journeys_run() {
+  local name="$1" mode="$2"
+  shift 2
+  prepare_journeys_case "$name" "$mode"
   run_command "$name" "$@"
   live_check_arguments=()
 }
@@ -103,6 +108,7 @@ stopped_before_deleting green hopin
 stop_seconds="$(sed -n 's/^systemd-run: scope live-check-journeys-hopin TimeoutStopSec=\([0-9][0-9]*\)$/\1/p' "$state/log")"
 [ -n "$stop_seconds" ] || refuse "green: the scope sets no TimeoutStopSec"
 grep -q 'curl: logout read-only' "$state/log" || refuse "green: the handed-over jar was rewritten by the sign-out"
+[ "$(grep -c '^probe-run: ' "$state/log")" = 1 ] || refuse "green: not exactly one call of the gate: $(paste -sd'|' "$state/log")"
 gate_line="$(grep '^probe-run: ' "$state/log")"
 [[ "$gate_line" =~ ^probe-run:\ -k\ ([0-9]+)\ ([0-9]+)\  ]] || refuse "green: the gate is not called as probe-run -k K CAP: $gate_line"
 gate_kill="${BASH_REMATCH[1]}" gate_cap="${BASH_REMATCH[2]}"
@@ -206,11 +212,7 @@ echo "the heal's read-back of a handed-over jar names a session the app kept"
 # ------------------------------------------------------------------------------------------- the gate's own statuses
 for gate_status in 75 2 69 130; do
   case_name="gate-$gate_status"
-  prepare_case "$case_name"
-  make_checkout "$case_name" "overnightworks/$checked_app"
-  live_check_arguments=(--tier journeys --checkout "$checkout")
-  run_command "$case_name" FAKE_GATE_STATUS="$gate_status"
-  live_check_arguments=()
+  journeys_run "$case_name" exit:0 FAKE_GATE_STATUS="$gate_status"
   if [ "$gate_status" = 75 ]; then
     expect_result "$case_name" 3 skipped
     grep -q "^live:check: hopin skipped reason=load\$" "$output_file" || refuse "$case_name: the line is not skipped reason=load"
@@ -223,12 +225,10 @@ for gate_status in 75 2 69 130; do
 done
 echo "the gate's load timeout is skipped and its other failures red, each with no lock, no stack call and no write"
 
-prepare_case lock-held enabled
+prepare_journeys_case lock-held exit:0 enabled
 mkdir -m 700 "$runtime/live-check"
 exec {lock_descriptor}>"$runtime/live-check/lock"
 flock --nonblock "$lock_descriptor"
-make_checkout lock-held overnightworks/hopin
-live_check_arguments=(--tier journeys --checkout "$checkout")
 run_command lock-held
 live_check_arguments=()
 exec {lock_descriptor}>&-
@@ -238,11 +238,7 @@ no_event 'kubectl\|systemd-run\|drive' || refuse "lock-held: the stack or the sc
 [ "$(<"$state/enabled")" = true ] || refuse "lock-held: a person was written"
 echo "a held lock gives the inner run's refused with exit 4 and nothing of the gate's"
 
-prepare_case scope-trial-fails
-make_checkout scope-trial-fails overnightworks/hopin
-live_check_arguments=(--tier journeys --checkout "$checkout")
-run_command scope-trial-fails FAKE_FAIL=scope
-live_check_arguments=()
+journeys_run scope-trial-fails exit:0 FAKE_FAIL=scope
 expect_result scope-trial-fails 1 red
 grep -qE '^live:check: hopin red .*step=scope$' "$output_file" || refuse "scope-trial-fails: the result line names not the step scope"
 no_event 'kubectl\|drive' || refuse "scope-trial-fails: the stack was called: $(paste -sd'|' "$state/log")"
@@ -280,6 +276,20 @@ echo "a directory that is no git work tree is refused with no write"
 make_checkout no-task overnightworks/hopin none
 refused_checkout no-task
 echo "a checkout whose mise lists no live:journeys is refused with no write"
+make_checkout subdirectory overnightworks/hopin
+mkdir "$checkout/sub"
+cp "$checkout/mise.toml" "$checkout/sub/mise.toml"
+checkout="$checkout/sub"
+refused_checkout subdirectory
+echo "a subdirectory of the app's work tree is refused with no write"
+
+for origin_case in "origin-scp-form git@github.com:overnightworks/$checked_app.git" "origin-ssh-form ssh://git@github.com/overnightworks/$checked_app.git"; do
+  checkout_origin="${origin_case#* }"
+  journeys_run "${origin_case%% *}" exit:0
+  expect_result "${origin_case%% *}" 0 green
+done
+unset checkout_origin
+echo "an origin in the ssh forms of the app's repository is accepted"
 
 for usage_case in "unknown-tier --tier weekly" "checkout-without-tier --checkout $work_directory" "tier-without-checkout --tier journeys"; do
   case_name="${usage_case%% *}"

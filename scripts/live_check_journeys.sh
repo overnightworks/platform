@@ -73,6 +73,8 @@ a_journeys_run_left_something() {
 }
 
 # ----------------------------------------------------------------------------------------------- before the gate
+# find_mise: sets mise_path, the mise the drive's environment runs.
+find_mise() { mise_path="$(command -v mise)" || fail "mise is not on PATH"; }
 # require_a_checkout_of_the_app: the checkout is the top of a git work tree whose origin names the app's repository and
 # whose mise, under the drive's environment, lists live:journeys. The command only reads it; the cause of a red sits with
 # the caller.
@@ -89,7 +91,7 @@ require_a_checkout_of_the_app() {
     "https://github.com/$repository" | "git@github.com:$repository" | "ssh://git@github.com/$repository") ;;
     *) fail "the origin of $checkout is not $repository" ;;
   esac
-  mise_path="$(command -v mise)" || fail "mise is not on PATH"
+  find_mise
   tasks="$(timeout --foreground "$call_seconds" env -i "${journey_environment[@]}" "$mise_path" -C "$checkout" tasks ls --name-only 2>/dev/null)" ||
     fail "mise cannot list the tasks of $checkout; is it trusted?"
   grep -qxF live:journeys <<<"$tasks" || fail "$checkout declares no task live:journeys"
@@ -179,7 +181,7 @@ hand_over_the_cookies() {
 # closed for it; the command waits for it in the background, so a TERM reaches the trap at once. Sets drive_status.
 drive_the_journeys() {
   drive_status=0
-  mise_path="$(command -v mise)" || fail "mise is not on PATH"
+  find_mise
   sign_in_step=journeys
   systemd-run --user --scope --quiet --collect --unit "$(journeys_unit_of "$app")" --property "TimeoutStopSec=$scope_stop_seconds" -- \
     env -i "${journey_environment[@]}" "$mise_path" -C "$checkout" run live:journeys --origin "$origin" \
