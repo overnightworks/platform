@@ -130,6 +130,8 @@ class Listener(http.server.HTTPServer):
 
 class Request(http.server.BaseHTTPRequestHandler):
     server: Listener
+    # A client that connects and sends nothing must not hold the single-threaded listener past its deadline.
+    timeout = 10
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - the request line holds the code
         pass

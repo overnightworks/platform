@@ -40,7 +40,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-page_url, mode, run, fixture = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4])
+page_url, run, fixture = sys.argv[1], pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3])
 code = (fixture / "code").read_text()
 
 
@@ -74,9 +74,8 @@ state = urllib.parse.parse_qs(urllib.parse.urlparse(form.action).query)["state"]
 # The redirect goes where the manifest sent it, as GitHub does: a request with another state, with a non-ASCII state and with none.
 other_requests = [f"state={urllib.parse.quote(state[::-1])}", f"state={urllib.parse.quote('é')}", ""]
 (run / "wrong-state-status").write_text("\n".join(str(get(f"{redirect_url}?code={code}&{other}")[0]) for other in other_requests) + "\n")
-if mode == "ok":
-    (run / "redirect-status").write_text(str(get(f"{redirect_url}?code={code}&state={state}")[0]))
-    (run / "second-redirect-status").write_text(str(get(f"{redirect_url}?code={code}&state={state}")[0]))
+(run / "redirect-status").write_text(str(get(f"{redirect_url}?code={code}&state={state}")[0]))
+(run / "second-redirect-status").write_text(str(get(f"{redirect_url}?code={code}&state={state}")[0]))
 BROWSER
 
 make_fakes() { # <run directory> <fixture directory>
@@ -119,7 +118,7 @@ run=@RUN@
 fixture=@FIXTURE@
 echo "$1" >>"${run}/opened"
 case "$1" in
-  http://127.0.0.1:*/) python3 -I @BROWSER@ "$1" "$(cat "${fixture}/browser-mode")" "${run}" "${fixture}" ;;
+  http://127.0.0.1:*/) python3 -I @BROWSER@ "$1" "${run}" "${fixture}" ;;
 esac
 FAKE
   sed -i "s|@RUN@|${run}|g; s|@FIXTURE@|${fixture}|g; s|@BROWSER@|${work}/browser.py|g" "${run}/bin/gh" "${run}/bin/curl" "${run}/bin/xdg-open"
@@ -134,7 +133,6 @@ new_run() {
   : >"${run}/gh-calls" && : >"${run}/curl-calls" && : >"${run}/opened" && : >"${run}/env-records"
   make_fakes "${run}" "${fixture}"
   printf '%s' "${code}" >"${fixture}/code"
-  printf '%s' ok >"${fixture}/browser-mode"
   printf '%s' '{"name":"release-bump","can_admins_bypass":true,"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' >"${fixture}/environment"
   printf '%s' '{"total_count":1,"branch_policies":[{"id":1,"name":"main","type":"branch"}]}' >"${fixture}/policies"
   printf '%s' '{"key_id":"1","key":"AAAA"}' >"${fixture}/public-key"
@@ -222,7 +220,7 @@ for scenario in stores-the-key stores-the-key-again; do
 done
 
 # Refused before anything is served: the page is never opened, GitHub is asked nothing and the failure is no recovery.
-refused() { # <id> <name>
+refused() {
   [ "${status}" -ne 0 ] || fail "${scenario}: the command did not refuse"
   [ ! -s "${run}/opened" ] || fail "${scenario}: the page was opened"
   [ "$(calls "${run}/curl-calls" .)" -eq 0 ] && [ "$(secret_sets)" -eq 0 ] || fail "${scenario}: the command converted a code or stored a key"
@@ -293,17 +291,16 @@ for scenario in "${!late_failures[@]}"; do
   echo "${scenario}: nothing is stored and the command names the App to delete"
 done
 
-# The listener alone: it takes only a redirect with its own state and, once its deadline passes, stores nothing and exits non-zero.
-scenario="the-deadline-passes-after-other-states"
+# The listener alone: with no redirect it stores nothing and, once its deadline passes, exits non-zero.
+scenario="the-deadline-passes-without-a-redirect"
 new_run "${scenario}"
-printf '%s' only-other-states >"${fixture}/browser-mode"
 coproc serving { in_world python3 -I "${listener}" "${app_name}" 2 overnightworks/platform release-bump RELEASE_BUMP_APP_PRIVATE_KEY 2>"${run}/err"; }
+serving_pid=$!
 IFS= read -r -u "${serving[0]}" page_url
-python3 -I "${work}/browser.py" "${page_url}" "$(cat "${fixture}/browser-mode")" "${run}" "${fixture}"
+grep -qE '^http://127\.0\.0\.1:[0-9]+/$' <<<"${page_url}" || fail "${scenario}: the listener printed no address"
 status=0
-wait "${serving_PID}" || status=$?
-[ "${status}" -ne 0 ] || fail "${scenario}: the listener exited 0 without a matching redirect"
-[ "$(cat "${run}/wrong-state-status")" = $'400\n400\n400' ] || fail "${scenario}: another state was not refused"
+wait "${serving_pid}" || status=$?
+[ "${status}" -ne 0 ] || fail "${scenario}: the listener exited 0 without a redirect"
 [ "$(calls "${run}/curl-calls" .)" -eq 0 ] && [ "$(secret_sets)" -eq 0 ] || fail "${scenario}: the listener converted a code or stored a key"
 no_leak
-echo "${scenario}: another state gets 400 and the deadline stores nothing"
+echo "${scenario}: the deadline stores nothing"
