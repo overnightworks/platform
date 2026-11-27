@@ -2,13 +2,12 @@
 # Usage: CANDIDATE_REVISION=<sha> CANDIDATE_BRANCH=<branch> CANDIDATE_SOURCE_URL=<url> RUNNER_TEMP=<dir> \
 #   tests/speech_runtime/a_gpu_release_keeps_a_ready_speech_pod_from_bridge_to_settle.sh
 # Run after the candidate was reconciled and served by tests/flux/serve_the_candidate_commit.sh, and last of its part. k3d
-# has no card, so the cell commits a stand-in: the GPU Deployment without its runtime class and card, with the small
-# image's environment and memory, read from speech-runtime.yaml as that previous release stood in the history, at speech's
-# previous CPU release. It then sets the card to
-# speech (the stand-in at one pod, the small image at none) and commits a GPU release, the stand-in's ref moved to speech's
-# current CPU release. The cell proves the order from timestamps: the small pod turns Ready before the old GPU pod is killed,
-# and the new GPU pod turns Ready before the small pod is killed; a sample of the Service's endpoints each second never
-# shows none from the small pod's Ready to the end. Then, with the layer speech-runtime suspended, it commits a second
+# has no card, so the cell commits a stand-in: the GPU Deployment without its runtime class and card, with the
+# environment and memory of the small image, read from speech-runtime.yaml as it stood at speech's previous CPU release.
+# It then sets the card to speech (the stand-in at one pod, the small image at none) and commits a GPU release, the
+# stand-in's ref moved to speech's current CPU release. The cell proves the order from timestamps: the small pod turns
+# Ready before the old GPU pod is killed, and the new GPU pod turns Ready before the small pod is killed; a sample of the
+# Service's endpoints each second never shows none from the small pod's Ready to the end. Then, with the layer speech-runtime suspended, it commits a second
 # release, waits until the new Job bridge raised the small image, runs the Job settle of the first release under a name of its
 # own, which finds the newer release pending and leaves the small image up, and resumes the layer: the Job settle of the
 # second release lowers it. Each Job is a new object each time. Every wait ends within the time of one phase, so that a stall fails the cell
