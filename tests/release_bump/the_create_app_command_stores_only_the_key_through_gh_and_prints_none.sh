@@ -158,6 +158,7 @@ in_world() {
 drive() {
   status=0
   (cd "${checkout}" && in_world timeout 120 mise run release:create-app "$@") >"${run}/out" 2>"${run}/err" || status=$?
+  [ "${status}" -ne 124 ] || fail "${scenario}: the command hung until its 120 second cap"
 }
 
 # leaks <value>: the run, the gh login directory and the checkout hold the value anywhere.
@@ -300,7 +301,7 @@ IFS= read -r -u "${serving[0]}" page_url
 grep -qE '^http://127\.0\.0\.1:[0-9]+/$' <<<"${page_url}" || fail "${scenario}: the listener printed no address"
 status=0
 wait "${serving_pid}" || status=$?
-[ "${status}" -ne 0 ] || fail "${scenario}: the listener exited 0 without a redirect"
+[ "${status}" -eq 1 ] || fail "${scenario}: the listener exited ${status}, not 1 (124 means its deadline never fired)"
 [ "$(calls "${run}/curl-calls" .)" -eq 0 ] && [ "$(secret_sets)" -eq 0 ] || fail "${scenario}: the listener converted a code or stored a key"
 no_leak
 echo "${scenario}: the deadline stores nothing"
