@@ -67,7 +67,7 @@ wait_until_the_drive_is_gone() {
   while :; do
     remaining="$(drive_processes)" || return 1
     [ -n "$remaining" ] || return 0
-    [ "$SECONDS" -lt "$deadline" ] || return 1
+    [ "$((SECONDS + 1))" -le "$deadline" ] || return 1
     sleep 1
   done
 }
