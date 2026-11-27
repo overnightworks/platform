@@ -1,0 +1,8 @@
+claim_id = "65937d4a0b744beab8c50fcc0e00d30b"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
+role = "builder"
+base = "08a1fe497ae6788da2e2bcaf21d87bf69c899e60"
+branch = "claude/issue-993-quality-v0-28-0"
+scope = [".github/workflows/ci.yml", ".github/workflows/code-scanning.yml", "host/git-hooks", "mise.toml", "quality/config.toml", "tests/bootstrap/dotfiles_write_both_hooks_with_mode_755.sh"]
+opened_commit = "2d3321f4a46da76382054d06575f760febf59c69"
+whole_reason = "One release adoption: the pins, the entries v0.28.0 turns into cases or ends, and the one move that ends the hook template's entry change together, since v0.28.0 checks nothing until every entry has its end."
