@@ -9,9 +9,9 @@ Impact: the namespace's writers stop, and its Flux Kustomization stays suspended
    agent: `mise exec -- tests/keycloak/restored_copy_keeps_its_keys_and_people.sh <dump> <evidence>`. It passes, every
    compared line `equal`. Without that file, or for another namespace, the load's own comparison is the check.
 2. After a load, so that the new data is backed up and proven the same hour and not on the next schedule, an agent:
-   `mise run backup:now <namespace>`. It takes one Backup from the namespace's Schedule `postgres`, then runs its CronJob `restore-test` as a Job, and prints each object's name and
+   `mise run backup:now <namespace>`. It takes one Backup from the namespace's Schedule `backup`, then runs its CronJob `restore-test` as a Job, and prints each object's name and
    outcome; it ends non-zero naming the Backup or the Job that failed. It refuses, creating nothing and saying what to do,
-   a namespace without exactly one of those Schedules or without the CronJob. It deletes and prunes nothing;
+   a namespace without that Schedule or without the CronJob. It deletes and prunes nothing;
    the two objects stay for `kubectl describe`.
 
 ## Fix

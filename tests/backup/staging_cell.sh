@@ -33,7 +33,7 @@ backup_pod() {
 # create_backup <name>: one Backup, as the Schedule would start it.
 create_backup() {
   backups+=("$1")
-  kubectl --namespace "$namespace" get schedule postgres --output json |
+  kubectl --namespace "$namespace" get schedule backup --output json |
     NAME="$1" yq --input-format json --output-format json \
       '{ "apiVersion": "k8up.io/v1", "kind": "Backup", "metadata": { "name": strenv(NAME) },
          "spec": { "backend": .spec.backend, "podConfigRef": .spec.podConfigRef } }' |

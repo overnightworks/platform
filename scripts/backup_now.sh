@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # `mise run backup:now <namespace>`: takes one Backup of the namespace now and runs its restore test on it, so a backup
 # is proven the same hour and not on the next schedule. The Backup carries the backend and pod config of the namespace's
-# Schedule `backup` (`postgres` where the Postgres component renames it), and the Job is the CronJob restore-test as it
+# Schedule `backup`, and the Job is the CronJob restore-test as it
 # is. It creates two objects, deletes and prunes nothing, reads no Secret and prints names and outcomes, never a log.
 # Usage: scripts/backup_now.sh <namespace>
 set -euo pipefail
@@ -10,15 +10,14 @@ namespace="${1:?usage: backup_now.sh <namespace>}"
 say() { echo "backup:now: $1"; }
 fail() { echo "backup:now: $1" >&2; exit 1; }
 
-# Both are read before the first object is made, so a refusal makes no object. The Schedule is `backup`, or `postgres`
-# where the Postgres component renames it; one namespace holds exactly one of the two.
+# Both are read before the first object is made, so a refusal makes no object.
 schedules="$(kubectl --namespace "$namespace" get schedules.k8up.io --output json)" ||
   fail "cannot read the Schedules of $namespace; check the namespace's name and that the kubeconfig $KUBECONFIG reaches the cluster, then run it again"
 schedules="$(yq --input-format json --output-format json \
-  '[.items[] | select(.metadata.name == "backup" or .metadata.name == "postgres")]' <<<"$schedules")"
+  '[.items[] | select(.metadata.name == "backup")]' <<<"$schedules")"
 schedule_count="$(yq --input-format json 'length' <<<"$schedules")"
 [ "$schedule_count" = 1 ] ||
-  fail "$namespace holds $schedule_count k8up Schedules named backup or postgres, not one; run it in a namespace that includes the backup component, or leave only one of the two"
+  fail "$namespace holds no k8up Schedule backup; run it in a namespace that includes the backup component"
 restore_test="$(kubectl --namespace "$namespace" get cronjob restore-test --ignore-not-found --output name)" ||
   fail "cannot read the CronJob restore-test of $namespace; check that the kubeconfig $KUBECONFIG reaches the cluster, then run it again"
 [ -n "$restore_test" ] ||
