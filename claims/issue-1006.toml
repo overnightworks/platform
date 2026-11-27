@@ -1,7 +1,0 @@
-claim_id = "f90d5b780d154dd89e17bd251bbc81c8"
-agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
-role = "builder"
-base = "30dccf903c3618c56dd990cde3b2168bafa213fe"
-branch = "claude/issue-1006-tfstate-ignored"
-scope = ["src/opentofu/.gitignore"]
-opened_commit = "19725fdb5af2834c9852eed140cfd8e3918a45df"
