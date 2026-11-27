@@ -165,6 +165,8 @@ for alone_case in "${alone_cases[@]}"; do
 done
 start_probe alone_failed "chat_fails" 0 --question 18
 start_probe alone_unknown "" 0 --question 3
+start_probe alone_bare "" 0 --question
+start_probe alone_bogus "" 0 --bogus
 # Question 4 alone, on the models it is given: the answered pair, a refusing model, a default pair, an unlisted name, a name
 # that is no text name, a model argument for a question that takes none, and a failed run.
 start_probe models_given "" 0 --question 4 --model text/sonnet --model text/haiku-low
@@ -308,6 +310,13 @@ run_probe alone_unknown
 has alone_unknown 'question 3 does not run alone; those that do: 4 18'
 lacks alone_unknown 'the probe key'
 ended_cleanly alone_unknown
+for case in alone_bare alone_bogus; do
+  run_probe "$case"
+  [ "$status" = 1 ] || fail "$case: the probe ended $status, not 1: $(tail -n 5 <<<"$output")"
+  has "$case" '^litellm:gateway-probe: usage: scripts/litellm_gateway_probe.sh'
+  lacks "$case" 'unbound variable'
+  lacks "$case" 'the probe key'
+done
 echo "a run of one question deletes its key when it fails, and an unknown question makes none"
 
 # Question 4 alone answers Q4, Q5, Q6 and Q8 on the chat route for each model it is given and for no other.
