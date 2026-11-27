@@ -1,7 +1,0 @@
-claim_id = "c38ca1253bcc4c7487de547a491cc985"
-agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
-role = "builder"
-base = "08a1fe497ae6788da2e2bcaf21d87bf69c899e60"
-branch = "claude/issue-994-hal-root-files-absent"
-scope = ["mise.toml"]
-opened_commit = "59cae3a2145e4d4752e4f9ff03c4b247139f2ac9"
