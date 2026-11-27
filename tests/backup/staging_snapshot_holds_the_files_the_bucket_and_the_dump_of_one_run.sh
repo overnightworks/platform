@@ -191,7 +191,7 @@ run_restic "$namespace" staging-newest '
 [ "$(sed -n 's/^newest //p' <<<"$restic_output")" = "$staging" ] || fail "the newest snapshot of $namespace is not the staging one"
 echo "the newest snapshot of $namespace is the staging one$(grep -q '^arranged$' <<<"$restic_output" && echo ', by a rewritten time' || true)"
 run_restore_test "$namespace" staging-newest-restore-test
-[ "$status" = passed ] || fail "the restore test of $namespace failed while its newest snapshot is the staging one"
+require_restore_passed "the restore test of $namespace failed while its newest snapshot is the staging one"
 echo "the restore test of $namespace passes"
 run_logs+="$restore_pod_log"$'\n'
 grep -q '\] restore object: compare: one object equals its copy in the snapshot' <<<"$restore_pod_log" ||
