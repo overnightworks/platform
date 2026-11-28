@@ -1,7 +1,0 @@
-claim_id = "3b071dafc21e4825b0c2cbec2b925d42"
-agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
-role = "builder"
-base = "857e2d67b151cfbd535aec21ba07775cb498514d"
-branch = "claude/issue-1034-songmaker-worker-grace"
-scope = ["apps/songmaker/music-worker.yaml", "apps/songmaker/scoring-worker.yaml"]
-opened_commit = "e5797094d5f0ed7fd60762e165f54576dee15f62"
