@@ -190,9 +190,9 @@ as `mise -C <checkout> run live:journeys --origin <origin> --storage-state <file
   agent reads.
 - **Copies.** The app keeps no copy of the file, and no trace, video or report that holds a cookie, outside a git-ignored
   directory of its checkout.
-- **Environment.** The task gets `HOME`, a `PATH` of `/usr/bin:/bin` and `LANG`, and nothing else: no password, no
-  `KUBECONFIG`, no runtime directory and no platform or mise variable. The app's mise supplies its own tools, and the
-  caller prepares the checkout, which the command never changes.
+- **Environment.** The command passes the task only `HOME`, a `PATH` of `/usr/bin:/bin` and `LANG`: no password, no
+  `KUBECONFIG`, no runtime directory and no platform variable. The app's own mise supplies its tools and adds its task
+  variables, and the caller prepares the checkout, which the command never changes.
 - **Limits.** The task runs in a session of its own inside probe-run's cap, which ends it and every process it
   started.
 
