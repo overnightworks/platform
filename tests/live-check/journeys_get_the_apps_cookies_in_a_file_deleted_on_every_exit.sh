@@ -193,6 +193,15 @@ left_clean killed-leader
 live_check_arguments=()
 echo "a drive that ignores TERM and is ended by the KILL leaves no job notice and no path in the command's output"
 
+prepare_journeys_case killed-leader-unreadable signal:TERM:outer
+: >"$state/leader-ignores-term"
+run_command killed-leader-unreadable FAKE_FAIL=listing
+expect_result killed-leader-unreadable 1 red
+! grep -qE 'Killed|storage-state|line [0-9]+:' "$output_file" || refuse "killed-leader-unreadable: a job notice or a path of the drive is in the output"
+kept_secret killed-leader-unreadable
+live_check_arguments=()
+echo "a drive ended by the KILL whose processes cannot be listed leaves no job notice and no path in the command's output"
+
 # -------------------------------------------------------------------------------------- what an earlier run left behind
 leave_handed_over_run hopin leftover-run
 checked_app=skat

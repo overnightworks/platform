@@ -88,14 +88,15 @@ signal_the_drive_and_read_back() {
 }
 # stop_the_drive: signal_the_drive_and_read_back, then the reaping of the drive's job, with stderr closed for both, because
 # bash names the signal that ended a job, with its command line and so the storage state's path, when it reaps it, and
-# the output holds codes and counts only. The reaping waits only for a drive proven gone.
+# the output holds codes and counts only. The reaping waits only for a drive proven gone; for any other the job leaves
+# bash's table unwaited, so that no later command's stderr carries its notice.
 stop_the_drive() {
   local stopped
   [ -n "$drive_group" ] || return 0
   {
     signal_the_drive_and_read_back
     stopped=$?
-    [ "$stopped" != 0 ] || wait "$drive_group"
+    if [ "$stopped" = 0 ]; then wait "$drive_group"; else disown "$drive_group"; fi
     return "$stopped"
   } 2>/dev/null
 }
