@@ -116,6 +116,13 @@ FAKE
 run=@RUN@
 fixture=@FIXTURE@
 echo "$1" >>"${run}/opened"
+if [ -f "${fixture}/kill-the-command" ]; then
+  # The script is this process's parent and the listener its child, mise the script's parent: record the listener, then
+  # SIGKILL mise, the command itself.
+  ps -o pid= --ppid "${PPID}" | tr -d ' ' | grep -vxF "$$" >"${run}/listener-pid" || true
+  kill -KILL "$(ps -o ppid= -p "${PPID}" | tr -d ' ')"
+  exit 0
+fi
 case "$1" in
   http://127.0.0.1:*/) python3 -I @BROWSER@ "$1" "${run}" "${fixture}" ;;
 esac
@@ -291,7 +298,7 @@ for scenario in "${!late_failures[@]}"; do
   echo "${scenario}: nothing is stored and the command names the App to delete"
 done
 
-# The listener alone: with no redirect it stores nothing and, once its deadline passes, exits non-zero.
+# The listener alone: with no redirect it stores nothing and, once its deadline passes, exits 1.
 scenario="the-deadline-passes-without-a-redirect"
 new_run "${scenario}"
 coproc serving { in_world timeout 60 python3 -I "${listener}" "${app_name}" 2 overnightworks/platform release-bump RELEASE_BUMP_APP_PRIVATE_KEY 2>"${run}/err"; }
@@ -304,3 +311,22 @@ wait "${serving_pid}" || status=$?
 [ "$(calls "${run}/curl-calls" .)" -eq 0 ] && [ "$(secret_sets)" -eq 0 ] || fail "${scenario}: the listener converted a code or stored a key"
 no_leak
 echo "${scenario}: the deadline stores nothing"
+
+# A SIGKILLed command leaves no listener serving: the listener ends with its parent and stores nothing.
+scenario="the-command-is-killed-after-the-page-is-served"
+new_run "${scenario}"
+: >"${fixture}/kill-the-command"
+drive "${app_name}"
+listener_pid="$(cat "${run}/listener-pid" 2>/dev/null || true)"
+[[ "${listener_pid}" =~ ^[0-9]+$ ]] || fail "${scenario}: the listener's pid was not recorded"
+for _ in $(seq 1 50); do
+  kill -0 "${listener_pid}" 2>/dev/null || break
+  sleep 0.1
+done
+if kill -0 "${listener_pid}" 2>/dev/null; then
+  kill -KILL "${listener_pid}"
+  fail "${scenario}: the listener still served 5 seconds after its command was killed"
+fi
+! stored && [ "$(calls "${run}/curl-calls" .)" -eq 0 ] || fail "${scenario}: the listener converted a code or stored a key"
+no_leak
+echo "${scenario}: the listener ended with its command and stored nothing"

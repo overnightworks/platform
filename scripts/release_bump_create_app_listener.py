@@ -3,8 +3,8 @@
 
 Usage: python3 -I release_bump_create_app_listener.py <name> <deadline seconds> <owner/repository> <environment> <secret>
 Prints one line on stdout, the page's address, and then serves until one request carries the state it made, the
-deadline passes or a check refuses. Exit 0: the key is stored. Exit 1: nothing is stored; the reason is on stderr and
-holds no value of the code or of GitHub's answer.
+deadline passes, a check refuses or the command that started it ends. Exit 0: the key is stored. Exit 1: nothing is
+stored; the reason is on stderr and holds no value of the code or of GitHub's answer.
 
 The temporary code in the redirect converts into the key, client_secret and webhook_secret for an hour, so only this
 process holds it: it reaches curl on stdin, never an argument, and the answer returns on a pipe from which only the key
@@ -18,9 +18,11 @@ import hmac
 import html
 import http.server
 import json
+import os
 import re
 import resource
 import secrets
+import signal
 import subprocess
 import sys
 import time
@@ -29,6 +31,7 @@ from dataclasses import dataclass
 
 PERMISSIONS = {"contents": "write", "pull_requests": "write", "metadata": "read"}
 CODE_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,100}")
+PR_SET_PDEATHSIG = 1
 PR_SET_DUMPABLE = 4
 
 
@@ -171,10 +174,22 @@ class Request(http.server.BaseHTTPRequestHandler):
         self.server.finished = True
 
 
+def prctl(option: int, name: str, argument: int) -> None:
+    if ctypes.CDLL(None, use_errno=True).prctl(option, argument, 0, 0, 0) != 0:
+        raise OSError(f"prctl({name}) failed")
+
+
 def keep_no_core_dump() -> None:
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    if ctypes.CDLL(None, use_errno=True).prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
-        raise OSError("prctl(PR_SET_DUMPABLE) failed")
+    prctl(PR_SET_DUMPABLE, "PR_SET_DUMPABLE", 0)
+
+
+def end_with_the_parent(parent: int) -> None:
+    """A killed command leaves no page serving: the kernel ends this process with its parent."""
+    prctl(PR_SET_PDEATHSIG, "PR_SET_PDEATHSIG", signal.SIGKILL)
+    # A parent that died before the call sent no signal.
+    if os.getppid() != parent:
+        raise Refusal("the command that started the listener has ended")
 
 
 def serve(target: Target, deadline_seconds: float) -> None:
@@ -191,6 +206,7 @@ def serve(target: Target, deadline_seconds: float) -> None:
 
 
 def main() -> int:
+    parent = os.getppid()
     parser = argparse.ArgumentParser()
     parser.add_argument("name")
     parser.add_argument("deadline_seconds", type=float)
@@ -202,6 +218,7 @@ def main() -> int:
     target = Target(arguments.name, organisation, repository, arguments.environment, arguments.secret)
     keep_no_core_dump()
     try:
+        end_with_the_parent(parent)
         serve(target, arguments.deadline_seconds)
     except Refusal as refusal:
         print(f"release_bump_create_app_listener: {refusal}; nothing was stored", file=sys.stderr)
