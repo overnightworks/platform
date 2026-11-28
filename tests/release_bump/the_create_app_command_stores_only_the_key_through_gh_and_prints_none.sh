@@ -10,8 +10,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/world.sh"
 
 export MISE_DISABLE_TOOLS=kubectl,gh KUBECONFIG=/nonexistent
 # mise keeps its tools and state under the caller's home, which each run replaces with an empty one.
-export MISE_DATA_DIR="${MISE_DATA_DIR:-${HOME}/.local/share/mise}" MISE_CACHE_DIR="${MISE_CACHE_DIR:-${HOME}/.cache/mise}"
-export MISE_STATE_DIR="${MISE_STATE_DIR:-${HOME}/.local/state/mise}" MISE_CONFIG_DIR="${MISE_CONFIG_DIR:-${HOME}/.config/mise}"
+keep_mise_directories
 listener="${repository_root}/scripts/release_bump_create_app_listener.py"
 
 app_name=release-fixture-app
