@@ -702,7 +702,8 @@ description = "Create the release App through GitHub's manifest flow in the brow
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-exec scripts/release_bump_create_app.sh "$@"
+# The script ends with mise, so a killed command leaves neither it nor its listener running.
+exec setpriv --pdeathsig KILL scripts/release_bump_create_app.sh "$@"
 '''
 
 [tasks."release:fetch"]

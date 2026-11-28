@@ -118,9 +118,10 @@ run=@RUN@
 fixture=@FIXTURE@
 echo "$1" >>"${run}/opened"
 if [ -f "${fixture}/kill-the-command" ]; then
-  # The command is this process's parent and the listener its child: record the listener, then SIGKILL the command.
+  # The script is this process's parent and the listener its child, mise the script's parent: record the listener, then
+  # SIGKILL mise, the command itself.
   ps -o pid= --ppid "${PPID}" | tr -d ' ' | grep -vxF "$$" >"${run}/listener-pid" || true
-  kill -KILL "${PPID}"
+  kill -KILL "$(ps -o ppid= -p "${PPID}" | tr -d ' ')"
   exit 0
 fi
 case "$1" in
