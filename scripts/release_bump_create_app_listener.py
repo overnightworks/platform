@@ -174,16 +174,19 @@ class Request(http.server.BaseHTTPRequestHandler):
         self.server.finished = True
 
 
+def prctl(option: int, name: str, argument: int) -> None:
+    if ctypes.CDLL(None, use_errno=True).prctl(option, argument, 0, 0, 0) != 0:
+        raise OSError(f"prctl({name}) failed")
+
+
 def keep_no_core_dump() -> None:
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    if ctypes.CDLL(None, use_errno=True).prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
-        raise OSError("prctl(PR_SET_DUMPABLE) failed")
+    prctl(PR_SET_DUMPABLE, "PR_SET_DUMPABLE", 0)
 
 
 def end_with_the_parent(parent: int) -> None:
     """A killed command leaves no page serving: the kernel ends this process with its parent."""
-    if ctypes.CDLL(None, use_errno=True).prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
-        raise OSError("prctl(PR_SET_PDEATHSIG) failed")
+    prctl(PR_SET_PDEATHSIG, "PR_SET_PDEATHSIG", signal.SIGKILL)
     # A parent that died before the call sent no signal.
     if os.getppid() != parent:
         sys.exit(1)
