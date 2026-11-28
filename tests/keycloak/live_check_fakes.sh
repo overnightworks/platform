@@ -241,7 +241,8 @@ printf '%s%s' "$body" "${format//'%{redirect_url}'/$redirect}"
 FAKE
 # The gate and the process listing. probe-run runs the command it wraps (its arguments after -k K CAP) and passes a TERM on
 # to it once, or, with FAKE_GATE_STATUS, answers that status without running it; when the command has ended it ends the
-# drive's group too, as the end of the real probe-run's namespace does; FAKE_GATE_STATUS=KILL makes it end itself by the KILL. ps is the real one, except that
+# drive's group too, as the end of the real probe-run's namespace does; FAKE_GATE_STATUS=KILL makes it end itself by the KILL,
+# and FAKE_GATE_KILLED_AFTER_TERM=true, once the command it passed the TERM to has ended, by the KILL. ps is the real one, except that
 # FAKE_FAIL=listing makes the listing of every process fail and that the first process listing which finds the drive's
 # straggler gone writes its time (microseconds since the epoch) to the straggler-gone file of the case.
 cat >"$fake_bin/probe-run" <<'FAKE'
@@ -260,6 +261,7 @@ command_pid=$!
 trap 'log_event "probe-run: term"; kill -TERM "$command_pid" 2>/dev/null || true' TERM INT
 wait "$command_pid" || status=$?
 while kill -0 "$command_pid" 2>/dev/null; do wait "$command_pid" && status=0 || status=$?; done
+[ "${FAKE_GATE_KILLED_AFTER_TERM:-}" != true ] || kill -KILL $$
 [ ! -e "$FAKE_STATE/drive-group" ] || kill -KILL -- "-$(<"$FAKE_STATE/drive-group")" 2>/dev/null || true
 exit "$status"
 FAKE
@@ -449,6 +451,10 @@ kept_secret() {
   fi
   ! grep -qE "$cookie_value|$keycloak_cookie_value|FAKECODE" "$output_file" || refuse "$name: a cookie or code is in the output"
   ! grep -q "Logging into" "$output_file" || refuse "$name: kcadm's sign-in notice is in the output"
+}
+# no_job_notice <case>: no bash job notice and no path of the drive stands in the output.
+no_job_notice() {
+  ! grep -qE 'Killed|storage-state|line [0-9]+:' "$output_file" || refuse "$1: a job notice or a path of the drive is in the output"
 }
 # process_alive <pid>: the process lives and is no zombie.
 process_alive() { [[ "$(ps -o stat= -p "$1" 2>/dev/null)" =~ ^[^Z] ]]; }

@@ -187,7 +187,7 @@ prepare_journeys_case killed-leader signal:TERM:outer
 : >"$state/leader-ignores-term"
 run_command killed-leader
 expect_result killed-leader 1 red
-! grep -qE 'Killed|storage-state|line [0-9]+:' "$output_file" || refuse "killed-leader: a job notice or a path of the drive is in the output"
+no_job_notice killed-leader
 kept_secret killed-leader
 left_clean killed-leader
 live_check_arguments=()
@@ -197,7 +197,7 @@ prepare_journeys_case killed-leader-unreadable signal:TERM:outer
 : >"$state/leader-ignores-term"
 run_command killed-leader-unreadable FAKE_FAIL=listing
 expect_result killed-leader-unreadable 1 red
-! grep -qE 'Killed|storage-state|line [0-9]+:' "$output_file" || refuse "killed-leader-unreadable: a job notice or a path of the drive is in the output"
+no_job_notice killed-leader-unreadable
 kept_secret killed-leader-unreadable
 live_check_arguments=()
 echo "a drive ended by the KILL whose processes cannot be listed leaves no job notice and no path in the command's output"
@@ -205,7 +205,7 @@ echo "a drive ended by the KILL whose processes cannot be listed leaves no job n
 journeys_run self-killed-leader signal:KILL:self
 expect_result self-killed-leader 1 red
 grep -q 'journeys=137' "$output_file" || refuse "self-killed-leader: the output holds no journeys=137"
-! grep -qE 'Killed|storage-state|line [0-9]+:' "$output_file" || refuse "self-killed-leader: a job notice or a path of the drive is in the output"
+no_job_notice self-killed-leader
 kept_secret self-killed-leader
 left_clean self-killed-leader
 echo "a drive that kills itself is red with journeys=137 and leaves no job notice and no path in the command's output"
@@ -248,8 +248,16 @@ echo "the gate's load timeout is skipped and its other failures red, each with n
 journeys_run gate-killed exit:0 FAKE_GATE_STATUS=KILL
 expect_result gate-killed 1 red
 grep -q "^live:check: hopin red (gate=137)\$" "$output_file" || refuse "gate-killed: the line is not red (gate=137)"
-! grep -qE 'Killed|line [0-9]+:' "$output_file" || refuse "gate-killed: a job notice is in the output"
+no_job_notice gate-killed
 echo "a gate that is ended by the KILL is red with gate=137 and leaves no job notice in the command's output"
+
+journeys_run gate-killed-after-term signal:TERM:outer FAKE_GATE_KILLED_AFTER_TERM=true
+expect_result gate-killed-after-term 1 red
+grep -q "^live:check: hopin red (gate=137)\$" "$output_file" || refuse "gate-killed-after-term: the line is not red (gate=137)"
+no_job_notice gate-killed-after-term
+kept_secret gate-killed-after-term
+left_clean gate-killed-after-term
+echo "a gate that gets the TERM once and then ends itself by the KILL is red with gate=137 and leaves no job notice in the command's output"
 
 prepare_journeys_case lock-held exit:0 enabled
 mkdir -m 700 "$runtime/live-check"
