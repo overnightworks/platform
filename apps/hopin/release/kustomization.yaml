@@ -6,7 +6,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: ghcr.io/overnightworks/hopin
-    newTag: 2026.11.28.1
-    digest: sha256:ddd503dddb7ee7ab80275f56e2409a6aad62c7c293f4650b4fc262c0118519f8
+    newTag: 2026.11.28.2
+    digest: sha256:e1efac96764eabf71a82dfc0c656480190c309b54559d7089a530ed4c3136416
 configurations:
   - image-volume.yaml
