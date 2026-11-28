@@ -202,6 +202,14 @@ kept_secret killed-leader-unreadable
 live_check_arguments=()
 echo "a drive ended by the KILL whose processes cannot be listed leaves no job notice and no path in the command's output"
 
+journeys_run self-killed-leader signal:KILL:self
+expect_result self-killed-leader 1 red
+grep -q 'journeys=137' "$output_file" || refuse "self-killed-leader: the output holds no journeys=137"
+! grep -qE 'Killed|storage-state|line [0-9]+:' "$output_file" || refuse "self-killed-leader: a job notice or a path of the drive is in the output"
+kept_secret self-killed-leader
+left_clean self-killed-leader
+echo "a drive that kills itself is red with journeys=137 and leaves no job notice and no path in the command's output"
+
 # -------------------------------------------------------------------------------------- what an earlier run left behind
 leave_handed_over_run hopin leftover-run
 checked_app=skat
@@ -236,6 +244,12 @@ for gate_status in 75 2 69 130; do
   [ ! -e "$runtime/live-check" ] || refuse "$case_name: the run made its lock directory"
 done
 echo "the gate's load timeout is skipped and its other failures red, each with no lock, no stack call and no write"
+
+journeys_run gate-killed exit:0 FAKE_GATE_STATUS=KILL
+expect_result gate-killed 1 red
+grep -q "^live:check: hopin red (gate=137)\$" "$output_file" || refuse "gate-killed: the line is not red (gate=137)"
+! grep -qE 'Killed|line [0-9]+:' "$output_file" || refuse "gate-killed: a job notice is in the output"
+echo "a gate that is ended by the KILL is red with gate=137 and leaves no job notice in the command's output"
 
 prepare_journeys_case lock-held exit:0 enabled
 mkdir -m 700 "$runtime/live-check"

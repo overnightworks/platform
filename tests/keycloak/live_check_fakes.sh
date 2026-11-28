@@ -241,7 +241,7 @@ printf '%s%s' "$body" "${format//'%{redirect_url}'/$redirect}"
 FAKE
 # The gate and the process listing. probe-run runs the command it wraps (its arguments after -k K CAP) and passes a TERM on
 # to it once, or, with FAKE_GATE_STATUS, answers that status without running it; when the command has ended it ends the
-# drive's group too, as the end of the real probe-run's namespace does. ps is the real one, except that
+# drive's group too, as the end of the real probe-run's namespace does; FAKE_GATE_STATUS=KILL makes it end itself by the KILL. ps is the real one, except that
 # FAKE_FAIL=listing makes the listing of every process fail and that the first process listing which finds the drive's
 # straggler gone writes its time (microseconds since the epoch) to the straggler-gone file of the case.
 cat >"$fake_bin/probe-run" <<'FAKE'
@@ -250,6 +250,7 @@ set -euo pipefail
 source "$FAKE_LIB"
 scan_arguments_and_environment probe-run "$@"
 log_event "probe-run: $*"
+[ "${FAKE_GATE_STATUS:-}" != KILL ] || kill -KILL $$
 [ -z "${FAKE_GATE_STATUS:-}" ] || exit "$FAKE_GATE_STATUS"
 [ "$1" = -k ] || { violate "probe-run: no -k K CAP before the command"; exit 2; }
 shift 3
@@ -278,7 +279,7 @@ FAKE
 # epoch, to the straggler-term file) and then ends as the case's drive-mode file says: exit:<n>, or
 # signal:<name>:<outer|inner>, which sends that signal to the outermost or innermost live_check.sh above it and holds
 # until the drive's stop ends it (the leader itself ignores TERM when the case has a leader-ignores-term file, so only the
-# KILL ends it). Every other call is the real mise's.
+# KILL ends it), or signal:KILL:self, where the leader ends itself by the KILL. Every other call is the real mise's.
 cat >"$fake_bin/mise" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -354,6 +355,7 @@ case "$*" in
     case "$mode" in
       signal:*:outer) IFS=: read -r _ signal _ <<<"$mode"; kill -"$signal" "$outer" ;;
       signal:*:inner) IFS=: read -r _ signal _ <<<"$mode"; kill -"$signal" "$inner" ;;
+      signal:KILL:self) kill -KILL "$sleeper"; kill -KILL $$ ;;
     esac
     wait "$sleeper" ;;
   *) violate "mise: unexpected call $*"; exit 1 ;;
