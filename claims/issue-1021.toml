@@ -1,8 +1,0 @@
-claim_id = "413a41ac4d754c8597582c4dd4c2ccb2"
-agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
-role = "builder"
-base = "f70000931c58fca737d4dd04eb8564aaf8af1982"
-branch = "claude/issue-1021-mise-dirs-helper"
-scope = ["tests"]
-opened_commit = "7d819e4bdb1d5ee1ba82e694e3c54b716f7a417d"
-whole_reason = "Every cell that replaces HOME changes in one step, since a half-moved set keeps two owners of the same block."
