@@ -1,0 +1,7 @@
+claim_id = "554493bd327b40e8a3c4963df3d009f6"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
+role = "builder"
+base = "f3f9c853b82acbc719486ee8812e9cc867e871cb"
+branch = "release/speech-runtime"
+scope = ["apps/speech-runtime/release/kustomization.yaml"]
+opened_commit = "e56cffa761da1f5298dd42258105941c322aff8b"
