@@ -197,8 +197,10 @@ prepare_journeys_case killed-leader-unreadable signal:TERM:outer
 : >"$state/leader-ignores-term"
 run_command killed-leader-unreadable FAKE_FAIL=listing
 expect_result killed-leader-unreadable 1 red
+grep -q 'may remain: .*the processes of the journeys drive' "$output_file" || refuse "killed-leader-unreadable: the output names no process of the drive"
 no_job_notice killed-leader-unreadable
 kept_secret killed-leader-unreadable
+[ "$(<"$state/enabled")" = false ] || refuse "killed-leader-unreadable: the person is enabled"
 live_check_arguments=()
 echo "a drive ended by the KILL whose processes cannot be listed leaves no job notice and no path in the command's output"
 
