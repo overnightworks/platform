@@ -183,6 +183,16 @@ left_clean kill-inner
 checked_app=hopin
 echo "a run killed untrapped leaves the person, the jar and the file, and the next run of another app signs the jar out and deletes the file"
 
+prepare_journeys_case killed-leader signal:TERM:outer
+: >"$state/leader-ignores-term"
+run_command killed-leader
+expect_result killed-leader 1 red
+! grep -qE 'Killed|storage-state|line [0-9]+:' "$output_file" || refuse "killed-leader: a job notice or a path of the drive is in the output"
+kept_secret killed-leader
+left_clean killed-leader
+live_check_arguments=()
+echo "a drive that ignores TERM and is ended by the KILL leaves no job notice and no path in the command's output"
+
 # -------------------------------------------------------------------------------------- what an earlier run left behind
 leave_handed_over_run hopin leftover-run
 checked_app=skat

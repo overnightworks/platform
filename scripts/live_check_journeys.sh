@@ -79,13 +79,25 @@ wait_until_the_drive_is_gone() {
     sleep "$pause"
   done
 }
-# stop_the_drive: TERM to the drive's group, KILL to what stays, and a read-back that nothing is left.
-stop_the_drive() {
-  [ -n "$drive_group" ] || return 0
+# signal_the_drive_and_read_back: TERM to the drive's group, KILL to what stays, and a read-back that nothing is left.
+signal_the_drive_and_read_back() {
   kill -TERM -- "-$drive_group" 2>/dev/null || true
   wait_until_the_drive_is_gone "$drive_stop_seconds" && return 0
   kill -KILL -- "-$drive_group" 2>/dev/null || true
   wait_until_the_drive_is_gone "$drive_kill_seconds"
+}
+# stop_the_drive: signal_the_drive_and_read_back, then the reaping of the drive's job, with stderr closed for both, because
+# bash names the signal that ended a job, with its command line and so the storage state's path, when it reaps it, and
+# the output holds codes and counts only. The reaping waits only for a drive proven gone.
+stop_the_drive() {
+  local stopped
+  [ -n "$drive_group" ] || return 0
+  {
+    signal_the_drive_and_read_back
+    stopped=$?
+    [ "$stopped" != 0 ] || wait "$drive_group"
+    return "$stopped"
+  } 2>/dev/null
 }
 
 # ----------------------------------------------------------------------------------------------- before the gate
@@ -123,7 +135,8 @@ forward_signal_to_gate() {
 # run_the_gate: runs the whole run again as `probe-run -k K CAP live_check.sh <app> journeys <checkout> inside-gate`, whose
 # own wait is the only one; the fourth argument is an aid for cooperative callers. Never returns: the inner run's exit
 # 0, 1, 3 and 4 and its result line stand; 75 (the load stayed high) is skipped; any other status is red. The end of the
-# run's namespace ends every process the drive left, the one the cap killed included.
+# run's namespace ends every process the drive left, the one the cap killed included. Its waits close stderr, which is
+# where bash would name a killed job.
 run_the_gate() {
   local gate_status=0
   signal_forwarded=false
@@ -131,9 +144,9 @@ run_the_gate() {
   trap forward_signal_to_gate TERM INT
   probe-run -k "$gate_kill_seconds" "$gate_cap_seconds" "$live_check_command" "$app" journeys "$checkout" inside-gate &
   gate_pid=$!
-  wait "$gate_pid" || gate_status=$?
+  wait "$gate_pid" 2>/dev/null || gate_status=$?
   while kill -0 "$gate_pid" 2>/dev/null; do
-    wait "$gate_pid" && gate_status=0 || gate_status=$?
+    wait "$gate_pid" 2>/dev/null && gate_status=0 || gate_status=$?
   done
   case "$gate_status" in
     0 | 1 | 3 | 4) exit "$gate_status" ;;
@@ -193,7 +206,7 @@ drive_the_journeys() {
   setsid env -i "${journey_environment[@]}" "$mise_path" -C "$checkout" run live:journeys --origin "$origin" \
     --storage-state "$(storage_state_of "$app")" </dev/null >/dev/null 2>&1 {lock_descriptor}>&- &
   drive_group=$!
-  wait "$drive_group" || drive_status=$?
+  wait "$drive_group" 2>/dev/null || drive_status=$?
 }
 # hand_over_to_the_journeys: after the sign-in; maps the app's exit 0, 1 and 3 to green, red and skipped. The cleanup of
 # finish stops the drive, signs out with the handed-over cookies and deletes the file.

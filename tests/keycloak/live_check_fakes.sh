@@ -277,7 +277,8 @@ FAKE
 # straggler-mode file says ignores-term, and then it writes the time of the TERM it ignores, in microseconds since the
 # epoch, to the straggler-term file) and then ends as the case's drive-mode file says: exit:<n>, or
 # signal:<name>:<outer|inner>, which sends that signal to the outermost or innermost live_check.sh above it and holds
-# until the drive's stop ends it. Every other call is the real mise's.
+# until the drive's stop ends it (the leader itself ignores TERM when the case has a leader-ignores-term file, so only the
+# KILL ends it). Every other call is the real mise's.
 cat >"$fake_bin/mise" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -345,7 +346,11 @@ case "$*" in
     # The group's TERM reaches the leader's own wait only through its trap, so what it waits for ignores TERM.
     (trap '' TERM; exec sleep 600) &
     sleeper=$!
-    trap 'kill -KILL "$sleeper" 2>/dev/null; log_event "drive: terminated"; exit 143' TERM
+    if [ -e "$FAKE_STATE/leader-ignores-term" ]; then
+      trap '' TERM
+    else
+      trap 'kill -KILL "$sleeper" 2>/dev/null; log_event "drive: terminated"; exit 143' TERM
+    fi
     case "$mode" in
       signal:*:outer) IFS=: read -r _ signal _ <<<"$mode"; kill -"$signal" "$outer" ;;
       signal:*:inner) IFS=: read -r _ signal _ <<<"$mode"; kill -"$signal" "$inner" ;;
