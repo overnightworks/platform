@@ -697,6 +697,18 @@ scripts/release_bump_compute.sh "$1" "$workspace/output" ${2:+"$2"}
 scripts/release_bump_publish.sh "$1" "$workspace/output"
 '''
 
+[tasks."release:create-app"]
+description = "Create the release App through GitHub's manifest flow in the browser and store only its key as the secret of the environment release-bump on platform: release:create-app <name>; the operator's, the key passes no agent"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+exec scripts/release_bump_create_app.sh "$@"
+'''
+
+[tasks."release:fetch"]
+description = "Start the release bump's workflow on main at once, instead of waiting for its next look"
+run = "gh workflow run release-bump.yml --ref main --repo overnightworks/platform"
+
 [tasks.bootstrap]
 description = "The PC's own steps after the declarative parts: the commit hook, then k3s, then Flux, then its access to platform-secrets"
 run = [{ task = "bootstrap:hook" }, { task = "bootstrap:k3s" }, { task = "bootstrap:flux" }, { task = "bootstrap:secrets" }]

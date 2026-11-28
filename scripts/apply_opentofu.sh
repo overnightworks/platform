@@ -14,6 +14,8 @@ LOCK_WAIT_SECONDS=30
 
 usage="usage: scripts/apply_opentofu.sh <github|cloudflare> [--apply] [--allow-ruleset-update]"
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=gh_login_environment.sh
+source "${repository_root}/scripts/gh_login_environment.sh"
 
 fail() {
   echo "apply_opentofu: $1" >&2
@@ -45,7 +47,7 @@ if [ "${apply}" = true ]; then
     fail "--apply runs only when HEAD is origin/main"
   # An ignored file counts too: tofu reads every .tf and auto-loaded .tfvars file in the root. The Cloudflare root also
   # reads the tunnel's lines, which name the zone's records.
-  [ -z "$(git -C "${repository_root}" status --porcelain --untracked-files=all --ignored=matching -- src/opentofu infrastructure/cloudflared/config.yaml mise.toml scripts/apply_opentofu.sh scripts/cloudflare_adoption_check.sh)" ] ||
+  [ -z "$(git -C "${repository_root}" status --porcelain --untracked-files=all --ignored=matching -- src/opentofu infrastructure/cloudflared/config.yaml mise.toml scripts/apply_opentofu.sh scripts/gh_login_environment.sh scripts/cloudflare_adoption_check.sh)" ] ||
     fail "--apply runs only with src/opentofu/, the tunnel's lines, mise.toml and the scripts unchanged"
 fi
 
@@ -71,7 +73,7 @@ plan_file="$(mktemp "${cache_directory}/plan.XXXXXX")"
 trap 'rm -rf "${private_temporary}" "${plan_file}"' EXIT
 
 # The allowlist keeps the caller's tokens, provider settings and TF_* variables away from gh and tofu.
-child_environment=(env -i "PATH=${PATH}" "HOME=${HOME}" "LANG=${LANG:-C.UTF-8}" "TMPDIR=${private_temporary}"
+child_environment=("${clean_environment[@]}" "TMPDIR=${private_temporary}"
   TF_INPUT=0 TF_IN_AUTOMATION=1 TF_CLI_CONFIG_FILE=/dev/null "TF_DATA_DIR=${data_directory}")
 
 mise install --quiet opentofu yq
@@ -82,11 +84,7 @@ yq="$(mise which yq)"
 plan_variables=()
 case "${root}" in
   github)
-    for gh_login_variable in XDG_CONFIG_HOME GH_CONFIG_DIR; do
-      if [ -n "${!gh_login_variable:-}" ]; then
-        child_environment+=("${gh_login_variable}=${!gh_login_variable}")
-      fi
-    done
+    append_gh_login_variables child_environment
     # The provider falls back to anonymous access when gh gives it no token, so the login is checked first.
     login="$("${child_environment[@]}" gh api --hostname github.com user --jq .login)" || login=""
     [ -n "${login}" ] || fail "gh produced no login under the command's environment; run gh auth login"

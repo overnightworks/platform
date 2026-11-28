@@ -135,6 +135,8 @@ Facts of today's boundaries, each held by a manifest or a cell:
   none, and the tunnel's token and credential are one Secret.
 - The ServiceAccount `bridge` of `speech-runtime-bridge` reads the two speech Deployments and scales only the CPU
   one; no right reaches the GPU Deployment's scale, so no Job can start or stop the card's user.
+- The release App's private key lives only in the environment `release-bump` of platform, which only a job on main
+  reads (`docs/github-settings.md`, GH-8).
 - LiteLLM's provider keys reach no host but those `infrastructure/litellm/egress-allowed.yml` lists: only `agent-egress`
   dials out, and it dials only those upstreams.
 - Keycloak's admin console, Grafana and Gatus are reached through a port-forward from the PC; the tunnel routes

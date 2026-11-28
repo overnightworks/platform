@@ -73,7 +73,7 @@ plan_json() {
 # A checkout whose HEAD is its origin/main and clean, so --apply gets past its own guards to the plan.
 apply_checkout="${work_directory}/checkout"
 mkdir -p "${apply_checkout}/scripts" "${apply_checkout}/src/opentofu/github" "${apply_checkout}/src/opentofu/cloudflare" "${apply_checkout}/infrastructure/cloudflared"
-cp "${repository_root}/scripts/apply_opentofu.sh" "${repository_root}/scripts/cloudflare_adoption_check.sh" "${apply_checkout}/scripts/"
+cp "${repository_root}/scripts/apply_opentofu.sh" "${repository_root}/scripts/cloudflare_adoption_check.sh" "${repository_root}/scripts/gh_login_environment.sh" "${apply_checkout}/scripts/"
 cp "${repository_root}/mise.toml" "${repository_root}/mise.lock" "${apply_checkout}/"
 export MISE_TRUSTED_CONFIG_PATHS="${apply_checkout}"
 touch "${apply_checkout}/src/opentofu/github/main.tf" "${apply_checkout}/src/opentofu/cloudflare/main.tf" "${apply_checkout}/infrastructure/cloudflared/config.yaml"
