@@ -241,10 +241,11 @@ echo "a process listing that cannot be read leaves the drive's processes unprove
 
 prepare_journeys_case ignores-term exit:0
 echo ignores-term >"$state/straggler-mode"
-started_at=$SECONDS
 run_command ignores-term
 expect_result ignores-term 0 green
-[ $((SECONDS - started_at)) -ge "$drive_stop_seconds" ] || refuse "ignores-term: the process ignoring TERM was not given $drive_stop_seconds seconds"
+grace_microseconds=$(($(<"$state/straggler-gone") - $(<"$state/straggler-term")))
+[ "$grace_microseconds" -ge $((drive_stop_seconds * 1000000)) ] || refuse "ignores-term: the process ignoring TERM was given $grace_microseconds microseconds, not $drive_stop_seconds seconds"
+[ "$grace_microseconds" -le $(((drive_stop_seconds + call_seconds) * 1000000)) ] || refuse "ignores-term: the process ignoring TERM was given $grace_microseconds microseconds, more than $drive_stop_seconds seconds and a listing"
 no_event 'drive: stopped' || refuse "ignores-term: the process that ignores TERM was stopped by it"
 kept_secret ignores-term
 left_clean ignores-term

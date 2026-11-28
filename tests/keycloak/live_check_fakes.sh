@@ -242,7 +242,8 @@ FAKE
 # The gate and the process listing. probe-run runs the command it wraps (its arguments after -k K CAP) and passes a TERM on
 # to it once, or, with FAKE_GATE_STATUS, answers that status without running it; when the command has ended it ends the
 # drive's group too, as the end of the real probe-run's namespace does. ps is the real one, except that
-# FAKE_FAIL=listing makes the listing of every process fail.
+# FAKE_FAIL=listing makes the listing of every process fail and that the first process listing which finds the drive's
+# straggler gone writes its time (microseconds since the epoch) to the straggler-gone file of the case.
 cat >"$fake_bin/probe-run" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -264,12 +265,17 @@ FAKE
 cat >"$fake_bin/ps" <<'FAKE'
 #!/usr/bin/env bash
 [ "$*" != "-e -o pgid=,stat=" ] || [ "${FAKE_FAIL:-}" != listing ] || exit 1
-exec "__REAL_PS__" "$@"
+[ "$*" = "-e -o pgid=,stat=" ] && [ -e "${FAKE_STATE:-/nonexistent}/straggler-term" ] && [ ! -e "$FAKE_STATE/straggler-gone" ] || exec "__REAL_PS__" "$@"
+status=0
+"__REAL_PS__" "$@" || status=$?
+[[ "$("__REAL_PS__" -o stat= -p "$(<"$FAKE_STATE/straggler")" 2>/dev/null)" =~ ^[^Z] ]] || echo "${EPOCHREALTIME/[.,]/}" >"$FAKE_STATE/straggler-gone"
+exit "$status"
 FAKE
 # mise: `mise -C <checkout> ...` is the app's own mise, run by the command under env -i, which holds no FAKE_ variable,
 # so it finds the case through the state-current link. `tasks ls` lists the checkout's mise.toml; `run live:journeys`
 # is the drive, which records what it received, leaves one process behind in its group (one that ignores TERM when the case's
-# straggler-mode file says ignores-term) and then ends as the case's drive-mode file says: exit:<n>, or
+# straggler-mode file says ignores-term, and then it writes the time of the TERM it ignores, in microseconds since the
+# epoch, to the straggler-term file) and then ends as the case's drive-mode file says: exit:<n>, or
 # signal:<name>:<outer|inner>, which sends that signal to the outermost or innermost live_check.sh above it and holds
 # until the drive's stop ends it. Every other call is the real mise's.
 cat >"$fake_bin/mise" <<'FAKE'
@@ -315,7 +321,7 @@ case "$*" in
     (
       set +e
       if [ "$(cat "$FAKE_STATE/straggler-mode" 2>/dev/null)" = ignores-term ]; then
-        trap '' TERM
+        trap 'echo "${EPOCHREALTIME/[.,]/}" >"$FAKE_STATE/straggler-term"' TERM
       else
         trap 'compgen -G "${state_file%/*}/storage-state-*" >/dev/null && file=present || file=absent; log_event "drive: stopped file=$file"; exit 0' TERM
       fi

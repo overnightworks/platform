@@ -15,7 +15,7 @@ journey_environment=(HOME="${HOME:?}" PATH=/usr/bin:/bin LANG="${LANG:-C.UTF-8}"
 drive_stop_seconds=30
 drive_kill_seconds=10
 # What one pass of the cleanup spends: its calls of call_seconds (15 at most: kcadm's file lost, one credential), the
-# last listing of each of the two waits of the drive's stop, which starts before the wait's seconds pass, and those
+# last listing of each of the two waits of the drive's stop, which starts when the wait's seconds have passed, and those
 # seconds. Every tier runs it, so mise.toml's timeout -k for the sign-in tier and the nightly unit's stop delay follow
 # cleanup_seconds.
 cleanup_calls=15
@@ -61,16 +61,22 @@ drive_processes() {
   listing="$(timeout --foreground "$call_seconds" ps -e -o pgid=,stat=)" || return 1
   awk -v group="$drive_group" '$1 == group && $2 !~ /^Z/' <<<"$listing"
 }
-# wait_until_the_drive_is_gone <seconds>: every listing starts before that long has passed and the last one ends the
-# wait, so it takes that long plus one listing at most; fails when processes of the drive are left or the listing cannot
-# be read, which proves none gone.
+# wait_until_the_drive_is_gone <seconds>: lists the processes until none is left, and gives up once that long has passed
+# since its start, with the listing that starts then as the last: it takes that long plus one listing at most and never
+# less than that long; fails when processes of the drive are left or the listing cannot be read, which proves none gone.
+# EPOCHREALTIME counts microseconds (its decimal mark follows the locale), because SECONDS ticks on the wall clock's
+# second boundaries and would end the wait early.
 wait_until_the_drive_is_gone() {
-  local deadline=$((SECONDS + $1)) remaining
+  local deadline left pause remaining
+  deadline=$((${EPOCHREALTIME/[.,]/} + $1 * 1000000))
   while :; do
     remaining="$(drive_processes)" || return 1
     [ -n "$remaining" ] || return 0
-    [ "$SECONDS" -lt "$((deadline - 1))" ] || return 1
-    sleep 1
+    left=$((deadline - ${EPOCHREALTIME/[.,]/}))
+    [ "$left" -gt 0 ] || return 1
+    pause=$((left < 1000000 ? left : 1000000))
+    printf -v pause '%d.%06d' $((pause / 1000000)) $((pause % 1000000))
+    sleep "$pause"
   done
 }
 # stop_the_drive: TERM to the drive's group, KILL to what stays, and a read-back that nothing is left.
