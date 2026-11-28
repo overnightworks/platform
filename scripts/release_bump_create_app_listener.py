@@ -3,8 +3,8 @@
 
 Usage: python3 -I release_bump_create_app_listener.py <name> <deadline seconds> <owner/repository> <environment> <secret>
 Prints one line on stdout, the page's address, and then serves until one request carries the state it made, the
-deadline passes or a check refuses. Exit 0: the key is stored. Exit 1: nothing is stored; the reason is on stderr and
-holds no value of the code or of GitHub's answer.
+deadline passes, a check refuses or the command that started it ends. Exit 0: the key is stored. Exit 1: nothing is
+stored; the reason is on stderr and holds no value of the code or of GitHub's answer.
 
 The temporary code in the redirect converts into the key, client_secret and webhook_secret for an hour, so only this
 process holds it: it reaches curl on stdin, never an argument, and the answer returns on a pipe from which only the key
@@ -189,7 +189,7 @@ def end_with_the_parent(parent: int) -> None:
     prctl(PR_SET_PDEATHSIG, "PR_SET_PDEATHSIG", signal.SIGKILL)
     # A parent that died before the call sent no signal.
     if os.getppid() != parent:
-        sys.exit(1)
+        raise Refusal("the command that started the listener has ended")
 
 
 def serve(target: Target, deadline_seconds: float) -> None:
@@ -217,8 +217,8 @@ def main() -> int:
     organisation, repository = arguments.repository.split("/")
     target = Target(arguments.name, organisation, repository, arguments.environment, arguments.secret)
     keep_no_core_dump()
-    end_with_the_parent(parent)
     try:
+        end_with_the_parent(parent)
         serve(target, arguments.deadline_seconds)
     except Refusal as refusal:
         print(f"release_bump_create_app_listener: {refusal}; nothing was stored", file=sys.stderr)
