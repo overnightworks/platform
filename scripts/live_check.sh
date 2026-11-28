@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2154 # person_id and unreadable are set by keycloak_kcadm.sh.
-# The command behind `mise run live:check <app>`: signs the one test person of realm.yaml in to the app through the
-# app's own page on the live stack, the way a browser does, and leaves the person disabled. Exit 0 is green, 1 red
-# (a failed sign-in, an unreadable stack, a refusal, or a step of the cleanup that may have left something), 3 skipped
-# (the app's Deployment is not Available), 4 refused (another run holds the lock; nothing was read or written). Output is
-# the app, the result and HTTP codes or counts, never a password, a cookie, a code or a page.
+# The command behind `mise run live:check <app> [--tier journeys --checkout <dir>]`: signs the one test person of
+# realm.yaml in to the app through the app's own page on the live stack, the way a browser does, and leaves the person
+# disabled; the journeys tier (live_check_journeys.sh) also runs the app's live journeys in the middle. Exit 0 is green,
+# 1 red (a failed sign-in, an unreadable stack, a refusal, or a step of the cleanup that may have left something), 3
+# skipped (the app's Deployment is not Available, or for the journeys tier the load gate's timeout or the app's exit 3),
+# 4 refused (another run holds the lock; nothing was read or written). Output is the app, the result and HTTP codes or
+# counts, never a password, a cookie, a code or a page.
 #
 # The password is made per run, lives in this process's memory and reaches Keycloak and the sign-in form on stdin only.
 # On every exit the command can trap (success, error, TERM, INT) one EXIT trap signs out at every app whose cookie jar
@@ -22,7 +24,8 @@ export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 task_name=live:check
 person=live-check
 # Each call of the cluster or the app ends past this bound, as a hung one would hold the cleanup, which mise.toml's
-# timeout -k covers with its calls: 15 at most (kcadm's file lost, one credential), which is the whole 300 seconds. A
+# timeout -k covers with its calls: 15 at most (kcadm's file lost, one credential), the two listings of the journeys
+# drive's processes and their stop, which is cleanup_seconds (live_check_journeys.sh), the whole budget of one pass. A
 # cleanup pass meets at most one cookie jar, of hopin, skat, presentator or songmaker: a run makes its own only after a
 # heal that deleted every leftover, and a heal with leftovers ends the run.
 call_seconds=20
@@ -70,13 +73,23 @@ load_app() {
   origin="${origin%/}"
   callback_url="$(yq -p json -r '.redirectUris[0]' <<<"$client_entry")"
   cookie_jar="$(cookie_jar_of "$1")"
+  handed_over_marker="$(handed_over_of "$1")"
 }
 
 # shellcheck source=live_check_apps.sh
 source "$(dirname "${BASH_SOURCE[0]}")/live_check_apps.sh"
+# shellcheck source=live_check_journeys.sh
+source "$(dirname "${BASH_SOURCE[0]}")/live_check_journeys.sh"
 app="${1:-}"
-if [ -z "$(app_row "$app")" ]; then
-  echo "usage: mise run live:check <app>" >&2
+tier="${2:-sign-in}"
+# shellcheck disable=SC2034 # live_check_journeys.sh reads checkout and live_check_command.
+checkout="${3:-}"
+# The fourth argument is the gate's own call of the command for the journeys tier.
+inside_gate="${4:-}"
+# shellcheck disable=SC2034 # read by live_check_journeys.sh.
+live_check_command="$(realpath -- "$0")"
+if [ -z "$(app_row "$app")" ] || ! tier_arguments_agree; then
+  echo "usage: mise run live:check <app> [--tier journeys --checkout <dir>]" >&2
   echo "apps: $(app_names | paste -sd ' ' -)" >&2
   exit 1
 fi
@@ -128,6 +141,10 @@ PERSON="$person" yq --exit-status '.users[] | select(.username == strenv(PERSON)
 [ -n "${XDG_RUNTIME_DIR:-}" ] || fail "XDG_RUNTIME_DIR is unset, so the run has no private directory for its lock and cookie jars"
 lock_directory="$XDG_RUNTIME_DIR/live-check"
 load_app "$app" || exit 1
+if [ "$tier" = journeys ] && [ -z "$inside_gate" ]; then
+  require_a_checkout_of_the_app
+  run_the_gate
+fi
 
 # One run at a time; a second is refused before it reads or writes anything.
 [ -d "$lock_directory" ] || mkdir -m 700 -- "$lock_directory"
@@ -169,7 +186,7 @@ person_needs_cleaning() {
   enabled="$(enabled_state)" || fail "$unreadable"
   credential_ids="$(password_credential_ids)" || fail "$unreadable"
   sessions="$(session_count)" || fail "$unreadable"
-  [ "$enabled" = true ] || [ -n "$credential_ids" ] || [ "$sessions" != 0 ] || a_cookie_jar_is_left
+  [ "$enabled" = true ] || [ -n "$credential_ids" ] || [ "$sessions" != 0 ] || a_cookie_jar_is_left || a_journeys_run_left_something
 }
 a_cookie_jar_is_left() {
   local name
@@ -184,8 +201,11 @@ visit() {
   local target="$1"
   shift
   case "$target" in /*) target="$origin$target" ;; esac
+  # A jar whose cookies were handed over is only read, so the read-back sends the very cookies the journeys had.
+  local jar_arguments=(--cookie "$cookie_jar")
+  [ -e "$handed_over_marker" ] || jar_arguments+=(--cookie-jar "$cookie_jar")
   answer="$(curl --silent --show-error --max-time "$call_seconds" --output /dev/null --write-out '%{http_code} %{redirect_url}' \
-    --cookie "$cookie_jar" --cookie-jar "$cookie_jar" "$@" --config <(curl_url "$target"))"
+    "${jar_arguments[@]}" "$@" --config <(curl_url "$target"))"
 }
 
 # ------------------------------------------------------------------------------------------------- the cleanup
@@ -211,11 +231,12 @@ delete_stranded_config_files() {
   stranded_config_files=("${remaining[@]}")
 }
 # sign_out_of_app <app>: with the app's jar, its own sign-out route and Origin, read back by its account route answering
-# 401. The codes of a jar that is not this run's own, or of the first cleanup's, carry the app's name, so the result line
+# 401; for a jar whose cookies were handed over, that proves the session ended at the app, not that the jar was cleared.
+# The codes of a jar that is not this run's own, or of the first cleanup's, carry the app's name, so the result line
 # holds no key twice.
 sign_out_of_app() {
   local name="$1" code_prefix="" logout_status account_status
-  local deployment_namespace deployment start_path account_path logout_path origin callback_url cookie_jar
+  local deployment_namespace deployment start_path account_path logout_path origin callback_url cookie_jar handed_over_marker
   [ -e "$(cookie_jar_of "$name")" ] || return 0
   load_app "$name" || return 1
   { [ "$name" != "$app" ] || [ "$healing" = true ]; } && code_prefix="$name-"
@@ -244,14 +265,18 @@ disable_person() {
   [ "$(enabled_state)" = false ]
 }
 delete_cookie_jar() {
-  rm -f -- "$(cookie_jar_of "$1")"
-  [ ! -e "$(cookie_jar_of "$1")" ]
+  rm -f -- "$(cookie_jar_of "$1")" "$(cookie_jar_of "$1").rewritten" "$(handed_over_of "$1")"
+  [ ! -e "$(cookie_jar_of "$1")" ] && [ ! -e "$(handed_over_of "$1")" ]
 }
 clean_up_person() {
   local name
+  attempt "$journeys_drive_name" stop_the_drive
   attempt "kcadm's sign-in to Keycloak" sign_in_kcadm_again
   for name in $(app_names); do
     attempt "the person's $name session" sign_out_of_app "$name"
+  done
+  for name in $(app_names); do
+    attempt "the storage state $(storage_state_of "$name")" delete_storage_state "$name"
   done
   attempt "the person's Keycloak sessions" end_keycloak_sessions
   attempt "the person's password credential" delete_password_credentials
@@ -339,3 +364,4 @@ sign_in_step=account
 visit "$account_path"
 expect_status account 200
 sign_in_step=""
+[ "$tier" != journeys ] || hand_over_to_the_journeys

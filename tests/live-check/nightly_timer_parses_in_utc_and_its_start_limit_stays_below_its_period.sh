@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Proves docs/operations.md OPS-24: the unit that runs `live:report nightly` and the timer that starts it, read from
 # mise.toml, so no value chosen there is restated here: the timer's calendar parses and names the UTC zone, the timer starts
-# that one service, the service's stop delay exceeds the kill delay of live:check's own `timeout -k`, and its start limit
-# stays below the timer's period, so a run ends before the next night starts.
+# that one service, the kill delay of live:check's own `timeout -k` covers the cleanup's seconds, the service's stop delay
+# exceeds it, and its start limit stays below the timer's period, so a run ends before the next night starts.
 # Usage: tests/live-check/nightly_timer_parses_in_utc_and_its_start_limit_stays_below_its_period.sh
 set -eo pipefail
 # shellcheck source=../failure.sh
@@ -33,6 +33,9 @@ period=$((elapse_times[1] - elapse_times[0]))
 check_run="$(mise exec -- yq -p toml -oy '.tasks["live:check"].run' mise.toml)"
 kill_delay="$(sed -n 's/.*timeout -k \([0-9][0-9]*\) .*/\1/p' <<<"$check_run")"
 [ -n "$kill_delay" ] || fail "the task live:check runs no 'timeout -k <seconds>': $check_run"
+call_seconds="$(sed -n 's/^call_seconds=//p' scripts/live_check.sh)"
+cleanup_seconds="$(call_seconds="$call_seconds" bash -c 'source "$1"; echo "$cleanup_seconds"' _ scripts/live_check_journeys.sh)"
+[ "$kill_delay" -ge "$cleanup_seconds" ] || fail "live:check's kill delay of $kill_delay seconds is below the cleanup's $cleanup_seconds seconds"
 stop_seconds="$(seconds_of_timespan "$(unit_value "$service" timeout_stop_sec)")"
 [ "$stop_seconds" -gt "$kill_delay" ] || fail "timeout_stop_sec is $stop_seconds seconds, not above live:check's kill delay of $kill_delay"
 

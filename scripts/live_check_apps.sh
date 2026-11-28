@@ -13,3 +13,6 @@ songmaker    songmaker    web     /login/oidc  /api/auth/me  /auth/logout
 '
 app_names() { awk 'NF { print $1 }' <<<"$app_table"; }
 app_row() { awk -v wanted="$1" '$1 == wanted' <<<"$app_table"; }
+# app_repository <app>: the GitHub repository of the app, which the report opens its items at and the journeys tier's
+# checkout must name as its origin.
+app_repository() { printf 'overnightworks/%s' "$1"; }

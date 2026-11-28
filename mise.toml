@@ -237,14 +237,14 @@ unit = "trash-prune"
 # and 01:30 UTC is 02:30 CET and 03:30 CEST, outside the DST hour and before litellm-expire's 04:00 UTC. working_directory
 # names the checkout the runbook and the apply name, which mise's `{{ config_root }}` would replace by the checkout the apply
 # runs from. The start limit ends a stuck run well before the next night; the stop delay lets a run's cleanup, which
-# live:check bounds at 300 seconds after a TERM, finish.
+# live:check bounds at 380 seconds after a TERM, finish.
 [bootstrap.linux.systemd.units.live-check]
 description = "Sign in to every app and report each result to Gatus"
 type = "oneshot"
 exec_start = "~/.local/bin/mise run live:report nightly"
 working_directory = "~/git/platform"
 timeout_start_sec = "6h"
-timeout_stop_sec = "330"
+timeout_stop_sec = "410"
 start = false
 wanted_by = []
 
@@ -1585,14 +1585,25 @@ say "$client's agent_owner is $username; $username is in ${groups[*]}; $owners_g
 '''
 
 # The live check of an app where a person signs in, on the operator's PC against the public names; never from CI. The
-# cap's -k covers the cleanup: at most 15 calls of 20 seconds each, 300 seconds (scripts/live_check.sh), which the first
-# live run measures. A cleanup pass meets at most one cookie jar, of hopin, skat, presentator or songmaker, since a run
-# makes its own only after a heal that deleted every leftover.
+# sign-in tier's cap -k covers the cleanup: at most 15 calls of 20 seconds each, the two listings of the journeys drive's
+# processes and their stop, 380 seconds (cleanup_seconds in scripts/live_check_journeys.sh), which the first live run
+# measures. A cleanup pass meets at most one cookie jar, of hopin, skat, presentator or songmaker, since a run makes its
+# own only after a heal that deleted every leftover. The journeys tier has no timeout of its own: it calls probe-run, whose
+# load wait and cap bound it (scripts/live_check_journeys.sh names K, that cleanup, and CAP).
 [tasks."live:check"]
-description = "Runs on the operator's PC against the public names, never from CI: signs the one test person of realm.yaml in to <app> through its own page, then signs it out and disables it again; prints the app, green, red or skipped (exit 0, 1, 3) and codes only"
-usage = 'arg "[app]" help="The app to check: one of the apps in the table in scripts/live_check_apps.sh"'
+description = "Runs on the operator's PC against the public names, never from CI: signs the one test person of realm.yaml in to <app> through its own page, then signs it out and disables it again; prints the app, green, red or skipped (exit 0, 1, 3) and codes only. With --tier journeys it also runs the app's live:journeys task of --checkout, a checkout the command only reads, in a session of its own, handing it the origin and a storage-state file of the run's own cookies and keeping its output out of the command's; the load gate's timeout and the task's exit 3 are skipped (docs/operations.md OPS-25)"
+usage = '''
+arg "[app]" help="The app to check: one of the apps in the table in scripts/live_check_apps.sh"
+flag "--tier <tier>" help="sign-in (the default) or journeys" default="sign-in"
+flag "--checkout <dir>" help="The app's checkout, required for the journeys tier and refused for the sign-in tier"
+'''
 quiet = true
-run = 'exec timeout -k 300 900 scripts/live_check.sh "${usage_app:-}"'
+run = '''
+if [ "${usage_tier:-sign-in}" = journeys ]; then
+  exec scripts/live_check.sh "${usage_app:-}" "$usage_tier" "${usage_checkout:-}"
+fi
+exec timeout -k 380 900 scripts/live_check.sh "${usage_app:-}" "${usage_tier:-sign-in}" "${usage_checkout:-}"
+'''
 
 # The report of the sign-in check, on the operator's PC, never from CI: it waits for the report's lock up to 60 minutes
 # and then runs `live:check` for each app with its waits, so it has no cap of its own; the nightly timer's unit caps it.

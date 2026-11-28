@@ -252,8 +252,8 @@ person enabled with a credential, its sessions and the 0600 cookie jar `cookies-
 which the next run, for any app, finds first and cleans the same way, signing out at that app with the codes of the
 result line carrying its name (`skat-sign-out=… skat-account-after=…`), and kcadm's sign-in file in Keycloak's container, which no later run learns and
 which stays until Keycloak's pod restarts, all inside that boundary; the password died with the process. The run exits 0
-when green, 1 when red and 3 when skipped, which is the app's Deployment not being Available, after the cleanup and with
-no other write. A run whose lock another run holds reads and writes nothing, prints the result `refused` and exits 4; a red
+when green, 1 when red and 3 when skipped, which is the app's Deployment not being Available, or for the journeys tier
+the load gate's timeout or the app's exit 3 (OPS-25), after the cleanup and with no other write. A run whose lock another run holds reads and writes nothing, prints the result `refused` and exits 4; a red
 result line ends with `step=<step>` while the sign-in was under way (`start`, `login-page`, `sign-in-form`, `callback`,
 `account`, or `sign-out` once it passed), and the names that may remain survive a failed first cleanup. (OPS-20)
 
@@ -313,3 +313,44 @@ a restart neither mails nor hides a miss, whenever the next push comes; a key pu
 Gatus start mails up to 3 hours late. The rule is silent while `tunnel` is suspended and for 36 hours after
 `mise run online`, so an offline raises nothing, and a key with no push in 30 days leaves it. Gatus' heartbeat for these
 rows stays off, because its misses would count in the same counter. (OPS-24)
+
+`mise run live:check <app> --tier journeys --checkout <dir>` is the same live check with the app's own journeys run in
+the middle, handed a session and never the password; the contract with the app's command is `docs/app.md`, "Live
+journeys". The checkout is its caller's, which the command only reads, never prepares, changes or removes. It refuses, red
+with `step=checkout`, exit 1 and no write, a directory that is not the top of a git work tree whose `origin` names the
+table's `app_repository`, and one whose mise, under the drive's environment, lists no task `live:journeys`; an unknown
+tier, a checkout with the sign-in tier and the journeys tier without one print the usage. The sign-in, the drive and the
+trapped cleanup are the live check's drive under probe-run, since nothing is built or installed: the command calls itself
+once as `probe-run -k 380 1450 scripts/live_check.sh <app> journeys <checkout> inside-gate`, so probe-run's own load wait
+is the only wait and comes before the lock, the heal and the first write; K is the cleanup's 380 seconds (15 calls of
+20 seconds, two listings of the drive's processes of 20 seconds and the drive's stop of 40), CAP is 1830 − K. The fourth
+argument is an aid for cooperative callers. Inside, after the lock, the heal deletes a leftover `storage-state-<app>.json`
+and signs out a jar whose marker `handed-over-<app>` remains as below; then comes OPS-19's sign-in. The jar is rewritten to the
+cookies of the app's host, so no Keycloak cookie stands in a file of the run during the drive, and the same cookies are
+written as Playwright's storage state, 0600 in the 0700 `$XDG_RUNTIME_DIR/live-check`, with the marker beside the jar; a
+jar line the conversion cannot read is red with `step=storage-state`. The app's task runs as `mise -C <checkout> run
+live:journeys --origin <origin> --storage-state <file>` in a session of its own (`setsid`), whose process group is the
+drive's, under `env -i` with `HOME`, a `PATH` of `/usr/bin:/bin` and `LANG` only, its stdin, stdout and stderr on
+`/dev/null` and the lock closed for it, so no output of the app reaches the command's, Gatus or an item. A systemd user
+scope cannot hold it: `systemd-run --user --scope` cannot reach the user manager from inside probe-run's pid namespace,
+and a transient service would leave probe-run's network namespace, which keeps Chromium free of `ERR_NETWORK_CHANGED`.
+The own session, the minimal environment and the jar without Keycloak's cookies are aids for cooperative code; the boundary is the operator's
+account, as for OPS-18. The storage-state file holds only the app's own cookies of this run and is valid only until the run
+signs out; the same boundary as the password's holds it. On every exit it can trap, the cleanup sends the drive's group
+a TERM and, after 30 seconds, a KILL, and reads back that no process of it lives (a listing it cannot read, or a process
+that outlives the KILL, is a process that may remain), signs out at the app with the jar as it is (a jar with its marker is only read, never rewritten) and
+reads the account route with the very cookies handed over, which must answer 401, and then deletes the file whatever the
+sign-out answered. That read-back proves the end of the session handed over; a session the app rotated during the journey
+ends through Keycloak's back-channel sign-out, which nothing reads back. An app that clears the cookie and keeps its
+session answers 200: the run is red with `step=sign-out` and `may remain` names the person's `<app>` session. An exit it
+cannot trap leaves the file, the jar and the marker, which the next run of any app deletes and signs out; every process
+of the drive, even one that left the group, ends with the run's namespace, which probe-run ends with its command. The app's exit 0 is green, 3 is skipped (exit 3) and 1 or any other is red with `step=journeys`, the code on the
+result line as `journeys=<n>`. A TERM or INT to the command is passed to probe-run once, and the command returns after the
+inner run's cleanup. The gate's own statuses: 75, the load staying high, prints `skipped reason=load` and exits 3 with
+nothing written; any other status that is not the inner run's 0, 1, 3 or 4 prints `red (gate=<status>)` after the inner
+run's own line and exits 1. A journeys run holds the
+command's lock from the gate's start to its end, at most K + CAP = 1830 seconds: the releasing head's sign-in gets exit 4
+and reruns after it (`docs/app.md`), and `live:report` polls for 30 minutes and then reports `skipped reason=command-busy`
+for a run that used its whole cap. Never from CI: a live proof drives it on the PC, and
+`tests/live-check/journeys_get_the_apps_cookies_in_a_file_deleted_on_every_exit.sh` proves the handoff against fakes.
+(OPS-25)
