@@ -1,0 +1,8 @@
+claim_id = "7f85304a26f84ab380847423da35c7b3"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
+role = "builder"
+base = "78aa6fb36b0e3c92727eeb340ffde8fbb75e647d"
+branch = "release/skat"
+scope = ["apps/skat/release/kustomization.yaml", "infrastructure/legal/app-texts.toml", "infrastructure/legal/app-texts/skat/datenschutz.html", "infrastructure/legal/built/datenschutz.html"]
+opened_commit = "577a6470d2b012ea8cc6f4d1ef81f595ba8f33f9"
+whole_reason = "release:bump writes the image pin and, from the same tag, skat's legal copy with its pin and the built page; together they are one release."
