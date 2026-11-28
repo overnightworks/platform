@@ -9,11 +9,11 @@ kind: Component
 images:
   - name: speech-cpu
     newName: ghcr.io/overnightworks/speech
-    newTag: 2026.11.18.1
-    digest: sha256:dbf3140e9a08c68496b361be68d498fbcfca94a7bd1a14d352ce2177c2a70837
+    newTag: 2026.11.28.1
+    digest: sha256:0950baa8823e7139f6cc0a5e2dd780188e2e692b4a89e6f79debac22c3b4d445
   - name: speech-gpu
     newName: ghcr.io/overnightworks/speech
-    newTag: 2026.11.18.1-gpu
-    digest: sha256:1b0b136ca64e96fd0b2727a13557b8644dc9b4ce66b1be55d359c65d201a94f2
+    newTag: 2026.11.28.1-gpu
+    digest: sha256:91742ce47d74bf5b762668838dce70ab9f3a761cd57478abe77a24b860e02071
 configurations:
   - gpu-image.yaml

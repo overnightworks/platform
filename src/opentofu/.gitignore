@@ -1,0 +1,3 @@
+# A state file holds the account's resource data and must never reach the public history.
+*.tfstate
+*.tfstate.*

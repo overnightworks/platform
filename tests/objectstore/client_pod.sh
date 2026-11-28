@@ -72,3 +72,11 @@ client_output() {
   [ "$(kubectl -n "$APP_NAMESPACE" get pod "$name" -o jsonpath='{.status.phase}')" = Succeeded ] || fail "the client Pod $name failed"
   kubectl -n "$APP_NAMESPACE" delete pod "$name" --wait --timeout=2m >/dev/null
 }
+# remove_client: for a cell's exit trap, the bucket cleared by a client Pod, whose failure counts as a deletion failure, then
+# the client Pods and the ConfigMap install_client made.
+remove_client() {
+  (run_client clear-planted-objects "$credentials_secret" clear "$bucket_variable") ||
+    { delete_object --namespace "$APP_NAMESPACE" delete pod clear-planted-objects --ignore-not-found --wait --timeout=2m; deletion_failures=$((deletion_failures + 1)); }
+  delete_object --namespace "$APP_NAMESPACE" delete pod --selector cell=object-store --ignore-not-found --wait --timeout=2m
+  delete_object --namespace "$APP_NAMESPACE" delete configmap object-store-client --ignore-not-found
+}

@@ -2,20 +2,20 @@
 
 ## Commands
 
-`mise tasks` lists every task; all need the locked tools: `scripts/bootstrap_pc.sh --only tools`, which needs `git`,
-`curl` and `sha256sum`.
+`mise tasks` lists every task; all need the locked tools: `scripts/bootstrap_pc.sh --only tools`, which needs git,
+curl and sha256sum.
 
 - `quality check`: the repository's rules; needs quality at the pin in `ci.yml`, installed by `mise run bootstrap:hook`.
-- `mise run github:test` and `cloudflare:test`: check `src/opentofu`'s roots; need only the tools.
-- `mise run legal:test`: tests `src/legal`; `mise run legal:check <key> <dir>`: checks an app's legal files; needs its checkout.
+- `mise run github:test` and `cloudflare:test`: check `src/opentofu`'s roots; tools only.
+- `mise run legal:test`: tests `src/legal`; `legal:check <key> <dir>`: checks an app's legal files; needs its checkout.
 - `mise run check:secrets-expiry`: names Secrets expiring within 30 days; needs the PC's k3s.
 - The operator's: `mise run secrets:new-key` (the age key, its one copy in his password manager), `check:pod-logs`
   (sudo) and `keycloak:admin` (his console sign-in).
 - An agent runs `mise run bootstrap:secrets` once the age key file is in place, `litellm:admin <username>` only for
-  a person he names and `gpu:use <songs|speech|free>` only inside a window he named.
-- `mise run offline` and `online` take the public names off the internet and back: see
-  `docs/runbooks/take-the-platform-offline.md`.
-- `mise run admission:pause` and `admission:resume` are the head's: they suspend and restore the attestation check.
+  a person he names and `gpu:use <songs|speech|free>` only inside a window he named; `db:read <namespace>` is its one
+  way to read a live Postgres: SQL on stdin, as a read-only role.
+- `mise run offline` and `online` take the public names off and back: `docs/runbooks/take-the-platform-offline.md`.
+- `mise run admission:pause` and `admission:resume` are the head's: suspend and restore the attestation check.
 
 ## Rules
 

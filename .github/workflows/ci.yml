@@ -69,6 +69,12 @@ jobs:
           mise exec -- tests/flux/part_closure_follows_dependson.sh
           mise exec -- tests/flux/reconcile_refuses_an_unset_or_unknown_part.sh
 
+      - name: Check that the failure report names what each Pod that is not Ready waits on and the node's state, and reads no Secret
+        run: mise exec -- tests/flux/print_flux_state_names_what_each_not_ready_pod_waits_on.sh
+
+      - name: Check that the Ready step of a part prints the peaks of the runner's wait on every exit, a failed wait included, and leaves no sampler
+        run: mise exec -- tests/flux/scoped_layers_reconcile_the_candidate_prints_the_peaks_on_every_exit.sh
+
       - name: Check that the parts a run executes are core alone for a docs-only diff, those a changed layer or glob selects, and every part but the nightly-only ones for an unknown path, a zero base or a failing diff
         run: mise exec -- tests/flux/parts_for_paths_selects_by_changed_paths.sh
 
@@ -94,6 +100,12 @@ jobs:
 
       - name: Check that backup:fetch ends non-zero naming a file that holds no custom-format dump and deletes it, and keeps a dump at mode 0600
         run: mise exec -- tests/backup/backup_fetch_deletes_a_file_that_holds_no_custom_format_dump.sh
+
+      - name: Check that the load's source step picks the older snapshot whose MANIFEST holds the dump past a newer snapshot of another dump, and the newest of the snapshots that hold it
+        run: mise exec -- tests/backup/load_source_finds_the_older_snapshot_of_the_dump.sh
+
+      - name: Check that the load's bucket check counts the differences a status 1 list of rclone names and fails for status 1 with a list that names none and for status 2
+        run: mise exec -- tests/backup/load_check_counts_a_named_difference_and_refuses_an_unnamed_failure.sh
 
       - name: Check that gpu:use orders its steps so speech always has a Ready pod, waits for each Deployment's ready replica, names the step and the way back of a failed wait, frees the card only from speech's state with the bound armed first, returns it only while nobody took it and refuses an unknown user
         run: mise exec -- tests/gpu/use_orders_the_switch_names_the_way_back_and_waits_for_the_ready_replica.sh
@@ -170,6 +182,9 @@ jobs:
       - name: Check that release-bump.yml's compute job gives each app's outcome, keeps the output of a bump, keeps a refusal a warning with the run green, lets one app's failure leave the others reporting before it makes the run red, and holds no more than contents and packages read, no environment, no secret and no cancelling group
         run: mise exec -- tests/release_bump/the_dry_run_computes_every_component_and_holds_no_write_credential.sh
 
+      - name: Check that mise run release:create-app refuses a missing or unrestricted environment and a name that is no slug before it serves a page, stores only the key on release-bump of platform through gh's stdin, takes only the redirect with its state, names the App to delete after a mismatch or a failure, and leaves the code, the key, client_secret and webhook_secret in no argument, output, environment or file
+        run: mise exec -- tests/release_bump/the_create_app_command_stores_only_the_key_through_gh_and_prints_none.sh
+
       - name: Check that the design kit under infrastructure/design equals its release wheel and holds nothing else, and that infrastructure/legal/assets holds nothing else than legal-2.css
         run: tests/legal/design_assets_equal_their_release_wheel.sh
 
@@ -181,6 +196,9 @@ jobs:
 
       - name: Check that live:check signs the test person in with its password on stdin only, leaves it signed out and disabled on every exit it can trap, names what a failed step may leave, cleans up an earlier run's leftovers first and refuses or skips with no write
         run: mise exec -- tests/keycloak/live_check_leaves_the_person_disabled_on_every_exit.sh
+
+      - name: Check that live:check --tier journeys hands the app's command its origin and a 0600 storage state of the app's own cookies, never the password or a Keycloak cookie, in a minimal environment with its output kept out of the command's, stops the drive's group before deleting the file and reads the handed-over session back on every exit it can trap, maps the app's exit 0, 1 and 3 and the gate's statuses, passes a TERM or INT on once, heals what a killed run left, and refuses a checkout of another repository or without the task with no write
+        run: mise exec -- tests/live-check/journeys_get_the_apps_cookies_in_a_file_deleted_on_every_exit.sh
 
       - name: Check that live:report pushes each final green or red once, reruns a red or skipped app once, opens one item at the app for a red after the rerun and names the step and the side of the cause, waits for the command's lock without pushing red, serializes on its own lock, pushes and opens nothing while offline, and keeps the token off every argument, environment and output
         run: mise exec -- tests/keycloak/live_report_pushes_each_result_and_opens_one_item_per_red.sh
@@ -206,8 +224,11 @@ jobs:
       - name: Check that every pull layer mounts each app ref its app renders and every image volume of its Job, and that a missing ref and an unmounted volume fail
         run: mise exec -- tests/workloads/pull_layers_mount_every_app_ref_their_app_runs.sh
 
-      - name: Check that the Deployments of the namespaces of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM, a rollout's surge included, plus the backup stay within their Postgres' max_connections, and that a raised replica, surge or pool, a missing declaration and a lowered limit are each red
+      - name: Check that the Deployments of the namespaces of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM, a rollout's surge included, plus the backup and the role reader stay within their Postgres' max_connections, and that a raised replica, surge or pool, a missing declaration and a lowered limit are each red
         run: mise exec -- tests/postgres/connections_stay_within_max_connections.sh apps/hopin apps/songmaker apps/personas apps/skat apps/presentator infrastructure/keycloak infrastructure/litellm
+
+      - name: Check that reader_role.sh keep ends 0 with one line naming its bound when no server answers, and never reaches psql
+        run: mise exec -- tests/postgres/reader_keep_gives_up_past_its_bound.sh
 
   # The legs of cluster: core and the parts the run's changed paths select, which tests/flux/parts.yaml owns. cluster is
   # never skipped, since the gate reads a skipped mandatory job as red, so a scope that selects nothing but core still has a leg.
@@ -354,13 +375,25 @@ jobs:
         if: matrix.part == 'backup-2'
         run: tests/disk/docuum_deletes_the_least_recently_used_unprotected_image.sh
 
-      - name: Check that the bucket Component's rclone fails whole on a full disk and leaves no file at its final name and no partial
+      - name: Check that the staging syncs fail whole on a full disk, leaving no file at its final name and no partial, and free a replaced tree before they write
         if: matrix.part == 'backup-2'
-        run: tests/backup/bucket_sync_fails_whole_on_a_full_disk.sh
+        run: tests/backup/staging_syncs_fail_whole_when_full_and_free_a_replaced_tree_first.sh
+
+      - name: Check that the stager's fit refuses a copy by the bytes it still writes beside the eviction margin and counts a staged copy as written
+        if: matrix.part == 'backup-2'
+        run: tests/backup/stager_fit_refuses_a_copy_by_what_it_still_writes_beside_the_eviction_margin.sh
 
       - name: Check that the bucket step fails when a key written during its sync stands in for a key the copy dropped
         if: matrix.part == 'backup-2'
         run: tests/backup/bucket_count_cannot_hide_a_key_the_copy_dropped.sh
+
+      - name: Check that the role room ends non-zero on a TERM, never as a fit
+        if: matrix.part == 'backup-2'
+        run: tests/backup/room_role_ends_non_zero_on_a_term_and_never_reads_as_a_fit.sh
+
+      - name: Check that the bucket role frees a replaced tree before it writes, against an S3 source
+        if: matrix.part == 'backup-2'
+        run: tests/backup/bucket_role_frees_a_replaced_tree_before_it_writes.sh
 
       # Before the cluster exists, so a stale generated file fails here and never reaches Flux.
       - name: Compare the generated files with a fresh regeneration
@@ -615,12 +648,23 @@ jobs:
           OUTSIDE_TARGET: github.com:443
         run: tests/postgres/postgres_storage_prune_load_and_egress.sh
 
+      - name: Check that mise run db:read passes the check of the declared role reader in every Postgres namespace, which holds the connection limit of its ConfigMap and counts the first key table as the superuser does
+        if: matrix.part == 'load-1'
+        run: tests/postgres/every_postgres_reads_as_its_declared_reader.sh
+
       - name: P7a foreign-session and interrupt cells
         if: matrix.part == 'load-3'
         env:
           # The layer whose Postgres the loader proof loads.
           PROOF_LAYER: litellm
         run: tests/postgres/load_dump_refuses_a_foreign_session_and_suspension_and_survives_interrupts.sh
+
+      - name: Check that the role reader is refused the listed writes, objects, escapes and the statement past its timeout, reads what is made later, is refused after a drift, survives a lock in keep and returns at the next start
+        if: matrix.part == 'load-3'
+        env:
+          # The layer whose Postgres the cell reads.
+          PROOF_LAYER: litellm
+        run: tests/postgres/reader_refuses_the_listed_writes_and_returns_at_start.sh
 
       - name: Assert that songmaker's Postgres is Ready and non-root and closed to other namespaces
         if: matrix.part == 'load-1'
@@ -884,6 +928,22 @@ jobs:
         env:
           SONGMAKER_NAMESPACE: songmaker
         run: tests/backup/backup_fetch_writes_songmaker_s_dump_of_its_staging_snapshot.sh
+      # The step changes songmaker's database, audio claim and bucket, which no later step of this part reads.
+      - name: P7f cells
+        if: matrix.part == 'backup-5'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          APP_MANIFEST: apps/songmaker/web.yaml
+        run: tests/backup/load_restores_dump_claim_and_bucket_of_one_snapshot.sh
+      # The cells change songmaker's PreBackupPod and its bucket, which no later step of this part reads.
+      - name: Seed and fit cells
+        if: matrix.part == 'backup-6'
+        env:
+          SONGMAKER_NAMESPACE: songmaker
+          APP_MANIFEST: apps/songmaker/web.yaml
+        run: |
+          tests/backup/backup_now_seeds_a_first_copy_larger_than_one_pre_sync.sh
+          tests/backup/staging_refuses_a_copy_that_would_cross_the_eviction_margin.sh
       - name: P9f cells
         if: matrix.part == 'backup-1' || matrix.part == 'backup-3'
         env:
@@ -983,13 +1043,6 @@ jobs:
       - name: Assert that every exit of presentator's worker container gives a fresh pod, that a running pod is left alone, that an exit loop makes one pod at a time and leaves the node as it was, and that a removed sandbox ends in a fresh pod
         if: matrix.part == 'presentator'
         run: tests/presentator/a_used_worker_pod_is_replaced_by_a_fresh_one.sh
-
-      # The step changes songmaker's database and audio claim, which no later step of this part reads.
-      - name: P7f cells
-        if: matrix.part == 'observability-2'
-        env:
-          SONGMAKER_NAMESPACE: songmaker
-        run: tests/backup/load_replaces_database_and_files_together.sh
 
       - name: Assert that a Pod furnished as presentator's web reaches its bucket in the object store with the contract's environment alone and no other bucket, that only such Pods reach the S3 port and none the admin port, that a second run of the Job apply changes nothing, a rotated key loses its access and a backup key that only reads
         if: matrix.part == 'objectstore'
@@ -1364,7 +1417,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: overnightworks/quality/.github/workflows/gate.yml@9cc46a35d4fa874e96d0fc45e5c4871e06e093ec # v0.27.0
+    uses: overnightworks/quality/.github/workflows/gate.yml@c4e75830ac6581f5216cda127eee4c0b026e6822 # v0.28.0
     with:
       coverage-artifact: coverage
     secrets:

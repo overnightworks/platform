@@ -4,8 +4,8 @@ image:
   registry: docker.io
   repository: library/traefik
   # The tag alone moves on Docker Hub after a release, so the image is pinned by its index digest.
-  digest: sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a
-versionOverride: v3.7.17
+  digest: sha256:8301d6f60957a422f98918aacf2b01482abde3e74ead3719aabdb7c64045fe28
+versionOverride: v3.7.20
 global:
   # The version comes from Git, so Traefik makes no call home.
   checkNewVersion: false
@@ -22,7 +22,8 @@ providers:
   # The router backchannel-logout-refused keeps every app's back-channel logout off the internet: Keycloak calls it on the app's
   # Service and never through Traefik. It names no host, so a new app's host needs no entry, and its explicit priority
   # beats every Ingress router, whose priority is the length of its rule. A router matches the routing path: the escaped
-  # path after sanitizePath's cleaning of doubled slashes and dot segments, with every percent-encoded character
+  # path after sanitizePath's cleaning of doubled slashes and dot segments, which includes a segment that starts with a
+  # path parameter (`..;x` is `..`, `.;x` is `.`, `;x` is empty), with every percent-encoded character
   # decoded except the reserved ones, which the entrypoint refuses or which cannot spell the name. The pattern is
   # case-insensitive and takes the name, an optional slash and then the end of the path or a character an app's router
   # may strip or ignore: a control character, a space (every ASCII character up to 0x20, and DEL) or the start of a

@@ -10,7 +10,10 @@
 # /scratch/ready marks the finished tree, and the pod is Ready only on it. A failed step leaves no MANIFEST and no ready.
 # Nothing here prints a file name, a row or a credential: rsync's, rclone's and find's messages name files, so they are
 # dropped and a failed step names itself and its exit status.
-# Usage: sh stage_files.sh stager|copy|bucket|dump, run by busybox sh in each container's image.
+# `listing <tree>...` prints the file lines of the trees under the current directory, which db:load-dump's loader compares
+# with the lines MANIFEST holds for a restored tree.
+# `room <free> <total> <allocatable> <need>` is the fit's rule, which db:load-dump runs as well.
+# Usage: sh stage_files.sh stager|copy|bucket|dump|manifest|room|listing <args>..., run by busybox sh in each container's image.
 set -u
 scratch=/scratch
 staging=/staging
@@ -35,24 +38,57 @@ idle() {
   exit 0
 }
 
-# serve <step> <command>...: waits for the step's request, runs the command and records its exit status. A restarted
-# container finds the step's exit status in /scratch and does not run it again.
+# serve <step> <command>...: waits for the step's request, runs the command and records its exit status; a container that
+# cannot record it ends non-zero. A restarted container finds the step's exit status in /scratch and does not run it
+# again. The seed's stager writes `end` when it ends, which ends every wait, so that its vendor containers end with it.
 serve() {
   step="$1"
   shift
   [ ! -e "$scratch/$step.exit" ] || return 0
-  until [ -e "$scratch/$step.request" ]; do nap; done
+  until [ -e "$scratch/$step.request" ] || [ -e "$scratch/end" ]; do nap; done
+  [ -e "$scratch/$step.request" ] || return 0
   status=0
   "$@" &
   wait "$!" || status=$?
-  echo "$status" >"$scratch/$step.exit.tmp"
-  mv "$scratch/$step.exit.tmp" "$scratch/$step.exit"
+  { echo "$status" >"$scratch/$step.exit.tmp" && mv "$scratch/$step.exit.tmp" "$scratch/$step.exit"; } || exit 1
 }
 
 # sync_files: the declared claim, mounted read-only at /source, into files/. A uid that cannot read a file makes rsync
-# exit 23.
+# exit 23. It deletes before it transfers, so that a tree never holds its old copy beside its new one.
 sync_files() {
-  rsync -a --delete /source/ "$staging/files/" 2>/dev/null
+  rsync -a --delete-before /source/ "$staging/files/" 2>/dev/null
+}
+
+# tree_size <directory>: prints "<files> <directories> <bytes>" of the tree, never a name; a tree that is not there is
+# empty. find and stat read no file's bytes.
+tree_size() {
+  [ -d "$1" ] || { echo "0 0 0"; return 0; }
+  sizes="$(find "$1" -type f -exec stat -c %s {} + 2>/dev/null)" || return 1
+  directories="$(find "$1" -mindepth 1 -type d 2>/dev/null | wc -l)"
+  files=0
+  bytes=0
+  for size in $sizes; do
+    files=$((files + 1))
+    bytes=$((bytes + size))
+  done
+  echo "$files $((directories)) $bytes"
+}
+
+# claim_size: the declared claim's tree_size, in /scratch.
+claim_size() {
+  size="$(tree_size /source)" || return 1
+  echo "$size" >"$scratch/claim-size.answer"
+}
+
+# bucket_size: "<objects> <prefixes> <bytes>" of the Namespace's bucket, from one recursive listing with the backup's key
+# that goes into a count, so no name leaves the pipe; a failed listing ends the count with a line no listing holds.
+bucket_size() {
+  size="$({ rclone lsf --recursive --format sp ":s3:$BUCKET" 2>/dev/null || echo failed; } | awk '
+    /^failed$/ { failed = 1; next }
+    { size = $0; sub(/;.*/, "", size); path = substr($0, length(size) + 2)
+      if (path ~ /\/$/) prefixes++; else { objects++; bytes += size } }
+    END { if (failed) exit 1; printf "%d %d %.0f\n", objects, prefixes, bytes }')" || return 1
+  echo "$size" >"$scratch/bucket-size.answer"
 }
 
 # copy_bucket <listing file>: the Namespace's bucket, read with the backup's own key, into bucket/. rclone's output names
@@ -70,7 +106,7 @@ copy_bucket() {
   listing="$1"
   rclone lsf --recursive --files-only ":s3:$BUCKET" >"$listing" 2>/dev/null || return 1
   status=0
-  messages="$(rclone sync ":s3:$BUCKET" "$staging/bucket/" --use-server-modtime 2>&1 >/dev/null)" || status=$?
+  messages="$(rclone sync ":s3:$BUCKET" "$staging/bucket/" --use-server-modtime --delete-before 2>&1 >/dev/null)" || status=$?
   skipped="$(printf '%s\n' "$messages" | grep -c 'found in source - ignoring')"
   [ "$status" = 0 ] || return "$status"
   [ "$skipped" = 0 ] || return 1
@@ -114,6 +150,36 @@ dump() {
     mv "$staging/postgres.dump.tmp" "$staging/postgres.dump"
 }
 
+# file_lines <tree>...: one MANIFEST line for each file under the trees, in the order find gives, from the current directory.
+file_lines() {
+  find "$@" -type f -exec stat -c "file$tab%s$tab%Y$tab%n" {} + 2>/dev/null
+}
+
+# listing <tree>...: the trees' file lines in MANIFEST's form, sorted, which a restore compares with MANIFEST's own.
+listing() {
+  files="$(file_lines "$@")" || exit 1
+  [ -z "$files" ] || printf '%s\n' "$files" | LC_ALL=C sort
+}
+
+# room <free> <total> <allocatable> <need>, all in bytes but the allocatable, a Kubernetes quantity: the rule of every fit,
+# which the stager and db:load-dump share. The kubelet evicts pods once the node's filesystem has less free than its hard
+# threshold plus any reservation, which is total minus the node's allocatable ephemeral storage; a write of <need> bytes
+# fits when it leaves more than that free. Prints the margin; exits 0 when it fits, 1 when not and 2 when the allocatable
+# is no quantity it reads.
+room() {
+  awk -v free="$1" -v total="$2" -v allocatable="$3" -v need="$4" '
+    BEGIN {
+      if (allocatable !~ /^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|K|M|G|T|P)?$/) exit 2
+      factor["Ki"] = 1024; factor["Mi"] = 1024 ^ 2; factor["Gi"] = 1024 ^ 3; factor["Ti"] = 1024 ^ 4; factor["Pi"] = 1024 ^ 5
+      factor["K"] = 1000; factor["M"] = 1000 ^ 2; factor["G"] = 1000 ^ 3; factor["T"] = 1000 ^ 4; factor["P"] = 1000 ^ 5
+      number = allocatable; sub(/[A-Za-z]+$/, "", number); unit = substr(allocatable, length(number) + 1)
+      margin = total - number * (unit in factor ? factor[unit] : 1)
+      if (margin < 0) margin = 0
+      printf "%.0f\n", margin
+      exit (free - need > margin) ? 0 : 1
+    }'
+}
+
 # manifest: writes MANIFEST.tmp from the finished tree; refuses a name with a newline, which would split its line.
 manifest() {
   cd "$staging" || exit 1
@@ -128,21 +194,31 @@ manifest() {
   done
   dump_sha256="$(sha256sum postgres.dump)" || exit 1
   dump_size="$(stat -c %s postgres.dump)" || exit 1
-  files="$(find "$@" -type f -exec stat -c "file$tab%s$tab%Y$tab%n" {} + 2>/dev/null)" || exit 1
+  files="$(listing "$@")" || exit 1
   {
     printf 'dump\t%s\t%s\n' "${dump_sha256%% *}" "$dump_size"
-    [ -z "$files" ] || printf '%s\n' "$files" | LC_ALL=C sort
+    [ -z "$files" ] || printf '%s\n' "$files"
   } >MANIFEST.tmp
 }
 
-# fail <message>: names the failed step on stderr and idles, so the pod never turns Ready.
-fail() {
-  echo "stage: $1" >&2
+# stop_here <the seed's exit status> <the seed's outcome>: a Backup's pod idles, so it never turns Ready; the seed ends
+# with its outcome as the termination message, which backup:now reads.
+stop_here() {
+  if [ -n "${STAGE_SEED:-}" ]; then
+    printf '%s' "$2" >/dev/termination-log
+    exit "$1"
+  fi
   idle
 }
 
+# fail <step> <its exit status or -> <message>: names the failed step on stderr and stops there.
+fail() {
+  echo "stage: $3" >&2
+  stop_here 1 "failed $1 $2"
+}
+
 # run_steps <deadline> <steps>: requests every step of the space-separated list together and waits for all of them until
-# the deadline, in seconds since the epoch. A step that failed ends the stage naming itself, the first in list order, and
+# the deadline, in seconds since the epoch, none where it is empty. A step that failed ends the stage naming itself, the first in list order, and
 # so does a step still running at the deadline. A step's start and end carry the UTC time, from which its duration reads.
 run_steps() {
   deadline="$1"
@@ -160,7 +236,7 @@ run_steps() {
         continue
       fi
       status="$(cat "$scratch/$step.exit")"
-      [ "$status" = 0 ] || fail "$step failed with exit $status"
+      [ "$status" = 0 ] || fail "$step" "$status" "$step failed with exit $status"
       case " $finished " in
         *" $step "*) ;;
         *)
@@ -170,7 +246,7 @@ run_steps() {
       esac
     done
     [ -n "$running" ] || return 0
-    [ "$(date +%s)" -lt "$deadline" ] || fail "$running ran out of its budget"
+    [ -z "$deadline" ] || [ "$(date +%s)" -lt "$deadline" ] || fail "$running" - "$running ran out of its budget"
     nap
   done
 }
@@ -178,58 +254,104 @@ run_steps() {
 # guard: refuses while any pod but this one mounts the staging claim, such as a file Job of a failed Backup that still
 # reads it. A pod that has ended holds no mount.
 guard() {
-  pods="$(kubectl --cache-dir=/tmp/kube get pods --output json)" || fail "the guard cannot list the namespace's pods"
+  pods="$(kubectl --cache-dir=/tmp/kube get pods --output json)" || fail guard - "the guard cannot list the namespace's pods"
   holders="$(printf '%s' "$pods" | jq --arg own "$POD_NAME" '
     (.items[] | select(.metadata.name == $own) | .spec.volumes[] | select(.name == "staging") |
      .persistentVolumeClaim.claimName) as $claim |
     [.items[] | select(.metadata.name != $own and .status.phase != "Succeeded" and .status.phase != "Failed") |
      select(any(.spec.volumes[]?; .persistentVolumeClaim.claimName? == $claim))] | length')" ||
-    fail "the guard cannot read the namespace's pods"
-  [ -n "$holders" ] || fail "the guard cannot find its own pod"
-  [ "$holders" = 0 ] || fail "refused: $holders other pods mount the staging claim"
+    fail guard - "the guard cannot read the namespace's pods"
+  [ -n "$holders" ] || fail guard - "the guard cannot find its own pod"
+  if [ "$holders" != 0 ]; then
+    echo "stage: refused: $holders other pods mount the staging claim" >&2
+    stop_here 4 "refused-held $holders"
+  fi
   echo "stage: guard passed"
 }
 
 # report_bucket: prints the count and the summed size of the staged bucket's files, no name.
 report_bucket() {
-  sizes="$(find "$staging/bucket" -type f -exec stat -c %s {} + 2>/dev/null)" || fail "the staged bucket cannot be counted"
-  objects=0
-  bytes=0
-  for size in $sizes; do
-    objects=$((objects + 1))
-    bytes=$((bytes + size))
-  done
+  size="$(tree_size "$staging/bucket")" || fail report - "the staged bucket cannot be counted"
+  read -r objects _ bytes <<EOF
+$size
+EOF
   echo "stage: bucket $objects objects $bytes bytes"
 }
 
+# missing <source bytes> <staged bytes>: what the sync still writes of a tree.
+missing() {
+  if [ "$1" -gt "$2" ]; then echo "$(($1 - $2))"; else echo 0; fi
+}
+
+# fit: from the sizes the copy and bucket containers answered and the trees already staged, what the pre-syncs write at
+# most beside what the staging volume holds: each tree's bytes not yet staged, and a block for each file and directory.
+# It prints the counts and bytes, and refuses a write that does not leave more than the kubelet's eviction margin free.
+# What a file in flight, the dump and the app's writes meanwhile add stays below that margin.
+fit() {
+  read -r claim_files claim_directories claim_bytes <"$scratch/claim-size.answer" || fail fit - "the claim's size is unreadable"
+  bucket_objects=0 bucket_prefixes=0 bucket_bytes=0 staged_bucket="0 0 0"
+  if [ -n "${STAGE_BUCKET:-}" ]; then
+    read -r bucket_objects bucket_prefixes bucket_bytes <"$scratch/bucket-size.answer" || fail fit - "the bucket's size is unreadable"
+    staged_bucket="$(tree_size "$staging/bucket")" || fail fit - "the staged bucket cannot be counted"
+  fi
+  staged_claim="$(tree_size "$staging/files")" || fail fit - "the staged claim cannot be counted"
+  block="$(stat -f -c %S "$staging")" || fail fit - "the staging volume's block size is unreadable"
+  volume="$(df -P "$staging" | awk 'NR == 2 { printf "%.0f %.0f", $4 * 1024, $2 * 1024 }')"
+  [ -n "$volume" ] || fail fit - "the staging volume's size is unreadable"
+  free="${volume% *}" total="${volume#* }"
+  claim_missing="$(missing "$claim_bytes" "${staged_claim##* }")"
+  bucket_missing="$(missing "$bucket_bytes" "${staged_bucket##* }")"
+  need="$((claim_missing + bucket_missing + (claim_files + claim_directories + bucket_objects + bucket_prefixes) * block))"
+  status=0
+  margin="$(sh "$0" room "$free" "$total" "$NODE_ALLOCATABLE_STORAGE" "$need")" || status=$?
+  [ "$status" != 2 ] || fail fit 2 "the node's allocatable storage '$NODE_ALLOCATABLE_STORAGE' is no quantity"
+  echo "stage: fit: claim $claim_files files $claim_directories directories $claim_bytes bytes; bucket $bucket_objects objects $bucket_prefixes prefixes $bucket_bytes bytes; need $need; free $free of $total; margin $margin"
+  if [ "$status" != 0 ]; then
+    echo "stage: refused: the copies need $need bytes beside the kubelet's eviction margin of $margin, and the staging volume has $free of $total bytes free; free disk space first (mise run disk shows what holds it)" >&2
+    stop_here 3 "refused-room $need $free $total $margin"
+  fi
+}
+
 stager() {
-  : "${PRE_SYNC_BUDGET:?}" "${CAPTURE_BUDGET:?}" "${POD_NAME:?}"
+  : "${PRE_SYNC_BUDGET:?}" "${CAPTURE_BUDGET:?}" "${POD_NAME:?}" "${NODE_ALLOCATABLE_STORAGE:?}"
+  [ -z "${STAGE_SEED:-}" ] || trap ': >"$scratch/end"' EXIT
   # A restarted container finds its earlier attempt's files in /scratch and does not stage again.
-  [ ! -e "$scratch/attempted" ] || fail "a restarted stager does not stage again"
+  [ ! -e "$scratch/attempted" ] || fail guard - "a restarted stager does not stage again"
   : >"$scratch/attempted"
   guard
-  rm -f "$staging/MANIFEST" "$staging/MANIFEST.tmp" || fail "the old MANIFEST cannot be removed"
+  rm -f "$staging/MANIFEST" "$staging/MANIFEST.tmp" || fail manifest-removal - "the old MANIFEST cannot be removed"
+  size_steps=claim-size
   pre_sync_steps=pre-sync
   final_sync_steps=final-sync
   if [ -n "${STAGE_BUCKET:-}" ]; then
+    size_steps="$size_steps bucket-size"
     pre_sync_steps="$pre_sync_steps bucket-pre-sync"
     final_sync_steps="$final_sync_steps bucket-final-sync"
   else
     # A layer that dropped the bucket leaves no earlier copy for this run's snapshot or MANIFEST.
-    rm -rf "$staging/bucket" || fail "the old bucket copy cannot be removed"
+    rm -rf "$staging/bucket" || fail bucket-removal - "the old bucket copy cannot be removed"
   fi
-  run_steps "$(($(date +%s) + PRE_SYNC_BUDGET))" "$pre_sync_steps"
+  # One deadline holds the sizes and the pre-syncs. The seed has none: it stages what a Backup's deadline cannot.
+  pre_sync_deadline=
+  [ -n "${STAGE_SEED:-}" ] || pre_sync_deadline="$(($(date +%s) + PRE_SYNC_BUDGET))"
+  run_steps "$pre_sync_deadline" "$size_steps"
+  fit
+  run_steps "$pre_sync_deadline" "$pre_sync_steps"
+  if [ -n "${STAGE_SEED:-}" ]; then
+    [ -z "${STAGE_BUCKET:-}" ] || report_bucket
+    stop_here 0 seeded
+  fi
   capture_deadline="$(($(date +%s) + CAPTURE_BUDGET))"
   run_steps "$capture_deadline" dump
   run_steps "$capture_deadline" "$final_sync_steps"
   [ -z "${STAGE_BUCKET:-}" ] || report_bucket
   remaining="$((capture_deadline - $(date +%s)))"
-  [ "$remaining" -gt 0 ] || fail "manifest ran out of its budget"
+  [ "$remaining" -gt 0 ] || fail manifest - "manifest ran out of its budget"
   status=0
   timeout "$remaining" sh "$0" manifest &
   wait "$!" || status=$?
-  [ "$status" = 0 ] || fail "manifest failed with exit $status"
-  mv "$staging/MANIFEST.tmp" "$staging/MANIFEST" || fail "the MANIFEST cannot be renamed"
+  [ "$status" = 0 ] || fail manifest "$status" "manifest failed with exit $status"
+  mv "$staging/MANIFEST.tmp" "$staging/MANIFEST" || fail manifest - "the MANIFEST cannot be renamed"
   : >"$scratch/ready"
   echo "stage: ready"
   idle
@@ -238,12 +360,16 @@ stager() {
 case "${1:-}" in
   stager) stager ;;
   copy)
+    serve claim-size claim_size
     serve pre-sync sync_files
+    [ -z "${STAGE_SEED:-}" ] || exit 0
     serve final-sync sync_files
     idle
     ;;
   bucket)
+    serve bucket-size bucket_size
     serve bucket-pre-sync sync_bucket
+    [ -z "${STAGE_SEED:-}" ] || exit 0
     serve bucket-final-sync sync_bucket
     idle
     ;;
@@ -258,8 +384,18 @@ case "${1:-}" in
     trap - TERM
     manifest
     ;;
+  room)
+    # A signal must end it non-zero, never as a fit.
+    trap - TERM
+    shift
+    room "$@"
+    ;;
+  listing)
+    shift
+    listing "$@"
+    ;;
   *)
-    echo "usage: sh stage_files.sh stager|copy|bucket|dump" >&2
+    echo "usage: sh stage_files.sh stager|copy|bucket|dump|manifest|room|listing <args>..." >&2
     exit 2
     ;;
 esac

@@ -67,6 +67,17 @@ url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_am
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195621"
 provenance = "github-attestations"
 
+[[tools."github:shell-pool/shpool"]]
+version = "0.11.7"
+backend = "github:shell-pool/shpool"
+specifiers = ["0.11"]
+
+[tools."github:shell-pool/shpool"."platforms.linux-x64"]
+checksum = "sha256:b03eed182cdebcf14ff597d04af2f370bbb7bec6898ef6cbb2dd00561d8ccbb7"
+checksum_source = "mise-versions"
+url = "https://github.com/shell-pool/shpool/releases/download/v0.11.7/shpool-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/shell-pool/shpool/releases/assets/745128138"
+
 [[tools.helm]]
 version = "4.3.1"
 backend = "aqua:helm/helm"

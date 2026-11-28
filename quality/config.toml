@@ -3,40 +3,6 @@ mandatory_jobs = ["checks", "cluster", "bootstrap", "opentofu", "images", "relea
 legacy = "fail"
 
 [[root.allow]]
-entry = "mise.toml"
-reason = "the pinned tools config; mise finds project config only in the root"
-
-[[root.allow]]
-entry = "mise.lock"
-reason = "the tool lock beside mise.toml; mise finds project config only in the root"
-
-[[root.allow]]
-entry = "clusters/"
-reason = "Flux's documented layout, ruled Q9 on platform#1"
-
-[[root.allow]]
-entry = "infrastructure/"
-reason = "Flux's documented layout: the cluster-wide add-ons beside clusters/, the admission vendor list first"
-
-[[root.allow]]
 entry = "host/"
 reason = "the files the bootstrap writes onto the host, ruled Q9 on platform#1"
-
-[[root.allow]]
-entry = "apps/"
-reason = "Flux's documented layout, ruled Q9 on platform#1"
-
-[[layout.allow]]
-path = "infrastructure/design/design-0.39.0/fonts/open-sans-LICENSE"
-rule = "file-suffix"
-reason = "the names are the wheel's and hal's, which the served tree and the equality cell keep byte for byte, so a rename is counterproductive"
-
-[[layout.allow]]
-path = "infrastructure/design/design-0.39.0/fonts/oswald-LICENSE"
-rule = "file-suffix"
-reason = "the names are the wheel's and hal's, which the served tree and the equality cell keep byte for byte, so a rename is counterproductive"
-
-[[layout.allow]]
-path = "host/git-hooks/git_hook"
-rule = "script-name"
-reason = "the template the bootstrap copies to the host as git's pre-commit and pre-merge-commit; it belongs with the other files written onto the host, so a move into scripts/ is counterproductive"
+ends = "#997"

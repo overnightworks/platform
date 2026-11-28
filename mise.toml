@@ -16,6 +16,8 @@ yq = "4"
 docuum = "0"
 "aqua:umlx5h/gtrash" = "0"
 "aqua:astral-sh/uv" = "0"
+# aco's seat holds its sessions in shpool.
+"github:shell-pool/shpool" = "0.11"
 
 [env]
 # The one k3s pin: the k3d image in CI and the installer on the PC.
@@ -136,14 +138,52 @@ state = "running"
 enabled = true
 on_change = "restart"
 
-# hal's two enabled root units, stopped and disabled while their files still exist.
-[bootstrap.services."cloudflared.service"]
-state = "stopped"
-enabled = false
+# The root files hal's tunnel and journal setup left on the PC: its units, their drop-ins, its polkit rules and the
+# tunnel's directory. A directory goes once its files do.
+[bootstrap.files."/etc/systemd/system/cloudflared.service"]
+state = "absent"
 
-[bootstrap.services."hal-journal-retention.timer"]
-state = "stopped"
-enabled = false
+[bootstrap.files."/etc/systemd/system/cloudflared.service.d/20-nonroot.conf"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/cloudflared.service.d/30-edge-global-stop.conf"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/cloudflared.service.d/30-hal-global-stop.conf"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/hal-journal-retention.service"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/hal-journal-retention.timer"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/cloudflared-update.service"]
+state = "absent"
+
+[bootstrap.files."/etc/systemd/system/cloudflared-update.timer"]
+state = "absent"
+
+[bootstrap.files."/etc/polkit-1/rules.d/10-edge-cloudflared-stop.rules"]
+state = "absent"
+
+[bootstrap.files."/etc/polkit-1/rules.d/10-hal-cloudflared-stop.rules"]
+state = "absent"
+
+[bootstrap.files."/etc/cloudflared/config.yml"]
+state = "absent"
+
+[bootstrap.files."/etc/cloudflared/cert.pem"]
+state = "absent"
+
+[bootstrap.files."/etc/cloudflared/a903516a-2660-4507-90a5-5a27d20c82c4.json"]
+state = "absent"
+
+[bootstrap.directories."/etc/systemd/system/cloudflared.service.d"]
+state = "absent"
+
+[bootstrap.directories."/etc/cloudflared"]
+state = "absent"
 
 # The disk's bounds run in the operator's own user manager, with no sudo: Docuum keeps Docker's images within 100 GB, a
 # weekly clean empties uv's cache, a daily tmpfiles clean deletes Codex sessions after 30 days and a daily gtrash
@@ -156,12 +196,12 @@ mode = "copy"
 # The global commit hook: one template under both names git calls, in a directory of platform's own, so a quality bump
 # needs no change of the files. bootstrap:hook installs quality and sets core.hooksPath once these exist.
 [dotfiles."~/.local/share/platform/git-hooks/pre-commit"]
-source = "host/git-hooks/git_hook"
+source = "host/git-hooks/scripts/git_hook"
 mode = "copy"
 permissions = "0755"
 
 [dotfiles."~/.local/share/platform/git-hooks/pre-merge-commit"]
-source = "host/git-hooks/git_hook"
+source = "host/git-hooks/scripts/git_hook"
 mode = "copy"
 permissions = "0755"
 
@@ -222,14 +262,14 @@ unit = "trash-prune"
 # and 01:30 UTC is 02:30 CET and 03:30 CEST, outside the DST hour and before litellm-expire's 04:00 UTC. working_directory
 # names the checkout the runbook and the apply name, which mise's `{{ config_root }}` would replace by the checkout the apply
 # runs from. The start limit ends a stuck run well before the next night; the stop delay lets a run's cleanup, which
-# live:check bounds at 300 seconds after a TERM, finish.
+# live:check bounds at 380 seconds after a TERM, finish.
 [bootstrap.linux.systemd.units.live-check]
 description = "Sign in to every app and report each result to Gatus"
 type = "oneshot"
 exec_start = "~/.local/bin/mise run live:report nightly"
 working_directory = "~/git/platform"
 timeout_start_sec = "6h"
-timeout_stop_sec = "330"
+timeout_stop_sec = "410"
 start = false
 wanted_by = []
 
@@ -682,6 +722,19 @@ scripts/release_bump_compute.sh "$1" "$workspace/output" ${2:+"$2"}
 scripts/release_bump_publish.sh "$1" "$workspace/output"
 '''
 
+[tasks."release:create-app"]
+description = "Create the release App through GitHub's manifest flow in the browser and store only its key as the secret of the environment release-bump on platform: release:create-app <name>; the operator's, the key passes no agent"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# The script ends with mise, so a killed command leaves neither it nor its listener running.
+exec setpriv --pdeathsig KILL scripts/release_bump_create_app.sh "$@"
+'''
+
+[tasks."release:fetch"]
+description = "Start the release bump's workflow on main at once, instead of waiting for its next look"
+run = "gh workflow run release-bump.yml --ref main --repo overnightworks/platform"
+
 [tasks.bootstrap]
 description = "The PC's own steps after the declarative parts: the commit hook, the user's docker group, then k3s, then Flux, then its access to platform-secrets"
 run = [{ task = "bootstrap:hook" }, { task = "bootstrap:docker-group" }, { task = "bootstrap:k3s" }, { task = "bootstrap:flux" }, { task = "bootstrap:secrets" }]
@@ -697,7 +750,7 @@ run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 workflow=.github/workflows/ci.yml
-template=host/git-hooks/git_hook
+template=host/git-hooks/scripts/git_hook
 hooks_directory="$HOME/.local/share/platform/git-hooks"
 quality_repository=https://github.com/overnightworks/quality
 fail() { echo "bootstrap:hook: $1" >&2; exit 1; }
@@ -927,14 +980,32 @@ applied_revision="$(read_object Kustomization "$source_name" '{.status.lastAppli
 echo "bootstrap:secrets: Kustomization $source_name Ready at $applied_revision"
 '''
 
+# The one way an agent reads a live Postgres: as the role reader, which infrastructure/postgres/scripts/reader_role.sh
+# declares, through the container's local trust, so no credential exists.
+[tasks."db:read"]
+description = "Read a namespace's Postgres as the role reader, which can only read: SQL on stdin"
+usage = '''
+long_about "Read only the rows and columns needed, never secrets, credentials, session data or user content, and give counts and identifiers as evidence. An error's line number counts the lines of the role's check before the SQL too. The role refuses a write, not a read: what is read and passed on stays the rule's. keycloak's and litellm's databases hold signing keys and hashed keys, so a read there counts rows and never selects *."
+arg "<namespace>" help="The namespace whose Postgres is read"
+'''
+quiet = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+exec kubectl --namespace "${usage_namespace?}" exec --stdin postgres-0 --container postgres -- sh /etc/postgres-reader/reader_role.sh read
+'''
+
 # The platform's restore command. A dump holds keys and hashes, so every line it prints is a name, a count or an
-# outcome, never a row.
+# outcome, never a row. A layer that declares a claim also restores the claim, and its bucket where it declares one, of
+# the staging snapshot that holds the dump (scripts/load_snapshot.sh), so that database, claim and bucket are one restore
+# point.
 [tasks."db:load-dump"]
-description = "Load a custom-format dump into a namespace's Postgres with its writers stopped, verify it, then resume Flux"
+description = "Load a custom-format dump into a namespace's Postgres with its writers stopped, with its claim and bucket of the dump's staging snapshot where the layer declares them, verify it, then resume Flux"
 usage = '''
 flag "--compare" help="Also compare every table's row count and the sha256 of its sorted rows with the dump"
 flag "--resume" help="Only resume the Kustomization a killed load left suspended, once no other session holds the database"
-flag "--files <dir>" help="The directory whose files replace the namespace's claim, which a layer that declares one requires"
+flag "--empty-bucket" help="Delete every object of the namespace's bucket before the load puts the snapshot's objects in, which a layer with a bucket requires unless the bucket is empty"
 arg "<namespace>" help="The namespace whose Postgres is loaded; its Flux Kustomization has the same name"
 arg "[file]" help="The custom-format dump; pg_restore's messages go to <file>.load.log beside it, mode 0600"
 '''
@@ -944,9 +1015,10 @@ run = '''
 set -euo pipefail
 umask 077
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-namespace="${usage_namespace?}" file="${usage_file:-}" files="${usage_files:-}"
-pod=postgres-0 loader=db-load-files
+namespace="${usage_namespace?}" file="${usage_file:-}" empty_bucket="${usage_empty_bucket:-false}"
+pod=postgres-0 loader=db-load-snapshot
 alone_seconds="${DB_LOAD_DUMP_ALONE_SECONDS:-120}"
+bucket_written=false
 say() { echo "db:load-dump: $1"; }
 fail() { echo "db:load-dump: $1" >&2; exit 1; }
 [[ $alone_seconds =~ ^[1-9][0-9]*$ ]] ||
@@ -976,17 +1048,25 @@ wait_alone() {
 }
 # A Ctrl-C reaches mise and this script, and mise forwards it once more, so each exit path ignores INT and runs at most
 # once, to its end.
+# A claim layer's loader holds the app's key and a restic with the claim mounted, so Flux resumes only once the loader is
+# gone: one that outlives its killed kubectl exec could still write after the writers restart.
 resume_flux() {
   trap - EXIT TERM
   trap '' INT
-  [ -z "$files" ] || scripts/load_files.sh stop "$namespace" "$loader" || true
+  if [ -n "$claim" ] && ! scripts/load_snapshot.sh stop "$namespace"; then
+    fail "the loader $loader of $namespace could not be deleted; the Kustomization $namespace stays suspended and its \
+writers at 0: delete the Pod $loader in $namespace, then run flux resume kustomization $namespace"
+  fi
   flux resume kustomization "$namespace" --wait
 }
 resume() {
-  trap - EXIT TERM
+  trap 'trap - EXIT; stay_suspended "stopped while waiting for the database $namespace to be alone"; exit 143' TERM
+  trap - EXIT
   trap '' INT
-  wait_alone || fail "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds; the \
-Kustomization stays suspended and the writers at 0: $(way_back)"
+  wait_alone || {
+    stay_suspended "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds"
+    exit 1
+  }
   resume_flux
 }
 # The sha256 of the whole database as pg_dump writes it: schema, rows and sequence values. The fixed restrict key
@@ -999,19 +1079,27 @@ unfingerprinted_relations() {
     OR (c.relkind IN ('r', 'p') AND EXISTS (SELECT FROM pg_depend d WHERE d.classid = 'pg_class'::regclass
       AND d.objid = c.oid AND d.deptype = 'e'))"
 }
-# A load with files has no resume: the claim and the database change together, so only the same command again makes
-# them equal to the source.
+# A load of a claim layer has no resume: the claim, the bucket and the database change together, so only the same command
+# again makes them equal to the snapshot, and with --empty-bucket once the bucket may hold part of the load.
 way_back() {
-  if [ -n "$files" ]; then echo "run the same command again"
-  else echo "check the data, then run mise run db:load-dump --resume $namespace"; fi
+  if [ -z "$claim" ]; then echo "check the data, then run mise run db:load-dump --resume $namespace"
+  elif [ "$bucket_written" = true ]; then echo "run the same command again with --empty-bucket"
+  else echo "run the same command again"; fi
 }
-unknown_outcome() {
-  echo "db:load-dump: whether the load changed the data is unknown; the Kustomization $namespace stays suspended \
-and its writers at 0: $(way_back)" >&2
+# The loader goes before any message that leaves the Kustomization suspended, as before the one that resumes it.
+drop_loader() {
+  [ -z "$claim" ] || scripts/load_snapshot.sh stop "$namespace" ||
+    echo "db:load-dump: the loader $loader of $namespace could not be deleted; delete it before Flux resumes" >&2
 }
-files_unfinished() {
-  echo "db:load-dump: the load of $namespace with its files did not finish or is not verified; the Kustomization \
-$namespace stays suspended and its writers at 0: $(way_back)" >&2
+# Every handler that deletes the loader and leaves the Kustomization suspended says why, then the way back.
+stay_suspended() {
+  drop_loader
+  echo "db:load-dump: $1; the Kustomization $namespace stays suspended and its writers at 0: $(way_back)" >&2
+}
+unknown_outcome() { stay_suspended "whether the load changed the data is unknown"; }
+claim_unfinished() {
+  trap '' INT
+  stay_suspended "the load of $namespace with its claim did not finish or is not verified"
 }
 # A non-zero status or a signal can follow a committed restore, and a client that died can leave its remote pg_restore
 # running, so the data counts as unchanged only once the database is alone, holds no relation the fingerprint leaves
@@ -1020,7 +1108,7 @@ failed_load() {
   trap 'unknown_outcome; exit 143' TERM
   trap - EXIT
   trap '' INT
-  if [ -n "$files" ]; then files_unfinished; return; fi
+  if [ -n "$claim" ]; then claim_unfinished; return; fi
   local after_load
   if wait_alone && [ "$(unfingerprinted_relations)" = 0 ] && after_load="$(fingerprint)" &&
     [ "$after_load" = "$before_load" ]; then
@@ -1034,13 +1122,14 @@ failed_load() {
 }
 claim="$(kubectl --namespace "$namespace" get configmap postgres --output jsonpath='{.data.backup-claim}')" ||
   fail "cannot read whether $namespace declares a claim; nothing changed"
-if [ -n "$claim" ] && [ -z "$files" ] && [ "${usage_resume:-false}" != true ]; then
-  fail "$namespace declares a claim, so the load needs --files <dir> with its files; nothing changed"
-fi
-[ -z "$files" ] || [ -n "$claim" ] || fail "$namespace declares no claim, so --files is refused; nothing changed"
+# A layer declares its bucket where the PreBackupPod of its claim has the container bucket.
+bucket=false
+[ -z "$claim" ] || bucket="$(scripts/load_snapshot.sh declares-bucket "$namespace")" || exit 1
+[ "$empty_bucket" != true ] || [ "$bucket" = true ] ||
+  fail "$namespace declares no bucket, so --empty-bucket is refused; nothing changed"
 if [ "${usage_resume:-false}" = true ]; then
   [ -z "$claim" ] || fail "$namespace declares a claim, so --resume is refused: run the same command again with its \
-dump and --files; nothing changed"
+dump; nothing changed"
   existing="$(kubectl --namespace flux-system get kustomization "$namespace" --ignore-not-found --output name)" ||
     fail "cannot read whether the Kustomization $namespace exists; nothing changed"
   [ -n "$existing" ] || fail "there is no Kustomization $namespace in flux-system; nothing changed"
@@ -1049,17 +1138,22 @@ dump and --files; nothing changed"
 fi
 
 [ -r "$file" ] && [ ! -d "$file" ] || fail "no readable dump file given; nothing changed"
-[ -z "$files" ] || scripts/load_files.sh check "$files"
+# The one snapshot that holds this dump gives the claim and the bucket; a dump of none, or a node too full for the load,
+# refuses before anything is suspended.
+if [ -n "$claim" ]; then
+  source_result="$(scripts/load_snapshot.sh source "$namespace" "$(sha256sum <"$file" | cut -c1-64)")" || exit 1
+  read -r snapshot scratch <<<"$source_result"
+fi
 suspended="$(kubectl --namespace flux-system get kustomization "$namespace" -o jsonpath='{.spec.suspend}')" ||
   fail "cannot read whether the Kustomization $namespace is suspended; nothing changed"
-# A load with files that was killed leaves the Kustomization suspended and runs again as the same command.
-[ "$suspended" != true ] || [ -n "$files" ] ||
+# A load of a claim layer that was killed leaves the Kustomization suspended and runs again as the same command.
+[ "$suspended" != true ] || [ -n "$claim" ] ||
   fail "the Kustomization $namespace is suspended; nothing changed. After a killed load of this command run mise run \
 db:load-dump --resume $namespace, else ask whoever suspended it"
 # Before the load no session of this run writes to the database, so the resume waits for none. It is armed before the
 # suspension, which a signal can apply before its client returns. A Kustomization that was suspended already holds a
 # killed load of this command or a foreign suspension, and a failure before the load leaves it suspended.
-if [ "$suspended" = true ]; then trap files_unfinished EXIT; else trap resume_flux EXIT; fi
+if [ "$suspended" = true ]; then trap claim_unfinished EXIT; else trap resume_flux EXIT; fi
 trap 'exit 130' INT
 trap 'exit 143' TERM
 flux suspend kustomization "$namespace"
@@ -1075,8 +1169,26 @@ writers="$(kubectl --namespace "$namespace" get pods -o yaml |
   yq '.items[] | select(.metadata.ownerReferences[]?.kind == "ReplicaSet" and ((.status.phase == "Failed" or .status.phase == "Succeeded") and ([.status.containerStatuses[]?, .status.initContainerStatuses[]?] | map(select(.state.running != null)) | length == 0)) == false) | "pod/" + .metadata.name')"
 [ -z "$writers" ] || kubectl --namespace "$namespace" wait $writers --for=delete --timeout=5m
 wait_alone || fail "the database $namespace still holds another session, or cannot be read, after $alone_seconds seconds; nothing loaded"
-# Before the load, so a claim that cannot hold the files refuses with the database unchanged.
-[ -z "$files" ] || scripts/load_files.sh start "$namespace" "$loader" "$claim" "$files"
+# Before the load, so a snapshot that cannot be restored, or a bucket that holds objects the load may not delete,
+# refuses with the database unchanged.
+if [ -n "$claim" ]; then
+  scripts/load_snapshot.sh start "$namespace" "$claim" "$scratch" "$bucket" || fail "the loader did not start; nothing loaded"
+  if [ "$bucket" = true ]; then
+    scripts/load_snapshot.sh restore-bucket "$namespace" "$snapshot" || fail "the snapshot's bucket copy is not restored; nothing loaded"
+    held="$(scripts/load_snapshot.sh count "$namespace")" || fail "cannot count the objects of the bucket $namespace; nothing loaded"
+    read -r objects bytes <<<"$held"
+    if [ "$objects" != 0 ] && [ "$empty_bucket" != true ]; then
+      if [ "$suspended" = true ]; then
+        trap - EXIT
+        drop_loader
+        fail "the Kustomization $namespace was suspended before this run, so an earlier run's load stays: the bucket holds \
+$objects objects, $bytes bytes; run the same command again with --empty-bucket; nothing loaded"
+      fi
+      fail "the bucket $namespace holds $objects objects, $bytes bytes; --empty-bucket deletes them before the load; nothing loaded"
+    fi
+    say "the bucket $namespace holds $objects objects, $bytes bytes"
+  fi
+fi
 before_load="$(fingerprint)" || fail "cannot read the database $namespace before the load; nothing loaded"
 
 log="$file.load.log"
@@ -1092,10 +1204,7 @@ kubectl --namespace "$namespace" exec --stdin "$pod" --container postgres -- \
   --role="$namespace" --single-transaction --exit-on-error --dbname="$namespace" <"$file" 2>"$log" || load_status=$?
 [ "$load_status" = 0 ] || fail "pg_restore exited $load_status with $(grep -c . "$log") lines in $log"
 # The data is committed: until it is verified, a signal or a failure leaves the writers stopped, not resumed on it.
-unverified() {
-  echo "db:load-dump: the loaded data is not verified against $file; the Kustomization $namespace stays suspended and \
-its writers at 0: $(way_back)" >&2
-}
+unverified() { stay_suspended "the loaded data is not verified against $file"; }
 trap unverified EXIT
 
 verified=true
@@ -1115,10 +1224,16 @@ if [ "${usage_compare:-false}" = true ]; then
 fi
 [ "$verified" = true ] || exit 1
 
-if [ -n "$files" ]; then
-  trap files_unfinished EXIT
-  scripts/load_files.sh sync "$namespace" "$loader" "$files" "$log"
-  scripts/load_files.sh verify "$namespace" "$loader" "$files" "$log"
+if [ -n "$claim" ]; then
+  trap claim_unfinished EXIT
+  scripts/load_snapshot.sh restore-claim "$namespace" "$snapshot"
+  if [ "$bucket" = true ]; then
+    # From the delete, or from the copy into a bucket that was empty, the bucket may hold part of the load.
+    bucket_written=true
+    [ "$empty_bucket" != true ] || scripts/load_snapshot.sh empty "$namespace"
+    scripts/load_snapshot.sh copy "$namespace"
+    scripts/load_snapshot.sh check "$namespace" "$snapshot"
+  fi
 fi
 say "verified; resuming the Kustomization $namespace"
 resume
@@ -1130,6 +1245,8 @@ jobs="$(kubectl --namespace "$namespace" get jobs --selector "kustomize.toolkit.
 [ -z "$jobs" ] || kubectl --namespace "$namespace" wait $jobs --for=condition=Complete --timeout=5m
 in_postgres sh /etc/postgres-checks/check-key-tables.sh --counts-only
 say "$namespace converged"
+[ "$bucket" != true ] || say "run mise run backup:now $namespace: every object of the bucket has a new server time, so the \
+restore test finds none unchanged until a Backup follows"
 '''
 
 [tasks."backup:fetch"]
@@ -1181,7 +1298,7 @@ say "wrote the latest dump of $namespace to $file ($(stat --format=%s "$file") b
 '''
 
 [tasks."backup:now"]
-description = "Take one Backup of a namespace's k8up Schedule now and run its restore test on it, so a backup is proven the same hour"
+description = "Seed a claim layer's first copy of its claim and bucket, take one Backup of a namespace's k8up Schedule now and run its restore test on it, so a backup is proven the same hour"
 usage = '''
 arg "<namespace>" help="The namespace with a k8up Schedule and the CronJob restore-test"
 '''
@@ -1516,14 +1633,25 @@ say "$client's agent_owner is $username; $username is in ${groups[*]}; $owners_g
 '''
 
 # The live check of an app where a person signs in, on the operator's PC against the public names; never from CI. The
-# cap's -k covers the cleanup: at most 15 calls of 20 seconds each, 300 seconds (scripts/live_check.sh), which the first
-# live run measures. A cleanup pass meets at most one cookie jar, of hopin, skat, presentator or songmaker, since a run
-# makes its own only after a heal that deleted every leftover.
+# sign-in tier's cap -k covers the cleanup: at most 15 calls of 20 seconds each, the two listings of the journeys drive's
+# processes and their stop, 380 seconds (cleanup_seconds in scripts/live_check_journeys.sh), which the first live run
+# measures. A cleanup pass meets at most one cookie jar, of hopin, skat, presentator or songmaker, since a run makes its
+# own only after a heal that deleted every leftover. The journeys tier has no timeout of its own: it calls probe-run, whose
+# load wait and cap bound it (scripts/live_check_journeys.sh names K, that cleanup, and CAP).
 [tasks."live:check"]
-description = "Runs on the operator's PC against the public names, never from CI: signs the one test person of realm.yaml in to <app> through its own page, then signs it out and disables it again; prints the app, green, red or skipped (exit 0, 1, 3) and codes only"
-usage = 'arg "[app]" help="The app to check: one of the apps in the table in scripts/live_check_apps.sh"'
+description = "Runs on the operator's PC against the public names, never from CI: signs the one test person of realm.yaml in to <app> through its own page, then signs it out and disables it again; prints the app, green, red or skipped (exit 0, 1, 3) and codes only. With --tier journeys it also runs the app's live:journeys task of --checkout, a checkout the command only reads, in a session of its own, handing it the origin and a storage-state file of the run's own cookies and keeping its output out of the command's; the load gate's timeout and the task's exit 3 are skipped (docs/operations.md OPS-25)"
+usage = '''
+arg "[app]" help="The app to check: one of the apps in the table in scripts/live_check_apps.sh"
+flag "--tier <tier>" help="sign-in (the default) or journeys" default="sign-in"
+flag "--checkout <dir>" help="The app's checkout, required for the journeys tier and refused for the sign-in tier"
+'''
 quiet = true
-run = 'exec timeout -k 300 900 scripts/live_check.sh "${usage_app:-}"'
+run = '''
+if [ "${usage_tier:-sign-in}" = journeys ]; then
+  exec scripts/live_check.sh "${usage_app:-}" "$usage_tier" "${usage_checkout:-}"
+fi
+exec timeout -k 380 900 scripts/live_check.sh "${usage_app:-}" "${usage_tier:-sign-in}" "${usage_checkout:-}"
+'''
 
 # The report of the sign-in check, on the operator's PC, never from CI: it waits for the report's lock up to 60 minutes
 # and then runs `live:check` for each app with its waits, so it has no cap of its own; the nightly timer's unit caps it.

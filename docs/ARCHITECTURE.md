@@ -125,7 +125,7 @@ Facts of today's boundaries, each held by a manifest or a cell:
   holds `NET_ADMIN` to load a packet filter that leaves the worker no connection but replies to its web.
   `nvidia` and `local-path-storage` carry no label, as both mount a hostPath.
 - Postgres and Redis admit only their own namespace, and Garage admits only the web pods of presentator and songmaker
-  and songmaker's backup pod and restore test; Keycloak admits Traefik and its own namespace; backup repositories admit only a
+  and songmaker's backup pod, restore test and the loader of `db:load-dump`; Keycloak admits Traefik and its own namespace; backup repositories admit only a
   namespace's own user. The build worker's NetworkPolicy lets it send nothing.
 - The API server admits an image only as a vendor repository at a sha256 digest or a full app ref
   (`infrastructure/admission/image-vendors.yaml`). Kyverno's `app-attestations` admits an app ref only with the
@@ -135,13 +135,24 @@ Facts of today's boundaries, each held by a manifest or a cell:
   none, and the tunnel's token and credential are one Secret.
 - The ServiceAccount `bridge` of `speech-runtime-bridge` reads the two speech Deployments and scales only the CPU
   one; no right reaches the GPU Deployment's scale, so no Job can start or stop the card's user.
+- The release App's private key lives only in the environment `release-bump` of platform, which only a job on main
+  reads (`docs/github-settings.md`, GH-8).
 - LiteLLM's provider keys reach no host but those `infrastructure/litellm/egress-allowed.yml` lists: only `agent-egress`
   dials out, and it dials only those upstreams.
 - Keycloak's admin console, Grafana and Gatus are reached through a port-forward from the PC; the tunnel routes
   none of them. Only the realm `hallucinai`, its localization and its static resources are routed.
 - No access token carries a person's name or e-mail address; the ID token and userinfo do.
 - A declared test person can sign in to hopin, skat, presentator and songmaker only during a run of `mise run live:check`: at rest it is disabled with no
-  credential, and the boundary that keeps its password from a non-cooperative agent is the operator's account on the PC.
+  credential, and the boundary that keeps its password from a non-cooperative agent is the operator's account on the PC;
+  an app's live journeys get only that app's session cookies of the run, in a file deleted on exit and valid until the run
+  signs out; the boundary that keeps a copy from a non-cooperative journey is the operator's account, as for the password.
+- Each Postgres declares the role `reader` at every start (`infrastructure/postgres/scripts/reader_role.sh`), with no
+  password and no right but `pg_read_all_data`'s, and `mise run db:read <namespace>` runs an agent's SQL as it through
+  `kubectl exec`, in a read-only session whose timeouts it sets, after a check that the session is that role. It is a
+  tripwire, an aid for a cooperative agent that stops a mistaken write: its contract is the refusals
+  `tests/postgres/reader_refuses_the_listed_writes_and_returns_at_start.sh` lists, and the boundary against a
+  non-cooperative agent is the operator's account on the PC, whose cluster-admin kubeconfig reaches the superuser
+  through `kubectl exec`.
 - Flux reads two sources: this repository's default branch and `platform-secrets`.
 
 ### Proof strategy

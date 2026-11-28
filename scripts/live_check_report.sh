@@ -156,7 +156,7 @@ open_item() {
     echo "live:report: $app skipped reason=offline"
     return 0
   fi
-  titles="$(timeout --foreground "$read_timeout_seconds" gh issue list --repo "overnightworks/$app" --state open --search "in:title \"$title\"" --json title)" || {
+  titles="$(timeout --foreground "$read_timeout_seconds" gh issue list --repo "$(app_repository "$app")" --state open --search "in:title \"$title\"" --json title)" || {
     echo "live:report: $app item failed (gh exit $?)" >&2
     return 1
   }
@@ -164,7 +164,7 @@ open_item() {
     echo "live:report: $app item exists"
     return 0
   fi
-  url="$(item_body "$app" | timeout --foreground "$read_timeout_seconds" gh issue create --repo "overnightworks/$app" --title "$title" --body-file -)" || gh_status=$?
+  url="$(item_body "$app" | timeout --foreground "$read_timeout_seconds" gh issue create --repo "$(app_repository "$app")" --title "$title" --body-file -)" || gh_status=$?
   if [ "$gh_status" != 0 ]; then
     echo "live:report: $app item failed (gh exit $gh_status)" >&2
     return 1

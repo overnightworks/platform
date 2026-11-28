@@ -35,7 +35,7 @@ Its Schedule runs a weekly backup (Sunday 03:00, prune keeping 4 weekly and 3 mo
 `pg_dump --format=custom` into `backup-repository`, the URL the including layer sets in the ConfigMap `postgres`; a
 PodConfig gives k8up's Job pods the fields `restricted` requires; and the CronJob `restore-test` restores the latest
 snapshot into a throwaway server each month, on the 1st at 05:00 UTC, bounded to an hour, and fails without a snapshot
-or on an empty first key table. A declared bucket's objects are in the same snapshots as the dump, so a deleted object stays in them up to about three months. Where a layer declares its bucket, the restore test also reads at most one object of the latest snapshot and its live copy, the latter with the backup's read-only key, compares their sha256 inside its own pod and prints neither name nor content. (PD-3)
+or on an empty first key table. A declared bucket's objects are in the same snapshots as the dump, so a deleted object stays in them up to about three months. Where a layer declares its bucket, the restore test also reads at most one object of the latest snapshot and its live copy, the latter with the backup's read-only key, compares their sha256 inside its own pod and prints neither name nor content. While `mise run db:load-dump` restores a declared bucket, the loader Pod `db-load-snapshot` holds that bucket's objects of the loaded snapshot in its emptyDir for the load only; the emptyDir goes with the loader Pod, which every exit of the load deletes; after a kill it goes with the next run of the command, the runbook's `kubectl delete pod` line or the Pod's 6-hour deadline. (PD-3)
 The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung),
 [litellm](../infrastructure/legal/sections/litellm/datenschutz.html#agent-dienst).
 
@@ -90,3 +90,14 @@ whose message holds the method, the path without the query and the status (`%m %
 request carries the caller's trace id at `mdc.traceId`, adopted from its `traceparent` header or made by Keycloak. The
 access line holds no query string, since `%R` omits it, and no duration. (PD-10)
 The promise: [keycloak](../infrastructure/legal/sections/keycloak/datenschutz.html#anmeldung).
+
+## The read-only role (`infrastructure/postgres/scripts/reader_role.sh`)
+
+A delegated agent reads an app's Postgres only through `mise run db:read <namespace>`, which runs the SQL on its stdin
+as the role `reader`, declared at every start of the Postgres container with no password and no right but
+`pg_read_all_data`'s, so only `kubectl exec` reaches it. The role reads every table of the database, Keycloak's signing
+keys and LiteLLM's hashed keys included, and is refused the writes, objects, switches to read-write, sequence steps,
+programs and shell escapes that `tests/postgres/reader_refuses_the_listed_writes_and_returns_at_start.sh` lists. What it
+reads and passes on is the operator's rule, which the role does not enforce: only the rows and columns needed, never
+secrets, credentials, session data or user content, and counts and identifiers as evidence. (PD-11)
+The promise: none.

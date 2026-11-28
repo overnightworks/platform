@@ -24,6 +24,11 @@ The ruleset `code scanning: high or higher blocks the merge` requires CodeQL at 
 `none` on the default branch of every `quality_gate=true` repository except one whose `code_scanning_exempt` is `true`,
 which only platform-secrets carries and only organisation actors set. (GH-7)
 
+The environment `release-bump` on platform, in `release_bump.tf`, admits branches by custom policies, never "protected
+branches only", with one policy for the branch `main`, so only a run on main reads it. It holds only the release App's
+key, which `mise run release:create-app` stores and no declaration names. Both objects are also `prevent_destroy` and
+`destroy = false`. ([the runbook](runbooks/create-or-replace-the-release-app.md)) (GH-8)
+
 ## How a change reaches GitHub (`scripts/apply_opentofu.sh github`)
 
 `scripts/apply_opentofu.sh github` plans the GitHub settings `src/opentofu/github` declares, with the operator's own gh
@@ -32,7 +37,10 @@ login, on any commit and without writing state (exit 0 no change, 2 changes, 1 f
 `--apply` applies that run's own plan, only from a clean `origin/main`. (GH-4)
 
 A plan with a `delete` action, a replacement included, fails with exit 1 on both runs, names each address and applies
-nothing; a deliberate removal is a `removed` block with `lifecycle { destroy = false }`, which plans a forget. (GH-5)
+nothing; a deliberate removal is a `removed` block with `lifecycle { destroy = false }`, which plans a forget. A
+repository leaves `managed` and that forget is applied before the repository is archived, since GitHub refuses the
+refresh of an archived repository's objects. A `for_each` key is forgotten by the resource's own `destroy = false`
+lifecycle, because OpenTofu rejects a `removed` block for one instance. (GH-5)
 
 An imported object's state carries no `skip_destroy` until an apply writes it, so removing a block can plan a delete;
 the command refuses any such plan, which closes it for every object of the root. (GH-6)

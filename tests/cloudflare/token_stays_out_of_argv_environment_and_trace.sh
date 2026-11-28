@@ -50,13 +50,13 @@ FAKE
 chmod +x "${fake_bin}/mise" "${fake_bin}/tofu"
 # The caller's environment stays out: the script gets these variables only. mise keeps its tools, trust and cache where
 # they are, and a provider variable of the caller's kind is planted to show that the allowlist drops it.
+keep_mise_directories
 ambient_value="ambient-value-of-the-callers-provider-variable"
 FAKE_TOKEN_FILE="${work_directory}/token"
 synthetic_environment=(env -i "PATH=${fake_bin}:${PATH}" "HOME=${work_directory}/home" MISE_DISABLE_TOOLS=gh,opentofu,tofu
   KUBECONFIG=/nonexistent "FAKE_BIN=${fake_bin}" "REAL_YQ=${real_yq}" "REAL_MISE=${real_mise}" "REPOSITORY_ROOT=${repository_root}"
   "RECORDS=${records}" "XDG_CACHE_HOME=${work_directory}/cache" "XDG_STATE_HOME=${work_directory}/state"
-  "MISE_DATA_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/mise" "MISE_STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/mise"
-  "MISE_CACHE_DIR=${XDG_CACHE_HOME:-$HOME/.cache}/mise" "MISE_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/mise"
+  "${mise_dirs[@]}"
   "CLOUDFLARE_API_TOKEN=${ambient_value}")
 mkdir "${work_directory}/home"
 

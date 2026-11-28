@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# print_ready_times.sh <step start, epoch seconds>: when each Kustomization, pod and Job turned ready and how long
-# each image pull took, as seconds after the start, and the timestamped log of each Failed pod. It only reads and always
-# exits 0; a failed read prints its name.
+# print_ready_times.sh <step start, epoch seconds> [<vmstat -n -t -w log of the wait>]: when each Kustomization, pod and Job turned ready and how long
+# each image pull took, as seconds after the start, the runner's samples with the peaks of the wait, and the timestamped
+# log of each Failed pod. It only reads and always exits 0; a failed read prints its name.
 set -uo pipefail
 step_started_at="${1:?the start of the step as epoch seconds}"
+runner_samples="${2-}"
 
 # Prefix of every filter: t turns an RFC 3339 time into seconds after the start, pull_seconds the duration of the
 # kubelet's own clause " in <duration> (" of a Pulled message into seconds (null without one).
@@ -81,6 +82,33 @@ report "Jobs by start" $'STARTED\tCOMPLETED\tACTIVE\tSUCCEEDED\tNAMESPACE/NAME' 
   jobs --all-namespaces
 report "Image pulls by duration, slowest first" $'PULLED_AT\tSECONDS\tSIZE_MB\tNAMESPACE/POD\tIMAGE' "$pull_filter" \
   events --all-namespaces --field-selector reason=Pulled
+# runner_samples_and_peaks: the samples as vmstat wrote them, as the baseline of green runs too, and one line of the
+# highest runnable and blocked tasks, CPU use, I/O wait, steal and swap traffic and the lowest free memory. The columns
+# are found by the names in vmstat's header.
+runner_samples_and_peaks() {
+  echo "== The runner every 10 s during the wait (vmstat: r runnable, b blocked, wa I/O wait, st steal, si/so swap)"
+  if [ ! -s "$runner_samples" ]; then
+    echo "no sample of the runner"
+    return 0
+  fi
+  cat "$runner_samples"
+  awk '
+    $1 == "r" { for (column = 1; column <= NF; column++) index_of[$column] = column; next }
+    $1 !~ /^[0-9]+$/ || !("free" in index_of) { next }
+    function high(name, value) { if (!(name in peak) || value > peak[name]) peak[name] = value }
+    {
+      high("r", $index_of["r"]); high("b", $index_of["b"]); high("us+sy", $index_of["us"] + $index_of["sy"])
+      high("wa", $index_of["wa"]); high("st", $index_of["st"]); high("si+so", $index_of["si"] + $index_of["so"])
+      if (!("free" in low) || $index_of["free"] < low["free"]) low["free"] = $index_of["free"]
+    }
+    END {
+      if (!("free" in low)) { print "no sample of the runner could be read"; exit }
+      printf "peaks of the wait: r %s, b %s, us+sy %s, wa %s, st %s, si+so %s, lowest free %s\n",
+        peak["r"], peak["b"], peak["us+sy"], peak["wa"], peak["st"], peak["si+so"], low["free"]
+    }' "$runner_samples"
+}
+runner_samples_and_peaks
+
 # failed_pod_logs: the header and the timestamped log of every Failed pod; the container times are seconds after the
 # start, the log lines carry the kubelet's own UTC times.
 failed_pod_filter="$(

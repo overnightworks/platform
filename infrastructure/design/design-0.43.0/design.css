@@ -130,9 +130,9 @@
 	--text-muted: #555;
 	--card-bg: rgba(255, 255, 255, 0.9);
 	--header-bg: #f0f0f2;
-	--ok: #1e7a1e;
+	--ok: #1a721a;
 	--ok-soft: #e0f5e0;
-	--busy: #9a6200;
+	--busy: #8a5700;
 	--busy-soft: #fef3e0;
 	--fail: #c02020;
 	--fail-soft: #fde8e8;
@@ -152,7 +152,7 @@
 	--text-muted: #888;
 	--card-bg: rgba(13, 13, 13, 0.85);
 	--header-bg: #0a0a0a;
-	--ok: #44aa44;
+	--ok: #55bb55;
 	--ok-soft: #1a3a1a;
 	--busy: #f0a030;
 	--busy-soft: #2a1f10;
@@ -172,7 +172,7 @@
 		--text-muted: #888;
 		--card-bg: rgba(13, 13, 13, 0.85);
 		--header-bg: #0a0a0a;
-		--ok: #44aa44;
+		--ok: #55bb55;
 		--ok-soft: #1a3a1a;
 		--busy: #f0a030;
 		--busy-soft: #2a1f10;

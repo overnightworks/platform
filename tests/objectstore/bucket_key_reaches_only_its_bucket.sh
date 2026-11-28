@@ -202,6 +202,12 @@ expect_probe "$prebackup_verdict" "a Pod labelled as the restore test in $APP_NA
   "$APP_NAMESPACE" s3-restore-test "$restore_test_labels" "$s3_host" "$service_port"
 expect_probe closed "a Pod labelled as the restore test in $OTHER_NAMESPACE, to the S3 port" \
   "$OTHER_NAMESPACE" s3-restore-test-other-namespace "$restore_test_labels" "$s3_host" "$service_port"
+# The loader of db:load-dump, which holds the app's key for the load: the same rule, its label read from its fixed shape.
+loader_labels="$(yq -o json -I0 '.pod.metadata.labels' scripts/load_snapshot.yaml)"
+expect_probe "$prebackup_verdict" "a Pod labelled as the loader of db:load-dump in $APP_NAMESPACE, to the S3 port" \
+  "$APP_NAMESPACE" s3-loader "$loader_labels" "$s3_host" "$service_port"
+expect_probe closed "a Pod labelled as the loader of db:load-dump in $OTHER_NAMESPACE, to the S3 port" \
+  "$OTHER_NAMESPACE" s3-loader-other-namespace "$loader_labels" "$s3_host" "$service_port"
 # The Component's endpoint, region, bucket and key, read from the owners the web's are read from.
 component_container="$(yq '.patches[] | select(.target.kind == "PreBackupPod") | .patch' "$bucket_component/kustomization.yaml" |
   yq '.[] | select(.op == "add" and .path == "/spec/pod/spec/containers/-") | .value')"

@@ -165,9 +165,12 @@ for alone_case in "${alone_cases[@]}"; do
 done
 start_probe alone_failed "chat_fails" 0 --question 18
 start_probe alone_unknown "" 0 --question 3
+start_probe alone_bare "" 0 --question
+start_probe alone_bogus "" 0 --bogus
 # Question 4 alone, on the models it is given: the answered pair, a refusing model, a default pair, an unlisted name, a name
 # that is no text name, a model argument for a question that takes none, and a failed run.
 start_probe models_given "" 0 --question 4 --model text/sonnet --model text/haiku-low
+start_probe models_four "" 0 --question 4 --model text/sonnet --model text/sonnet-low --model text/haiku --model text/haiku-low
 start_probe models_repeated "" 0 --question 4 --model text/sonnet --model text/sonnet
 start_probe models_refused "defer_refused" 0 --question 4 --model text/sonnet-low --model text/haiku-low
 start_probe models_default "" 0 --question 4
@@ -307,6 +310,13 @@ run_probe alone_unknown
 has alone_unknown 'question 3 does not run alone; those that do: 4 18'
 lacks alone_unknown 'the probe key'
 ended_cleanly alone_unknown
+for case in alone_bare alone_bogus; do
+  run_probe "$case"
+  [ "$status" = 1 ] || fail "$case: the probe ended $status, not 1: $(tail -n 5 <<<"$output")"
+  has "$case" '^litellm:gateway-probe: usage: scripts/litellm_gateway_probe.sh'
+  lacks "$case" 'unbound variable'
+  lacks "$case" 'the probe key'
+done
 echo "a run of one question deletes its key when it fails, and an unknown question makes none"
 
 # Question 4 alone answers Q4, Q5, Q6 and Q8 on the chat route for each model it is given and for no other.
@@ -322,6 +332,14 @@ count_of models_given '^litellm:gateway-probe: the probe key gateway-probe-[0-9]
 lacks models_given 'unbound variable'
 has models_given 'Q4 \[[A-Z0-9 ]+\] chat text/sonnet: yes;.*no skill tools [0-9]{4,}'
 echo "question 4 alone asks the deferral question of the models it is given and of no others"
+
+# Four models make ten arguments, and the run still reaches every one of them.
+run_probe models_four
+[ "$status" = 0 ] || fail "models_four: the probe ended $status: $(tail -n 20 <<<"$output")"
+ended_cleanly models_four
+lacks models_four '^usage:'
+for model in text/sonnet text/sonnet-low text/haiku text/haiku-low; do count_of models_four "Q4 \[[A-Z0-9 ]+\] chat $model: " 1; done
+echo "question 4 alone asks four models"
 
 # A model named twice is asked once.
 run_probe models_repeated

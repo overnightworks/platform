@@ -46,10 +46,7 @@ cleanup() {
   # The planted audio and objects leave on every exit; their own Pods are deleted by run_files and run_client or here.
   (run_files remove-planted-audio "$declared_claim" false "rm -rf '/files/$cell_directory'") ||
     { delete_object --namespace "$namespace" delete pod remove-planted-audio --ignore-not-found --wait --timeout=2m; deletion_failures=$((deletion_failures + 1)); }
-  (run_client clear-planted-objects "$credentials_secret" clear "$bucket_variable") ||
-    { delete_object --namespace "$namespace" delete pod clear-planted-objects --ignore-not-found --wait --timeout=2m; deletion_failures=$((deletion_failures + 1)); }
-  delete_object --namespace "$namespace" delete pod --selector cell=object-store --ignore-not-found --wait --timeout=2m
-  delete_object --namespace "$namespace" delete configmap object-store-client --ignore-not-found
+  remove_client
   for name in prune-as-reading-uid check-as-reading-uid; do
     delete_object --namespace "$namespace" delete "${name%%-*}" "$name" --ignore-not-found --wait --timeout=2m
   done
@@ -191,7 +188,7 @@ run_restic "$namespace" staging-newest '
 [ "$(sed -n 's/^newest //p' <<<"$restic_output")" = "$staging" ] || fail "the newest snapshot of $namespace is not the staging one"
 echo "the newest snapshot of $namespace is the staging one$(grep -q '^arranged$' <<<"$restic_output" && echo ', by a rewritten time' || true)"
 run_restore_test "$namespace" staging-newest-restore-test
-[ "$status" = passed ] || fail "the restore test of $namespace failed while its newest snapshot is the staging one"
+require_restore_passed "the restore test of $namespace failed while its newest snapshot is the staging one"
 echo "the restore test of $namespace passes"
 run_logs+="$restore_pod_log"$'\n'
 grep -q '\] restore object: compare: one object equals its copy in the snapshot' <<<"$restore_pod_log" ||
@@ -315,15 +312,7 @@ echo "the second Backup read from its parent: 2 new, 4 changed and $((claim_coun
 # Cell 8: the stager refuses to stage while another pod mounts the staging claim; the tree and MANIFEST stay.
 staging_digests='cd /staging && echo "tree $(find . -exec stat -c "%n %s %Y" {} + | LC_ALL=C sort | sha256sum | cut -c1-64)" &&
   echo "manifest $(sha256sum <MANIFEST | cut -c1-64)"'
-NAME="$holder" IMAGE="$PROBE_IMAGE" USER_ID="$reading_uid" yq --null-input --output-format json '
-  {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": strenv(NAME)},
-   "spec": {"restartPolicy": "Never", "automountServiceAccountToken": false, "enableServiceLinks": false,
-     "securityContext": {"runAsNonRoot": true, "runAsUser": env(USER_ID), "seccompProfile": {"type": "RuntimeDefault"}},
-     "containers": [{"name": "holder", "image": strenv(IMAGE), "command": ["sleep", "3600"],
-       "securityContext": {"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": {"drop": ["ALL"]}},
-       "volumeMounts": [{"name": "staging", "mountPath": "/staging", "readOnly": true}]}],
-     "volumes": [{"name": "staging", "persistentVolumeClaim": {"claimName": "backup-staging", "readOnly": true}}]}}' |
-  kubectl --namespace "$namespace" create --filename - >/dev/null
+staging_pod "$holder" '["sleep", "3600"]'
 kubectl --namespace "$namespace" wait "pod/$holder" --for=condition=Ready --timeout=5m >/dev/null
 held_before="$(kubectl --namespace "$namespace" exec "$holder" -- sh -c "$staging_digests")"
 refused_backup staging-held '^stage: refused: [0-9]+ other pods mount the staging claim$'

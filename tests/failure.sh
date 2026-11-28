@@ -14,6 +14,18 @@ expect_problem() {
   echo "the mutant '$description' is red: ${problems%%$'\n'*}"
 }
 
+# keep_mise_directories: mise keeps its tools, trust, state and cache where they are, whichever HOME or XDG directory the
+# cell replaces next; call it before the replacement. It exports the four directories and lists them as
+# mise_dirs=(NAME=value ...) for a cell that runs a command under `env -i`.
+keep_mise_directories() {
+  export MISE_DATA_DIR="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}"
+  export MISE_STATE_DIR="${MISE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mise}"
+  export MISE_CACHE_DIR="${MISE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/mise}"
+  export MISE_CONFIG_DIR="${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}"
+  mise_dirs=("MISE_DATA_DIR=${MISE_DATA_DIR}" "MISE_STATE_DIR=${MISE_STATE_DIR}" "MISE_CACHE_DIR=${MISE_CACHE_DIR}"
+    "MISE_CONFIG_DIR=${MISE_CONFIG_DIR}")
+}
+
 # until_true <seconds> <description> <command>...: the command passes within the time, tried every 5 seconds.
 until_true() {
   local deadline=$((SECONDS + $1)) description="$2"

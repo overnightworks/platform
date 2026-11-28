@@ -72,11 +72,18 @@ An app uses only the capabilities it needs; nothing obliges it to consume one.
   bucket as its output `bucket`. An app pins it as `uses: overnightworks/platform/.github/actions/garage@<commit sha>`.
   The store has no object
   versioning and no `If-None-Match` on a write. Plain HTTP stays inside the cluster. A bucket is backed up only where
-  its app's layer declares it (below); a file that is the app's only copy stays out of a bucket until the platform's
-  restore command covers buckets.
+  its app's layer declares it (below). A weekly Backup stages what a declared bucket gained since the last one up to about
+  33 GB, the bound under which an app may keep a file that is its only copy in the bucket; its window is `PRE_SYNC_BUDGET`
+  in `infrastructure/postgres/backup/files/files.yaml`. The figure assumes objects of about 35 MB (songmaker's audio) on the
+  PC's NVMe at the 115 MB/s that a probe measured (Garage with its fsyncs into the staging disk, the slowest of three runs of
+  150 objects, the data just written); smaller objects stage less, since each costs about 0.15 ms of listing.
+  `mise run backup:now <namespace>` stages a larger first copy or week without the Backup's deadline, in its own Pod, before
+  its Backup. A Backup or a seed refuses a copy that would leave less free than the kubelet's eviction threshold plus any
+  storage reservation, naming counts and bytes. The restore command puts back each object's key and bytes,
+  not its Content-Type (guessed from the extension), its user metadata or its server time, which becomes the time of the load.
 - **Its names in the realm.** Keycloak's realm `hallucinai` (`infrastructure/keycloak/realm.yaml`) holds an app `<name>`'s objects under one scheme: the client `<name>`, through which it signs people in; the group `/apps/<name>` and, where the app has admins, `/apps/<name>/admin`, which mean what webauth's host contract (APP-03, APP-04) says; the group `/apps/<name>/mcp`, whose members' agents may reach its MCP endpoint; and the client scope `mcp-<name>`, which a token for that endpoint carries. Two names belong to the fleet: the group `/agents`, which holds every agent with an account of its own, and the public client `agents`, through which a person's own agent signs in. The app's Deployment hands each name the app uses to the container that checks tokens, as a plain environment value under the same key in every app: `REALM_CLIENT_ID`, `REALM_LOGIN_GROUP`, `REALM_ADMIN_GROUP`, `REALM_MCP_GROUP`, `REALM_MCP_SCOPE`, `REALM_AGENT_GROUP` and `REALM_MCP_CLIENT_ID`. Two names of services belong to the fleet too: the group `/services/litellm`, the AI gateway's right, under `REALM_AI_GROUP`, and the client scope `speech-service-audience`, the speech service's, under `REALM_SPEECH_SCOPE`; the Deployment hands them whether or not the app's code reads them yet. A service's own names (speech's client, role and group) stand in its own configuration. The app maps the keys onto its own settings and holds no literal of them. A container that hands any `REALM_` key hands every one that the realm file demands of its app, and the check judges the two service keys when handed and never demands them. No container under `apps/` takes `envFrom`. Which clients may ask for an app's scope, and which agents are members of its MCP group, is the app's choice, written in the realm file.
 
-Provided for an app's database: a weekly k8up backup into its own repository on the platform, kept 4 weekly and 3 monthly, with a monthly `restic check` and a monthly restore test (`infrastructure/postgres/backup`, which keycloak, litellm, hopin, skat, songmaker, personas and presentator include). Where an app's layer also includes `infrastructure/postgres/backup/files` and names a claim, the backup copies that claim beside the dump. Where it also includes `infrastructure/postgres/backup/files/bucket`, the backup copies the Namespace's bucket beside them, read with its read-only backup key, in the same snapshot, and the monthly restore test reads one unchanged object of the latest snapshot and compares its sha256 with the live object's, read with the same key. Not provided: a backup of a claim that no layer names, a database's backup without its layer including that component, a backup of a bucket that no layer declares, and a copy of anything off the PC. A dead disk loses every app's data.
+Provided for an app's database: the role `reader`, which the base declares and a delegated agent reads the store through (`mise run db:read <namespace>`), so the app grants it nothing, and whose connections count against `max_connections`; a weekly k8up backup into its own repository on the platform, kept 4 weekly and 3 monthly, with a monthly `restic check` and a monthly restore test (`infrastructure/postgres/backup`, which keycloak, litellm, hopin, skat, songmaker, personas and presentator include). Where an app's layer also includes `infrastructure/postgres/backup/files` and names a claim, the backup copies that claim beside the dump. Where it also includes `infrastructure/postgres/backup/files/bucket`, the backup copies the Namespace's bucket beside them, read with its read-only backup key, in the same snapshot, and the monthly restore test reads one unchanged object of the latest snapshot and compares its sha256 with the live object's, read with the same key. `mise run db:load-dump` restores the database, the claim and the bucket of one snapshot together and refuses a bucket that holds objects unless `--empty-bucket` (restore-a-database.md). Not provided: a backup of a claim that no layer names, a database's backup without its layer including that component, a backup of a bucket that no layer declares, and a copy of anything off the PC. A dead disk loses every app's data.
 
 ## What every app offers
 
@@ -98,10 +105,11 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 - **Connections.** A Deployment that opens its Postgres declares the connections one pod may hold: the pool and overflow
   variables its container sets (`DATABASE_POOL_SIZE` and `DATABASE_MAX_OVERFLOW`, counting one more for init-time
   engines), or, where the app or its vendor fixes them, the annotation `hallucinai.de/postgres-connections-per-pod`.
-  The sum over the namespace's Deployments of their pods x that figure, plus the backup's dump, must stay within the
-  base's `max_connections` less its reserved slots. A `Recreate` Deployment has its replicas. A `RollingUpdate` has 2 x
-  replicas + surge pods, since a pod being stopped is no part of the surge and may hold its connections while the surge
-  pods start, and each surge pod adds 1 connection where its init container migrates the database.
+  The sum over the namespace's Deployments of their pods x that figure, plus the backup's dump and the connections of
+  the role `reader`, must stay within the base's `max_connections` less its reserved slots. A `Recreate` Deployment has
+  its replicas. A `RollingUpdate` has 2 x replicas + surge pods, since a pod being stopped is no part of the surge and
+  may hold its connections while the surge pods start, and each surge pod adds 1 connection where its init container
+  migrates the database.
 - **Configuration.** Live settings come from the manifest's environment, secrets from files `platform-secrets`
   supplies; no live secret is a plain environment value, since an environment value passes to every child process. How
   the app finds its files (`*_FILE`, a secrets directory) is the app's.
@@ -116,7 +124,7 @@ Provided for an app's database: a weekly k8up backup into its own repository on 
 | Image form (listed vendor at a digest, or a full app ref) on every Pod create or change | admission policy `app-and-vendor-images` |
 | An app ref carries a provenance attestation signed by quality's release workflow for its own repository, on every Pod create or image change | Kyverno's policy `app-attestations`; platform's `cluster` job proves a refusal by server-side dry-run and every live app ref admitted |
 | Namespace enforces `restricted` (presentator's warns and audits only); Deployment is `Recreate` or a `RollingUpdate` that never takes a pod away before its replacement is Ready, Available with all its replicas Ready, every container at the Deployment's digest | platform's `cluster` job, for each Deployment under `apps/` |
-| A Deployment's pods, with those still stopping in a rolling update, its surge and the backup, stay within its Postgres' `max_connections` | the `checks` job, by rendering the layers of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM |
+| A Deployment's pods, with those still stopping in a rolling update, its surge, the backup and the role reader, stay within its Postgres' `max_connections` | the `checks` job, by rendering the layers of hopin, songmaker, personas, skat, presentator, Keycloak and LiteLLM |
 | A name a manifest under `apps/` hands under a `REALM_` key is a plain value, declared in `realm.yaml` as an object of that key's kind, and the layer's own app's or one of the fleet's; every key the realm file demands of the app is handed; no container there takes `envFrom` | the `checks` job, by rendering every layer under `apps/` that `clusters/pc/apps.yaml` names |
 | Every Service an Ingress routes to carries the same five sticky-cookie annotations | the `checks` job, by rendering every layer of `clusters/pc` |
 | A second request with the cookie reaches the same one of two pods, and the cookie is `Secure`, `HttpOnly` and host-only | the `cluster` job's part `core`, on a throwaway namespace |
@@ -163,6 +171,30 @@ at the landed main, and records the result line on its release item. The report 
 the app's Gatus row and opens the item at the app for a red after the rerun; exit 4 means a timer or another head is
 running, and the head runs it again after that run ends. A red whose line names another app's leftover goes to platform's
 head.
+
+## Live journeys
+
+An app where a person signs in may ship journeys that platform runs on the operator's PC against the public names, never
+from CI: `mise run live:check <app> --tier journeys --checkout <dir>` (`docs/operations.md`, OPS-25). Platform owns the
+calling side; the app owns its journeys and declares one mise task, `live:journeys`, in its repository. Platform runs it
+as `mise -C <checkout> run live:journeys --origin <origin> --storage-state <file>`.
+
+- **Origin and file.** `<origin>` is the app client's `baseUrl` in `infrastructure/keycloak/realm.yaml` without its trailing
+  slash. `<file>` is a Playwright storage state, `{"cookies": [...], "origins": []}`, holding the app host's cookies of the
+  run's sign-in only; session cookies have `expires: -1` and `sameSite` is `Lax`.
+- **Exit codes.** 0 means every journey passed, 1 one failed, and 3 skipped for a precondition the app names. Any other
+  exit is red. Platform reads only the exit code; a report stays the app's own, in its checkout.
+- **Without the file.** The task fails loud, with a non-zero exit and no journey run, when `--storage-state` is missing or
+  names no readable file: CI never has that file.
+- **Output.** Its stdout and stderr go to `/dev/null`. It still prints codes and counts only, since its report is what an
+  agent reads.
+- **Copies.** The app keeps no copy of the file, and no trace, video or report that holds a cookie, outside a git-ignored
+  directory of its checkout.
+- **Environment.** The command passes the task only `HOME`, a `PATH` of `/usr/bin:/bin` and `LANG`: no password, no
+  `KUBECONFIG`, no runtime directory and no platform variable. The app's own mise supplies its tools and adds its task
+  variables, and the caller prepares the checkout, which the command never changes.
+- **Limits.** The task runs in a session of its own inside probe-run's cap, which ends it and every process it
+  started.
 
 ## The GPU
 
