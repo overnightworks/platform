@@ -1,0 +1,7 @@
+claim_id = "5d830430e5944b729d35d4d069211836"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
+role = "builder"
+base = "f70000931c58fca737d4dd04eb8564aaf8af1982"
+branch = "claude/issue-1020-listener-parent-death"
+scope = ["scripts/release_bump_create_app_listener.py", "tests/release_bump/the_create_app_command_stores_only_the_key_through_gh_and_prints_none.sh"]
+opened_commit = "559932b4721f490228af6c0dbaeae59a5a5725af"
