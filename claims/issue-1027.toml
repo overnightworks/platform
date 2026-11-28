@@ -1,0 +1,7 @@
+claim_id = "d02c4441db534f8cbf04ad557a9e78ad"
+agent = "Claude 9e754c99-087b-4316-b223-5569180a8ee3"
+role = "builder"
+base = "79f0694db9ce55f37b9d218dd6d30971617946f1"
+branch = "release/songmaker"
+scope = ["apps/songmaker/release/kustomization.yaml"]
+opened_commit = "878c464f01851dc3ef134d457b9fd77234f465d4"
