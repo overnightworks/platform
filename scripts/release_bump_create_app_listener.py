@@ -18,9 +18,11 @@ import hmac
 import html
 import http.server
 import json
+import os
 import re
 import resource
 import secrets
+import signal
 import subprocess
 import sys
 import time
@@ -29,6 +31,7 @@ from dataclasses import dataclass
 
 PERMISSIONS = {"contents": "write", "pull_requests": "write", "metadata": "read"}
 CODE_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,100}")
+PR_SET_PDEATHSIG = 1
 PR_SET_DUMPABLE = 4
 
 
@@ -177,6 +180,15 @@ def keep_no_core_dump() -> None:
         raise OSError("prctl(PR_SET_DUMPABLE) failed")
 
 
+def end_with_the_parent(parent: int) -> None:
+    """A killed command leaves no page serving: the kernel ends this process with its parent."""
+    if ctypes.CDLL(None, use_errno=True).prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
+        raise OSError("prctl(PR_SET_PDEATHSIG) failed")
+    # A parent that died before the call sent no signal.
+    if os.getppid() != parent:
+        sys.exit(1)
+
+
 def serve(target: Target, deadline_seconds: float) -> None:
     deadline = time.monotonic() + deadline_seconds
     with Listener(target) as listener:
@@ -191,6 +203,7 @@ def serve(target: Target, deadline_seconds: float) -> None:
 
 
 def main() -> int:
+    parent = os.getppid()
     parser = argparse.ArgumentParser()
     parser.add_argument("name")
     parser.add_argument("deadline_seconds", type=float)
@@ -201,6 +214,7 @@ def main() -> int:
     organisation, repository = arguments.repository.split("/")
     target = Target(arguments.name, organisation, repository, arguments.environment, arguments.secret)
     keep_no_core_dump()
+    end_with_the_parent(parent)
     try:
         serve(target, arguments.deadline_seconds)
     except Refusal as refusal:
