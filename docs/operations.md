@@ -128,7 +128,7 @@ deletion date is older than 30 days, with that file, and leaves an entry without
 it cannot read and the Trash of other mounts; the unit creates the home Trash first, since gtrash fails on a missing
 one. (OPS-11)
 
-Claude's sessions, Docker's volumes and its build cache (hal's) are never cleaned here. (OPS-12)
+Claude's sessions, Docker's volumes and its build cache (bounded by the bootstrap's `daemon.json`) are never cleaned here. (OPS-12)
 
 A Backup or a seed of a claim layer's copies (`backup:now`, docs/app.md) refuses, before any sync, a copy that would leave
 the staging volume less free than the kubelet's eviction line, which is the volume's size minus the node's allocatable

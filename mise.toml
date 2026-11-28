@@ -30,6 +30,15 @@ K3S_INSTALLER_SHA256 = "ed01f89fd977bf20ac1516bbebf8370bf3ddbaa55dac8aba610956a4
 # The one source of GitHub's host keys, which secrets:github-host-keys checks the deploy key's known_hosts against.
 GITHUB_META_URL = "https://api.github.com/meta"
 
+# Docker's engine and its two CLI plugins come from Ubuntu's archive, as on the PC, so the host has one trust root
+# and one update path. The packages create the docker group and start Docker, which bootstrap:docker-group and the
+# docker service below build on. Docker's own apt source is not used; its conflicting docker-ce would replace the
+# engine and stop every container.
+[bootstrap.packages]
+"apt:docker.io" = "latest"
+"apt:docker-buildx" = "latest"
+"apt:docker-compose-v2" = "latest"
+
 # mise creates no missing parent of a file, and k3s's own directory exists only once k3s has run.
 [bootstrap.directories."/etc/rancher/k3s"]
 owner = "root"
@@ -111,6 +120,22 @@ notify = ["systemd-journald"]
 [bootstrap.services.systemd-journald]
 state = "running"
 enabled = false
+on_change = "restart"
+
+# Docker's daemon.json: the journald log driver puts container logs under the journal's bound, the build cache bound
+# keeps the disk bound every docker build is held to, and the nvidia runtime serves songmaker's GPU test stack, which
+# starts the container with `runtime: nvidia`. mise compares bytes, so a changed byte restarts Docker, which stops
+# every container on the PC, and waits for the operator's word. /etc/docker comes with docker.io.
+[bootstrap.files."/etc/docker/daemon.json"]
+source = "host/docker/daemon.json"
+owner = "root"
+group = "root"
+mode = "0644"
+notify = ["docker"]
+
+[bootstrap.services.docker]
+state = "running"
+enabled = true
 on_change = "restart"
 
 # The root files hal's tunnel and journal setup left on the PC: its units, their drop-ins, its polkit rules and the
@@ -711,8 +736,8 @@ description = "Start the release bump's workflow on main at once, instead of wai
 run = "gh workflow run release-bump.yml --ref main --repo overnightworks/platform"
 
 [tasks.bootstrap]
-description = "The PC's own steps after the declarative parts: the commit hook, then k3s, then Flux, then its access to platform-secrets"
-run = [{ task = "bootstrap:hook" }, { task = "bootstrap:k3s" }, { task = "bootstrap:flux" }, { task = "bootstrap:secrets" }]
+description = "The PC's own steps after the declarative parts: the commit hook, the user's docker group, then k3s, then Flux, then its access to platform-secrets"
+run = [{ task = "bootstrap:hook" }, { task = "bootstrap:docker-group" }, { task = "bootstrap:k3s" }, { task = "bootstrap:flux" }, { task = "bootstrap:secrets" }]
 
 [tasks."bootstrap:hook"]
 description = "Install quality at the gate pin of ci.yml with its engines, then set git's core.hooksPath to the global commit hook"
@@ -763,6 +788,28 @@ if [ "$(git config --global --get core.hooksPath || true)" != "$hooks_directory"
   git config --global core.hooksPath "$hooks_directory"
 fi
 echo "bootstrap:hook: core.hooksPath is $hooks_directory"
+'''
+
+[tasks."bootstrap:docker-group"]
+description = "Add the user running the bootstrap to the docker group, and stop for a new login when this process lacks the group"
+# The user is the machine's, so [bootstrap.users] would hardcode a login in the repository. bootstrap:k3s and
+# bootstrap:flux read the kubeconfig through the docker group that host/k3s/config.yaml's write-kubeconfig-group
+# names, so they must run in a process that has it, and a group added to a running process takes effect only in the
+# next login.
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fail() { echo "bootstrap:docker-group: $1" >&2; exit 1; }
+
+members="$(getent group docker)" || fail "the group docker does not exist; run scripts/bootstrap_pc.sh --only packages first"
+if ! tr ',' '\n' <<<"${members##*:}" | grep -qxF "$USER"; then
+  sudo usermod --append --groups docker "$USER"
+  echo "bootstrap:docker-group: $USER added to docker"
+fi
+if ! id --name --groups | tr ' ' '\n' | grep -qxF docker; then
+  fail "$USER is in docker, but this login has not read it yet; log in again and run the bootstrap again"
+fi
+echo "bootstrap:docker-group: $USER is in docker"
 '''
 
 [tasks."bootstrap:k3s"]
