@@ -15,8 +15,7 @@ printf '%s\n' '      Used       1B-blocks Use%' "5000000000 10000000000 ${FAKE_D
 FAKE
 chmod +x "$scratch/bin/df"
 # mise keeps its tools where they are; only the task's $HOME is the scratch tree.
-mise_dirs=("MISE_DATA_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/mise" "MISE_STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/mise"
-  "MISE_CACHE_DIR=${XDG_CACHE_HOME:-$HOME/.cache}/mise" "MISE_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/mise")
+keep_mise_directories
 run_disk() {
   local fake_bin="$scratch/bin"
   [ -z "${2:-}" ] || fake_bin="$scratch/$2:$fake_bin"
