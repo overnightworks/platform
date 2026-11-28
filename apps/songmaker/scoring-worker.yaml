@@ -21,6 +21,9 @@ spec:
       labels:
         app.kubernetes.io/name: scoring-worker
     spec:
+      # The worker drains its running jobs for up to 300 s after SIGTERM (songmaker's worker_drain_timeout), and the
+      # grace leaves about 30 s of stop work above it.
+      terminationGracePeriodSeconds: 330
       automountServiceAccountToken: false
       enableServiceLinks: false
       imagePullSecrets:
