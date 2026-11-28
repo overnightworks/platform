@@ -202,7 +202,7 @@ no_job_notice killed-leader-unreadable
 kept_secret killed-leader-unreadable
 [ "$(<"$state/enabled")" = false ] || refuse "killed-leader-unreadable: the person is enabled"
 live_check_arguments=()
-echo "a drive ended by the KILL whose processes cannot be listed leaves no job notice and no path in the command's output"
+echo "a drive ended by the KILL whose processes cannot be listed leaves no job notice and no path in the command's output, so the run is red and names the processes as may remain, with the person disabled"
 
 journeys_run self-killed-leader signal:KILL:self
 expect_result self-killed-leader 1 red
