@@ -25,8 +25,8 @@ sha256 = "d756044aa9db85063bd48ba119bb4d09ac0956b09e139b805f6bb20241aacc21"
 [songmaker]
 
 [songmaker.datenschutz]
-date = 2026-11-10
-sha256 = "9cdeb6feea9666b19902bd72a7ca414df2f0f5f9cf342a1ee036dc1d45e7414f"
+date = 2026-11-27
+sha256 = "cb388692b7039323a2a8721fbd0cc3e243bd2b2d9bae2080c096ac84968b4b27"
 
 [songmaker.nutzungsbedingungen]
 date = 2026-11-05
