@@ -52,7 +52,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: ghcr.io/overnightworks/personas:2026.11.27.1@sha256:fccd50429bdae83f8792626d22cc2e5f46820c2cf5917f7af3f98763a7511182
+          image: ghcr.io/overnightworks/personas:2026.11.28.1@sha256:41a1ffcd4320975273f7391ea4489047defa3e3fa09b4ccff1c12b09c3beef26
           args: [personas, migrate]
           # The command reads the whole configuration, so it mounts what the runner does.
           env:
@@ -77,7 +77,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: personas
-          image: ghcr.io/overnightworks/personas:2026.11.27.1@sha256:fccd50429bdae83f8792626d22cc2e5f46820c2cf5917f7af3f98763a7511182
+          image: ghcr.io/overnightworks/personas:2026.11.28.1@sha256:41a1ffcd4320975273f7391ea4489047defa3e3fa09b4ccff1c12b09c3beef26
           env:
             - name: PERSONAS_CONFIG
               value: /etc/personas/personas.toml
